@@ -263,8 +263,8 @@ async def gemini_rewrite(
         full_prompt = f"Контекст из источника (для понимания товара):\n{clean_donor_text}\n\n{prompt}"
     content_parts.append({"type": "text", "text": full_prompt})
 
-    payload = {
-        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+payload = {
+        "model": "llama-3.2-11b-vision-preview", # Реальная Vision-модель от Groq
         "messages": [{"role": "user", "content": content_parts}],
         "temperature": 0.8,
         "max_tokens": 1024,
