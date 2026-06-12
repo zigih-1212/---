@@ -4,66 +4,73 @@ import json
 import logging
 import os
 import re
-from urllib.parse import unquote
-
 import httpx
 from bs4 import BeautifulSoup
 
-# Подтягиваем настройки из config.py
-from config import (
-    BOT_TOKEN, TARGET_CHANNEL, GROQ_API_KEY, 
-    DONOR_CHANNELS, RUN_INTERVAL_SECONDS, 
-    FIRST_RUN_POSTS_COUNT, CURSORS_FILE
-)
+# КОНФИГ
+TOKEN = "8800001861:AAGW0Qlgk3NRh5ruzrlI7OxZ4-LPmUT18ms"
+CHANNEL = "@wb_skidochniki"
+DONOR = "wb_skidkamam"
+GROQ_API = os.getenv("GROQ_API_KEY", "") # Укажи в Railway переменную GROQ_API_KEY
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 log = logging.getLogger(__name__)
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-}
-
-# --- ФУНКЦИИ ПАМЯТИ ---
-def load_cursors() -> dict:
-    if os.path.exists(CURSORS_FILE):
-        try:
-            with open(CURSORS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
-
-def save_cursors(cursors: dict) -> None:
+async def get_rewrite(client, img_url, text):
+    # Промпт для уникализации
+    prompt = f"Напиши уникальное продающее описание для товара на основе текста: {text}. Эмодзи обязательны. Без цен и артикулов."
+    payload = {
+        "model": "llama-3.2-11b-vision-preview",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
     try:
-        with open(CURSORS_FILE, "w", encoding="utf-8") as f:
-            json.dump(cursors, f, indent=4)
-    except Exception as e:
-        log.error(f"Не удалось сохранить память: {e}")
+        resp = await client.post("https://api.groq.com/openai/v1/chat/completions", 
+            json=payload, headers={"Authorization": f"Bearer {GROQ_API}"})
+        return resp.json()["choices"][0]["message"]["content"]
+    except: return "✨ Топ находка! Смотри подробности по ссылке ниже 👇"
 
-# --- НЕЙРОСЕТЬ GROQ ---
-async def groq_rewrite(client: httpx.AsyncClient, image_url: str | None, clean_text: str, marketplace: str) -> str:
-    store_name = "Wildberries" if marketplace == "wildberries" else "Ozon"
-    prompt = (
-        f"Внимательно посмотри на это изображение товара с {store_name}. "
-        "Твоя задача — написать абсолютно новое, уникальное, продающее описание для Telegram-канала, "
-        "основываясь на том, ЧТО ТЫ ВИДИШЬ на фото. Сделай описание развернутым (минимум 3-4 предложения). "
-        "Добавь классные эмодзи. СТРОЖАЙШЕ ЗАПРЕЩЕНО упоминать цены, скидки, артикулы или чужие ссылки. "
-        "Ответь ТОЛЬКО готовым текстом нового описания на русском языке."
-    )
+async def main():
+    async with httpx.AsyncClient() as client:
+        log.info("Бот запущен!")
+        last_id = 0
+        while True:
+            try:
+                resp = await client.get(f"https://t.me/s/{DONOR}")
+                soup = BeautifulSoup(resp.text, 'lxml')
+                posts = soup.find_all('div', class_='tgme_widget_message')
+                
+                for post in posts:
+                    pid = int(post.get('data-post').split('/')[-1])
+                    if pid <= last_id: continue
+                    
+                    # Поиск ссылки
+                    link_tag = post.find('a', href=True, text=re.compile(r'wildberries', re.I))
+                    if not link_tag: continue
+                    
+                    raw_url = link_tag['href']
+                    # МЕСТО ДЛЯ ТАКПРОДАМ: здесь будет функция замены на твой переходник
+                    final_url = raw_url 
+                    
+                    # Поиск фото
+                    photo_tag = post.find('a', class_='tgme_widget_message_photo_wrap')
+                    img_url = None
+                    if photo_tag and 'style' in photo_tag.attrs:
+                        m = re.search(r"url\('(.+?)'\)", photo_tag['style'])
+                        if m: img_url = m.group(1).replace("_a.jpg", "_w.jpg")
 
-    parts = []
-    if image_url:
-        try:
-            img_resp = await client.get(image_url, headers=HEADERS, timeout=20, follow_redirects=True)
-            img_resp.raise_for_status()
-            img_b64 = base64.b64encode(img_resp.content).decode()
-            ct = img_resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-            parts.append({"type": "image_url", "image_url": {"url": f"data:{ct};base64,{img_b64}"}})
-        except Exception as e:
-            log.warning(f"Картинка не загрузилась в Groq: {e}")
+                    # Рерайт и отправка
+                    text = await get_rewrite(client, img_url, post.get_text())
+                    
+                    keyboard = {"inline_keyboard": [[{"text": "🛒 ЗАБРАТЬ НА WB", "url": final_url}]]}
+                    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+                    await client.post(url, data={"chat_id": CHANNEL, "photo": img_url, "caption": text, 
+                                                "parse_mode": "HTML", "reply_markup": json.dumps(keyboard)})
+                    
+                    last_id = max(last_id, pid)
+                    await asyncio.sleep(20) # Пауза чтобы не ловить бан
+            except Exception as e: log.error(e)
+            await asyncio.sleep(60)
 
-    full_prompt = f"Контекст из источника:\n{clean_text}\n\n{prompt}" if clean_text else prompt
+if __name__ == "__main__":
+    asyncio.run(main())
