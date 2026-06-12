@@ -167,6 +167,8 @@ async def process_donor(client: httpx.AsyncClient, channel: str, cursors: dict):
         text_div = html.find('div', class_='tgme_widget_message_text')
         clean_text = re.sub(r'http\S+', '', text_div.get_text(separator="\n")) if text_div else ""
 
-        img_url = None
+img_url = None
         photo_div = html.find('a', class_='tgme_widget_message_photo_wrap')
-        if photo_div
+        if photo_div and 'style' in photo_div.attrs:
+            m = re.search(r"background-image:url\('(.+?)'\)", photo_div['style'])
+            if m: img_url = m.group(1).replace("_a.jpg", "_w.jpg")
