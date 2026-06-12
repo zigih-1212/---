@@ -164,11 +164,18 @@ async def process_donor(client: httpx.AsyncClient, channel: str, cursors: dict):
             max_id = max(max_id, pid)
             continue
 
+        # Очистка текста от ссылок
         text_div = html.find('div', class_='tgme_widget_message_text')
-        clean_text = re.sub(r'http\S+', '', text_div.get_text(separator="\n")) if text_div else ""
+        clean_text = ""
+        if text_div:
+            # Убираем все ссылки из текста
+            clean_text = re.sub(r'http\S+|www\.\S+', '', text_div.get_text(separator="\n"))
+            clean_text = clean_text.strip()
 
-img_url = None
+        # Поиск картинки
+        img_url = None
         photo_div = html.find('a', class_='tgme_widget_message_photo_wrap')
         if photo_div and 'style' in photo_div.attrs:
             m = re.search(r"background-image:url\('(.+?)'\)", photo_div['style'])
-            if m: img_url = m.group(1).replace("_a.jpg", "_w.jpg")
+            if m:
+                img_url = m.group(1).replace("_a.jpg", "_w.jpg")
