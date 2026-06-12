@@ -1,3 +1,20 @@
+import asyncio
+import base64
+import json
+import logging
+import os
+import re
+import time
+from pathlib import Path
+from urllib.parse import urlparse, parse_qs, unquote
+
+import httpx
+from bs4 import BeautifulSoup
+
+# Дальше идут импорты из твоего конфига
+from config import BOT_TOKEN, TARGET_CHANNEL, GROQ_API_KEY, DONOR_CHANNELS, RUN_INTERVAL_SECONDS, FIRST_RUN_POSTS_COUNT, CURSORS_FILE
+
+# ... и только ГДЕ-ТО НИЖЕ должна начинаться функция async def gemini_rewrite(...)
 # ─────────────────────────────────────────────
 # GROQ API (бесплатно, vision)
 # ─────────────────────────────────────────────
