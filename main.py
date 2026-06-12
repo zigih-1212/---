@@ -28,13 +28,17 @@ async def main():
                     pid = int(post.get('data-post').split('/')[-1])
                     if pid <= last_id: continue
                     
-                   # Ищем текст и сразу очищаем его от всех ссылок
+                   # Ищем текст
                     text_tag = post.find('div', class_='tgme_widget_message_text')
                     text = text_tag.get_text(separator="\n") if text_tag else "🔥 Топ товар!"
                     
-                    # УДАЛЯЕМ ВСЕ ССЫЛКИ ИЗ ТЕКСТА
-                    text = re.sub(r'https?://\S+', '', text)
+                    # УНИВЕРСАЛЬНАЯ ОЧИСТКА: Удаляем любые ссылки (http, https, www, t.me)
+                    text = re.sub(r'https?://\S+|www\.\S+|t\.me/\S+', '', text)
                     text = text.strip()
+                    
+                    # Если после очистки остался мусор или пустая строка, ставим дефолт
+                    if len(text) < 5:
+                        text = "🔥 <b>Находка дня!</b>\n\nСмотри, какой крутой товар я нашел. Успей забрать по отличной цене! 👇"
                     # Формируем партнерскую ссылку
                     partner_url = f"https://takprdm.ru/{TAKPRODAM_ID}/?redirectTo={urllib.parse.quote(link_tag['href'], safe='')}"
                     
