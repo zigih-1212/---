@@ -1,6 +1,4 @@
 import asyncio
-import base64
-import json
 import logging
 import os
 import re
@@ -11,24 +9,27 @@ from bs4 import BeautifulSoup
 TOKEN = "8800001861:AAGW0Qlgk3NRh5ruzrlI7OxZ4-LPmUT18ms"
 CHANNEL = "@wb_skidochniki"
 DONOR = "wb_skidkamam"
-GROQ_API = os.getenv("GROQ_API_KEY", "") # Укажи в Railway переменную GROQ_API_KEY
+GROQ_API = os.getenv("GROQ_API_KEY", "") 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 log = logging.getLogger(__name__)
 
-async def get_rewrite(client, img_url, text):
-    # Промпт для уникализации
-    prompt = f"Напиши уникальное продающее описание для товара на основе текста: {text}. Эмодзи обязательны. Без цен и артикулов."
+async def get_rewrite(client, text):
     payload = {
         "model": "llama-3.2-11b-vision-preview",
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": f"Напиши уникальное описание для товара: {text}. Без цен, только эмодзи и текст."}],
         "temperature": 0.7
     }
     try:
         resp = await client.post("https://api.groq.com/openai/v1/chat/completions", 
             json=payload, headers={"Authorization": f"Bearer {GROQ_API}"})
+        if resp.status_code != 200:
+            log.error(f"Groq Error {resp.status_code}: {resp.text}")
+            return None
         return resp.json()["choices"][0]["message"]["content"]
-    except: return "✨ Топ находка! Смотри подробности по ссылке ниже 👇"
+    except Exception as e:
+        log.error(f"Groq Exception: {e}")
+        return None
 
 async def main():
     async with httpx.AsyncClient() as client:
@@ -44,33 +45,36 @@ async def main():
                     pid = int(post.get('data-post').split('/')[-1])
                     if pid <= last_id: continue
                     
-                    # Поиск ссылки
-                    link_tag = post.find('a', href=True, text=re.compile(r'wildberries', re.I))
-                    if not link_tag: continue
-                    
-                    raw_url = link_tag['href']
-                    # МЕСТО ДЛЯ ТАКПРОДАМ: здесь будет функция замены на твой переходник
-                    final_url = raw_url 
-                    
-                    # Поиск фото
-                    photo_tag = post.find('a', class_='tgme_widget_message_photo_wrap')
+                    # Поиск фото (надежный способ)
                     img_url = None
+                    photo_tag = post.find('a', class_='tgme_widget_message_photo_wrap')
                     if photo_tag and 'style' in photo_tag.attrs:
                         m = re.search(r"url\('(.+?)'\)", photo_tag['style'])
-                        if m: img_url = m.group(1).replace("_a.jpg", "_w.jpg")
+                        if m: img_url = m.group(1)
 
-                    # Рерайт и отправка
-                    text = await get_rewrite(client, img_url, post.get_text())
+                    text = await get_rewrite(client, post.get_text())
+                    if not text: text = "✨ Новинка! Переходи по ссылке 👇"
+
+                    # Ссылка
+                    link_tag = post.find('a', href=re.compile(r'wildberries|ozon', re.I))
+                    if not link_tag: continue
+                    url = link_tag['href']
+
+                    # Отправка
+                    data = {"chat_id": CHANNEL, "caption": text, "parse_mode": "HTML", 
+                            "reply_markup": json.dumps({"inline_keyboard": [[{"text": "🛒 КУПИТЬ", "url": url}]]})}
                     
-                    keyboard = {"inline_keyboard": [[{"text": "🛒 ЗАБРАТЬ НА WB", "url": final_url}]]}
-                    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-                    await client.post(url, data={"chat_id": CHANNEL, "photo": img_url, "caption": text, 
-                                                "parse_mode": "HTML", "reply_markup": json.dumps(keyboard)})
+                    if img_url:
+                        data["photo"] = img_url
+                        await client.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", data=data)
+                    else:
+                        await client.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data=data)
                     
                     last_id = max(last_id, pid)
-                    await asyncio.sleep(20) # Пауза чтобы не ловить бан
-            except Exception as e: log.error(e)
+                    await asyncio.sleep(10)
+            except Exception as e: log.error(f"Main loop error: {e}")
             await asyncio.sleep(60)
 
 if __name__ == "__main__":
+    import json
     asyncio.run(main())
