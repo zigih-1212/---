@@ -3,8 +3,9 @@ import logging
 import os
 import httpx
 import json
-from bs4 import BeautifulSoup
+import re  # <-- ЭТОТ ИМПОРТ РЕШАЕТ ПРОБЛЕМУ
 import urllib.parse
+from bs4 import BeautifulSoup
 
 TOKEN = "8800001861:AAGW0Qlgk3NRh5ruzrlI7OxZ4-LPmUT18ms"
 CHANNEL = "@wb_skidochniki"
@@ -16,7 +17,7 @@ log = logging.getLogger(__name__)
 
 async def main():
     async with httpx.AsyncClient(timeout=30) as client:
-        log.info("Бот запущен! Работаем только с текстом и ссылками для стабильности.")
+        log.info("Бот запущен и работает идеально!")
         last_id = 0
         while True:
             try:
@@ -28,24 +29,22 @@ async def main():
                     pid = int(post.get('data-post').split('/')[-1])
                     if pid <= last_id: continue
                     
-                   # Ищем текст
+                    link_tag = post.find('a', href=lambda x: x and ('wildberries' in x or 'ozon' in x))
+                    if not link_tag: continue
+                    
                     text_tag = post.find('div', class_='tgme_widget_message_text')
                     text = text_tag.get_text(separator="\n") if text_tag else "🔥 Топ товар!"
                     
-                    # УНИВЕРСАЛЬНАЯ ОЧИСТКА: Удаляем любые ссылки (http, https, www, t.me)
-                    text = re.sub(r'https?://\S+|www\.\S+|t\.me/\S+', '', text)
-                    text = text.strip()
-                    
-                    # Если после очистки остался мусор или пустая строка, ставим дефолт
+                    # Очистка текста
+                    text = re.sub(r'https?://\S+|www\.\S+|t\.me/\S+', '', text).strip()
                     if len(text) < 5:
-                        text = "🔥 <b>Находка дня!</b>\n\nСмотри, какой крутой товар я нашел. Успей забрать по отличной цене! 👇"
-                    # Формируем партнерскую ссылку
+                        text = "🔥 <b>Находка дня!</b>\n\nСмотри, какой крутой товар! Успей забрать по отличной цене! 👇"
+
                     partner_url = f"https://takprdm.ru/{TAKPRODAM_ID}/?redirectTo={urllib.parse.quote(link_tag['href'], safe='')}"
                     
-                    # Отправляем только текст
                     payload = {
                         "chat_id": CHANNEL,
-                        "text": f"<b>{text[:200]}...</b>\n\n👇 Успей забрать по скидке:",
+                        "text": f"{text}\n\n👇 Успей забрать по скидке:",
                         "parse_mode": "HTML",
                         "reply_markup": json.dumps({"inline_keyboard": [[{"text": "🛒 ЗАБРАТЬ СО СКИДКОЙ", "url": partner_url}]]})
                     }
