@@ -37,7 +37,7 @@ async def main():
         while True:
             try:
                 resp = await client.get(f"https://t.me/s/{DONOR}")
-                soup = BeautifulSoup(resp.text, 'lxml')
+                soup = BeautifulSoup(resp.text, 'html.parser')
                 posts = soup.find_all('div', class_='tgme_widget_message')
                 
                 for post in posts:
