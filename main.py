@@ -35,6 +35,9 @@ ADMITAD_BASE64 = os.getenv("ADMITAD_BASE64")
 # Настройки Кулдауна (в минутах)
 CHANNELS_COOLDOWN_MINUTES = int(os.getenv("CHANNELS_COOLDOWN_MINUTES", "5"))
 
+# Ссылка на панель управления WebApp
+WEBAPP_ADMIN_URL = os.getenv("WEBAPP_ADMIN_URL", "https://clck.ru/") 
+
 # Константы Тарифов (Дни: (Цена Руб, Цена Звезд, Текст скидки))
 TARIF_PLAN = {
     15: (600, 300, "🔥 Базовый"),
@@ -104,6 +107,14 @@ def init_db():
                        message_id INTEGER,
                        chat_id TEXT,
                        unpin_at TIMESTAMP)''')
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS night_queue 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       target_chat TEXT,
+                       post_text TEXT,
+                       client_id TEXT,
+                       donor_post_id TEXT,
+                       is_vip_or_blogger TEXT DEFAULT 'no')''')
     conn.commit()
     conn.close()
 
@@ -127,6 +138,7 @@ async def start(message: types.Message):
     
     if is_admin(uid):
         builder = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="📊 ОТКРЫТЬ WEBAPP АДМИНКУ 📊", web_app=types.WebAppInfo(url=WEBAPP_ADMIN_URL))],
             [types.InlineKeyboardButton(text="🎯 Список Блогеров", callback_data="list_bloggers"),
              types.InlineKeyboardButton(text="🛍 Список Покупателей", callback_data="list_buyers")],
             [types.InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")],
@@ -179,7 +191,7 @@ async def start(message: types.Message):
     )
     await message.answer(welcome, reply_markup=builder, parse_mode="Markdown")
 
-# --- СЦЕНАРИЙ РЕГИСТРАЦИИ БЛОГЕРА (НОВАЯ ГИБКАЯ ВОРОНКА) ---
+# --- СЦЕНАРИЙ РЕГИСТРАЦИИ БЛОГЕРА ---
 @dp.callback_query(F.data == "reg_blogger")
 async def reg_blogger_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer("🔗 **Шаг 1/3:** Отправьте ссылку на ваш канал/источник трафика (YouTube, TikTok, Reels или TG-канал):")
@@ -189,7 +201,6 @@ async def reg_blogger_start(callback: types.CallbackQuery, state: FSMContext):
 @dp.message(UserRegistration.waiting_for_blogger_channel_link)
 async def reg_blogger_link_received(message: types.Message, state: FSMContext):
     await state.update_data(blogger_source=message.text)
-    
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🎰 Постить в ваш основной VIP-канал (Закреп 24ч)", callback_data="choose_format_zakrep")],
         [types.InlineKeyboardButton(text="📡 Подключить автопостинг прямо в мой канал", callback_data="choose_format_autoposting")]
@@ -243,10 +254,10 @@ async def reg_blogger_autoposting_final(message: types.Message, state: FSMContex
     try:
         member = await bot.get_chat_member(chat_id=channel_input, user_id=bot.id)
         if member.status not in ['administrator', 'creator']:
-            await message.answer("❌ **Ошибка:** Бот не назначен администратором в этом канале. Проверьте права и отправьте юзернейм заново.")
+            await message.answer("❌ **Ошибка:** Бот не назначен администратором.")
             return
     except Exception:
-        await message.answer("❌ **Ошибка:** Канал не найден или бот заблокирован в нем. Убедитесь, что канал публичный.")
+        await message.answer("❌ **Ошибка:** Канал не найден.")
         return
 
     data = await state.get_data()
@@ -262,7 +273,7 @@ async def reg_blogger_autoposting_final(message: types.Message, state: FSMContex
     conn.close()
     
     builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="📊 Мой личный кабинет", callback_data="blogger_stats")]])
-    await message.answer(f"✅ **Канал блогера успешно подключен к автопостингу!**\n\nБот будет наполнять ваш канал контентом со встроенным маркером `{sub_id}` с соблюдением безопасных кулдаунов.", reply_markup=builder, parse_mode="Markdown")
+    await message.answer(f"✅ **Канал блогера успешно подключен!**", reply_markup=builder, parse_mode="Markdown")
     await state.clear()
 
 # --- СЦЕНАРИЙ РЕГИСТРАЦИИ ПОКУПАТЕЛЯ SaaS ---
@@ -286,12 +297,8 @@ async def reg_buyer_save(message: types.Message, state: FSMContext):
     
     try:
         member = await bot.get_chat_member(chat_id=channel_input, user_id=bot.id)
-        if member.status not in ['administrator', 'creator']:
-            await message.answer("❌ **Ошибка:** Бот не админ в этом канале.")
-            return
-    except Exception:
-        await message.answer("❌ **Ошибка:** Канал не найден.")
-        return
+        if member.status not in ['administrator', 'creator']: return
+    except Exception: return
 
     test_end = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
     conn = sqlite3.connect('database.db')
@@ -305,36 +312,28 @@ async def reg_buyer_save(message: types.Message, state: FSMContext):
     await message.answer(f"✅ **Канал успешно подключен!** Вам начислено **3 дня теста**.", reply_markup=builder, parse_mode="Markdown")
     await state.clear()
 
-# --- МАТЕРИАЛЫ ДЛЯ ВИДЕО БЛОГЕРОВ ---
+# --- МАТЕРИАЛЫ ДЛЯ БЛОГЕРОВ ---
 @dp.callback_query(F.data == "blogger_trends")
 async def show_blogger_trends(callback: types.CallbackQuery):
     user = get_user_data(callback.from_user.id)
     if not user: return
     sub_id = user[5]
-    
     sample_skus = ["143525234", "210435923", "98453215"]
     text = "🔥 **ГОРЯЧИЕ НАХОДКИ ДЛЯ ВАШИХ SHORTS / REELS:**\n\nНиже представлены товары с максимальной конверсией:\n\n"
     
     for i, sku in enumerate(sample_skus, 1):
         final_link, _ = await generate_takprodam_link(sku, is_wb=True, subid=sub_id)
         text += f"{i}️⃣ **Трендовый товар WB** (Арт: `{sku}`)\n" \
-                f"👉 Ссылка для био: [Скопировать ссылку]({final_link})\n\n"
-                
-    text += "💰 *Вы получаете 50% прибыли со всех заказов.*"
+                f"👉 Короткая ссылка для био: {final_link}\n\n"
     await callback.message.answer(text, parse_mode="Markdown", disable_web_page_preview=True)
     await callback.answer()
 
-# --- СТАТИСТИКА ---
+# --- СТАТИСТИКА И НАСТРОЕК ---
 @dp.callback_query(F.data == "blogger_stats")
 async def show_blogger_stats(callback: types.CallbackQuery):
     user = get_user_data(callback.from_user.id)
     if not user: return
-    text = (f"📈 **Аналитика партнера:**\n\n"
-            f"🎥 **Ресурс:** {user[4]}\n"
-            f"🏷 **SubID:** `{user[5]}`\n"
-            f"📊 Постов отправлено: {user[10]}\n"
-            f"🖱 Переходов по ссылкам: {user[11]}\n"
-            f"💰 Выплаты осуществляются 50/50 по отчету ТакПродам.")
+    text = (f"📈 **Аналитика партнера:**\n\n🎥 **Ресурс:** {user[4]}\n🏷 **SubID:** `{user[5]}`\n📊 Постов отправлено: {user[10]}")
     await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
 
@@ -342,12 +341,7 @@ async def show_blogger_stats(callback: types.CallbackQuery):
 async def show_buyer_cabinet(callback: types.CallbackQuery):
     user = get_user_data(callback.from_user.id)
     if not user: return
-    text = (f"👤 **Личный кабинет SaaS-клиента:**\n\n"
-            f"📢 **Ваш канал:** `{user[3]}`\n"
-            f"🟢 Статус: {user[7]}\n"
-            f"📦 Тариф: {user[8]}\n"
-            f"⏳ Активен до: {user[9]}\n"
-            f"📊 Опубликовано постов: {user[10]}")
+    text = (f"👤 **Личный кабинет SaaS-клиента:**\n\n📢 **Ваш канал:** `{user[3]}`\n🟢 Статус: {user[7]}\n📦 Тариф: {user[8]}\n⏳ Активен до: {user[9]}")
     await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
 
@@ -379,29 +373,25 @@ async def set_buyer_filter(callback: types.CallbackQuery):
     await callback.message.answer(f"✅ Фильтр изменен на: **{selected}**")
     await callback.answer()
 
-# --- ОПЛАТЫ И ТАРИФЫ ---
+# --- ОПЛАТЫ ---
 @dp.callback_query(F.data == "pay_sub")
 async def pay_sub_menu(callback: types.CallbackQuery):
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text=f"📅 15 дней — {TARIF_PLAN[15][0]}₽", callback_data="select_days_15")],
-        [types.InlineKeyboardButton(text=f"📅 30 дней — {TARIF_PLAN[30][0]}₽ ({TARIF_PLAN[30][2]})", callback_data="select_days_30")],
-        [types.InlineKeyboardButton(text=f"📅 90 дней — {TARIF_PLAN[90][0]}₽ ({TARIF_PLAN[90][2]})", callback_data="select_days_90")],
-        [types.InlineKeyboardButton(text=f"📅 180 дней — {TARIF_PLAN[180][0]}₽ ({TARIF_PLAN[180][2]})", callback_data="select_days_180")]
+        [types.InlineKeyboardButton(text=f"📅 30 дней — {TARIF_PLAN[30][0]}₽", callback_data="select_days_30")]
     ])
-    await callback.message.answer("📦 **Выберите желаемый срок продления подписки:**", reply_markup=builder)
+    await callback.message.answer("📦 **Выберите желаемый срок подписки:**", reply_markup=builder)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("select_days_"))
 async def select_payment_method(callback: types.CallbackQuery):
     days = int(callback.data.split("_")[2])
     rub_p, star_p, _ = TARIF_PLAN[days]
-    
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text=f"⭐️ Оплатить Звездами ({star_p} ⭐️)", callback_data=f"checkout_stars_{days}")],
-        [types.InlineKeyboardButton(text=f"🇷🇺 Сбербанк ({rub_p}₽)", callback_data=f"checkout_card_Sberbank_{days}")],
-        [types.InlineKeyboardButton(text=f"🟡 Т-Банк ({rub_p}₽)", callback_data=f"checkout_card_T-Bank_{days}")]
+        [types.InlineKeyboardButton(text=f"⭐️ Звёздами ({star_p} ⭐️)", callback_data=f"checkout_stars_{days}")],
+        [types.InlineKeyboardButton(text=f"🇷🇺 Карта РФ ({rub_p}₽)", callback_data=f"checkout_card_Sberbank_{days}")]
     ])
-    await callback.message.answer(f"💳 **Вы выбрали тариф на {days} дней.**\nВыберите способ оплаты:", reply_markup=builder)
+    await callback.message.answer(f"💳 Выберите способ оплаты ({days} дней):", reply_markup=builder)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("checkout_stars_"))
@@ -409,11 +399,9 @@ async def checkout_stars(callback: types.CallbackQuery):
     days = int(callback.data.split("_")[2])
     _, star_price, _ = TARIF_PLAN[days]
     await callback.message.answer_invoice(
-        title=f"Подписка AutoErid SMM [{days} дней]",
-        description=f"Продление автопостинга на {days} дней.",
-        payload=f"sub_extend_{days}_days",
-        provider_token="", currency="XTR",    
-        prices=[types.LabeledPrice(label=f"Доступ на {days} дн.", amount=star_price)]
+        title=f"Подписка [{days} дней]", description=f"Продление автопостинга.",
+        payload=f"sub_extend_{days}_days", provider_token="", currency="XTR",    
+        prices=[types.LabeledPrice(label=f"Доступ", amount=star_price)]
     )
     await callback.answer()
 
@@ -424,22 +412,18 @@ async def process_pre_checkout(pre_checkout_query: types.PreCheckoutQuery):
 @dp.message(F.successful_payment)
 async def process_successful_payment(message: types.Message):
     uid = str(message.from_user.id)
-    payload = message.successful_payment.invoice_payload
-    days = int(re.search(r'\d+', payload).group())
-    
+    days = int(re.search(r'\d+', message.successful_payment.invoice_payload).group())
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
     cursor.execute("SELECT sub_end FROM clients WHERE user_id=?", (uid,))
     res = cursor.fetchone()
-    
     if res:
         current_end = datetime.strptime(res[0], "%Y-%m-%d")
         start_point = current_end if current_end > datetime.now() else datetime.now()
         new_end = (start_point + timedelta(days=days)).strftime("%Y-%m-%d")
-        
         cursor.execute("UPDATE clients SET sub_end=?, sub_type='Полная', status='🟢 Активен', last_pay_method='⭐️ Stars' WHERE user_id=?", (new_end, uid))
         conn.commit()
-        await message.answer(f"🎉 **Оплата зачислена!** Подписка продлена до `{new_end}`.")
+        await message.answer(f"🎉 Подписка успешно продлена до `{new_end}`.")
     conn.close()
 
 @dp.callback_query(F.data.startswith("checkout_card_"))
@@ -462,8 +446,17 @@ async def user_support_contact(callback: types.CallbackQuery):
     await callback.answer()
 
 # =====================================================================
-# --- ИИ-ДВИЖОК ПАРСИНГА С НАСТРОЙКОЙ КУЛДАУНОВ И АНТИПОВТОРОВ ---
+# --- ИИ-ДВИЖОК ПАРСИНГА С КУЛДАУНОМ, НОЧНЫМ РЕЖИМОМ И СОКРАЩАТЕЛЕМ ---
 # =====================================================================
+
+async def shorten_url(long_url):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(f"https://clck.ru/--?url={long_url}", timeout=5.0)
+            if res.status_code == 200:
+                return res.text.strip()
+    except Exception: pass
+    return long_url
 
 async def ai_grok_rewrite(old_text):
     try:
@@ -474,28 +467,25 @@ async def ai_grok_rewrite(old_text):
                 json={
                     "model": "meta-llama/Meta-Llama-3-8B-Instruct",
                     "messages": [{"role": "user", "content": f"Сделай красивый рерайт этого рекламного текста для Telegram канала скидок Wildberries. Сделай его уникальным, используй смайлики. Напиши ТОЛЬКО готовый текст поста, без лишних фраз автора: {old_text}"}]
-                },
-                timeout=10.0
+                }, timeout=10.0
             )
-            if res.status_code == 200:
-                return res.json()['choices'][0]['message']['content']
-    except Exception as e:
-        log.error(f"Ошибка ИИ-рерайта: {e}")
-    return f"🔥 Находка на маркетплейсе! 🔥\n\n{old_text[:150]}...\n\n📦 Успей забрать по лучшей цене!"
+            if res.status_code == 200: return res.json()['choices'][0]['message']['content']
+    except Exception: pass
+    return f"🔥 Находка на маркетплейсе! 🔥\n\n{old_text[:120]}...\n\n📦 Успей забрать по лучшей цене!"
 
 async def generate_takprodam_link(sku, is_wb=True, subid=""):
     base_url = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx" if is_wb else f"https://www.ozon.ru/product/{sku}/"
-    if not ADMITAD_API_TOKEN:
-        return base_url, "Реклама. ООО Маркетплейс"
+    if not ADMITAD_API_TOKEN: return base_url, "Реклама. ООО Маркетплейс"
     try:
         async with httpx.AsyncClient() as client:
             headers = {"Authorization": f"Bearer {ADMITAD_API_TOKEN}"}
             payload = {"subid": subid, "ulp": base_url}
             res = await client.post(f"https://api.admitad.com/get_links/{ADMITAD_BASE64}/", headers=headers, data=payload, timeout=5.0)
             if res.status_code == 200:
-                return res.json()[0]['clink'], "Реклама. ООО 'АДМИТАД', ИНН 7714402214"
-    except Exception as e:
-        log.error(f"Ошибка API ТакПродам: {e}")
+                long_link = res.json()[0]['clink']
+                short_link = await shorten_url(long_link)
+                return short_link, "Реклама. ООО 'АДМИТАД', ИНН 7714402214"
+    except Exception: pass
     return base_url, "Реклама. ООО Маркетплейс"
 
 async def check_channel_cooldown(client_id):
@@ -504,13 +494,9 @@ async def check_channel_cooldown(client_id):
     cursor.execute("SELECT last_post_time FROM clients WHERE user_id=?", (str(client_id),))
     res = cursor.fetchone()
     conn.close()
-    
-    if not res or not res[0]:
-        return True
-    
+    if not res or not res[0]: return True
     last_time = datetime.strptime(res[0], "%Y-%m-%d %H:%M:%S")
-    if datetime.now() - last_time >= timedelta(minutes=CHANNELS_COOLDOWN_MINUTES):
-        return True
+    if datetime.now() - last_time >= timedelta(minutes=CHANNELS_COOLDOWN_MINUTES): return True
     return False
 
 async def update_channel_last_post_time(client_id):
@@ -521,8 +507,13 @@ async def update_channel_last_post_time(client_id):
     conn.commit()
     conn.close()
 
+def is_night_time():
+    current_hour = datetime.now().hour
+    if current_hour >= 23 or current_hour < 8: return True
+    return False
+
 async def start_parsing_engine():
-    log.info("ИИ-движок парсинга с кулдаунами запущен.")
+    log.info("ИИ-комбайн автопостинга со всеми 3 VIP-функциями запущен.")
     await asyncio.sleep(10)
     while True:
         for channel in DONOR_CHANNELS:
@@ -546,59 +537,76 @@ async def start_parsing_engine():
                     
                     unique_text = await ai_grok_rewrite(raw_text)
                     
-                    if MY_MAIN_CHANNEL and await check_channel_cooldown('ADMIN_MAIN'):
-                        conn = sqlite3.connect('database.db')
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT id FROM post_history WHERE client_id='ADMIN_MAIN' AND donor_post_id=?", (msg_id,))
-                        if not cursor.fetchone():
-                            my_link, my_erid = await generate_takprodam_link(sku, is_wb=is_wb, subid="main_admin")
-                            my_post_text = f"⭐ **[VIP ВЫБОР]** ⭐\n\n{unique_text}\n\n🛍 [Забрать со скидкой на маркетплейсе]({my_link})\n\n📍 _{my_erid}_"
-                            
-                            try:
-                                sent_msg = await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=my_post_text, parse_mode="Markdown")
-                                await bot.pin_chat_message(chat_id=MY_MAIN_CHANNEL, message_id=sent_msg.message_id, disable_notification=True)
-                                
-                                unpin_time = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
-                                cursor.execute("INSERT INTO pinned_posts (message_id, chat_id, unpin_at) VALUES (?, ?, ?)", 
-                                               (sent_msg.message_id, str(MY_MAIN_CHANNEL), unpin_time))
+                    if MY_MAIN_CHANNEL:
+                        if is_night_time():
+                            conn = sqlite3.connect('database.db')
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT id FROM post_history WHERE client_id='ADMIN_MAIN' AND donor_post_id=?", (msg_id,))
+                            if not cursor.fetchone():
+                                my_link, my_erid = await generate_takprodam_link(sku, is_wb=is_wb, subid="main_admin")
+                                my_post_text = f"⭐ **[VIP ВЫБОР]** ⭐\n\n{unique_text}\n\n🛍 [Забрать на маркетплейсе]({my_link})\n\n📍 _{my_erid}_"
+                                cursor.execute("INSERT INTO night_queue (target_chat, post_text, client_id, donor_post_id, is_vip_or_blogger) VALUES (?, ?, 'ADMIN_MAIN', ?, 'vip')", (str(MY_MAIN_CHANNEL), my_post_text, msg_id))
                                 cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES ('ADMIN_MAIN', ?)", (msg_id,))
                                 conn.commit()
-                                await update_channel_last_post_time('ADMIN_MAIN')
-                            except Exception as ex:
-                                log.error(f"Ошибка публикации в главный канал: {ex}")
-                        conn.close()
+                            conn.close()
+                        else:
+                            if await check_channel_cooldown('ADMIN_MAIN'):
+                                conn = sqlite3.connect('database.db')
+                                cursor = conn.cursor()
+                                cursor.execute("SELECT id FROM post_history WHERE client_id='ADMIN_MAIN' AND donor_post_id=?", (msg_id,))
+                                if not cursor.fetchone():
+                                    my_link, my_erid = await generate_takprodam_link(sku, is_wb=is_wb, subid="main_admin")
+                                    my_post_text = f"⭐ **[VIP ВЫБОР]** ⭐\n\n{unique_text}\n\n🛍 [Забрать со скидкой на маркетплейсе]({my_link})\n\n📍 _{my_erid}_"
+                                    try:
+                                        sent_msg = await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=my_post_text, parse_mode="Markdown")
+                                        await bot.pin_chat_message(chat_id=MY_MAIN_CHANNEL, message_id=sent_msg.message_id, disable_notification=True)
+                                        unpin_time = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                                        cursor.execute("INSERT INTO pinned_posts (message_id, chat_id, unpin_at) VALUES (?, ?, ?)", (sent_msg.message_id, str(MY_MAIN_CHANNEL), unpin_time))
+                                        cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES ('ADMIN_MAIN', ?)", (msg_id,))
+                                        conn.commit()
+                                        await update_channel_last_post_time('ADMIN_MAIN')
+                                    except Exception: pass
+                                conn.close()
 
-                    if MY_MAIN_CHANNEL and await check_channel_cooldown('ADMIN_MAIN'):
-                        conn = sqlite3.connect('database.db')
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT user_id, sub_id FROM clients WHERE role='blogger' AND blogger_type='zakrep' AND status='🟢 Активен'")
-                        zakrep_bloggers = cursor.fetchall()
-                        conn.close()
-                        
-                        if zakrep_bloggers:
-                            chosen_blogger = random.choice(zakrep_bloggers)
-                            b_uid, b_subid = chosen_blogger
-                            
+                    conn = sqlite3.connect('database.db')
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT user_id, sub_id FROM clients WHERE role='blogger' AND blogger_type='zakrep' AND status='🟢 Активен'")
+                    zakrep_bloggers = cursor.fetchall()
+                    conn.close()
+                    
+                    if zakrep_bloggers and MY_MAIN_CHANNEL:
+                        chosen_blogger = random.choice(zakrep_bloggers)
+                        b_uid, b_subid = chosen_blogger
+                        if is_night_time():
                             conn = sqlite3.connect('database.db')
                             cursor = conn.cursor()
                             cursor.execute("SELECT id FROM post_history WHERE client_id=? AND donor_post_id=?", (b_uid, msg_id))
                             if not cursor.fetchone():
                                 b_link, b_erid = await generate_takprodam_link(sku, is_wb=is_wb, subid=b_subid)
                                 b_post_text = f"🎯 **[ВЫБОР ПАРТНЕРА]** 🎯\n\n{unique_text}\n\n🛍 [Забрать на маркетплейсе]({b_link})\n\n📍 _{b_erid}_"
-                                
-                                try:
-                                    sent_msg = await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=b_post_text, parse_mode="Markdown")
-                                    await bot.pin_chat_message(chat_id=MY_MAIN_CHANNEL, message_id=sent_msg.message_id, disable_notification=True)
-                                    
-                                    unpin_time = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
-                                    cursor.execute("INSERT INTO pinned_posts (message_id, chat_id, unpin_at) VALUES (?, ?, ?)", 
-                                                   (sent_msg.message_id, str(MY_MAIN_CHANNEL), unpin_time))
-                                    cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES (?, ?)", (b_uid, msg_id))
-                                    cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (b_uid,))
-                                    conn.commit()
-                                    await update_channel_last_post_time('ADMIN_MAIN')
-                                except Exception: pass
+                                cursor.execute("INSERT INTO night_queue (target_chat, post_text, client_id, donor_post_id, is_vip_or_blogger) VALUES (?, ?, ?, ?, 'blogger')", (str(MY_MAIN_CHANNEL), b_post_text, b_uid, msg_id))
+                                cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES (?, ?)", (b_uid, msg_id))
+                                conn.commit()
                             conn.close()
+                        else:
+                            if await check_channel_cooldown('ADMIN_MAIN'):
+                                conn = sqlite3.connect('database.db')
+                                cursor = conn.cursor()
+                                cursor.execute("SELECT id FROM post_history WHERE client_id=? AND donor_post_id=?", (b_uid, msg_id))
+                                if not cursor.fetchone():
+                                    b_link, b_erid = await generate_takprodam_link(sku, is_wb=is_wb, subid=b_subid)
+                                    b_post_text = f"🎯 **[ВЫБОР ПАРТНЕРА]** 🎯\n\n{unique_text}\n\n🛍 [Забрать на маркетплейсе]({b_link})\n\n📍 _{b_erid}_"
+                                    try:
+                                        sent_msg = await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=b_post_text, parse_mode="Markdown")
+                                        await bot.pin_chat_message(chat_id=MY_MAIN_CHANNEL, message_id=sent_msg.message_id, disable_notification=True)
+                                        unpin_time = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                                        cursor.execute("INSERT INTO pinned_posts (message_id, chat_id, unpin_at) VALUES (?, ?, ?)", (sent_msg.message_id, str(MY_MAIN_CHANNEL), unpin_time))
+                                        cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES (?, ?)", (b_uid, msg_id))
+                                        cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (b_uid,))
+                                        conn.commit()
+                                        await update_channel_last_post_time('ADMIN_MAIN')
+                                    except Exception: pass
+                                conn.close()
 
                     conn = sqlite3.connect('database.db')
                     cursor = conn.cursor()
@@ -611,32 +619,40 @@ async def start_parsing_engine():
                         user_id, channel_id, role, sub_id, platform_filter, blogger_type = client
                         if role == 'blogger' and blogger_type == 'zakrep': continue
                         if role == 'buyer' and platform_filter != 'Вместе' and platform_filter != market_tag: continue
+                        if not channel_id: continue
                         
-                        if not await check_channel_cooldown(user_id): continue
-                        
-                        conn = sqlite3.connect('database.db')
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT id FROM post_history WHERE client_id=? AND donor_post_id=?", (user_id, msg_id))
-                        if cursor.fetchone():
+                        if is_night_time():
+                            conn = sqlite3.connect('database.db')
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT id FROM post_history WHERE client_id=? AND donor_post_id=?", (user_id, msg_id))
+                            if not cursor.fetchone():
+                                client_subid = sub_id if role == 'blogger' else f"buy_{user_id}"
+                                final_link, erid_label = await generate_takprodam_link(sku, is_wb=is_wb, subid=client_subid)
+                                final_post_text = f"{unique_text}\n\n🛍 **Забрать на маркетплейсе:** [ССЫЛКА НА ТОВАР]({final_link})\n\n📍 _{erid_label}_"
+                                cursor.execute("INSERT INTO night_queue (target_chat, post_text, client_id, donor_post_id) VALUES (?, ?, ?, ?)", (channel_id, final_post_text, user_id, msg_id))
+                                cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES (?, ?)", (user_id, msg_id))
+                                conn.commit()
                             conn.close()
-                            continue
-                            
-                        client_subid = sub_id if role == 'blogger' else f"buy_{user_id}"
-                        final_link, erid_label = await generate_takprodam_link(sku, is_wb=is_wb, subid=client_subid)
-                        final_post_text = f"{unique_text}\n\n🛍 **Забрать на маркетплейсе:** [ССЫЛКА НА ТОВАР]({final_link})\n\n📍 _{erid_label}_"
-                        
-                        target_chat = channel_id
-                        if not target_chat: continue
-                        
-                        try:
-                            await bot.send_message(chat_id=target_chat, text=final_post_text, parse_mode="Markdown")
-                            cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES (?, ?)", (user_id, msg_id))
-                            cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (user_id,))
-                            conn.commit()
-                            await update_channel_last_post_time(user_id)
-                        except Exception: pass
-                        conn.close()
-                        await asyncio.sleep(random.randint(2, 5))
+                        else:
+                            if not await check_channel_cooldown(user_id): continue
+                            conn = sqlite3.connect('database.db')
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT id FROM post_history WHERE client_id=? AND donor_post_id=?", (user_id, msg_id))
+                            if cursor.fetchone():
+                                conn.close()
+                                continue
+                            client_subid = sub_id if role == 'blogger' else f"buy_{user_id}"
+                            final_link, erid_label = await generate_takprodam_link(sku, is_wb=is_wb, subid=client_subid)
+                            final_post_text = f"{unique_text}\n\n🛍 **Забрать на маркетплейсе:** [ССЫЛКА НА ТОВАР]({final_link})\n\n📍 _{erid_label}_"
+                            try:
+                                await bot.send_message(chat_id=channel_id, text=final_post_text, parse_mode="Markdown")
+                                cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES (?, ?)", (user_id, msg_id))
+                                cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (user_id,))
+                                conn.commit()
+                                await update_channel_last_post_time(user_id)
+                            except Exception: pass
+                            conn.close()
+                            await asyncio.sleep(random.randint(2, 5))
             except Exception: pass
         await asyncio.sleep(60)
 
@@ -795,7 +811,7 @@ async def admin_broadcast_execute(message: types.Message, state: FSMContext):
     await message.answer(f"📢 Доставлено сообщений: **{sent}**")
     await state.clear()
 
-# --- КРОН-БИЛЛИНГ + КРОН-ОТКРЕПЛЕНИЕ ПОСТОВ ---
+# --- КРОН-БИЛЛИНГ, ЗАКРЕПЫ И РАЗГРУЗКА НОЧНОЙ ОЧЕРЕДИ УТРОМ ---
 async def start_billing_clock():
     while True:
         try:
@@ -805,18 +821,35 @@ async def start_billing_clock():
             
             now_str = today.strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute("SELECT id, message_id, chat_id FROM pinned_posts WHERE unpin_at <= ?", (now_str,))
-            expired_pins = cursor.fetchall()
-            
-            for pin in expired_pins:
-                pin_id, msg_id, chat_id = pin
+            for pin in cursor.fetchall():
                 try:
-                    await bot.unpin_chat_message(chat_id=chat_id, message_id=msg_id)
-                    cursor.execute("DELETE FROM pinned_posts WHERE id = ?", (pin_id,))
+                    await bot.unpin_chat_message(chat_id=pin[2], message_id=pin[1])
+                    cursor.execute("DELETE FROM pinned_posts WHERE id = ?", (pin[0],))
                 except Exception: pass
+            
+            if not is_night_time():
+                cursor.execute("SELECT * FROM night_queue LIMIT 1")
+                next_job = cursor.fetchone()
+                if next_job:
+                    job_id, target_chat, post_text, client_id, donor_post_id, is_vip_or_blogger = next_job
+                    cooldown_id = 'ADMIN_MAIN' if is_vip_or_blogger == 'vip' or is_vip_or_blogger == 'blogger' else client_id
+                    
+                    if await check_channel_cooldown(cooldown_id):
+                        try:
+                            sent_msg = await bot.send_message(chat_id=target_chat, text=post_text, parse_mode="Markdown")
+                            if is_vip_or_blogger in ['vip', 'blogger']:
+                                await bot.pin_chat_message(chat_id=target_chat, message_id=sent_msg.message_id, disable_notification=True)
+                                unpin_time = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                                cursor.execute("INSERT INTO pinned_posts (message_id, chat_id, unpin_at) VALUES (?, ?, ?)", (sent_msg.message_id, target_chat, unpin_time))
+                            
+                            cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (client_id,))
+                            cursor.execute("DELETE FROM night_queue WHERE id=?", (job_id,))
+                            await update_channel_last_post_time(cooldown_id)
+                        except Exception:
+                            cursor.execute("DELETE FROM night_queue WHERE id=?", (job_id,))
             
             tomorrow_str = (today + timedelta(days=1)).strftime("%Y-%m-%d")
             today_str = today.strftime("%Y-%m-%d")
-            
             cursor.execute("SELECT user_id, channel_id FROM clients WHERE role='buyer' AND sub_end=? AND status='🟢 Активен'", (tomorrow_str,))
             for u in cursor.fetchall():
                 try: await bot.send_message(chat_id=u[0], text=f"⏳ Подписка для канала `{u[1]}` заканчивается через 24 часа.")
@@ -825,18 +858,18 @@ async def start_billing_clock():
             cursor.execute("SELECT user_id, channel_id FROM clients WHERE role='buyer' AND sub_end<=? AND status='🟢 Активен'", (today_str,))
             for u in cursor.fetchall():
                 cursor.execute("UPDATE clients SET status='🔴 Отключен' WHERE user_id=?", (u[0],))
-                try: await bot.send_message(chat_id=u[0], text=f"❌ Подписка для канала `{u[1]}` истекла. Постинг приостановлен.")
+                try: await bot.send_message(chat_id=u[0], text=f"❌ Подписка для канала `{u[1]}` истекла.")
                 except Exception: pass
             
             conn.commit()
             conn.close()
         except Exception: pass
-        await asyncio.sleep(600)
+        await asyncio.sleep(30)
 
 @dp.callback_query(F.data == "check_billing")
 async def admin_trigger_billing(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id): return
-    await callback.message.answer("🔄 Статусы подписок и закрепов успешно обновлены.")
+    await callback.message.answer("🔄 Система биллинга и очередей успешно синхронизирована.")
     await callback.answer()
 
 async def main():
