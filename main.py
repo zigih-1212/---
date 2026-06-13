@@ -53,9 +53,15 @@ async def check_commands(client, last_update_id):
     except Exception as e:
         log.error(f"Ошибка проверки команд: {e}")
     return last_update_id
-    while True:
-            last_id = 0
-        last_update_id = 0 # Добавь эту строку
+
+# ВАЖНО: Эта строка должна быть СОВСЕМ без отступов (прижата к левому краю)
+last_update_id = 0 
+
+# ВАЖНО: Эта строка тоже БЕЗ отступов
+while True:
+    try:
+        last_update_id = await check_commands(client, last_update_id)
+        # ... дальше твой остальной код ...
         while True:
             last_update_id = await check_commands(client, last_update_id) # Добавь эту строку
             try:
