@@ -5,17 +5,27 @@ import json
 import re
 import urllib.parse
 import random
+import os
 from bs4 import BeautifulSoup
 
-# --- КОНФИГ ---
-TOKEN = "8800001861:AAGW0Qlgk3NRh5ruzrlI7OxZ4-LPmUT18ms"
-CHANNEL = "-1003917183811"
-DONOR = "wb_skidkamam"
-TAKPRODAM_ID = "36498e27-9209-4b9a-b85b-f4750ef56904"
+# Функция загрузки конфигурации
+def load_config():
+    with open("config.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
+# Загружаем настройки один раз при запуске
+config = load_config()
+
+# Теперь все переменные берутся из твоего JSON
+TOKEN = "8800001861:AAGW0Qlgk3NRf5ruzrlI7OxZ4-LPmUT18ms" # Токен лучше оставить тут или тоже вынести в защищенный конфиг
+CHANNEL = config["active_channel"]
+DONOR = config["settings"]["donor_username"]
+TAKPRODAM_ID = config["settings"]["partner_id"]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 log = logging.getLogger(__name__)
 
+# ... (остальной код остается прежним)
 # --- ШАБЛОНЫ ТЕКСТА ---
 TEMPLATES = [
     "🔥 <b>Находка дня!</b>\n\nСмотри, какой крутой товар я нашел. Идеальное сочетание цены и качества, которое точно тебе понравится. Успей забрать, пока всё не разобрали! 👇",
