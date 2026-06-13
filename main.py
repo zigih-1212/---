@@ -50,13 +50,34 @@ async def main():
                     final_caption = f"{random.choice(TEMPLATES)}\n\n{clean_text[:150]}"
                     partner_url = f"https://takprdm.ru/{TAKPRODAM_ID}/?redirectTo={urllib.parse.quote(link_tag['href'], safe='')}"
                     
-                    # Пытаемся найти фото
+                   # ПОИСК ФОТО (НАДЕЖНЫЙ МЕТОД)
                     img_tag = post.find('a', class_='tgme_widget_message_photo_wrap')
                     img_url = None
                     if img_tag and 'style' in img_tag.attrs:
                         m = re.search(r"url\('(.+?)'\)", img_tag['style'])
-                        if m: img_url = m.group(1).replace("_a.jpg", "_w.jpg")
+                        if m:
+                            # Берем ссылку и чистим её
+                            raw_url = m.group(1)
+                            img_url = raw_url.replace("_a.jpg", "_w.jpg")
 
+                    # ОТПРАВКА (С УНИВЕРСАЛЬНЫМ ОБРАБОТЧИКОМ)
+                    payload = {
+                        "chat_id": CHANNEL,
+                        "parse_mode": "HTML",
+                        "reply_markup": json.dumps({"inline_keyboard": [[{"text": "🛒 ЗАБРАТЬ СО СКИДКОЙ", "url": partner_url}]]})
+                    }
+
+                    if img_url:
+                        payload["photo"] = img_url
+                        payload["caption"] = final_caption
+                        # Используем другой метод для надежности
+                        r = await client.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", data=payload)
+                    else:
+                        payload["text"] = final_caption
+                        r = await client.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data=payload)
+
+                    if r.status_code != 200:
+                        log.error(f"❌ Ошибка отправки: {r.text}")
                     # Отправка
                     if img_url:
                         payload = {
