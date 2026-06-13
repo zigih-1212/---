@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 # --- КОНФИГ ---
 TOKEN = "8800001861:AAGW0Qlgk3NRh5ruzrlI7OxZ4-LPmUT18ms"
-CHANNEL = "@wb_skidochniki"
+CHANNEL = "-1003917183811"
 DONOR = "wb_skidkamam"
 TAKPRODAM_ID = "36498e27-9209-4b9a-b85b-f4750ef56904"
 
