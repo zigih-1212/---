@@ -20,6 +20,7 @@ from bs4 import BeautifulSoup
 TOKEN = os.getenv("OT_TOKEN")
 ADMIN_IDS = [aid.strip() for aid in os.getenv("ADMIN_IDS", "").split(",") if aid.strip()]
 DONOR_CHANNELS = [d.strip() for d in os.getenv("DONOR_CHANNELS", "").split(",") if d.strip()]
+MY_MAIN_CHANNEL = os.getenv("MY_MAIN_CHANNEL") # Твой личный VIP-канал
 
 # Реквизиты для карт
 PAY_SBER = os.getenv("PAY_SBER", "Не указан")
@@ -30,6 +31,9 @@ PAY_VISA = os.getenv("PAY_VISA_KG", "Не указан")
 # API Ключи интеграций
 ADMITAD_API_TOKEN = os.getenv("ADMITAD_API_TOKEN")
 ADMITAD_BASE64 = os.getenv("ADMITAD_BASE64")
+
+# Настройки Кулдауна (в минутах)
+CHANNELS_COOLDOWN_MINUTES = int(os.getenv("CHANNELS_COOLDOWN_MINUTES", "5"))
 
 # Константы Тарифов (Дни: (Цена Руб, Цена Звезд, Текст скидки))
 TARIF_PLAN = {
@@ -53,7 +57,9 @@ class AdminStates(StatesGroup):
     waiting_for_broadcast_role = State()
 
 class UserRegistration(StatesGroup):
-    waiting_for_blogger_source = State()
+    waiting_for_blogger_channel_link = State()
+    waiting_for_blogger_format = State()
+    waiting_for_blogger_bot_admin = State()
     waiting_for_buyer_channel = State()
 
 # --- ТРАНСЛИТЕРАЦИЯ ДЛЯ SUBID БЛОГЕРОВ ---
@@ -83,13 +89,21 @@ def init_db():
                        posts_sent INTEGER DEFAULT 0,
                        clicks INTEGER DEFAULT 0,
                        last_pay_method TEXT DEFAULT 'Нет оплат',
-                       platform_filter TEXT DEFAULT 'Вместе')''')
+                       platform_filter TEXT DEFAULT 'Вместе',
+                       blogger_type TEXT DEFAULT 'none', 
+                       last_post_time TIMESTAMP)''')
     
     cursor.execute('''CREATE TABLE IF NOT EXISTS post_history 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT,
                        client_id TEXT,
                        donor_post_id TEXT,
                        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS pinned_posts
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       message_id INTEGER,
+                       chat_id TEXT,
+                       unpin_at TIMESTAMP)''')
     conn.commit()
     conn.close()
 
@@ -113,12 +127,12 @@ async def start(message: types.Message):
     
     if is_admin(uid):
         builder = types.InlineKeyboardMarkup(inline_keyboard=[
-            [[types.InlineKeyboardButton(text="🎯 Список Блогеров", callback_data="list_bloggers"),
-              types.InlineKeyboardButton(text="🛍 Список Покупателей", callback_data="list_buyers")],
-             [types.InlineKeyboardButton(text="📢 Таргетированная Рассылка", callback_data="admin_broadcast")],
-             [types.InlineKeyboardButton(text="🔄 Обновить статус подписок", callback_data="check_billing")]]
-        ][0])
-        await message.answer("🛠 **Панель управления AutoErid SMM**\n\nВы зашли как Администратор. Управляйте пользователями, проверяйте оплаты и запускайте рассылки через меню ниже:", reply_markup=builder, parse_mode="Markdown")
+            [types.InlineKeyboardButton(text="🎯 Список Блогеров", callback_data="list_bloggers"),
+             types.InlineKeyboardButton(text="🛍 Список Покупателей", callback_data="list_buyers")],
+            [types.InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")],
+            [types.InlineKeyboardButton(text="🔄 Обновить биллинг", callback_data="check_billing")]
+        ])
+        await message.answer("🛠 **Панель управления AutoErid SMM**\n\nВы зашли как Администратор.", reply_markup=builder, parse_mode="Markdown")
         return
 
     user = get_user_data(uid)
@@ -126,18 +140,21 @@ async def start(message: types.Message):
         role = user[6]
         status = user[7]
         if role == 'blogger':
+            b_type = user[14]
+            b_type_str = "VIP-Закреп в нашем канале" if b_type == 'zakrep' else f"Автопостинг в ваш канал `{user[3]}`"
             builder = types.InlineKeyboardMarkup(inline_keyboard=[
+                [types.InlineKeyboardButton(text="🔥 Тренды для моих видео", callback_data="blogger_trends")],
                 [types.InlineKeyboardButton(text="📈 Моя статистика", callback_data="blogger_stats")],
                 [types.InlineKeyboardButton(text="💬 Служба поддержки", callback_data="user_support")]
             ])
-            await message.answer(f"👋 Рады видеть вас, партнер! Ваш аккаунт настроен как **Блогер-партнер**.\n\nБот автоматически отслеживает ваши медиа-ресурсы и генерирует промо-посты.", reply_markup=builder, parse_mode="Markdown")
+            await message.answer(f"👋 Рады видеть вас, партнер!\n\nВаш формат работы: **{b_type_str}**.\nИспользуйте меню ниже, чтобы брать горячие товары со своими реф-ссылками.", reply_markup=builder, parse_mode="Markdown")
         elif role == 'buyer':
             if status == '🔴 Отключен':
                 builder = types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="💳 Купить/Продлить подписку", callback_data="pay_sub")],
+                    [types.InlineKeyboardButton(text="💳 Купить подписку", callback_data="pay_sub")],
                     [types.InlineKeyboardButton(text="💬 Служба поддержки", callback_data="user_support")]
                 ])
-                await message.answer("❌ **Доступ к автопостингу ограничен.**\n\nВаша подписка закончилась. Пожалуйста, продлите подписку для возобновления работы софта:", reply_markup=builder, parse_mode="Markdown")
+                await message.answer("❌ **Доступ к автопостингу ограничен.**\n\nВаша подписка закончилась. Пожалуйста, продлите подписку:", reply_markup=builder, parse_mode="Markdown")
             else:
                 builder = types.InlineKeyboardMarkup(inline_keyboard=[
                     [types.InlineKeyboardButton(text="👤 Личный кабинет", callback_data="buyer_cabinet")],
@@ -145,7 +162,7 @@ async def start(message: types.Message):
                     [types.InlineKeyboardButton(text="💳 Продлить подписку", callback_data="pay_sub")],
                     [types.InlineKeyboardButton(text="💬 Служба поддержки", callback_data="user_support")]
                 ])
-                await message.answer(f"👋 Добро пожаловать! Ваш аккаунт настроен как **Покупатель подписки**.\n\nРобот ведет автоматический мониторинг доноров и наполняет ваш канал.", reply_markup=builder, parse_mode="Markdown")
+                await message.answer(f"👋 Добро пожаловать! Ваш аккаунт настроен как **Покупатель подписки**.\nРобот ведет мониторинг доноров и наполняет ваш канал.", reply_markup=builder, parse_mode="Markdown")
         return
 
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -162,38 +179,99 @@ async def start(message: types.Message):
     )
     await message.answer(welcome, reply_markup=builder, parse_mode="Markdown")
 
-# --- СЦЕНАРИИ РЕГИСТРАЦИИ (БЛОГЕР / ПОКУПАТЕЛЬ) ---
+# --- СЦЕНАРИЙ РЕГИСТРАЦИИ БЛОГЕРА (НОВАЯ ГИБКАЯ ВОРОНКА) ---
 @dp.callback_query(F.data == "reg_blogger")
 async def reg_blogger_start(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.answer("🔗 **Шаг 1/1:** Отправьте ссылку на ваш основной источник трафика (YouTube Shorts, TikTok, Instagram Reels):")
-    await state.set_state(UserRegistration.waiting_for_blogger_source)
+    await callback.message.answer("🔗 **Шаг 1/3:** Отправьте ссылку на ваш канал/источник трафика (YouTube, TikTok, Reels или TG-канал):")
+    await state.set_state(UserRegistration.waiting_for_blogger_channel_link)
     await callback.answer()
 
-@dp.message(UserRegistration.waiting_for_blogger_source)
-async def reg_blogger_save(message: types.Message, state: FSMContext):
+@dp.message(UserRegistration.waiting_for_blogger_channel_link)
+async def reg_blogger_link_received(message: types.Message, state: FSMContext):
+    await state.update_data(blogger_source=message.text)
+    
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="🎰 Постить в ваш основной VIP-канал (Закреп 24ч)", callback_data="choose_format_zakrep")],
+        [types.InlineKeyboardButton(text="📡 Подключить автопостинг прямо в мой канал", callback_data="choose_format_autoposting")]
+    ])
+    await message.answer("🎯 **Шаг 2/3: Выберите формат сотрудничества 50/50:**", reply_markup=builder)
+    await state.set_state(UserRegistration.waiting_for_blogger_format)
+
+@dp.callback_query(UserRegistration.waiting_for_blogger_format, F.data.startswith("choose_format_"))
+async def reg_blogger_format_received(callback: types.CallbackQuery, state: FSMContext):
+    b_format = callback.data.split("_")[2]
+    await state.update_data(blogger_format=b_format)
+    
+    data = await state.get_data()
+    uid = str(callback.from_user.id)
+    uname = f"@{callback.from_user.username}" if callback.from_user.username else "Без ника"
+    source = data['blogger_source']
+    
+    clean_name = re.sub(r'https?://|t\.me/|@', '', source).split('/')[0]
+    if not clean_name:
+        clean_name = callback.from_user.username if callback.from_user.username else f"id{uid}"
+    sub_id = f"bl_{transliterate(clean_name)}"[:20]
+
+    if b_format == 'zakrep':
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO clients (user_id, username, source_link, sub_id, role, sub_end, blogger_type) VALUES (?, ?, ?, ?, 'blogger', ?, 'zakrep')", 
+                       (uid, uname, source, sub_id, (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")))
+        conn.commit()
+        conn.close()
+        
+        builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔥 Тренды для моих видео", callback_data="blogger_trends")]])
+        await callback.message.answer(f"✅ **Регистрация успешна!**\n\nВы выбрали формат **VIP-закрепов**. Ваш личный маркер партнера: `{sub_id}`.\nБот будет автоматически продвигать ваши ссылки в закрепе нашего VIP-канала!", reply_markup=builder, parse_mode="Markdown")
+        await state.clear()
+    
+    elif b_format == 'autoposting':
+        await callback.message.answer(
+            "🛠 **Настройка автопостинга в ваш канал:**\n\n"
+            "1. Добавьте этого бота в ваш Telegram-канал в качестве **Администратора**.\n"
+            "2. Дайте боту права на *Публикацию сообщений*.\n\n"
+            "👉 Отправьте сюда юзернейм вашего канала (в формате `@имя_канала`):"
+        )
+        await state.set_state(UserRegistration.waiting_for_blogger_bot_admin)
+    await callback.answer()
+
+@dp.message(UserRegistration.waiting_for_blogger_bot_admin)
+async def reg_blogger_autoposting_final(message: types.Message, state: FSMContext):
     uid = str(message.from_user.id)
     uname = f"@{message.from_user.username}" if message.from_user.username else "Без ника"
-    source = message.text
-    raw_name = message.from_user.username if message.from_user.username else f"id{uid}"
-    sub_id = f"bl_{transliterate(raw_name)}"
+    channel_input = message.text.strip()
     
+    try:
+        member = await bot.get_chat_member(chat_id=channel_input, user_id=bot.id)
+        if member.status not in ['administrator', 'creator']:
+            await message.answer("❌ **Ошибка:** Бот не назначен администратором в этом канале. Проверьте права и отправьте юзернейм заново.")
+            return
+    except Exception:
+        await message.answer("❌ **Ошибка:** Канал не найден или бот заблокирован в нем. Убедитесь, что канал публичный.")
+        return
+
+    data = await state.get_data()
+    source = data['blogger_source']
+    clean_name = re.sub(r'https?://|t\.me/|@', '', channel_input)
+    sub_id = f"bl_{transliterate(clean_name)}"[:20]
+
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO clients (user_id, username, source_link, sub_id, role, sub_end) VALUES (?, ?, ?, ?, 'blogger', ?)", 
-                   (uid, uname, source, sub_id, (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")))
+    cursor.execute("INSERT OR REPLACE INTO clients (user_id, username, channel_id, source_link, sub_id, role, sub_end, blogger_type) VALUES (?, ?, ?, ?, ?, 'blogger', ?, 'autoposting')", 
+                   (uid, uname, channel_input, source, sub_id, (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")))
     conn.commit()
     conn.close()
     
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="📈 Моя статистика", callback_data="blogger_stats")]])
-    await message.answer(f"✅ **Регистрация успешна!**\n\nВам присвоен маркер: `{sub_id}`. Напишите создателю @Zigih90 для активации стрима постов под ваши видео.", reply_markup=builder, parse_mode="Markdown")
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="📊 Мой личный кабинет", callback_data="blogger_stats")]])
+    await message.answer(f"✅ **Канал блогера успешно подключен к автопостингу!**\n\nБот будет наполнять ваш канал контентом со встроенным маркером `{sub_id}` с соблюдением безопасных кулдаунов.", reply_markup=builder, parse_mode="Markdown")
     await state.clear()
 
+# --- СЦЕНАРИЙ РЕГИСТРАЦИИ ПОКУПАТЕЛЯ SaaS ---
 @dp.callback_query(F.data == "reg_buyer")
 async def reg_buyer_start(callback: types.CallbackQuery, state: FSMContext):
     instr = (
         "🛠 **Инструкция по подключению канала:**\n\n"
         f"1. Добавьте этого бота в ваш Telegram-канал в качестве **Администратора**.\n"
-        "2. Дайте боту права на *Публикацию сообщений* и *Редактирование сообщений*.\n\n"
+        "2. Дайте боту права на *Публикацию сообщений*.\n\n"
         "👉 Отправьте сюда юзернейм канала (например, `@my_skidki_channel`):"
     )
     await callback.message.answer(instr, parse_mode="Markdown")
@@ -209,28 +287,43 @@ async def reg_buyer_save(message: types.Message, state: FSMContext):
     try:
         member = await bot.get_chat_member(chat_id=channel_input, user_id=bot.id)
         if member.status not in ['administrator', 'creator']:
-            await message.answer("❌ **Ошибка:** Бот не админ в этом канале. Дайте права и отправьте юзернейм еще раз.")
+            await message.answer("❌ **Ошибка:** Бот не админ в этом канале.")
             return
-    except TelegramBadRequest:
-        await message.answer("❌ **Ошибка:** Канал не найден или бот заблокирован. Проверьте имя канала.")
-        return
     except Exception:
-        await message.answer("❌ Ошибка проверки. Убедитесь, что канал публичный и бот там присутствует.")
+        await message.answer("❌ **Ошибка:** Канал не найден.")
         return
 
     test_end = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO clients (user_id, username, channel_id, role, sub_end, sub_type) VALUES (?, ?, ?, 'buyer', ?, 'Тестовая')""", 
+    cursor.execute("INSERT OR REPLACE INTO clients (user_id, username, channel_id, role, sub_end, sub_type) VALUES (?, ?, ?, 'buyer', ?, 'Тестовая')", 
                    (uid, uname, channel_input, test_end))
     conn.commit()
     conn.close()
     
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="👤 Войти в личный кабинет", callback_data="buyer_cabinet")]])
-    await message.answer(f"✅ **Канал успешно подключен!**\n\nВам начислено **3 дня тестового периода (Бесплатно)**. Скоро бот пришлет первый контент в `{channel_input}`.", reply_markup=builder, parse_mode="Markdown")
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="👤 Личный кабинет", callback_data="buyer_cabinet")]])
+    await message.answer(f"✅ **Канал успешно подключен!** Вам начислено **3 дня теста**.", reply_markup=builder, parse_mode="Markdown")
     await state.clear()
 
-# --- МЕНЮ СТАТИСТИКИ И НАСТРОЕК ---
+# --- МАТЕРИАЛЫ ДЛЯ ВИДЕО БЛОГЕРОВ ---
+@dp.callback_query(F.data == "blogger_trends")
+async def show_blogger_trends(callback: types.CallbackQuery):
+    user = get_user_data(callback.from_user.id)
+    if not user: return
+    sub_id = user[5]
+    
+    sample_skus = ["143525234", "210435923", "98453215"]
+    text = "🔥 **ГОРЯЧИЕ НАХОДКИ ДЛЯ ВАШИХ SHORTS / REELS:**\n\nНиже представлены товары с максимальной конверсией:\n\n"
+    
+    for i, sku in enumerate(sample_skus, 1):
+        final_link, _ = await generate_takprodam_link(sku, is_wb=True, subid=sub_id)
+        text += f"{i}️⃣ **Трендовый товар WB** (Арт: `{sku}`)\n"                 f"👉 Ссылка для био: [Скопировать ссылку]({final_link})\n\n"
+                
+    text += "💰 *Вы получаете 50% прибыли со всех заказов.*"
+    await callback.message.answer(text, parse_mode="Markdown", disable_web_page_preview=True)
+    await callback.answer()
+
+# --- СТАТИСТИКА ---
 @dp.callback_query(F.data == "blogger_stats")
 async def show_blogger_stats(callback: types.CallbackQuery):
     user = get_user_data(callback.from_user.id)
@@ -238,9 +331,9 @@ async def show_blogger_stats(callback: types.CallbackQuery):
     text = (f"📈 **Аналитика партнера:**\n\n"
             f"🎥 **Ресурс:** {user[4]}\n"
             f"🏷 **SubID:** `{user[5]}`\n"
-            f"📊 Постов сделано: {user[10]}\n"
-            f"鼠标 Переходов: {user[11]}\n"
-            f"💰 Данные баланса обновляются раз в сутки напрямую из API «ТакПродам».")
+            f"📊 Постов отправлено: {user[10]}\n"
+            f"🖱 Переходов по ссылкам: {user[11]}\n"
+            f"💰 Выплаты осуществляются 50/50 по отчету ТакПродам.")
     await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
 
@@ -253,8 +346,7 @@ async def show_buyer_cabinet(callback: types.CallbackQuery):
             f"🟢 Статус: {user[7]}\n"
             f"📦 Тариф: {user[8]}\n"
             f"⏳ Активен до: {user[9]}\n"
-            f"📊 Опубликовано постов: {user[10]}\n"
-            f"⚙️ Фильтр: {user[13]}")
+            f"📊 Опубликовано постов: {user[10]}")
     await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
 
@@ -286,17 +378,16 @@ async def set_buyer_filter(callback: types.CallbackQuery):
     await callback.message.answer(f"✅ Фильтр изменен на: **{selected}**")
     await callback.answer()
 
-# --- ТАРИФНЫЕ СЕТКИ И ВЫБОР СПОСОБА ОПЛАТЫ ---
+# --- ОПЛАТЫ И ТАРИФЫ ---
 @dp.callback_query(F.data == "pay_sub")
 async def pay_sub_menu(callback: types.CallbackQuery):
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text=f"📅 15 дней — {TARIF_PLAN[15][0]}₽ / {TARIF_PLAN[15][1]}⭐️", callback_data="select_days_15")],
-        [types.InlineKeyboardButton(text=f"📅 30 дней — {TARIF_PLAN[30][0]}₽ / {TARIF_PLAN[30][1]}⭐️ ({TARIF_PLAN[30][2]})", callback_data="select_days_30")],
-        [types.InlineKeyboardButton(text=f"📅 90 дней — {TARIF_PLAN[90][0]}₽ / {TARIF_PLAN[90][1]}⭐️ ({TARIF_PLAN[90][2]})", callback_data="select_days_90")],
-        [types.InlineKeyboardButton(text=f"📅 180 дней — {TARIF_PLAN[180][0]}₽ / {TARIF_PLAN[180][1]}⭐️ ({TARIF_PLAN[180][2]})", callback_data="select_days_180")],
-        [types.InlineKeyboardButton(text=f"📅 360 дней — {TARIF_PLAN[360][0]}₽ / {TARIF_PLAN[360][1]}⭐️ ({TARIF_PLAN[360][2]})", callback_data="select_days_360")]
+        [types.InlineKeyboardButton(text=f"📅 15 дней — {TARIF_PLAN[15][0]}₽", callback_data="select_days_15")],
+        [types.InlineKeyboardButton(text=f"📅 30 дней — {TARIF_PLAN[30][0]}₽ ({TARIF_PLAN[30][2]})", callback_data="select_days_30")],
+        [types.InlineKeyboardButton(text=f"📅 90 дней — {TARIF_PLAN[90][0]}₽ ({TARIF_PLAN[90][2]})", callback_data="select_days_90")],
+        [types.InlineKeyboardButton(text=f"📅 180 дней — {TARIF_PLAN[180][0]}₽ ({TARIF_PLAN[180][2]})", callback_data="select_days_180")]
     ])
-    await callback.message.answer("📦 **Выберите желаемый срок продления подписки:**\nЧем больше период — тем выше ваша скидка!", reply_markup=builder)
+    await callback.message.answer("📦 **Выберите желаемый срок продления подписки:**", reply_markup=builder)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("select_days_"))
@@ -305,27 +396,22 @@ async def select_payment_method(callback: types.CallbackQuery):
     rub_p, star_p, _ = TARIF_PLAN[days]
     
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text=f"⭐️ Оплатить Звездами ({star_p} ⭐️) — Автоматически", callback_data=f"checkout_stars_{days}")],
+        [types.InlineKeyboardButton(text=f"⭐️ Оплатить Звездами ({star_p} ⭐️)", callback_data=f"checkout_stars_{days}")],
         [types.InlineKeyboardButton(text=f"🇷🇺 Сбербанк ({rub_p}₽)", callback_data=f"checkout_card_Sberbank_{days}")],
-        [types.InlineKeyboardButton(text=f"🟡 Т-Банк ({rub_p}₽)", callback_data=f"checkout_card_T-Bank_{days}")],
-        [types.InlineKeyboardButton(text=f"💳 Visa Международные ({rub_p}₽)", callback_data=f"checkout_card_Visa KG_{days}")],
-        [types.InlineKeyboardButton(text=f"🪙 Криптовалюта TON", callback_data=f"checkout_card_Crypto TON_{days}")]
+        [types.InlineKeyboardButton(text=f"🟡 Т-Банк ({rub_p}₽)", callback_data=f"checkout_card_T-Bank_{days}")]
     ])
-    await callback.message.answer(f"💳 **Вы выбрали тариф на {days} дней.**\nВыберите удобный способ оплаты:", reply_markup=builder)
+    await callback.message.answer(f"💳 **Вы выбрали тариф на {days} дней.**\nВыберите способ оплаты:", reply_markup=builder)
     await callback.answer()
 
-# --- СЦЕНАРИЙ АВТО-ОПЛАТЫ ЧЕРЕЗ TELEGRAM STARS ---
 @dp.callback_query(F.data.startswith("checkout_stars_"))
 async def checkout_stars(callback: types.CallbackQuery):
     days = int(callback.data.split("_")[2])
     _, star_price, _ = TARIF_PLAN[days]
-    
     await callback.message.answer_invoice(
         title=f"Подписка AutoErid SMM [{days} дней]",
-        description=f"Автоматическое продление доступа к ИИ-автопостингу на {days} дней.",
+        description=f"Продление автопостинга на {days} дней.",
         payload=f"sub_extend_{days}_days",
-        provider_token="", 
-        currency="XTR",    
+        provider_token="", currency="XTR",    
         prices=[types.LabeledPrice(label=f"Доступ на {days} дн.", amount=star_price)]
     )
     await callback.answer()
@@ -338,7 +424,6 @@ async def process_pre_checkout(pre_checkout_query: types.PreCheckoutQuery):
 async def process_successful_payment(message: types.Message):
     uid = str(message.from_user.id)
     payload = message.successful_payment.invoice_payload
-    # Извлекаем количество дней из payload инвойса
     days = int(re.search(r'\d+', payload).group())
     
     conn = sqlite3.connect('database.db')
@@ -353,35 +438,20 @@ async def process_successful_payment(message: types.Message):
         
         cursor.execute("UPDATE clients SET sub_end=?, sub_type='Полная', status='🟢 Активен', last_pay_method='⭐️ Stars' WHERE user_id=?", (new_end, uid))
         conn.commit()
-        
-        await message.answer(f"🎉 **Оплата зачислена автоматически!**\nВаша подписка успешно продлена на **{days} дней** (до `{new_end}`). Спасибо за доверие нашему сервису!")
-        
-        for admin_id in ADMIN_IDS:
-            try: await bot.send_message(chat_id=admin_id, text=f"💰 **Авто-продажа!** Юзер @{message.from_user.username} купил тариф на {days} дней через Stars.")
-            except Exception: pass
+        await message.answer(f"🎉 **Оплата зачислена!** Подписка продлена до `{new_end}`.")
     conn.close()
 
-# --- СЦЕНАРИЙ ОПЛАТЫ ПО КАРТАМ (РУЧНАЯ ПРОВЕРКА ЧЕКА) ---
 @dp.callback_query(F.data.startswith("checkout_card_"))
 async def checkout_card(callback: types.CallbackQuery):
     parts = callback.data.split("_")
     method = parts[2]
     days = int(parts[3])
     rub_price, _, _ = TARIF_PLAN[days]
+    reqs = PAY_SBER if method == "Sberbank" else PAY_TBANK
     
-    reqs = PAY_SBER if method == "Sberbank" else PAY_TBANK if method == "T-Bank" else PAY_CRYPTO if method == "Crypto TON" else PAY_VISA
-    
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute("UPDATE clients SET last_pay_method=? WHERE user_id=?", (f"{method} ({days} дн)", str(callback.from_user.id)))
-    conn.commit()
-    conn.close()
-    
-    text = (f"💵 **Инструкция по ручной оплате тарифа ({days} дней):**\n\n"
-            f"Сумма к переводу: **{rub_price} рублей** (или эквивалент)\n"
-            f"Реквизиты платежной системы [{method}]:\n`{reqs}`\n\n"
-            f"👉 После совершения перевода пришлите скриншот чека создателю проекта: @Zigih90. "
-            f"Администратор подтвердит оплату в системе, и ваша подписка мгновенно станет активной на {days} дней.")
+    text = (f"💵 **Инструкция по ручной оплате ({days} дней):**\n\n"
+            f"Сумма: **{rub_price} рублей**\nРеквизиты [{method}]:\n`{reqs}`\n\n"
+            f"👉 Отправьте скриншот чека создателю проекта: @Zigih90 для активации подписки.")
     await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
 
@@ -391,7 +461,7 @@ async def user_support_contact(callback: types.CallbackQuery):
     await callback.answer()
 
 # =====================================================================
-# --- ИИ-ДВИЖОК ПАРСИНГА, РЕРАЙТА И ИНТЕГРАЦИИ API ТАКПРОДАМ ---
+# --- ИИ-ДВИЖОК ПАРСИНГА С НАСТРОЙКОЙ КУЛДАУНОВ И АНТИПОВТОРОВ ---
 # =====================================================================
 
 async def ai_grok_rewrite(old_text):
@@ -427,8 +497,31 @@ async def generate_takprodam_link(sku, is_wb=True, subid=""):
         log.error(f"Ошибка API ТакПродам: {e}")
     return base_url, "Реклама. ООО Маркетплейс"
 
+async def check_channel_cooldown(client_id):
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT last_post_time FROM clients WHERE user_id=?", (str(client_id),))
+    res = cursor.fetchone()
+    conn.close()
+    
+    if not res or not res[0]:
+        return True
+    
+    last_time = datetime.strptime(res[0], "%Y-%m-%d %H:%M:%S")
+    if datetime.now() - last_time >= timedelta(minutes=CHANNELS_COOLDOWN_MINUTES):
+        return True
+    return False
+
+async def update_channel_last_post_time(client_id):
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("UPDATE clients SET last_post_time=? WHERE user_id=?", (now_str, str(client_id)))
+    conn.commit()
+    conn.close()
+
 async def start_parsing_engine():
-    log.info("ИИ-движок автоматического парсинга запущен.")
+    log.info("ИИ-движок парсинга с кулдаунами запущен.")
     await asyncio.sleep(10)
     while True:
         for channel in DONOR_CHANNELS:
@@ -452,16 +545,75 @@ async def start_parsing_engine():
                     
                     unique_text = await ai_grok_rewrite(raw_text)
                     
+                    if MY_MAIN_CHANNEL and await check_channel_cooldown('ADMIN_MAIN'):
+                        conn = sqlite3.connect('database.db')
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT id FROM post_history WHERE client_id='ADMIN_MAIN' AND donor_post_id=?", (msg_id,))
+                        if not cursor.fetchone():
+                            my_link, my_erid = await generate_takprodam_link(sku, is_wb=is_wb, subid="main_admin")
+                            my_post_text = f"⭐ **[VIP ВЫБОР]** ⭐\n\n{unique_text}
+
+🛍 [Забрать со скидкой на маркетплейсе]({my_link})\n\n📍 _{my_erid}_"
+                            
+                            try:
+                                sent_msg = await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=my_post_text, parse_mode="Markdown")
+                                await bot.pin_chat_message(chat_id=MY_MAIN_CHANNEL, message_id=sent_msg.message_id, disable_notification=True)
+                                
+                                unpin_time = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                                cursor.execute("INSERT INTO pinned_posts (message_id, chat_id, unpin_at) VALUES (?, ?, ?)", 
+                                               (sent_msg.message_id, str(MY_MAIN_CHANNEL), unpin_time))
+                                cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES ('ADMIN_MAIN', ?)", (msg_id,))
+                                conn.commit()
+                                await update_channel_last_post_time('ADMIN_MAIN')
+                            except Exception as ex:
+                                log.error(f"Ошибка публикации в главный канал: {ex}")
+                        conn.close()
+
+                    if MY_MAIN_CHANNEL and await check_channel_cooldown('ADMIN_MAIN'):
+                        conn = sqlite3.connect('database.db')
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT user_id, sub_id FROM clients WHERE role='blogger' AND blogger_type='zakrep' AND status='🟢 Активен'")
+                        zakrep_bloggers = cursor.fetchall()
+                        conn.close()
+                        
+                        if zakrep_bloggers:
+                            chosen_blogger = random.choice(zakrep_bloggers)
+                            b_uid, b_subid = chosen_blogger
+                            
+                            conn = sqlite3.connect('database.db')
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT id FROM post_history WHERE client_id=? AND donor_post_id=?", (b_uid, msg_id))
+                            if not cursor.fetchone():
+                                b_link, b_erid = await generate_takprodam_link(sku, is_wb=is_wb, subid=b_subid)
+                                b_post_text = f"🎯 **[ВЫБОР ПАРТНЕРА]** 🎯\n\n{unique_text}\n\n🛍 [Забрать на маркетплейсе]({b_link})\n\n📍 _{b_erid}_"
+                                
+                                try:
+                                    sent_msg = await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=b_post_text, parse_mode="Markdown")
+                                    await bot.pin_chat_message(chat_id=MY_MAIN_CHANNEL, message_id=sent_msg.message_id, disable_notification=True)
+                                    
+                                    unpin_time = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                                    cursor.execute("INSERT INTO pinned_posts (message_id, chat_id, unpin_at) VALUES (?, ?, ?)", 
+                                                   (sent_msg.message_id, str(MY_MAIN_CHANNEL), unpin_time))
+                                    cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES (?, ?)", (b_uid, msg_id))
+                                    cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (b_uid,))
+                                    conn.commit()
+                                    await update_channel_last_post_time('ADMIN_MAIN')
+                                except Exception: pass
+                            conn.close()
+
                     conn = sqlite3.connect('database.db')
                     cursor = conn.cursor()
-                    cursor.execute("SELECT user_id, channel_id, role, sub_id, platform_filter FROM clients WHERE status='🟢 Активен'")
+                    cursor.execute("SELECT user_id, channel_id, role, sub_id, platform_filter, blogger_type FROM clients WHERE status='🟢 Активен'")
                     clients = cursor.fetchall()
                     conn.close()
                     
                     random.shuffle(clients)
                     for client in clients:
-                        user_id, channel_id, role, sub_id, platform_filter = client
+                        user_id, channel_id, role, sub_id, platform_filter, blogger_type = client
+                        if role == 'blogger' and blogger_type == 'zakrep': continue
                         if role == 'buyer' and platform_filter != 'Вместе' and platform_filter != market_tag: continue
+                        
+                        if not await check_channel_cooldown(user_id): continue
                         
                         conn = sqlite3.connect('database.db')
                         cursor = conn.cursor()
@@ -474,20 +626,23 @@ async def start_parsing_engine():
                         final_link, erid_label = await generate_takprodam_link(sku, is_wb=is_wb, subid=client_subid)
                         final_post_text = f"{unique_text}\n\n🛍 **Забрать на маркетплейсе:** [ССЫЛКА НА ТОВАР]({final_link})\n\n📍 _{erid_label}_"
                         
-                        target_chat = channel_id if role == 'buyer' else user_id
+                        target_chat = channel_id
+                        if not target_chat: continue
+                        
                         try:
                             await bot.send_message(chat_id=target_chat, text=final_post_text, parse_mode="Markdown")
                             cursor.execute("INSERT INTO post_history (client_id, donor_post_id) VALUES (?, ?)", (user_id, msg_id))
                             cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (user_id,))
                             conn.commit()
+                            await update_channel_last_post_time(user_id)
                         except Exception: pass
                         conn.close()
-                        await asyncio.sleep(random.randint(5, 15))
+                        await asyncio.sleep(random.randint(2, 5))
             except Exception: pass
-        await asyncio.sleep(600)
+        await asyncio.sleep(60)
 
 # =====================================================================
-# --- ФУНКЦИОНАЛ АДМИНИСТРАТОРА (КОНТРОЛЬ СИСТЕМЫ) ---
+# --- ФУНКЦИОНАЛ АДМИНИСТРАТОРА (КОНТРОЛЬ СИСТЕМЫ И ЗАКРЕПОВ) ---
 # =====================================================================
 
 @dp.callback_query(F.data == "list_bloggers")
@@ -495,7 +650,7 @@ async def admin_list_bloggers(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id): return
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, sub_id FROM clients WHERE role='blogger'")
+    cursor.execute("SELECT id, username, blogger_type FROM clients WHERE role='blogger'")
     rows = cursor.fetchall()
     conn.close()
     if not rows:
@@ -534,10 +689,10 @@ async def admin_view_client(callback: types.CallbackQuery):
     if not c: return
     role = c[6]
     if role == 'blogger':
-        text = (f"🎯 **Карточка Блогера:**\n\n🆔 ИД: `{c[1]}`\n👤 Юзернейм: {c[2]}\n🎥 Источник: {c[4]}\n🏷 SubID: `{c[5]}`\n📊 Постов: {c[10]}")
+        text = (f"🎯 **Карточка Блогера:**\n\n🆔 ИД: `{c[1]}`\n👤 Юзернейм: {c[2]}\n🎥 Источник: {c[4]}\n🏷 SubID: `{c[5]}`\n📦 Формат: `{c[14]}`\n📊 Постов: {c[10]}")
         builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🗑 Удалить из базы", callback_data=f"admdelete_{c[0]}")]])
     else:
-        text = (f"🛍 **Карточка Покупателя:**\n\n👤 Владелец: {c[2]}\n📢 Канал: `{c[3]}`\n⚡️ Статус: {c[7]}\n📦 Тариф: **{c[8]}**\n⏳ До: `{c[9]}`\n📊 Постов: {c[10]}\n⚙️ Фильтр: {c[13]}\n💳 Оплата: `{c[12]}`")
+        text = (f"🛍 **Карточка Покупателя:**\n\n👤 Владелец: {c[2]}\n📢 Канал: `{c[3]}`\n⚡️ Статус: {c[7]}\n📦 Тариф: **{c[8]}**\n⏳ До: `{c[9]}`\n📊 Постов: {c[10]}")
         builder = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="🔄 Изменить Тариф", callback_data=f"admtoggle_{c[0]}")],
             [types.InlineKeyboardButton(text="📅 Вручную продлить", callback_data=f"admextend_{c[0]}")],
@@ -641,18 +796,31 @@ async def admin_broadcast_execute(message: types.Message, state: FSMContext):
     await message.answer(f"📢 Доставлено сообщений: **{sent}**")
     await state.clear()
 
+# --- КРОН-БИЛЛИНГ + КРОН-ОТКРЕПЛЕНИЕ ПОСТОВ ---
 async def start_billing_clock():
     while True:
         try:
             conn = sqlite3.connect('database.db')
             cursor = conn.cursor()
             today = datetime.now()
+            
+            now_str = today.strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute("SELECT id, message_id, chat_id FROM pinned_posts WHERE unpin_at <= ?", (now_str,))
+            expired_pins = cursor.fetchall()
+            
+            for pin in expired_pins:
+                pin_id, msg_id, chat_id = pin
+                try:
+                    await bot.unpin_chat_message(chat_id=chat_id, message_id=msg_id)
+                    cursor.execute("DELETE FROM pinned_posts WHERE id = ?", (pin_id,))
+                except Exception: pass
+            
             tomorrow_str = (today + timedelta(days=1)).strftime("%Y-%m-%d")
             today_str = today.strftime("%Y-%m-%d")
             
             cursor.execute("SELECT user_id, channel_id FROM clients WHERE role='buyer' AND sub_end=? AND status='🟢 Активен'", (tomorrow_str,))
             for u in cursor.fetchall():
-                try: await bot.send_message(chat_id=u[0], text=f"⏳ Подписка для канала `{u[1]}` заканчивается через 24 часа. Продлите доступ прямо в боте.")
+                try: await bot.send_message(chat_id=u[0], text=f"⏳ Подписка для канала `{u[1]}` заканчивается через 24 часа.")
                 except Exception: pass
                 
             cursor.execute("SELECT user_id, channel_id FROM clients WHERE role='buyer' AND sub_end<=? AND status='🟢 Активен'", (today_str,))
@@ -660,18 +828,16 @@ async def start_billing_clock():
                 cursor.execute("UPDATE clients SET status='🔴 Отключен' WHERE user_id=?", (u[0],))
                 try: await bot.send_message(chat_id=u[0], text=f"❌ Подписка для канала `{u[1]}` истекла. Постинг приостановлен.")
                 except Exception: pass
-                
-            seven_days_ago = (today - timedelta(days=7)).strftime("%Y-%m-%d")
-            cursor.execute("DELETE FROM clients WHERE role='buyer' AND sub_end<=? AND status='🔴 Отключен'", (seven_days_ago,))
+            
             conn.commit()
             conn.close()
         except Exception: pass
-        await asyncio.sleep(3600)
+        await asyncio.sleep(600)
 
 @dp.callback_query(F.data == "check_billing")
 async def admin_trigger_billing(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id): return
-    await callback.message.answer("🔄 Статусы подписок успешно актуализированы.")
+    await callback.message.answer("🔄 Статусы подписок и закрепов успешно обновлены.")
     await callback.answer()
 
 async def main():
