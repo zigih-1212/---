@@ -317,7 +317,8 @@ async def show_blogger_trends(callback: types.CallbackQuery):
     
     for i, sku in enumerate(sample_skus, 1):
         final_link, _ = await generate_takprodam_link(sku, is_wb=True, subid=sub_id)
-        text += f"{i}️⃣ **Трендовый товар WB** (Арт: `{sku}`)\n"                 f"👉 Ссылка для био: [Скопировать ссылку]({final_link})\n\n"
+        text += f"{i}️⃣ **Трендовый товар WB** (Арт: `{sku}`)\n" \
+                f"👉 Ссылка для био: [Скопировать ссылку]({final_link})\n\n"
                 
     text += "💰 *Вы получаете 50% прибыли со всех заказов.*"
     await callback.message.answer(text, parse_mode="Markdown", disable_web_page_preview=True)
@@ -551,9 +552,7 @@ async def start_parsing_engine():
                         cursor.execute("SELECT id FROM post_history WHERE client_id='ADMIN_MAIN' AND donor_post_id=?", (msg_id,))
                         if not cursor.fetchone():
                             my_link, my_erid = await generate_takprodam_link(sku, is_wb=is_wb, subid="main_admin")
-                            my_post_text = f"⭐ **[VIP ВЫБОР]** ⭐\n\n{unique_text}
-
-🛍 [Забрать со скидкой на маркетплейсе]({my_link})\n\n📍 _{my_erid}_"
+                            my_post_text = f"⭐ **[VIP ВЫБОР]** ⭐\n\n{unique_text}\n\n🛍 [Забрать со скидкой на маркетплейсе]({my_link})\n\n📍 _{my_erid}_"
                             
                             try:
                                 sent_msg = await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=my_post_text, parse_mode="Markdown")
