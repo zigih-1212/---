@@ -5,16 +5,16 @@ import asyncio
 import sys
 import httpx
 from bs4 import BeautifulSoup
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# 1. ПРОВЕРКА ПЕРЕМЕННЫХ (Защита от падения)
+# 1. КОНФИГУРАЦИЯ
 TOKEN = os.getenv("OT_TOKEN")
 TARGET_CHANNEL = os.getenv("TARGET_CHANNEL")
 
-if not TOKEN or not TARGET_CHANNEL:
-    print("КРИТИЧЕСКАЯ ОШИБКА: Проверь наличие OT_TOKEN и TARGET_CHANNEL в Railway!")
+if not TOKEN:
+    print("КРИТИЧЕСКАЯ ОШИБКА: OT_TOKEN не найден!")
     sys.exit(1)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
@@ -28,40 +28,56 @@ def init_db():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS clients 
-                      (id INTEGER PRIMARY KEY, erid TEXT, channel_id TEXT)''')
+                      (id INTEGER PRIMARY KEY, channel_id TEXT, erid TEXT, status TEXT)''')
     conn.commit()
     conn.close()
 
 init_db()
 
-# 3. АДМИН-ПАНЕЛЬ
+# 3. АДМИН-ПАНЕЛЬ (Меню)
 @dp.message(CommandStart())
 async def start(message: types.Message):
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="➕ Добавить канал", callback_data="add_channel")],
-        [types.InlineKeyboardButton(text="🏷 Установить ЕРИД", callback_data="set_erid")]
+        [types.InlineKeyboardButton(text="➕ Добавить клиента", callback_data="add_client"),
+         types.InlineKeyboardButton(text="❌ Удалить клиента", callback_data="del_client")],
+        [types.InlineKeyboardButton(text="🏷 Установить ЕРИД", callback_data="set_erid"),
+         types.InlineKeyboardButton(text="📊 Статистика", callback_data="stats")],
+        [types.InlineKeyboardButton(text="📢 Рассылка", callback_data="broadcast")]
     ])
-    await message.answer("🤖 Админ-панель бота:\nВыбери действие:", reply_markup=builder)
+    await message.answer("🛠 Админ-панель SMM-бота:\nВыберите управление:", reply_markup=builder)
 
-# 4. ЛОГИКА ПАРСИНГА (Фоновый процесс)
+# 4. ОБРАБОТКА НАЖАТИЙ (Callback)
+@dp.callback_query(F.data == "stats")
+async def show_stats(callback: types.CallbackQuery):
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM clients")
+    count = cursor.fetchone()[0]
+    conn.close()
+    await callback.message.answer(f"📊 Всего клиентов в базе: {count}")
+    await callback.answer()
+
+@dp.callback_query(F.data == "add_client")
+async def add_client(callback: types.CallbackQuery):
+    await callback.message.answer("Введите ID канала клиента:")
+    await callback.answer()
+
+# 5. ПАРСИНГ (Фоновый процесс)
 async def start_parsing():
     log.info("Парсинг запущен и готов к работе.")
     async with httpx.AsyncClient() as client:
         while True:
             try:
-                # Здесь будет твоя логика взятия постов
-                # ... (код парсинга)
-                pass 
+                # Логика будет расширяться здесь
+                await asyncio.sleep(60)
             except Exception as e:
                 log.error(f"Ошибка в цикле парсинга: {e}")
-            await asyncio.sleep(60)
+                await asyncio.sleep(60)
 
-# 5. ЗАПУСК
+# 6. ЗАПУСК
 async def main():
     log.info("Бот запускается...")
-    # Запускаем парсинг в фоне
     asyncio.create_task(start_parsing())
-    # Запускаем бота
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
