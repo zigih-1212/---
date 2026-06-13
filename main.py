@@ -17,7 +17,7 @@ def load_config():
 config = load_config()
 
 # Теперь все переменные берутся из твоего JSON
-TOKEN = "8800001861:AAGW0Qlgk3NRf5ruzrlI7OxZ4-LPmUT18ms" # Токен лучше оставить тут или тоже вынести в защищенный конфиг
+TOKEN = "8800001861:AAGW0Qlgk3NRh5ruzrlI7OxZ4-LPmUT18ms" # Токен лучше оставить тут или тоже вынести в защищенный конфиг
 CHANNEL = config["active_channel"]
 DONOR = config["settings"]["donor_username"]
 TAKPRODAM_ID = config["settings"]["partner_id"]
