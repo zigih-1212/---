@@ -42,6 +42,13 @@ async def main():
     async with httpx.AsyncClient(timeout=30) as client:
         log.info(f"Бот запущен! Целевой канал: {TARGET_CHANNEL}")
         last_update_id = 0
+
+        # ТЕСТОВАЯ ОТПРАВКА (проверка связи)
+        await client.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={
+            "chat_id": TARGET_CHANNEL,
+            "text": "🤖 Бот успешно подключился к каналу! Проверка связи."
+        })
+        log.info("Тестовое сообщение отправлено!")
         
         while True:
             try:
