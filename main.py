@@ -60,7 +60,28 @@ async def main():
                             raw_url = m.group(1)
                             img_url = raw_url.replace("_a.jpg", "_w.jpg")
 
-                    # ОТПРАВКА (С УНИВЕРСАЛЬНЫМ ОБРАБОТЧИКОМ)
+                    # ПОИСК ССЫЛКИ НА ТОВАР И ФОТО
+                    link_tag = post.find('a', href=lambda x: x and ('wildberries' in x or 'ozon' in x))
+                    if not link_tag: continue
+                    
+                    product_url = link_tag['href']
+                    img_url = None
+                    
+                    # Пытаемся вытянуть фото Wildberries через ID товара
+                    if "wildberries.ru" in product_url:
+                        prod_id = re.search(r'/(\d+)/', product_url)
+                        if prod_id:
+                            # Официальный CDN WB для картинок
+                            img_url = f"https://images.wbstatic.net/big/new/{prod_id.group(1)}-1.jpg"
+                    
+                    # Если фото не нашли, пытаемся взять старым методом (из поста)
+                    if not img_url:
+                        img_tag = post.find('a', class_='tgme_widget_message_photo_wrap')
+                        if img_tag and 'style' in img_tag.attrs:
+                            m = re.search(r"url\('(.+?)'\)", img_tag['style'])
+                            if m: img_url = m.group(1)
+
+                    # ОТПРАВКА
                     payload = {
                         "chat_id": CHANNEL,
                         "parse_mode": "HTML",
@@ -70,19 +91,10 @@ async def main():
                     if img_url:
                         payload["photo"] = img_url
                         payload["caption"] = final_caption
-                        # Используем другой метод для надежности
                         r = await client.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", data=payload)
                     else:
                         payload["text"] = final_caption
                         r = await client.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data=payload)
-
-                    if r.status_code != 200:
-                        log.error(f"❌ Ошибка отправки: {r.text}")
-                    # Отправка
-                    if img_url:
-                        payload = {
-                            "chat_id": CHANNEL, "photo": img_url, "caption": final_caption, "parse_mode": "HTML",
-                            "reply_markup": json.dumps({"inline_keyboard": [[{"text": "🛒 ЗАБРАТЬ СО СКИДКОЙ", "url": partner_url}]]})
                         }
                         r = await client.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", data=payload)
                         if r.status_code != 200:
