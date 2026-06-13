@@ -63,30 +63,27 @@ while True:
         last_update_id = await check_commands(client, last_update_id)
         # ... дальше твой остальной код ...
         while True:
-            last_update_id = await check_commands(client, last_update_id) # Добавь эту строку
-            try:
-                resp = await client.get(f"https://t.me/s/{DONOR}")
-                # ... (дальше твой обычный код)
-        last_id = 0
-        async def check_commands(client, last_update_id):
-    try:
-        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates?offset={last_update_id}&limit=1"
-        resp = await client.get(url)
-        data = resp.json()
-        if data["result"]:
-            update = data["result"][0]
-            msg = update.get("message", {})
-            text = msg.get("text", "")
+        try:
+            # 1. Проверяем команды (интерактив)
+            last_update_id = await check_commands(client, last_update_id)
             
-            if text == "/status":
-                await client.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={
-                    "chat_id": msg["chat"]["id"],
-                    "text": f"🤖 Бот в сети!\nКанал: {CHANNEL}\nДонор: {DONOR}\nСтатус: Работает"
-                })
-            return update["update_id"] + 1
-    except Exception as e:
-        log.error(f"Ошибка проверки команд: {e}")
-    return last_update_id
+            # 2. Парсим донора
+            resp = await client.get(f"https://t.me/s/{DONOR}")
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            posts = soup.find_all('div', class_='tgme_widget_message')
+            
+            for post in reversed(posts):
+                pid = int(post.get('data-post').split('/')[-1])
+                if pid <= last_id: continue
+                
+                # ... тут твой код обработки товара ...
+                
+                last_id = pid
+                await asyncio.sleep(20)
+
+        except Exception as e:
+            log.error(f"Ошибка в цикле: {e}")
+            await asyncio.sleep(60) # Ждем, если случился сбой
         while True:
             try:
                 resp = await client.get(f"https://t.me/s/{DONOR}")
