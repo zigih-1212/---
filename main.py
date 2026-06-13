@@ -43,13 +43,24 @@ init_db()
 # --- ОБРАБОТЧИКИ ---
 @dp.message(CommandStart())
 async def start(message: types.Message):
-    if not is_admin(message.from_user.id): return
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔️ Доступ ограничен.")
+        return
+        
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="➕ Добавить клиента", callback_data="add_client")],
-        [types.InlineKeyboardButton(text="🏷 Установить ЕРИД", callback_data="set_erid")],
-        [types.InlineKeyboardButton(text="📊 Статистика", callback_data="stats")]
+        [
+            types.InlineKeyboardButton(text="➕ Добавить клиента", callback_data="add_client"),
+            types.InlineKeyboardButton(text="❌ Удалить клиента", callback_data="del_client")
+        ],
+        [
+            types.InlineKeyboardButton(text="🏷 Установить ЕРИД", callback_data="set_erid"),
+            types.InlineKeyboardButton(text="📊 Статистика", callback_data="stats")
+        ],
+        [
+            types.InlineKeyboardButton(text="📢 Рассылка", callback_data="broadcast")
+        ]
     ])
-    await message.answer("🛠 Админ-панель SMM-бота:", reply_markup=builder)
+    await message.answer("🛠 Админ-панель SMM-бота:\nВыберите управление:", reply_markup=builder)
 
 @dp.callback_query(F.data == "add_client")
 async def add_client_step1(callback: types.CallbackQuery, state: FSMContext):
@@ -70,6 +81,7 @@ async def add_client_step2(message: types.Message, state: FSMContext):
 
 @dp.callback_query(F.data == "stats")
 async def show_stats(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id): return
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM clients")
@@ -82,15 +94,18 @@ async def show_stats(callback: types.CallbackQuery):
 async def start_parsing():
     log.info("Парсер запущен.")
     while True:
-        # Здесь в будущем будет цикл по базе данных:
-        # 1. Получаем список всех channel_id из таблицы
-        # 2. Идем в каждый донорский канал
-        # 3. Парсим, подставляем ЕРИД и шлем в целевой канал
+        # Логика будет расширяться здесь
         await asyncio.sleep(60)
 
 async def main():
+    if not TOKEN:
+        log.error("OT_TOKEN не найден!")
+        return
     asyncio.create_task(start_parsing())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        log.info("Бот остановлен.")
