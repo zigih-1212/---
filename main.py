@@ -4,6 +4,10 @@ import sqlite3
 import asyncio
 import re
 import random
+import threading
+import uvicorn
+from fastapi import FastAPI
+from starlette.responses import HTMLResponse
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
@@ -49,6 +53,69 @@ TARIF_PLAN = {
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 log = logging.getLogger(__name__)
+
+# --- WEB APP СЕРВЕР (FastAPI) ---
+app = FastAPI()
+
+@app.get("/")
+async def get_admin_panel():
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, role, channel_id, status, sub_type, sub_end, posts_sent FROM clients")
+    data = cursor.fetchall()
+    conn.close()
+    
+    rows = ""
+    for r in data:
+        rows += f"""<tr>
+            <td>{r[0]}</td>
+            <td>{r[1]}</td>
+            <td><b>{r[2]}</b></td>
+            <td>{r[3] if r[3] else '-'}</td>
+            <td>{r[4]}</td>
+            <td>{r[5]}</td>
+            <td>{r[6] if r[6] else '-'}</td>
+            <td>{r[7]}</td>
+        </tr>"""
+        
+    html = f"""
+    <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>AutoErid SMM Panel</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f4f6f9; color: #333; }}
+                h2 {{ color: #2c3e50; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 20px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+                th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
+                th {{ background-color: #34495e; color: white; }}
+                tr:nth-child(even) {{ background-color: #f9f9f9; }}
+            </style>
+        </head>
+        <body>
+            <h2>📊 Система управления AutoErid SMM</h2>
+            <p>Актуальный список пользователей и партнеров в реальном времени:</p>
+            <table>
+                <tr>
+                    <th>ID</th>
+                    <th>Пользователь</th>
+                    <th>Роль</th>
+                    <th>Канал в системе</th>
+                    <th>Статус</th>
+                    <th>Тариф</th>
+                    <th>Доступ до</th>
+                    <th>Постов</th>
+                </tr>
+                {rows}
+            </table>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
+
+def run_fastapi():
+    uvicorn.run(app, host="0.0.0.0", port=8080)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -138,7 +205,7 @@ async def start(message: types.Message):
     
     if is_admin(uid):
         builder = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="📊 ОТКРЫТЬ WEBAPP АДМИНКУ 📊", web_app=types.WebAppInfo(url=WEBAPP_ADMIN_URL))],
+            [types.InlineKeyboardButton(text="📊 ОБРАТИТЬ ВНИМАНИЕ: WEBAPP АДМИНКА 📊", web_app=types.WebAppInfo(url=WEBAPP_ADMIN_URL))],
             [types.InlineKeyboardButton(text="🎯 Список Блогеров", callback_data="list_bloggers"),
              types.InlineKeyboardButton(text="🛍 Список Покупателей", callback_data="list_buyers")],
             [types.InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")],
@@ -672,7 +739,7 @@ async def admin_list_bloggers(callback: types.CallbackQuery):
         await callback.message.answer("🎯 Блогеры отсутствуют.")
         await callback.answer()
         return
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text=f"👤 {r[1]} [{r[2]}]", callback_data=f"admview_{r[0]}")] for r in rows])
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[[types.InlineKeyboardButton(text=f"👤 {r[1]} [{r[2]}]", callback_data=f"admview_{r[0]}")] for r in rows]])
     await callback.message.answer("🎯 **Зарегистрированные Блогеры:**", reply_markup=builder, parse_mode="Markdown")
     await callback.answer()
 
@@ -688,7 +755,7 @@ async def admin_list_buyers(callback: types.CallbackQuery):
         await callback.message.answer("🛍 Покупатели отсутствуют.")
         await callback.answer()
         return
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text=f"{r[2]} {r[1]}", callback_data=f"admview_{r[0]}")] for r in rows])
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[[types.InlineKeyboardButton(text=f"{r[2]} {r[1]}", callback_data=f"admview_{r[0]}")] for r in rows]])
     await callback.message.answer("🛍 **Покупатели SaaS-подписки:**", reply_markup=builder, parse_mode="Markdown")
     await callback.answer()
 
@@ -873,6 +940,9 @@ async def admin_trigger_billing(callback: types.CallbackQuery):
     await callback.answer()
 
 async def main():
+    # Запускаем FastAPI Web-сервер в отдельном безопасном потоке
+    threading.Thread(target=run_fastapi, daemon=True).start()
+    
     asyncio.create_task(start_billing_clock())
     asyncio.create_task(start_parsing_engine())
     await dp.start_polling(bot)
