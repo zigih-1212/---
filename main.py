@@ -55,7 +55,22 @@ async def main():
                 # 1. Проверяем команды
                 last_update_id = await check_commands(client, last_update_id)
                 
-                # 2. Здесь будет логика парсинга
+            # 2. Парсим донора
+                donor_url = "https://t.me/s/wb_skidkamam" # Твой канал-донор
+                resp = await client.get(donor_url)
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                
+                # Ищем последний пост (пример логики)
+                posts = soup.find_all("div", class_="tgme_widget_message_wrap")
+                if posts:
+                    last_post = posts[-1]
+                    post_id = last_post.find("div", class_="tgme_widget_message")["data-post"]
+                    
+                    # Здесь должна быть проверка, видели ли мы этот пост (через last_id)
+                    # Если пост новый:
+                    # 1. Берем текст и картинку
+                    # 2. Вызываем функцию обработки текста (с твоей рефералкой и ЕРИД)
+                    # 3. Отправляем через client.post(...)
                 # Бот работает, используя TARGET_CHANNEL вместо файла config.json
                 
             except Exception as e:
