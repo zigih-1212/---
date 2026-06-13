@@ -115,7 +115,8 @@ async def get_admin_panel():
     return HTMLResponse(content=html)
 
 def run_fastapi():
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    # Запускаем uvicorn с явным указанием loop="none", чтобы он не ломал петлю asyncio бота
+    uvicorn.run(app, host="0.0.0.0", port=8080, loop="none")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -205,7 +206,7 @@ async def start(message: types.Message):
     
     if is_admin(uid):
         builder = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="📊 ОБРАТИТЬ ВНИМАНИЕ: WEBAPP АДМИНКА 📊", web_app=types.WebAppInfo(url=WEBAPP_ADMIN_URL))],
+            [types.InlineKeyboardButton(text="📊 ОТКРЫТЬ WEBAPP АДМИНКУ 📊", web_app=types.WebAppInfo(url=WEBAPP_ADMIN_URL))],
             [types.InlineKeyboardButton(text="🎯 Список Блогеров", callback_data="list_bloggers"),
              types.InlineKeyboardButton(text="🛍 Список Покупателей", callback_data="list_buyers")],
             [types.InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")],
@@ -241,7 +242,7 @@ async def start(message: types.Message):
                     [types.InlineKeyboardButton(text="💳 Продлить подписку", callback_data="pay_sub")],
                     [types.InlineKeyboardButton(text="💬 Служба поддержки", callback_data="user_support")]
                 ])
-                await message.answer(f"👋 Добро пожаловать! Ваш аккаунт настроен как **Покупатель подписки**.\nРобот ведет мониторинг доноров и наполняет ваш канал.", reply_markup=builder, parse_mode="Markdown")
+                await message.answer(f"👋 Добро пожаловать! Ваш аккауйн настроен как **Покупатель подписки**.\nРобот ведет мониторинг доноров и наполняет ваш канал.", reply_markup=builder, parse_mode="Markdown")
         return
 
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -250,7 +251,7 @@ async def start(message: types.Message):
     ])
     welcome = (
         "👋 **Приветствуем в AutoErid SMM!**\n\n"
-        "Наш робот полностью автоматизирует ведение Telegram-каналов со скидками и находками Wildberries & Ozon:\n"
+        "Наш робот полностью автоматизирует венение Telegram-каналов со скидками и находками Wildberries & Ozon:\n"
         "• Чистит контент от водяных знаков и чужих ссылок;\n"
         "• Уникализирует описания с помощью ИИ (Grok);\n"
         "• Вшивает ЕРИД маркировку и ваши реферальные ссылки.\n\n"
@@ -940,13 +941,18 @@ async def admin_trigger_billing(callback: types.CallbackQuery):
     await callback.answer()
 
 async def main():
-    # Запускаем FastAPI Web-сервер в отдельном безопасном потоке
+    # 🌟 ИСПРАВЛЕНИЕ: Запускаем FastAPI в фоновом потоке ДО запуска бота
     threading.Thread(target=run_fastapi, daemon=True).start()
     
+    # Запуск крон-задач
     asyncio.create_task(start_billing_clock())
     asyncio.create_task(start_parsing_engine())
+    
+    # 🌟 Запуск бота в главном цикле событий (теперь поток не заблокирован!)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    try: asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit): log.info("Бот остановлен.")
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        log.info("Бот остановлен.")
