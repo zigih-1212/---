@@ -3,10 +3,10 @@ import os
 import sqlite3
 import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.utils import executor
+from aiogram.filters import CommandStart
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram import F
 import httpx
-from bs4 import BeautifulSoup
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.getenv("OT_TOKEN")
@@ -14,8 +14,7 @@ TARGET_CHANNEL = os.getenv("TARGET_CHANNEL")
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
-storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
+dp = Dispatcher(storage=MemoryStorage())
 
 # --- БАЗА ДАННЫХ ---
 def init_db():
@@ -29,26 +28,25 @@ def init_db():
 init_db()
 
 # --- КНОПКИ ---
-@dp.message_handler(commands=['start'])
+@dp.message(CommandStart())
 async def start(message: types.Message):
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("➕ Добавить канал", callback_data="add_channel"))
-    markup.add(types.InlineKeyboardButton("🏷 Установить ЕРИД", callback_data="set_erid"))
-    await message.answer("🤖 Админ-панель бота:\nВыбери действие:", reply_markup=markup)
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="➕ Добавить канал", callback_data="add_channel")],
+        [types.InlineKeyboardButton(text="🏷 Установить ЕРИД", callback_data="set_erid")]
+    ])
+    await message.answer("🤖 Админ-панель бота:\nВыбери действие:", reply_markup=builder)
 
-# --- ПАРСИНГ (Фоновый процесс) ---
+# --- ПАРСИНГ ---
 async def start_parsing():
-    async with httpx.AsyncClient() as client:
-        while True:
-            try:
-                # Здесь твой код парсинга
-                # Для примера: просто лог, чтобы бот не засыпал
-                logging.info("Парсинг запущен...")
-            except Exception as e:
-                logging.error(f"Ошибка парсинга: {e}")
-            await asyncio.sleep(60)
+    while True:
+        logging.info("Парсинг запущен...")
+        await asyncio.sleep(60)
+
+async def main():
+    # Запускаем парсинг в фоне
+    asyncio.create_task(start_parsing())
+    # Запускаем бота
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_parsing())
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())
