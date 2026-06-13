@@ -53,7 +53,7 @@ async def check_commands(client, last_update_id):
     except Exception as e:
         log.error(f"Ошибка проверки команд: {e}")
     return last_update_id
-        while True:
+    while True:
             last_id = 0
         last_update_id = 0 # Добавь эту строку
         while True:
