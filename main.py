@@ -63,7 +63,7 @@ while True:
         last_update_id = await check_commands(client, last_update_id)
         # ... дальше твой остальной код ...
         while True:
-        try:
+    try:
             # 1. Проверяем команды (интерактив)
             last_update_id = await check_commands(client, last_update_id)
             
