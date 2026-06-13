@@ -93,7 +93,6 @@ def get_user_data(user_id):
 @dp.message(CommandStart())
 async def start(message: types.Message):
     uid = message.from_user.id
-    uname = f"@{message.from_user.username}" if message.from_user.username else "Без ника"
     
     # ИНТЕРФЕЙС АДМИНИСТРАТОРА
     if is_admin(uid):
@@ -168,7 +167,6 @@ async def reg_blogger_save(message: types.Message, state: FSMContext):
     uname = f"@{message.from_user.username}" if message.from_user.username else "Без ника"
     source = message.text
     
-    # Генерируем читаемый латинский SubID на основе никнейма в Telegram или соцсети
     raw_name = message.from_user.username if message.from_user.username else f"id{uid}"
     sub_id = f"bl_{transliterate(raw_name)}"
     
@@ -208,7 +206,6 @@ async def reg_buyer_save(message: types.Message, state: FSMContext):
     uname = f"@{message.from_user.username}" if message.from_user.username else "Без ника"
     channel_input = message.text.strip()
     
-    # Валидация прав администратора в канале клиента
     try:
         member = await bot.get_chat_member(chat_id=channel_input, user_id=bot.id)
         if member.status not in ['administrator', 'creator']:
@@ -217,8 +214,8 @@ async def reg_buyer_save(message: types.Message, state: FSMContext):
     except TelegramBadRequest:
         await message.answer("❌ **Ошибка:** Не удалось найти указанный канал или у бота нет к нему доступа. Проверьте правильность написания юзернейма (должен начинаться с @) и то, что канал открытый.")
         return
-    except Exception as e:
-        await message.answer(f"❌ Произошла непредвиденная ошибка при проверке канала. Убедитесь, что бот добавлен в канал.")
+    except Exception:
+        await message.answer("❌ Произошла непредвиденная ошибка при проверке канала. Убедитесь, что бот добавлен в канал.")
         return
 
     test_end = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
@@ -235,7 +232,7 @@ async def reg_buyer_save(message: types.Message, state: FSMContext):
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="👤 Войти в личный кабинет", callback_data="buyer_cabinet")]
     ])
-    await message.answer(f"✅ **Канал успешно подключен!**\n\nВам автоматически начислено **3 дня тестового периода**. Робот приступает к формированию уникальной ленты для вашего канала `{channel_input}`.", reply_markup=builder, parse_mode="Markdown", reply_markup=builder)
+    await message.answer(f"✅ **Канал успешно подключен!**\n\nВам автоматически начислено **3 дня тестового периода**. Робот приступает к формированию уникальной ленты для вашего канала `{channel_input}`.", reply_markup=builder, parse_mode="Markdown")
     await state.clear()
 
 # --- МЕНЮ БЛОГЕРА ---
@@ -322,7 +319,6 @@ async def show_payment_details(callback: types.CallbackQuery):
     elif method == "Visa KG": reqs = PAY_VISA
     elif method == "Telegram Stars": reqs = "Для оплаты Звездами свяжитесь напрямую с @Zigih90"
 
-    # Записываем в базу потенциальный способ оплаты (клиент зашел в этот раздел)
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
     cursor.execute("UPDATE clients SET last_pay_method=? WHERE user_id=?", (method, str(callback.from_user.id)))
@@ -536,7 +532,7 @@ async def admin_broadcast_execute(message: types.Message, state: FSMContext):
         try:
             await bot.send_message(chat_id=u[0], text=text, parse_mode="Markdown")
             sent_count += 1
-            await asyncio.sleep(0.05) # Защита от лимитов Telegram API
+            await asyncio.sleep(0.05)
         except Exception:
             pass
             
@@ -554,7 +550,6 @@ async def start_billing_clock():
             tomorrow_str = (today + timedelta(days=1)).strftime("%Y-%m-%d")
             today_str = today.strftime("%Y-%m-%d")
             
-            # 1. Оповещение покупателей за 24 часа до конца подписки
             cursor.execute("SELECT user_id, channel_id FROM clients WHERE role='buyer' AND sub_end=? AND status='🟢 Активен'", (tomorrow_str,))
             warn_users = cursor.fetchall()
             for u in warn_users:
@@ -562,7 +557,6 @@ async def start_billing_clock():
                     await bot.send_message(chat_id=u[0], text=f"⏳ **Внимание!** Подписка на робота автопостинга для канала `{u[1]}` истекает через 24 часа. Продлите доступ в личном кабинете, чтобы публикации не прекращались.", parse_mode="Markdown")
                 except Exception: pass
                 
-            # 2. Мягкое отключение постов (Консервация) в день окончания
             cursor.execute("SELECT user_id, channel_id FROM clients WHERE role='buyer' AND sub_end<=? AND status='🟢 Активен'", (today_str,))
             expire_users = cursor.fetchall()
             for u in expire_users:
@@ -571,7 +565,6 @@ async def start_billing_clock():
                     await bot.send_message(chat_id=u[0], text=f"❌ **Подписка истекла.** Автопостинг в ваш канал `{u[1]}` приостановлен. Ваш канал сохранен в системе на 7 дней консервации. Для возобновления работы нажмите кнопку оплаты.", parse_mode="Markdown")
                 except Exception: pass
                 
-            # 3. Полное удаление через 7 дней жесткой просрочки
             seven_days_ago_str = (today - timedelta(days=7)).strftime("%Y-%m-%d")
             cursor.execute("DELETE FROM clients WHERE role='buyer' AND sub_end<=? AND status='🔴 Отключен'", (seven_days_ago_str,))
             
@@ -580,13 +573,11 @@ async def start_billing_clock():
         except Exception as e:
             log.error(f"Ошибка биллинг-цикла: {e}")
             
-        await asyncio.sleep(3600) # Проверка базы каждый час
+        await asyncio.sleep(3600)
 
-# Ручной триггер биллинга из админки
 @dp.callback_query(F.data == "check_billing")
 async def admin_trigger_billing(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id): return
-    # Просто вызываем внутреннюю логику моментально
     await callback.message.answer("🔄 Запущен принудительный пересчет дат подписок. Все статусы обновлены.")
     await callback.answer()
 
@@ -594,7 +585,6 @@ async def admin_trigger_billing(callback: types.CallbackQuery):
 async def start_parsing_engine():
     log.info("ИИ-движок парсинга находится в режиме ожидания.")
     while True:
-        # Сюда встанет автоматическая обработка 8 доноров, ИИ рерайт (Grok) и раздача постов.
         await asyncio.sleep(60)
 
 # --- ЗАПУСК БОТА ---
