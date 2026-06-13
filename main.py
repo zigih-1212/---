@@ -34,10 +34,27 @@ TEMPLATES = [
     "💎 <b>Топ-находка с маркетплейса!</b>\n\nСобрал для тебя всё самое лучшее. Отличный товар, который сделает твою жизнь чуточку комфортнее. Скорее переходи и забирай свой экземпляр!"
 ]
 
-async def main():
-    async with httpx.AsyncClient(timeout=30) as client:
-        log.info("Бот запущен и работает в режиме отправки файлов!")
-        last_id = 0
+async def check_commands(client, last_update_id):
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates?offset={last_update_id}&limit=1"
+        resp = await client.get(url)
+        data = resp.json()
+        if data["result"]:
+            update = data["result"][0]
+            msg = update.get("message", {})
+            text = msg.get("text", "")
+            
+            if text == "/status":
+                await client.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={
+                    "chat_id": msg["chat"]["id"],
+                    "text": f"🤖 Бот в сети!\nКанал: {CHANNEL}\nДонор: {DONOR}\nСтатус: Работает"
+                })
+            return update["update_id"] + 1
+    except Exception as e:
+        log.error(f"Ошибка проверки команд: {e}")
+    return last_update_id
+        while True:
+            last_id = 0
         last_update_id = 0 # Добавь эту строку
         while True:
             last_update_id = await check_commands(client, last_update_id) # Добавь эту строку
