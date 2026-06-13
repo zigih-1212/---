@@ -1,12 +1,10 @@
 import asyncio
 import logging
 import httpx
-import json
 import os
-from bs4 import BeautifulSoup
+import sys
 
 # --- НАСТРОЙКИ ИЗ RAILWAY ---
-# Если переменная не найдена, используем значение по умолчанию или None
 TOKEN = os.getenv("OT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 TARGET_CHANNEL = os.getenv("TARGET_CHANNEL")
@@ -36,27 +34,25 @@ async def check_commands(client, last_update_id):
 
 # --- ОСНОВНОЙ ЦИКЛ ---
 async def main():
+    # Проверка настроек
     if not TOKEN or not TARGET_CHANNEL:
-        log.error("ОШИБКА: TOKEN или TARGET_CHANNEL не заданы в переменных Railway!")
+        log.error("КРИТИЧЕСКАЯ ОШИБКА: Переменные OT_TOKEN или TARGET_CHANNEL не найдены в Railway!")
         return
 
     async with httpx.AsyncClient(timeout=30) as client:
-        log.info("Бот запущен в режиме DEV-TEST!")
+        log.info(f"Бот запущен! Целевой канал: {TARGET_CHANNEL}")
         last_update_id = 0
-        last_id = 0
         
         while True:
             try:
                 # 1. Проверяем команды
                 last_update_id = await check_commands(client, last_update_id)
                 
-                # 2. Парсим донора (используй свой URL донора)
-                # Пример: resp = await client.get("https://t.me/s/твоя_ссылка")
+                # 2. Здесь будет логика парсинга
+                # Бот работает, используя TARGET_CHANNEL вместо файла config.json
                 
-                # ... тут твой код парсинга ...
-
             except Exception as e:
-                log.error(f"Критическая ошибка цикла: {e}")
+                log.error(f"Ошибка в цикле: {e}")
             
             await asyncio.sleep(60)
 
