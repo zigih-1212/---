@@ -72,47 +72,45 @@ DB_PATH = "autopost.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("PRAGMA journal_mode=WAL;")
-    cur.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            role TEXT DEFAULT 'blogger',
-            channel_id TEXT,
-            channel_title TEXT,
-            sub_id TEXT UNIQUE,
-            sub_end TEXT,
-            is_active INTEGER DEFAULT 0,
-            traffic_source TEXT DEFAULT 'organic',
-            api_key TEXT,
-            client_erid_override TEXT,
-            filter_wb INTEGER DEFAULT 1,
-            filter_ozon INTEGER DEFAULT 1,
-            blogger_mode TEXT DEFAULT 'direct'
-        );
-        CREATE TABLE IF NOT EXISTS promocodes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE,
-            days INTEGER,
-            used BOOLEAN DEFAULT 0,
-            used_by INTEGER
-        );
-        CREATE TABLE IF NOT EXISTS posts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            donor_post_id TEXT,
-            status TEXT,
-            erid TEXT
-        );
-        -- (Остальные таблицы создадим на следующих шагах)
-    """)
-    conn.commit()
-    conn.close()
-    logger.info("БД инициализирована")
+    try:
+        cur = conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL;")
+        cur.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                role TEXT DEFAULT 'blogger',
+                channel_id TEXT,
+                channel_title TEXT,
+                sub_id TEXT UNIQUE,
+                sub_end TEXT,
+                is_active INTEGER DEFAULT 0,
+                traffic_source TEXT DEFAULT 'organic',
+                api_key TEXT,
+                client_erid_override TEXT,
+                filter_wb INTEGER DEFAULT 1,
+                filter_ozon INTEGER DEFAULT 1,
+                blogger_mode TEXT DEFAULT 'direct'
+            );
+            CREATE TABLE IF NOT EXISTS promocodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE,
+                days INTEGER,
+                used BOOLEAN DEFAULT 0,
+                used_by INTEGER
+            );
+            CREATE TABLE IF NOT EXISTS posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                donor_post_id TEXT,
+                status TEXT,
+                erid TEXT
+            );
+        """)
+        conn.commit()
+        logger.info("БД инициализирована")
     finally:
         conn.close()
-
 
 # =============================================================================
 # === CIRCUIT BREAKER (защита от бесконечного цикла запросов к API) ===========
