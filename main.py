@@ -882,6 +882,40 @@ async def cb_menu_tariffs(callback: CallbackQuery) -> None:
     )
     await callback.answer()
 
+# --- Шаг 2: Обработка выбранного тарифа (Ожидает состояние choosing_tariff) ---
+@router.callback_query(PaymentFSM.choosing_tariff, F.data.startswith("tariff_"))
+async def process_tariff_selection(callback_query: CallbackQuery, state: FSMContext):
+    # Извлекаем ID тарифа (например, '30d')
+    plan_id = callback_query.data.split("_")[1]
+    
+    if plan_id not in TARIFF_PLANS:
+        await callback_query.answer("⚠️ Тариф не найден", show_alert=True)
+        return
+        
+    # Сохраняем тариф в FSM
+    await state.update_data(selected_plan=plan_id)
+    
+    # Создаем клавиатуру выбора метода оплаты
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Карта РФ (Сбер, Т-Банк)", callback_data="pay:ru")],
+        [InlineKeyboardButton(text="💳 Карта КГ (Visa)", callback_data="pay:kg")],
+        [InlineKeyboardButton(text="💎 Криптовалюта (TON)", callback_data="pay:ton")],
+        [InlineKeyboardButton(text="⭐️ Telegram Stars", callback_data=f"buy:stars:{plan_id}")],
+        [InlineKeyboardButton(text="◀️ Назад к тарифам", callback_data="menu:tariffs")]
+    ])
+    
+    plan = TARIFF_PLANS[plan_id]
+    await callback_query.message.edit_text(
+        f"Выбран тариф: <b>{plan['label']}</b>\n\n"
+        "Выберите способ оплаты.\n"
+        "Если оплачиваете картой или TON — после перевода отправьте чек в этот чат.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+    # Переводим в состояние выбора метода
+    await state.set_state(PaymentFSM.choosing_method)
+    await callback_query.answer()
+
 
 # -----------------------------------------------------------------------------
 # Оплата Stars
