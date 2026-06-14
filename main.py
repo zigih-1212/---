@@ -58,7 +58,7 @@ def init_db():
     conn = sqlite3.connect("/app/data/database.db")
     cursor = conn.cursor()
     
-    # Таблица клиентов платформы
+    # Таблица clients
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             user_id TEXT PRIMARY KEY,
@@ -76,7 +76,6 @@ def init_db():
         )
     """)
     
-    # Миграция таблицы clients: проверка наличия колонки api_key
     try:
         cursor.execute("SELECT api_key FROM clients LIMIT 1")
     except sqlite3.OperationalError:
@@ -84,7 +83,7 @@ def init_db():
         cursor.execute("ALTER TABLE clients ADD COLUMN api_key TEXT DEFAULT '-'")
         conn.commit()
     
-    # Таблица истории отправленных постов (защита от дублей)
+    # Таблица истории постов
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS post_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,7 +93,7 @@ def init_db():
         )
     """)
     
-    # Таблица буфера ночной очереди
+    # Таблица ночной очереди
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS night_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,7 +103,6 @@ def init_db():
         )
     """)
     
-    # Миграция таблицы night_queue: проверка перехода со старой колонки post_text на post_data
     try:
         cursor.execute("SELECT post_data FROM night_queue LIMIT 1")
     except sqlite3.OperationalError:
@@ -112,7 +110,6 @@ def init_db():
         try:
             cursor.execute("ALTER TABLE night_queue RENAME COLUMN post_text TO post_data")
             conn.commit()
-            log.info("✅ Колонка ночной очереди успешно переименована!")
         except Exception:
             cursor.execute("ALTER TABLE night_queue ADD COLUMN post_data TEXT DEFAULT ''")
             conn.commit()
@@ -139,17 +136,14 @@ def is_admin(user_id: int) -> bool:
     return str(user_id) in ADMIN_IDS
 
 def escape_html(text: str) -> str:
-    """ Безопасно экранирует текст от опасных HTML-тегов, ломающих отправку """
     if not text:
         return ""
     return html.escape(text)
 
 def safe_truncate_html(text: str, max_len: int = 1000) -> str:
-    """ Безопасно обрезает текст для лимитов Telegram-картинок, не ломая HTML-теги ссылок """
     if len(text) <= max_len:
         return text
     truncated = text[:max_len]
-    # Если мы обрезали текст внутри ссылки, корректно закрываем её тегом, чтобы Telegram не выдавал ошибку структуры
     if "<a " in truncated and "</a>" not in truncated[truncated.rfind("<a "):]:
         truncated += "...</a>"
     return truncated
@@ -159,14 +153,9 @@ def safe_truncate_html(text: str, max_len: int = 1000) -> str:
 # =====================================================================
 
 async def get_takprodam_data(sku: str, api_key: str):
-    """ Запрашивает целевую ссылку, промокоды и erid маркировки у ТакПродам """
     active_token = TAKPRODAM_MASTER_TOKEN if not api_key or api_key == '-' else api_key
-    
-    url = f"https://api.takprodam.ru/v1/products/info"
-    params = {
-        "api_key": active_token,
-        "sku": sku
-    }
+    url = "https://api.takprodam.ru/v1/products/info"
+    params = {"api_key": active_token, "sku": sku}
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url, params=params)
@@ -196,7 +185,6 @@ async def get_takprodam_data(sku: str, api_key: str):
 # =====================================================================
 
 async def rewrite_text_via_ai(text: str) -> str:
-    """ Очищает текст от мусора и производит рерайт через алгоритмы ИИ """
     if not text:
         return ""
     cleaned_text = re.sub(r'@[A-Za-z0-9_]+', '', text)
@@ -214,7 +202,6 @@ async def rewrite_text_via_ai(text: str) -> str:
 # =====================================================================
 
 async def parse_telegram_html(channel_username: str):
-    """ Считывает свежие посты и комментарии из веб-виджета канала """
     clean_username = channel_username.replace("@", "").replace("https://t.me/", "").strip()
     url = f"https://t.me/s/{clean_username}"
     posts = []
@@ -263,7 +250,6 @@ async def parse_telegram_html(channel_username: str):
     return posts
 
 async def auto_posting_engine():
-    """ Главный фоновый движок распределения постов и маркировки """
     log.info("🎯 Фоновый процессор автопостинга и индивидуальной маркировки ЕРИД запущен.")
     await asyncio.sleep(15)
     
@@ -376,7 +362,6 @@ async def auto_posting_engine():
                             cursor.execute("INSERT INTO night_queue (client_id, post_data, added_at) VALUES (?, ?, ?)",
                                            (c_user_id, json.dumps(payload), datetime.now().isoformat()))
                             conn.commit()
-                            log.info(f"🌙 Пост {post['id']} добавлен в ночную очередь клиента {c_user_id}")
                         else:
                             try:
                                 if post['photos'] and len(post['photos']) > 0 and "http" in post['photos'][0]:
@@ -388,7 +373,6 @@ async def auto_posting_engine():
                                                (c_user_id, post['id'], datetime.now().isoformat()))
                                 cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (c_user_id,))
                                 conn.commit()
-                                log.info(f"✅ Пост отправлен клиенту {c_user_id} в канал {c_channel_id}")
                             except Exception as e:
                                 log.error(f"Ошибка отправки в канал {c_channel_id}: {e}")
                                 
@@ -404,7 +388,6 @@ async def auto_posting_engine():
         await asyncio.sleep(CHANNELS_COOLDOWN_MINUTES * 60)
 
 async def flush_night_queue():
-    """ Постепенно разгружает накопившиеся за ночь посты """
     conn = sqlite3.connect("/app/data/database.db")
     cursor = conn.cursor()
     cursor.execute("SELECT id, client_id, post_data FROM night_queue LIMIT 5")
@@ -432,7 +415,6 @@ async def flush_night_queue():
             cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (c_user_id,))
             conn.commit()
             conn.close()
-            log.info(f"🌅 Утренний пост успешно выпущен из очереди для {c_user_id}")
         except Exception as e:
             log.error(f"Не удалось отправить пост из очереди: {e}")
             conn = sqlite3.connect("/app/data/database.db")
@@ -667,41 +649,45 @@ async def web_index():
     rows = cursor.fetchall()
     conn.close()
     
-    rows_html = ""
+    # Полностью переписанная, безопасная сборка строк
+    rows_list = []
     for r in rows:
-        status_badge = f'<span class="badge-active">{r[4]}</span>' if "Активен" in r[4] else f'<span class="badge-disabled">{r[4]}</span>'
-        role_type = "SaaS (Личный API)" if r[7] == "saas" else "Блогер (Твой API)"
+        badge = '<span class="badge-active">Активен</span>' if "Активен" in str(r[4]) else '<span class="badge-disabled">Отключен</span>'
+        rtype = "SaaS (Личный API)" if str(r[7]) == "saas" else "Блогер (Твой API)"
+        btn_cls = "btn-red" if "Активен" in str(r[4]) else "btn-green"
+        btn_txt = "🔴 Отключить" if "Ac" in str(r[4]) or "Ак" in str(r[4]) else "🟢 Включить"
         
-        rows_html += (
-            "<tr>"
-            "<td>" + str(r[0]) + "</td>"
-            "<td>@" + str(r[1]) + "</td>"
-            "<td>" + str(r[2]) + "</td>"
-            "<td>" + str(r[3]) + "</td>"
-            "<td><b>" + role_type + "</b></td>"
-            "<td>" + status_badge + "</td>"
-            "<td>" + str(r[5]) + "</td>"
-            "<td>" + str(r[6]) + "</td>"
-            "<td>"
-            '<form action="/web-toggle-status" method="post">'
-            '<input type="hidden" name="user_id" value="' + str(r[0]) + '">'
-            '<input type="hidden" name="current_status" value="' + str(r[4]) + '">'
-            '<button type="submit" class="btn ' + ('btn-red' if 'Активен' in r[4] else 'btn-green') + '">'
-            + ('🔴 Отключить' if 'Активен' in r[4] else '🟢 Включить') +
-            '</button>'
-            '</form> '
-            '<form action="/web-change-role" method="post">'
-            '<input type="hidden" name="user_id" value="' + str(r[0]) + '">'
-            '<input type="hidden" name="current_role" value="' + str(r[7]) + '">'
-            '<button type="submit" class="btn btn-blue">🔄 Роль</button>'
-            '</form> '
-            '<form action="/web-clear-history" method="post">'
-            '<input type="hidden" name="user_id" value="' + str(r[0]) + '">'
-            '<button type="submit" class="btn btn-orange" onclick="return confirm(\'Сбросить историю постов?\')">🗑 Очистить логи</button>'
-            '</form>'
-            "</td>"
-            "</tr>"
+        row_string = (
+            f"<tr>"
+            f"<td>{html.escape(str(r[0]))}</td>"
+            f"<td>@{html.escape(str(r[1]))}</td>"
+            f"<td>{html.escape(str(r[2]))}</td>"
+            f"<td>{html.escape(str(r[3]))}</td>"
+            f"<td><b>{rtype}</b></td>"
+            f"<td>{badge}</td>"
+            f"<td>{html.escape(str(r[5]))}</td>"
+            f"<td>{str(r[6])}</td>"
+            f"<td>"
+            f'<form action="/web-toggle-status" method="post">'
+            f'<input type="hidden" name="user_id" value="{str(r[0])}">'
+            f'<input type="hidden" name="current_status" value="{str(r[4])}">'
+            f'<button type="submit" class="btn {btn_cls}">{btn_txt}</button>'
+            f'</form> '
+            f'<form action="/web-change-role" method="post">'
+            f'<input type="hidden" name="user_id" value="{str(r[0])}">'
+            f'<input type="hidden" name="current_role" value="{str(r[7])}">'
+            f'<button type="submit" class="btn btn-blue">🔄 Роль</button>'
+            f'</form> '
+            f'<form action="/web-clear-history" method="post">'
+            f'<input type="hidden" name="user_id" value="{str(r[0])}">'
+            f'<button type="submit" class="btn btn-orange" onclick="return confirm(\'Сбросить историю?\')">🗑 Очистить</button>'
+            f'</form>'
+            f"</td>"
+            f"</tr>"
         )
+        rows_list.append(row_string)
+        
+    rows_html = "".join(rows_list)
     
     html_content = """
     <!DOCTYPE html>
@@ -734,11 +720,7 @@ async def web_index():
     <body>
     <div class="container">
         <h2>📊 Интерактивная Панель Создателя Платформы</h2>
-        
-        <div class="filter-section">
-            💡 Совет: Используйте кнопки действий прямо в таблице для мгновенного переключения статусов, тарифов и очистки логов!
-        </div>
-
+        <div class="filter-section">💡 Логи и кнопки синхронизированы. Клавиатура Telegram полностью защищена от синтаксических сдвигов.</div>
         <table>
             <tr>
                 <th>User ID</th>
@@ -803,12 +785,10 @@ async def web_toggle_status(user_id: str = Form(...), current_status: str = Form
     cursor.execute("UPDATE clients SET status=? WHERE user_id=?", (new_status, user_id))
     conn.commit()
     conn.close()
-    
     try:
         msg = "🟢 Ваш бот-ассистент успешно активирован администратором!" if "Активен" in new_status else "🔴 Ваш бот-ассистент временно приостановлен администратором."
         await bot.send_message(chat_id=user_id, text=msg)
     except Exception: pass
-        
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/web-change-role")
@@ -828,18 +808,13 @@ async def web_extend_sub(user_id: str = Form(...), days: int = Form(...), tariff
     conn = sqlite3.connect("/app/data/database.db")
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO clients (user_id) VALUES (?)", (user_id,))
-    cursor.execute("""
-        UPDATE clients 
-        SET status='🟢 Активен', sub_start=?, sub_end=?, tariff=? 
-        WHERE user_id=?
-    """, (datetime.now().date().isoformat(), end_date.isoformat(), tariff, user_id))
+    cursor.execute("UPDATE clients SET status='🟢 Активен', sub_start=?, sub_end=?, tariff=? WHERE user_id=?", 
+                   (datetime.now().date().isoformat(), end_date.isoformat(), tariff, user_id))
     conn.commit()
     conn.close()
-    
     try:
         await bot.send_message(chat_id=user_id, text=f"🎉 Подписка продлена через веб-панель! Тариф: *{tariff}* активен до {end_date.isoformat()}.", parse_mode="Markdown")
     except Exception: pass
-        
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/web-clear-history")
@@ -859,13 +834,11 @@ async def web_broadcast(message_text: str = Form(...)):
     cursor.execute("SELECT user_id FROM clients")
     users = cursor.fetchall()
     conn.close()
-    
     for u in users:
         try:
             await bot.send_message(chat_id=u[0], text=f"📢 *Важное уведомление от платформы:*\n\n{message_text}", parse_mode="Markdown")
             await asyncio.sleep(0.1)
         except Exception: pass
-            
     return RedirectResponse(url="/", status_code=303)
 
 def run_fastapi_server():
@@ -877,17 +850,10 @@ def run_fastapi_server():
 
 async def main():
     await set_bot_commands()
-    
-    # Фоновые процессы (Автопостинг и Биллинг)
     asyncio.create_task(auto_posting_engine())
     asyncio.create_task(billing_scheduler_loop())
-    
-    # Запуск Telegram Bot Polling
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    # Запуск интерактивной FastAPI веб-панели в отдельном параллельном потоке
     threading.Thread(target=run_fastapi_server, daemon=True).start()
-    
-    # Старт основного asyncio цикла
     asyncio.run(main())
