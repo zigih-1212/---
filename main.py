@@ -1451,19 +1451,18 @@ async def handle_erid_override_input(message: Message, state: FSMContext) -> Non
 @router.callback_query(F.data == "menu:stats")
 async def cb_menu_stats(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
+    
+    # 1. Сразу отвечаем Telegram, чтобы убрать "зависание" кнопки
+    await callback.answer() 
+    
     conn = get_db()
     try:
-        total = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM posts WHERE user_id=?", (user_id,)
-        ).fetchone()["cnt"]
-        published = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM posts WHERE user_id=? AND status='published'",
-            (user_id,)
-        ).fetchone()["cnt"]
-        quarantine = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM posts WHERE user_id=? AND status='quarantine'",
-            (user_id,)
-        ).fetchone()["cnt"]
+        # Получаем общие цифры
+        total = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=?", (user_id,)).fetchone()[0]
+        published = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=? AND status='published'", (user_id,)).fetchone()[0]
+        quarantine = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=? AND status='quarantine'", (user_id,)).fetchone()[0]
+        
+        # Получаем список последних постов
         last_posts = conn.execute(
             "SELECT donor_post_id, status, created_at FROM posts "
             "WHERE user_id=? ORDER BY created_at DESC LIMIT 5",
@@ -1472,14 +1471,21 @@ async def cb_menu_stats(callback: CallbackQuery) -> None:
     finally:
         conn.close()
 
-    last_str = "\n".join(
-        f"  • <code>{p['donor_post_id']}</code> — {p['status']} ({p['created_at'][:10]})"
-        for p in last_posts
-    ) or "  <i>постов ещё не было</i>"
+    # 2. Безопасная сборка текста (если постов нет)
+    if not last_posts:
+        last_str = "  <i>Постов ещё не было</i>"
+    else:
+        last_str = "\n".join(
+            f"  • <code>{p['donor_post_id']}</code> — {p['status']} ({p['created_at'][:10]})"
+            for p in last_posts
+        )
 
+    # 3. Вывод данных
     await callback.message.edit_text(
         f"📊 <b>Статистика постов</b>\n\n"
-        f"Всего: {total}  |  Опубликовано: {published}  |  Карантин: {quarantine}\n\n"
+        f"Всего: {total}\n"
+        f"Опубликовано: {published}\n"
+        f"Карантин: {quarantine}\n\n"
         f"<b>Последние 5 постов:</b>\n{last_str}",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
