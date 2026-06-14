@@ -75,14 +75,13 @@ def init_db():
         )
     """)
     
-    # Автоматическая проверка и миграция старой БД без потери данных
+    # Миграция таблицы clients: проверка наличия колонки api_key
     try:
         cursor.execute("SELECT api_key FROM clients LIMIT 1")
     except sqlite3.OperationalError:
-        log.info("⚠️ Запуск бережного обновления структуры БД (добавление api_key)...")
+        log.info("⚠️ Запуск обновления структуры БД (добавление api_key)...")
         cursor.execute("ALTER TABLE clients ADD COLUMN api_key TEXT DEFAULT '-'")
         conn.commit()
-        log.info("✅ База данных успешно обновлена. Старые данные не пострадали!")
     
     # Таблица истории отправленных постов (защита от дублей)
     cursor.execute("""
@@ -103,6 +102,21 @@ def init_db():
             added_at TEXT
         )
     """)
+    
+    # Миграция таблицы night_queue: проверка перехода со старой колонки post_text на post_data
+    try:
+        cursor.execute("SELECT post_data FROM night_queue LIMIT 1")
+    except sqlite3.OperationalError:
+        log.info("⚠️ Запуск обновления структуры таблицы night_queue (post_text -> post_data)...")
+        try:
+            # Переименовываем старую колонку, если она существовала
+            cursor.execute("ALTER TABLE night_queue RENAME COLUMN post_text TO post_data")
+            conn.commit()
+            log.info("✅ Колонка ночной очереди успешно переименована!")
+        except Exception:
+            # Если переименование не удалось, просто пересоздаем колонку безопасно
+            cursor.execute("ALTER TABLE night_queue ADD COLUMN post_data TEXT DEFAULT ''")
+            conn.commit()
     
     conn.commit()
     conn.close()
@@ -407,7 +421,8 @@ async def flush_night_queue():
         except Exception as e:
             log.error(f"Не удалось отправить пост из очереди: {e}")
             conn = sqlite3.connect("/app/data/database.db")
-            cursor = cursor.execute("DELETE FROM night_queue WHERE id=?", (q_id,))
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM night_queue WHERE id=?", (q_id,))
             conn.commit()
             conn.close()
             
