@@ -86,8 +86,7 @@ async def get_admin_panel():
                         <input type="hidden" name="client_id" value="{r[0]}">
                         <input type="hidden" name="action" value="{toggle_action}">
                         <button type="submit" class="btn btn-toggle">{toggle_btn_text}</button>
-                    </form>
-                    {f'''<form action="/extend-days" method="post" style="display:inline;">
+                    </form>                    {f'''<form action="/extend-days" method="post" style="display:inline;">
                         <input type="hidden" name="client_id" value="{r[0]}">
                         <button type="submit" class="btn btn-extend">⚡ Продлить +30д</button>
                     </form>''' if r[2] == 'buyer' else ''}
@@ -265,10 +264,16 @@ def get_welcome_keyboard():
         [types.InlineKeyboardButton(text="🛍 Я Покупатель подписки (SaaS софт)", callback_data="reg_buyer")]
     ])
 
-# --- ОБРАБОТКА КОМАНДЫ /START ---
+# --- ОБРАБОТКА КОМАНДЫ /START (С ПЕРЕХВАТОМ АФФИЛИАТ-ССЫЛОК) ---
 @dp.message(CommandStart())
 async def start(message: types.Message):
     uid = message.from_user.id
+    
+    # Проверяем реферальный хвост от Telegram Affiliate Program
+    start_args = message.text.split()
+    is_affiliate_user = False
+    if len(start_args) > 1 and start_args[1].startswith("aff"):
+        is_affiliate_user = True
     
     if is_admin(uid):
         await message.answer("🛠 **Панель управления AutoErid SMM**\n\nВы зашли как Администратор.", reply_markup=get_admin_keyboard(), parse_mode="Markdown")
@@ -276,6 +281,14 @@ async def start(message: types.Message):
 
     user = get_user_data(uid)
     if user:
+        # Если старый юзер перешел по ссылке апдейтим его метку
+        if is_affiliate_user:
+            conn = sqlite3.connect('/app/data/database.db')
+            cursor = conn.cursor()
+            cursor.execute("UPDATE clients SET last_pay_method='affiliate' WHERE user_id=?", (str(uid),))
+            conn.commit()
+            conn.close()
+            
         role = user[6]
         status = user[7]
         if role == 'blogger':
@@ -304,6 +317,10 @@ async def start(message: types.Message):
                 await message.answer(f"👋 Добро пожаловать! Ваш аккаунт настроен как **Покупатель подписки**.\nРобот ведет мониторинг доноров и наполняет ваш канал.", reply_markup=builder, parse_mode="Markdown")
         return
 
+    # Для абсолютно нового юзера, зашедшего по рефералке Telegram Affiliate
+    welcome_str = "Тестовая"
+    pay_marker = "affiliate" if is_affiliate_user else "Нет оплат"
+
     welcome = (
         "👋 **Приветствуем в AutoErid SMM!**\n\n"
         "Наш робот полностью автоматизирует ведение Telegram-каналов со скидками и находками Wildberries & Ozon:\n"
@@ -312,6 +329,15 @@ async def start(message: types.Message):
         "• Вшивает ЕРИД маркировку и ваши реферальные ссылки.\n\n"
         "Пожалуйста, выберите формат работы для регистрации:"
     )
+    
+    # Предварительно создаем запись, чтобы сохранить его реферальный статус
+    conn = sqlite3.connect('/app/data/database.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO clients (user_id, username, last_pay_method, role) VALUES (?, ?, ?, 'none')", 
+                   (str(uid), f"@{message.from_user.username}" if message.from_user.username else "Без ника", pay_marker))
+    conn.commit()
+    conn.close()
+
     await message.answer(welcome, reply_markup=get_welcome_keyboard(), parse_mode="Markdown")
 
 # --- СЦЕНАРИЙ РЕГИСТРАЦИИ БЛОГЕРА ---
@@ -348,11 +374,11 @@ async def reg_blogger_format_received(callback: types.CallbackQuery, state: FSMC
         clean_name = callback.from_user.username if callback.from_user.username else f"id{uid}"
     sub_id = f"bl_{transliterate(clean_name)}"[:20]
 
+    conn = sqlite3.connect('/app/data/database.db')
+    cursor = conn.cursor()
     if b_format == 'zakrep':
-        conn = sqlite3.connect('/app/data/database.db')
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO clients (user_id, username, source_link, sub_id, role, sub_end, blogger_type) VALUES (?, ?, ?, ?, 'blogger', ?, 'zakrep')", 
-                       (uid, uname, source, sub_id, (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")))
+        cursor.execute("UPDATE clients SET username=?, source_link=?, sub_id=?, role='blogger', sub_end=?, blogger_type='zakrep' WHERE user_id=?", 
+                       (uname, source, sub_id, (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d"), uid))
         conn.commit()
         conn.close()
         
@@ -361,6 +387,7 @@ async def reg_blogger_format_received(callback: types.CallbackQuery, state: FSMC
         await state.clear()
     
     elif b_format == 'autoposting':
+        conn.close()
         builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
         await callback.message.edit_text(
             "🛠 **Настройка автопостинга в ваш канал:**\n\n"
@@ -394,8 +421,8 @@ async def reg_blogger_autoposting_final(message: types.Message, state: FSMContex
 
     conn = sqlite3.connect('/app/data/database.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO clients (user_id, username, channel_id, source_link, sub_id, role, sub_end, blogger_type) VALUES (?, ?, ?, ?, ?, 'blogger', ?, 'autoposting')", 
-                   (uid, uname, channel_input, source, sub_id, (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")))
+    cursor.execute("UPDATE clients SET username=?, channel_id=?, source_link=?, sub_id=?, role='blogger', sub_end=?, blogger_type='autoposting' WHERE user_id=?", 
+                   (uname, channel_input, source, sub_id, (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d"), uid))
     conn.commit()
     conn.close()
     
@@ -435,8 +462,8 @@ async def reg_buyer_save(message: types.Message, state: FSMContext):
     test_end = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
     conn = sqlite3.connect('/app/data/database.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO clients (user_id, username, channel_id, role, sub_end, sub_type) VALUES (?, ?, ?, 'buyer', ?, 'Тестовая')", 
-                   (uid, uname, channel_input, test_end))
+    cursor.execute("UPDATE clients SET username=?, channel_id=?, role='buyer', sub_end=?, sub_type='Тестовая' WHERE user_id=?", 
+                   (uname, channel_input, test_end, uid))
     conn.commit()
     conn.close()
     
@@ -724,19 +751,34 @@ async def admin_broadcast_execute(message: types.Message, state: FSMContext):
     await message.answer(f"📢 Доставлено сообщений: **{sent}**", reply_markup=builder)
     await state.clear()
 
-# --- СИСТЕМA ОПЛАТЫ (РАЗДЕЛЬНЫЕ КНОПКИ ДЛЯ ВСЕХ КАРТ И СЕТЕЙ) ---
+# --- СИСТЕМA ОПЛАТЫ (С УМНЫМ РАЗДЕЛЕНИЕМ ДЛЯ ПАРТНЕРОВ TELEGRAM) ---
 
 @dp.callback_query(F.data == "pay_sub")
 async def pay_sub_menu(callback: types.CallbackQuery):
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="🇷🇺 Карта Сбербанк", callback_data="paymethod_Sberbank")],
-        [types.InlineKeyboardButton(text="🇷🇺 Карта Т-Банк", callback_data="paymethod_TBank")],
-        [types.InlineKeyboardButton(text="🇰🇬 Карта Visa Кыргызстан", callback_data="paymethod_VisaKG")],
-        [types.InlineKeyboardButton(text="💎 Кошелек Tonkeeper (Crypto TON)", callback_data="paymethod_Tonkeeper")],
-        [types.InlineKeyboardButton(text="⭐️ Telegram Stars (Звёзды)", callback_data="paymethod_stars")],
-        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
-    ])
-    await callback.message.edit_text("💳 **Выберите удобный способ оплаты подписки:**", reply_markup=builder, parse_mode="Markdown")
+    user = get_user_data(callback.from_user.id)
+    
+    # ЕСЛИ пользователь пришел по рефералке Telegram Affiliate (стоит маркер 'affiliate')
+    if user and user[12] == "affiliate":
+        # Сразу перекидываем его в меню тарифов Звёзд, убирая выбор карт РФ!
+        buttons = []
+        for days, (rub_p, star_p, label) in TARIF_PLAN.items():
+            text = f"{label} {days} дней — {star_p} ⭐️"
+            buttons.append([types.InlineKeyboardButton(text=text, callback_data=f"checkout_stars_{days}")])
+        buttons.append([types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")])
+        
+        await callback.message.edit_text("⭐️ **Доступные тарифные планы (Оплата Звёздами Telegram):**", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    else:
+        # Для ОБЫЧНЫХ органических пользователей показываем полное меню со всеми картами
+        builder = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="🇷🇺 Карта Сбербанк", callback_data="paymethod_Sberbank")],
+            [types.InlineKeyboardButton(text="🇷🇺 Карта Т-Банк", callback_data="paymethod_TBank")],
+            [types.InlineKeyboardButton(text="🇰🇬 Карта Visa Кыргызстан", callback_data="paymethod_VisaKG")],
+            [types.InlineKeyboardButton(text="💎 Кошелек Tonkeeper (Crypto TON)", callback_data="paymethod_Tonkeeper")],
+            [types.InlineKeyboardButton(text="⭐️ Telegram Stars (Звёзды)", callback_data="paymethod_stars")],
+            [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+        ])
+        await callback.message.edit_text("💳 **Выберите удобный способ оплаты подписки:**", reply_markup=builder, parse_mode="Markdown")
+        
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("paymethod_"))
@@ -798,23 +840,26 @@ async def checkout_direct_handler(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("checkout_stars_"))
 async def checkout_stars_handler(callback: types.CallbackQuery):
+    user = get_user_data(callback.from_user.id)
     days = int(callback.data.split("_")[2])
     stars_price = TARIF_PLAN[days][1]
     
-    # Полный запуск реального инвойса Telegram Stars вместо текстовой заглушки!
     try:
         await callback.message.answer_invoice(
             title=f"Подписка SMM софт [{days} дней]",
             description=f"Продление автоматического наполнения контентом.",
             payload=f"sub_extend_{days}_days",
-            provider_token="", # Для XTR (Stars) токен провайдера всегда пустой
+            provider_token="", 
             currency="XTR",    
             prices=[types.LabeledPrice(label="Доступ к автопостингу", amount=stars_price)]
         )
-        await callback.message.delete() # Удаляем старое меню выбора, чтобы не засорять чат
+        await callback.message.delete()
     except Exception as e:
         log.error(f"Ошибка генерации звездного инвойса: {e}")
-        await callback.message.answer("❌ Произошла ошибка при генерации счета. Напишите админу @Zigih90")
+        # Если юзер партнерский — кнопка назад ведет в корень, иначе — в pay_sub
+        back_target = "back_to_main" if user and user[12] == "affiliate" else "pay_sub"
+        await callback.message.answer("❌ Ошибка генерации счета. Напишите админу @Zigih90", 
+                                      reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target)]]))
     await callback.answer()
 
 # Обязательные служебные хендлеры для аппрува звездных платежей
@@ -830,7 +875,7 @@ async def process_successful_payment(message: types.Message):
     cursor = conn.cursor()
     cursor.execute("SELECT sub_end FROM clients WHERE user_id=?", (uid,))
     res = cursor.fetchone()
-    if res:
+    if res and res[0]:
         current_end = datetime.strptime(res[0], "%Y-%m-%d")
         start_point = current_end if current_end > datetime.now() else datetime.now()
         new_end = (start_point + timedelta(days=days)).strftime("%Y-%m-%d")
@@ -840,12 +885,11 @@ async def process_successful_payment(message: types.Message):
         await message.answer(f"🎉 **Оплата успешно принята!**\n\nВаша подписка продлена до: `{new_end}`. Спасибо за доверие!", reply_markup=builder, parse_mode="Markdown")
     conn.close()
 
-# --- ИСПРАВЛЕННАЯ СЛУЖБА ПОДДЕРЖКИ (БЕЗ ЗАВИСАНИЙ) ---
 @dp.callback_query(F.data == "user_support")
 async def user_support_contact(callback: types.CallbackQuery):
     builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
     await callback.message.edit_text("💬 По всем техническим вопросам, предложениям сотрудничества или активации ручных платежей пишите создателю проекта: @Zigih90", reply_markup=builder)
-    await callback.answer() # Исправлено! Больше кнопка не зависнет часиками
+    await callback.answer()
 
 # =====================================================================
 # --- ИИ-ДВИЖОК ПАРСИНГА С КУЛДАУНОМ, НОЧНЫМ РЕЖИМОМ И СОКРАЩАТЕЛЕМ ---
