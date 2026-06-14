@@ -1777,12 +1777,13 @@ async def scan_donor_channels(bot: Bot):
         except Exception as e:
             logger.error(f"Ошибка при парсинге {channel}: {e}")
 
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+  
 async def main() -> None:
     logger.info("=== AutoPost Bot запускается ===")
-    def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # Это критически важно для работы row["column_name"]
-    return conn
   
     bot = Bot(token=BOT_TOKEN)
     storage = MemoryStorage()
