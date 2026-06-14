@@ -46,30 +46,6 @@ class PaymentFSM(StatesGroup):
     choosing_method = State()        # Шаг 2: Пользователь выбирает способ оплаты (РФ, КГ, Крипта)
     waiting_for_receipt = State()    # Шаг 3: Бот ждет фото чека от пользователя
 
-# 1. Точка входа: Вызов меню оплат
-async def start_payment_process(message: types.Message, state: FSMContext):
-    # Здесь мы будем выводить кнопки тарифов (15, 30, 90 дней...)
-    pass
-
-# 2. Обработка выбора тарифа
-async def process_tariff_selection(callback_query: types.CallbackQuery, state: FSMContext):
-    # Здесь бот запомнит выбранный тариф и покажет способы оплаты (Сбер, Т-Банк, TON...)
-    pass
-
-# 3. Обработка выбора способа оплаты
-async def process_payment_method(callback_query: types.CallbackQuery, state: FSMContext):
-    # Здесь бот выдаст нужные реквизиты и попросит прислать фото
-    pass
-
-# 4. Прием чека (фотографии)
-async def process_receipt_photo(message: types.Message, state: FSMContext):
-    # Здесь бот перехватит фото и перешлет его админу с кнопками [Активировать] / [Отклонить]
-    pass
-
-# 5. Обработка решения админа (нажатие кнопок под чеком)
-async def admin_payment_decision(callback_query: types.CallbackQuery):
-    # Здесь мы будем менять статус в БД и уведомлять пользователя
-    pass
 # --- Логирование ---
 log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 file_handler = RotatingFileHandler("bot.log", maxBytes=5 * 1024 * 1024, backupCount=3)
