@@ -2068,21 +2068,34 @@ async def check_all_bloggers(bot: Bot):
     conn.close()
 
     for b in bloggers:
-        video = get_latest_video(b['channel_id'])
-        if not video: continue
-        
-        video_id = video.get('id')
-        if not video_id or is_video_processed(video_id):
-            continue # Видео старое или уже в базе
+        # 1. Сначала "легкий" запрос, чтобы понять, есть ли новое видео
+        latest = get_latest_video(b['channel_id'])
+        if not latest or is_video_processed(latest['id']):
+            continue
 
-        # Если дошли сюда, видео НОВОЕ
-        # 1. Забираем описание (полный парсинг)
-        # 2. Ищем артикул/ссылку через re.search
-        # 3. Если находим -> запускаем process_donor_post
-        # 4. Если не находим -> шлем сообщение без ERID (как вы просили)
+        # 2. Ролик новый! Запрашиваем полное описание
+        full_info = get_video_full_details(latest['url'])
+        if not full_info:
+            continue
+            
+        description = full_info.get('description', '')
+        video_id = full_info.get('id')
         
-        logger.info(f"Найдено новое видео: {video_id} от пользователя {b['user_id']}")
-        # Здесь будет вызов публикации...
+        logger.info(f"Получено описание для видео {video_id}")
+        
+        # 3. Здесь ищем артикул в описании
+        sku_match = re.search(r'\d{6,12}', description)
+        sku = sku_match.group(0) if sku_match else None
+        
+        # 4. Вызываем публикацию
+        await process_new_video(
+            bot=bot,
+            user_id=b['user_id'],
+            video_id=video_id,
+            description=description,
+            sku=sku,
+            photo_url=full_info.get('thumbnail')
+        )
 # =============================================================================
 # === MAIN ENTRYPOINT =========================================================
 # =============================================================================
