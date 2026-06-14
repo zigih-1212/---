@@ -4,12 +4,13 @@ import sqlite3
 import asyncio
 import re
 import random
+import threading
 import uvicorn
-from fastapi import FastAPI
-from starlette.responses import HTMLResponse
+from fastapi import FastAPI, Form
+from starlette.responses import HTMLResponse, RedirectResponse
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -66,15 +67,32 @@ async def get_admin_panel():
     
     rows = ""
     for r in data:
+        status_color = "#2ecc71" if "Активен" in r[4] else "#e74c3c"
+        toggle_action = "disable" if "Активен" in r[4] else "enable"
+        toggle_btn_text = "🔴 Отключить" if "Активен" in r[4] else "🟢 Включить"
+        
         rows += f"""<tr>
             <td>{r[0]}</td>
             <td>{r[1]}</td>
             <td><b>{r[2]}</b></td>
             <td>{r[3] if r[3] else '-'}</td>
-            <td>{r[4]}</td>
+            <td style="color: {status_color}; font-weight: bold;">{r[4]}</td>
             <td>{r[5]}</td>
             <td>{r[6] if r[6] else '-'}</td>
             <td>{r[7]}</td>
+            <td>
+                <div class="btn-group">
+                    <form action="/update-status" method="post" style="display:inline;">
+                        <input type="hidden" name="client_id" value="{r[0]}">
+                        <input type="hidden" name="action" value="{toggle_action}">
+                        <button type="submit" class="btn btn-toggle">{toggle_btn_text}</button>
+                    </form>
+                    {f'''<form action="/extend-days" method="post" style="display:inline;">
+                        <input type="hidden" name="client_id" value="{r[0]}">
+                        <button type="submit" class="btn btn-extend">⚡ Продлить +30д</button>
+                    </form>''' if r[2] == 'buyer' else ''}
+                </div>
+            </td>
         </tr>"""
         
     html = f"""
@@ -82,29 +100,37 @@ async def get_admin_panel():
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>AutoErid SMM Panel</title>
+            <title>AutoErid SMM Advanced Panel</title>
             <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f4f6f9; color: #333; }}
-                h2 {{ color: #2c3e50; }}
-                table {{ width: 100%; border-collapse: collapse; margin-top: 20px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
-                th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
-                th {{ background-color: #34495e; color: white; }}
-                tr:nth-child(even) {{ background-color: #f9f9f9; }}
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; margin: 15px; background-color: #f5f7fa; color: #333; }}
+                h2 {{ color: #2c3e50; font-size: 20px; text-align: center; margin-bottom: 5px; }}
+                .subtitle {{ text-align: center; color: #7f8c8d; font-size: 13px; margin-bottom: 20px; }}
+                table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; font-size: 12px; }}
+                th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid #edf2f7; }}
+                th {{ background-color: #2c3e50; color: white; font-weight: 600; text-transform: uppercase; font-size: 11px; }}
+                tr:hover {{ background-color: #f8fafc; }}
+                .btn-group {{ display: flex; gap: 5px; }}
+                .btn {{ border: none; padding: 6px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: background 0.2s; }}
+                .btn-toggle {{ background-color: #e2e8f0; color: #4a5568; }}
+                .btn-toggle:hover {{ background-color: #cbd5e1; }}
+                .btn-extend {{ background-color: #3182ce; color: white; }}
+                .btn-extend:hover {{ background-color: #2b6cb0; }}
             </style>
         </head>
         <body>
-            <h2>📊 Система управления AutoErid SMM</h2>
-            <p>Актуальный список пользователей и партнеров в реальном времени:</p>
+            <h2>📊 Интерактивное управление AutoErid SMM</h2>
+            <div class="subtitle">Управляйте статусами и тарифами в один клик прямо из Telegram</div>
             <table>
                 <tr>
                     <th>ID</th>
-                    <th>Пользователь</th>
+                    <th>Юзер</th>
                     <th>Роль</th>
-                    <th>Канал в системе</th>
+                    <th>Канал</th>
                     <th>Статус</th>
                     <th>Тариф</th>
                     <th>Доступ до</th>
                     <th>Постов</th>
+                    <th>Действия</th>
                 </tr>
                 {rows}
             </table>
@@ -112,6 +138,34 @@ async def get_admin_panel():
     </html>
     """
     return HTMLResponse(content=html)
+
+@app.post("/update-status")
+async def web_update_status(client_id: int = Form(...), action: str = Form(...)):
+    new_status = "🟢 Активен" if action == "enable" else "🔴 Отключен"
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("UPDATE clients SET status=? WHERE id=?", (new_status, client_id))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/", status_code=303)
+
+@app.post("/extend-days")
+async def web_extend_days(client_id: int = Form(...)):
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT sub_end FROM clients WHERE id=?", (client_id,))
+    res = cursor.fetchone()
+    if res and res[0]:
+        current_end = datetime.strptime(res[0], "%Y-%m-%d")
+        start_point = current_end if current_end > datetime.now() else datetime.now()
+        new_end = (start_point + timedelta(days=30)).strftime("%Y-%m-%d")
+        cursor.execute("UPDATE clients SET sub_end=?, status='🟢 Активен' WHERE id=?", (new_end, client_id))
+        conn.commit()
+    conn.close()
+    return RedirectResponse(url="/", status_code=303)
+
+def run_fastapi():
+    uvicorn.run(app, host="0.0.0.0", port=8080)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -194,20 +248,29 @@ def get_user_data(user_id):
     conn.close()
     return res
 
+# --- КНОПКИ ГЛАВНОГО МЕНЮ АДМИНА И ЮЗЕРА ---
+def get_admin_keyboard():
+    return types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="📊 ОТКРЫТЬ WEBAPP АДМИНКУ 📊", web_app=types.WebAppInfo(url=WEBAPP_ADMIN_URL))],
+        [types.InlineKeyboardButton(text="🎯 Список Блогеров", callback_data="list_bloggers"),
+         types.InlineKeyboardButton(text="🛍 Список Покупателей", callback_data="list_buyers")],
+        [types.InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")],
+        [types.InlineKeyboardButton(text="🔄 Обновить биллинг", callback_data="check_billing")]
+    ])
+
+def get_welcome_keyboard():
+    return types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="🎯 Я Блогер-партнер (Работа 50/50)", callback_data="reg_blogger")],
+        [types.InlineKeyboardButton(text="🛍 Я Покупатель подписки (SaaS софт)", callback_data="reg_buyer")]
+    ])
+
 # --- ОБРАБОТКА КОМАНДЫ /START ---
 @dp.message(CommandStart())
 async def start(message: types.Message):
     uid = message.from_user.id
     
     if is_admin(uid):
-        builder = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="📊 ОТКРЫТЬ WEBAPP АДМИНКУ 📊", web_app=types.WebAppInfo(url=WEBAPP_ADMIN_URL))],
-            [types.InlineKeyboardButton(text="🎯 Список Блогеров", callback_data="list_bloggers"),
-             types.InlineKeyboardButton(text="🛍 Список Покупателей", callback_data="list_buyers")],
-            [types.InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")],
-            [types.InlineKeyboardButton(text="🔄 Обновить биллинг", callback_data="check_billing")]
-        ])
-        await message.answer("🛠 **Панель управления AutoErid SMM**\n\nВы зашли как Администратор.", reply_markup=builder, parse_mode="Markdown")
+        await message.answer("🛠 **Панель управления AutoErid SMM**\n\nВы зашли как Администратор.", reply_markup=get_admin_keyboard(), parse_mode="Markdown")
         return
 
     user = get_user_data(uid)
@@ -240,10 +303,6 @@ async def start(message: types.Message):
                 await message.answer(f"👋 Добро пожаловать! Ваш аккаунт настроен как **Покупатель подписки**.\nРобот ведет мониторинг доноров и наполняет ваш канал.", reply_markup=builder, parse_mode="Markdown")
         return
 
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="🎯 Я Блогер-партнер (Работа 50/50)", callback_data="reg_blogger")],
-        [types.InlineKeyboardButton(text="🛍 Я Покупатель подписки (SaaS софт)", callback_data="reg_buyer")]
-    ])
     welcome = (
         "👋 **Приветствуем в AutoErid SMM!**\n\n"
         "Наш робот полностью автоматизирует ведение Telegram-каналов со скидками и находками Wildberries & Ozon:\n"
@@ -252,12 +311,13 @@ async def start(message: types.Message):
         "• Вшивает ЕРИД маркировку и ваши реферальные ссылки.\n\n"
         "Пожалуйста, выберите формат работы для регистрации:"
     )
-    await message.answer(welcome, reply_markup=builder, parse_mode="Markdown")
+    await message.answer(welcome, reply_markup=get_welcome_keyboard(), parse_mode="Markdown")
 
 # --- СЦЕНАРИЙ РЕГИСТРАЦИИ БЛОГЕРА ---
 @dp.callback_query(F.data == "reg_blogger")
 async def reg_blogger_start(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.answer("🔗 **Шаг 1/3:** Отправьте ссылку на ваш канал/источник трафика (YouTube, TikTok, Reels или TG-канал):")
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
+    await callback.message.edit_text("🔗 **Шаг 1/3:** Отправьте ссылку на ваш канал/источник трафика (YouTube, TikTok, Reels или TG-канал):", reply_markup=builder)
     await state.set_state(UserRegistration.waiting_for_blogger_channel_link)
     await callback.answer()
 
@@ -266,7 +326,8 @@ async def reg_blogger_link_received(message: types.Message, state: FSMContext):
     await state.update_data(blogger_source=message.text)
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🎰 Постить в ваш основной VIP-канал (Закреп 24ч)", callback_data="choose_format_zakrep")],
-        [types.InlineKeyboardButton(text="📡 Подключить автопостинг прямо в мой канал", callback_data="choose_format_autoposting")]
+        [types.InlineKeyboardButton(text="📡 Подключить автопостинг прямо в мой канал", callback_data="choose_format_autoposting")],
+        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="reg_blogger")]
     ])
     await message.answer("🎯 **Шаг 2/3: Выберите формат сотрудничества 50/50:**", reply_markup=builder)
     await state.set_state(UserRegistration.waiting_for_blogger_format)
@@ -294,16 +355,18 @@ async def reg_blogger_format_received(callback: types.CallbackQuery, state: FSMC
         conn.commit()
         conn.close()
         
-        builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔥 Тренды для моих видео", callback_data="blogger_trends")]])
-        await callback.message.answer(f"✅ **Регистрация успешна!**\n\nВы выбрали формат **VIP-закрепов**. Ваш личный маркер партнера: `{sub_id}`.\nБот будет автоматически продвигать ваши ссылки в закрепе нашего VIP-канала!", reply_markup=builder, parse_mode="Markdown")
+        builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔥 В главное меню", callback_data="back_to_main")]])
+        await callback.message.edit_text(f"✅ **Регистрация успешна!**\n\nВы выбрали формат **VIP-закрепов**. Ваш личный маркер партнера: `{sub_id}`.\nБот будет автоматически продвигать ваши ссылки в закрепе нашего VIP-канала!", reply_markup=builder, parse_mode="Markdown")
         await state.clear()
     
     elif b_format == 'autoposting':
-        await callback.message.answer(
+        builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
+        await callback.message.edit_text(
             "🛠 **Настройка автопостинга в ваш канал:**\n\n"
             "1. Добавьте этого бота в ваш Telegram-канал в качестве **Администратора**.\n"
             "2. Дайте боту права на *Публикацию сообщений*.\n\n"
-            "👉 Отправьте сюда юзернейм вашего канала (в формате `@имя_канала`):"
+            "👉 Отправьте сюда юзернейм вашего канала (в формате `@имя_канала`):",
+            reply_markup=builder
         )
         await state.set_state(UserRegistration.waiting_for_blogger_bot_admin)
     await callback.answer()
@@ -342,13 +405,14 @@ async def reg_blogger_autoposting_final(message: types.Message, state: FSMContex
 # --- СЦЕНАРИЙ РЕГИСТРАЦИИ ПОКУПАТЕЛЯ SaaS ---
 @dp.callback_query(F.data == "reg_buyer")
 async def reg_buyer_start(callback: types.CallbackQuery, state: FSMContext):
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
     instr = (
         "🛠 **Инструкция по подключению канала:**\n\n"
         f"1. Добавьте этого бота в ваш Telegram-канал в качестве **Администратора**.\n"
         "2. Дайте боту права на *Публикацию сообщений*.\n\n"
         "👉 Отправьте сюда юзернейм канала (например, `@my_skidki_channel`):"
     )
-    await callback.message.answer(instr, parse_mode="Markdown")
+    await callback.message.edit_text(instr, reply_markup=builder, parse_mode="Markdown")
     await state.set_state(UserRegistration.waiting_for_buyer_channel)
     await callback.answer()
 
@@ -360,8 +424,12 @@ async def reg_buyer_save(message: types.Message, state: FSMContext):
     
     try:
         member = await bot.get_chat_member(chat_id=channel_input, user_id=bot.id)
-        if member.status not in ['administrator', 'creator']: return
-    except Exception: return
+        if member.status not in ['administrator', 'creator']:
+            await message.answer("❌ **Ошибка:** Бот должен быть администратором в указанном канале. Попробуйте еще раз.")
+            return
+    except Exception:
+        await message.answer("❌ **Ошибка:** Канал не найден. Убедитесь, что бот добавлен и имя корректно.")
+        return
 
     test_end = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
     conn = sqlite3.connect('database.db')
@@ -388,7 +456,9 @@ async def show_blogger_trends(callback: types.CallbackQuery):
         final_link, _ = await generate_takprodam_link(sku, is_wb=True, subid=sub_id)
         text += f"{i}️⃣ **Трендовый товар WB** (Арт: `{sku}`)\n" \
                 f"👉 Короткая ссылка для био: {final_link}\n\n"
-    await callback.message.answer(text, parse_mode="Markdown", disable_web_page_preview=True)
+    
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
+    await callback.message.edit_text(text, reply_markup=builder, parse_mode="Markdown", disable_web_page_preview=True)
     await callback.answer()
 
 # --- СТАТИСТИКА И НАСТРОЕК ---
@@ -397,7 +467,8 @@ async def show_blogger_stats(callback: types.CallbackQuery):
     user = get_user_data(callback.from_user.id)
     if not user: return
     text = (f"📈 **Аналитика партнера:**\n\n🎥 **Ресурс:** {user[4]}\n🏷 **SubID:** `{user[5]}`\n📊 Постов отправлено: {user[10]}")
-    await callback.message.answer(text, parse_mode="Markdown")
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
+    await callback.message.edit_text(text, reply_markup=builder, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "buyer_cabinet")
@@ -405,22 +476,25 @@ async def show_buyer_cabinet(callback: types.CallbackQuery):
     user = get_user_data(callback.from_user.id)
     if not user: return
     text = (f"👤 **Личный кабинет SaaS-клиента:**\n\n📢 **Ваш канал:** `{user[3]}`\n🟢 Статус: {user[7]}\n📦 Тариф: {user[8]}\n⏳ Активен до: {user[9]}")
-    await callback.message.answer(text, parse_mode="Markdown")
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
+    await callback.message.edit_text(text, reply_markup=builder, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "buyer_filters")
 async def buyer_filters_menu(callback: types.CallbackQuery):
     user = get_user_data(callback.from_user.id)
     if user[8] == 'Тестовая':
-        await callback.message.answer("🔒 **Фильтры доступны только на Полной подписке.**")
+        builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
+        await callback.message.edit_text("🔒 **Фильтры доступны только на Полной подписке.**", reply_markup=builder)
         await callback.answer()
         return
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🛒 Только Wildberries", callback_data="set_filter_wb")],
         [types.InlineKeyboardButton(text="🔵 Только Ozon", callback_data="set_filter_ozon")],
-        [types.InlineKeyboardButton(text="💥 Все вместе", callback_data="set_filter_all")]
+        [types.InlineKeyboardButton(text="💥 Все вместе", callback_data="set_filter_all")],
+        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
     ])
-    await callback.message.answer("⚙️ **Настройка маркетплейсов:**", reply_markup=builder)
+    await callback.message.edit_text("⚙️ **Настройка маркетплейсов:**", reply_markup=builder)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("set_filter_"))
@@ -433,17 +507,231 @@ async def set_buyer_filter(callback: types.CallbackQuery):
     cursor.execute("UPDATE clients SET platform_filter=? WHERE user_id=?", (selected, str(callback.from_user.id)))
     conn.commit()
     conn.close()
-    await callback.message.answer(f"✅ Фильтр изменен на: **{selected}**")
+    
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
+    await callback.message.edit_text(f"✅ Фильтр изменен на: **{selected}**", reply_markup=builder)
     await callback.answer()
 
-# --- ОПЛАТЫ ---
+# --- КНОПКА НАЗАД В КОРЕНЬ ---
+@dp.callback_query(F.data == "back_to_main")
+async def back_to_main_handler(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    uid = callback.from_user.id
+    if is_admin(uid):
+        await callback.message.edit_text("🛠 **Панель управления AutoErid SMM**\n\nВы зашли как Администратор.", reply_markup=get_admin_keyboard(), parse_mode="Markdown")
+    else:
+        user = get_user_data(uid)
+        if user:
+            role = user[6]
+            status = user[7]
+            if role == 'blogger':
+                b_type = user[14]
+                b_type_str = "VIP-Закреп в нашем канале" if b_type == 'zakrep' else f"Автопостинг в ваш канал `{user[3]}`"
+                builder = types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text="🔥 Тренды для моих видео", callback_data="blogger_trends")],
+                    [types.InlineKeyboardButton(text="📈 Моя статистика", callback_data="blogger_stats")],
+                    [types.InlineKeyboardButton(text="💬 Служба поддержки", callback_data="user_support")]
+                ])
+                await callback.message.edit_text(f"👋 Рады видеть вас, партнер!\n\nВаш формат работы: **{b_type_str}**.\nИспользуйте меню ниже, чтобы брать горячие товары со своими реф-ссылками.", reply_markup=builder, parse_mode="Markdown")
+            elif role == 'buyer':
+                if status == '🔴 Отключен':
+                    builder = types.InlineKeyboardMarkup(inline_keyboard=[
+                        [types.InlineKeyboardButton(text="💳 Купить подписку", callback_data="pay_sub")],
+                        [types.InlineKeyboardButton(text="💬 Служба поддержки", callback_data="user_support")]
+                    ])
+                    await callback.message.edit_text("❌ **Доступ к автопостингу ограничен.**\n\nВаша подписка закончилась. Пожалуйста, продлите подписку:", reply_markup=builder, parse_mode="Markdown")
+                else:
+                    builder = types.InlineKeyboardMarkup(inline_keyboard=[
+                        [types.InlineKeyboardButton(text="👤 Личный кабинет", callback_data="buyer_cabinet")],
+                        [types.InlineKeyboardButton(text="⚙️ Настройка фильтров", callback_data="buyer_filters")],
+                        [types.InlineKeyboardButton(text="💳 Продлить подписку", callback_data="pay_sub")],
+                        [types.InlineKeyboardButton(text="💬 Служба поддержки", callback_data="user_support")]
+                    ])
+                    await callback.message.edit_text(f"👋 Добро пожаловать! Ваш аккаунт настроен как **Покупатель подписки**.\nРобот ведет мониторинг доноров и наполняет ваш канал.", reply_markup=builder, parse_mode="Markdown")
+        else:
+            welcome = (
+                "👋 **Приветствуем в AutoErid SMM!**\n\n"
+                "Наш робот полностью автоматизирует ведение Telegram-каналов со скидками и находками Wildberries & Ozon:\n"
+                "• Чистит контент от водяных знаков и чужих ссылок;\n"
+                "• Уникализирует описания с помощью ИИ (Grok);\n"
+                "• Вшивает ЕРИД маркировку и ваши реферальные ссылки.\n\n"
+                "Пожалуйста, выберите формат работы для регистрации:"
+            )
+            await callback.message.edit_text(welcome, reply_markup=get_welcome_keyboard(), parse_mode="Markdown")
+    await callback.answer()
+
+# --- ТЕКСТОВЫЙ АДМИН-ФУНКЦИОНАЛ (КНОПКА НАЗАД РАБОТАЕТ) ---
+@dp.callback_query(F.data == "list_bloggers")
+async def admin_list_bloggers(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id): return
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, blogger_type FROM clients WHERE role='blogger'")
+    rows = cursor.fetchall()
+    conn.close()
+    builder = []
+    for r in rows:
+        builder.append([types.InlineKeyboardButton(text=f"👤 {r[1]} [{r[2]}]", callback_data=f"admview_{r[0]}")])
+    builder.append([types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")])
+    
+    await callback.message.edit_text("🎯 **Зарегистрированные Блогеры:**", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=builder), parse_mode="Markdown")
+    await callback.answer()
+
+@dp.callback_query(F.data == "list_buyers")
+async def admin_list_buyers(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id): return
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, channel_id, status FROM clients WHERE role='buyer'")
+    rows = cursor.fetchall()
+    conn.close()
+    builder = []
+    for r in rows:
+        builder.append([types.InlineKeyboardButton(text=f"{r[2]} {r[1]}", callback_data=f"admview_{r[0]}")])
+    builder.append([types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")])
+    
+    await callback.message.edit_text("🛍 **Покупатели SaaS-подписки:**", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=builder), parse_mode="Markdown")
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("admview_"))
+async def admin_view_client(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id): return
+    c_id = callback.data.split("_")[1]
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM clients WHERE id=?", (c_id,))
+    c = cursor.fetchone()
+    conn.close()
+    if not c: return
+    role = c[6]
+    if role == 'blogger':
+        text = (f"🎯 **Карточка Блогера:**\n\n🆔 ИД: `{c[1]}`\n👤 Юзернейм: {c[2]}\n🎥 Источник: {c[4]}\n🏷 SubID: `{c[5]}`\n📦 Формат: `{c[14]}`\n📊 Постов: {c[10]}")
+        builder = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="🗑 Удалить из базы", callback_data=f"admdelete_{c[0]}")],
+            [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+        ])
+    else:
+        text = (f"🛍 **Карточка Покупателя:**\n\n👤 Владелец: {c[2]}\n📢 Канал: `{c[3]}`\n⚡️ Статус: {c[7]}\n📦 Тариф: **{c[8]}**\n⏳ До: `{c[9]}`\n📊 Постов: {c[10]}")
+        builder = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="🔄 Изменить Тариф", callback_data=f"admtoggle_{c[0]}")],
+            [types.InlineKeyboardButton(text="📅 Вручную продлить", callback_data=f"admextend_{c[0]}")],
+            [types.InlineKeyboardButton(text="🗑 Удалить из базы", callback_data=f"admdelete_{c[0]}")],
+            [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+        ])
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("admtoggle_"))
+async def admin_toggle_sub_type(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id): return
+    c_id = callback.data.split("_")[1]
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT sub_type FROM clients WHERE id=?", (c_id,))
+    curr = cursor.fetchone()[0]
+    new_t = "Полная" if curr == "Тестовая" else "Тестовая"
+    cursor.execute("UPDATE clients SET sub_type=?, status='🟢 Активен' WHERE id=?", (new_t, c_id))
+    conn.commit()
+    conn.close()
+    
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Вернуться", callback_data=f"admview_{c_id}")]])
+    await callback.message.edit_text(f"✅ Тариф изменен на: **{new_t}**", reply_markup=builder)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("admextend_"))
+async def admin_extend_start(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id): return
+    c_id = callback.data.split("_")[1]
+    await state.update_data(adm_client_id=c_id)
+    await callback.message.edit_text("📅 Введите количество дней ручного продления:")
+    await state.set_state(AdminStates.waiting_for_sub_days)
+    await callback.answer()
+
+@dp.message(AdminStates.waiting_for_sub_days)
+async def admin_extend_save(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    try: days = int(message.text)
+    except ValueError: return
+    data = await state.get_data()
+    c_id = data['adm_client_id']
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT sub_end FROM clients WHERE id=?", (c_id,))
+    current_end_str = cursor.fetchone()[0]
+    current_end = datetime.strptime(current_end_str, "%Y-%m-%d")
+    if current_end < datetime.now(): current_end = datetime.now()
+    new_end = (current_end + timedelta(days=days)).strftime("%Y-%m-%d")
+    cursor.execute("UPDATE clients SET sub_end=?, status='🟢 Активен' WHERE id=?", (new_end, c_id))
+    conn.commit()
+    conn.close()
+    
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔥 В меню управления", callback_data="back_to_main")]])
+    await message.answer(f"✅ Подписка продлена до: `{new_end}`", reply_markup=builder)
+    await state.clear()
+
+@dp.callback_query(F.data.startswith("admdelete_"))
+async def admin_delete_client(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id): return
+    c_id = callback.data.split("_")[1]
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM clients WHERE id=?", (c_id,))
+    conn.commit()
+    conn.close()
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
+    await callback.message.edit_text("🗑 Удалено успешно.", reply_markup=builder)
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_broadcast")
+async def admin_broadcast_start(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id): return
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="🌍 Всем", callback_data="bcastrole_all")],
+        [types.InlineKeyboardButton(text="🎯 Блогерам", callback_data="bcastrole_blogger")],
+        [types.InlineKeyboardButton(text="🛍 Покупателям", callback_data="bcastrole_buyer")],
+        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+    ])
+    await callback.message.edit_text("📢 **Выбор сегмента рассылки:**", reply_markup=builder)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("bcastrole_"))
+async def admin_broadcast_get_role(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id): return
+    await state.update_data(broadcast_target=callback.data.split("_")[1])
+    await callback.message.edit_text("✏️ Введите текст рассылки:")
+    await state.set_state(AdminStates.waiting_for_broadcast_text)
+    await callback.answer()
+
+@dp.message(AdminStates.waiting_for_broadcast_text)
+async def admin_broadcast_execute(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    data = await state.get_data()
+    target = data['broadcast_target']
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM clients" if target == 'all' else f"SELECT user_id FROM clients WHERE role='{target}'")
+    users = cursor.fetchall()
+    conn.close()
+    sent = 0
+    for u in users:
+        try:
+            await bot.send_message(chat_id=u[0], text=message.text, parse_mode="Markdown")
+            sent += 1
+            await asyncio.sleep(0.05)
+        except Exception: pass
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔥 В админку", callback_data="back_to_main")]])
+    await message.answer(f"📢 Доставлено сообщений: **{sent}**", reply_markup=builder)
+    await state.clear()
+
+# --- ПОДДЕРЖКА И ТАРИФЫ ЮЗЕРА ---
 @dp.callback_query(F.data == "pay_sub")
 async def pay_sub_menu(callback: types.CallbackQuery):
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text=f"📅 15 дней — {TARIF_PLAN[15][0]}₽", callback_data="select_days_15")],
-        [types.InlineKeyboardButton(text=f"📅 30 дней — {TARIF_PLAN[30][0]}₽", callback_data="select_days_30")]
+        [types.InlineKeyboardButton(text=f"📅 30 дней — {TARIF_PLAN[30][0]}₽", callback_data="select_days_30")],
+        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
     ])
-    await callback.message.answer("📦 **Выберите желаемый срок подписки:**", reply_markup=builder)
+    await callback.message.edit_text("📦 **Выберите желаемый срок подписки:**", reply_markup=builder)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("select_days_"))
@@ -452,60 +740,16 @@ async def select_payment_method(callback: types.CallbackQuery):
     rub_p, star_p, _ = TARIF_PLAN[days]
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text=f"⭐️ Звёздами ({star_p} ⭐️)", callback_data=f"checkout_stars_{days}")],
-        [types.InlineKeyboardButton(text=f"🇷🇺 Карта РФ ({rub_p}₽)", callback_data=f"checkout_card_Sberbank_{days}")]
+        [types.InlineKeyboardButton(text=f"🇷🇺 Карта РФ ({rub_p}₽)", callback_data=f"checkout_card_Sberbank_{days}")],
+        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="pay_sub")]
     ])
-    await callback.message.answer(f"💳 Выберите способ оплаты ({days} дней):", reply_markup=builder)
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("checkout_stars_"))
-async def checkout_stars(callback: types.CallbackQuery):
-    days = int(callback.data.split("_")[2])
-    _, star_price, _ = TARIF_PLAN[days]
-    await callback.message.answer_invoice(
-        title=f"Подписка [{days} дней]", description=f"Продление автопостинга.",
-        payload=f"sub_extend_{days}_days", provider_token="", currency="XTR",    
-        prices=[types.LabeledPrice(label=f"Доступ", amount=star_price)]
-    )
-    await callback.answer()
-
-@dp.pre_checkout_query()
-async def process_pre_checkout(pre_checkout_query: types.PreCheckoutQuery):
-    await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
-
-@dp.message(F.successful_payment)
-async def process_successful_payment(message: types.Message):
-    uid = str(message.from_user.id)
-    days = int(re.search(r'\d+', message.successful_payment.invoice_payload).group())
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT sub_end FROM clients WHERE user_id=?", (uid,))
-    res = cursor.fetchone()
-    if res:
-        current_end = datetime.strptime(res[0], "%Y-%m-%d")
-        start_point = current_end if current_end > datetime.now() else datetime.now()
-        new_end = (start_point + timedelta(days=days)).strftime("%Y-%m-%d")
-        cursor.execute("UPDATE clients SET sub_end=?, sub_type='Полная', status='🟢 Активен', last_pay_method='⭐️ Stars' WHERE user_id=?", (new_end, uid))
-        conn.commit()
-        await message.answer(f"🎉 Подписка успешно продлена до `{new_end}`.")
-    conn.close()
-
-@dp.callback_query(F.data.startswith("checkout_card_"))
-async def checkout_card(callback: types.CallbackQuery):
-    parts = callback.data.split("_")
-    method = parts[2]
-    days = int(parts[3])
-    rub_price, _, _ = TARIF_PLAN[days]
-    reqs = PAY_SBER if method == "Sberbank" else PAY_TBANK
-    
-    text = (f"💵 **Инструкция по ручной оплате ({days} дней):**\n\n"
-            f"Сумма: **{rub_price} рублей**\nРеквизиты [{method}]:\n`{reqs}`\n\n"
-            f"👉 Отправьте скриншот чека создателю проекта: @Zigih90 для активации подписки.")
-    await callback.message.answer(text, parse_mode="Markdown")
+    await callback.message.edit_text(f"💳 Выберите способ оплаты ({days} дней):", reply_markup=builder)
     await callback.answer()
 
 @dp.callback_query(F.data == "user_support")
 async def user_support_contact(callback: types.CallbackQuery):
-    await callback.message.answer("💬 По всем техническим вопросам пишите создателю проекта: @Zigih90")
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
+    await callback.message.edit_text("💬 По всем техническим вопросам пишите создателю проекта: @Zigih90", reply_markup=builder)
     await callback.answer()
 
 # =====================================================================
@@ -516,8 +760,7 @@ async def shorten_url(long_url):
     try:
         async with httpx.AsyncClient() as client:
             res = await client.get(f"https://clck.ru/--?url={long_url}", timeout=5.0)
-            if res.status_code == 200:
-                return res.text.strip()
+            if res.status_code == 200: return res.text.strip()
     except Exception: pass
     return long_url
 
@@ -529,7 +772,7 @@ async def ai_grok_rewrite(old_text):
                 headers={"Content-Type": "application/json"},
                 json={
                     "model": "meta-llama/Meta-Llama-3-8B-Instruct",
-                    "messages": [{"role": "user", "content": f"Сделай красивый рерайт этого рекламного текста для Telegram канала скидок Wildberries. Сделай его уникальным, используй смайлики. Напиши ТОЛЬКО готовый текст поста, без лишних фраз автора: {old_text}"}]
+                    "messages": [{"role": "user", "content": f"Сделай красивый рерайт контента скидок Wildberries. Используй эмодзи. Отдай только текст поста без лишних фраз: {old_text}"}]
                 }, timeout=10.0
             )
             if res.status_code == 200: return res.json()['choices'][0]['message']['content']
@@ -719,161 +962,6 @@ async def start_parsing_engine():
             except Exception: pass
         await asyncio.sleep(60)
 
-# =====================================================================
-# --- ФУНКЦИОНАЛ АДМИНИСТРАТОРА (КОНТРОЛЬ СИСТЕМЫ И ЗАКРЕПОВ) ---
-# =====================================================================
-
-@dp.callback_query(F.data == "list_bloggers")
-async def admin_list_bloggers(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id): return
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, username, blogger_type FROM clients WHERE role='blogger'")
-    rows = cursor.fetchall()
-    conn.close()
-    if not rows:
-        await callback.message.answer("🎯 Блогеры отсутствуют.")
-        await callback.answer()
-        return
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[[[types.InlineKeyboardButton(text=f"👤 {r[1]} [{r[2]}]", callback_data=f"admview_{r[0]}")] for r in rows]])
-    await callback.message.answer("🎯 **Зарегистрированные Блогеры:**", reply_markup=builder, parse_mode="Markdown")
-    await callback.answer()
-
-@dp.callback_query(F.data == "list_buyers")
-async def admin_list_buyers(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id): return
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, channel_id, status FROM clients WHERE role='buyer'")
-    rows = cursor.fetchall()
-    conn.close()
-    if not rows:
-        await callback.message.answer("🛍 Покупатели отсутствуют.")
-        await callback.answer()
-        return
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[[[types.InlineKeyboardButton(text=f"{r[2]} {r[1]}", callback_data=f"admview_{r[0]}")] for r in rows]])
-    await callback.message.answer("🛍 **Покупатели SaaS-подписки:**", reply_markup=builder, parse_mode="Markdown")
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("admview_"))
-async def admin_view_client(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id): return
-    c_id = callback.data.split("_")[1]
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM clients WHERE id=?", (c_id,))
-    c = cursor.fetchone()
-    conn.close()
-    if not c: return
-    role = c[6]
-    if role == 'blogger':
-        text = (f"🎯 **Карточка Блогера:**\n\n🆔 ИД: `{c[1]}`\n👤 Юзернейм: {c[2]}\n🎥 Источник: {c[4]}\n🏷 SubID: `{c[5]}`\n📦 Формат: `{c[14]}`\n📊 Постов: {c[10]}")
-        builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🗑 Удалить из базы", callback_data=f"admdelete_{c[0]}")]])
-    else:
-        text = (f"🛍 **Карточка Покупателя:**\n\n👤 Владелец: {c[2]}\n📢 Канал: `{c[3]}`\n⚡️ Статус: {c[7]}\n📦 Тариф: **{c[8]}**\n⏳ До: `{c[9]}`\n📊 Постов: {c[10]}")
-        builder = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🔄 Изменить Тариф", callback_data=f"admtoggle_{c[0]}")],
-            [types.InlineKeyboardButton(text="📅 Вручную продлить", callback_data=f"admextend_{c[0]}")],
-            [types.InlineKeyboardButton(text="🗑 Удалить из базы", callback_data=f"admdelete_{c[0]}")]
-        ])
-    await callback.message.answer(text, parse_mode="Markdown", reply_markup=builder)
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("admtoggle_"))
-async def admin_toggle_sub_type(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id): return
-    c_id = callback.data.split("_")[1]
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT sub_type FROM clients WHERE id=?", (c_id,))
-    curr = cursor.fetchone()[0]
-    new_t = "Полная" if curr == "Тестовая" else "Тестовая"
-    cursor.execute("UPDATE clients SET sub_type=?, status='🟢 Активен' WHERE id=?", (new_t, c_id))
-    conn.commit()
-    conn.close()
-    await callback.message.answer(f"✅ Тариф изменен на: **{new_t}**")
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("admextend_"))
-async def admin_extend_start(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id): return
-    c_id = callback.data.split("_")[1]
-    await state.update_data(adm_client_id=c_id)
-    await callback.message.answer("📅 Введите количество дней ручного продления:")
-    await state.set_state(AdminStates.waiting_for_sub_days)
-    await callback.answer()
-
-@dp.message(AdminStates.waiting_for_sub_days)
-async def admin_extend_save(message: types.Message, state: FSMContext):
-    if not is_admin(message.from_user.id): return
-    try: days = int(message.text)
-    except ValueError: return
-    data = await state.get_data()
-    c_id = data['adm_client_id']
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT sub_end FROM clients WHERE id=?", (c_id,))
-    current_end_str = cursor.fetchone()[0]
-    current_end = datetime.strptime(current_end_str, "%Y-%m-%d")
-    if current_end < datetime.now(): current_end = datetime.now()
-    new_end = (current_end + timedelta(days=days)).strftime("%Y-%m-%d")
-    cursor.execute("UPDATE clients SET sub_end=?, status='🟢 Активен' WHERE id=?", (new_end, c_id))
-    conn.commit()
-    conn.close()
-    await message.answer(f"✅ Подписка продлена до: `{new_end}`")
-    await state.clear()
-
-@dp.callback_query(F.data.startswith("admdelete_"))
-async def admin_delete_client(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id): return
-    c_id = callback.data.split("_")[1]
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM clients WHERE id=?", (c_id,))
-    conn.commit()
-    conn.close()
-    await callback.message.answer("🗑 Удалено успешно.")
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_broadcast")
-async def admin_broadcast_start(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id): return
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="🌍 Всем", callback_data="bcastrole_all")],
-        [types.InlineKeyboardButton(text="🎯 Блогерам", callback_data="bcastrole_blogger")],
-        [types.InlineKeyboardButton(text="🛍 Покупателям", callback_data="bcastrole_buyer")]
-    ])
-    await callback.message.answer("📢 **Выбор сегмента рассылки:**", reply_markup=builder)
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("bcastrole_"))
-async def admin_broadcast_get_role(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id): return
-    await state.update_data(broadcast_target=callback.data.split("_")[1])
-    await callback.message.answer("✏️ Введите текст рассылки:")
-    await state.set_state(AdminStates.waiting_for_broadcast_text)
-    await callback.answer()
-
-@dp.message(AdminStates.waiting_for_broadcast_text)
-async def admin_broadcast_execute(message: types.Message, state: FSMContext):
-    if not is_admin(message.from_user.id): return
-    data = await state.get_data()
-    target = data['broadcast_target']
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM clients" if target == 'all' else f"SELECT user_id FROM clients WHERE role='{target}'")
-    users = cursor.fetchall()
-    conn.close()
-    sent = 0
-    for u in users:
-        try:
-            await bot.send_message(chat_id=u[0], text=message.text, parse_mode="Markdown")
-            sent += 1
-            await asyncio.sleep(0.05)
-        except Exception: pass
-    await message.answer(f"📢 Доставлено сообщений: **{sent}**")
-    await state.clear()
-
 # --- КРОН-БИЛЛИНГ, ЗАКРЕПЫ И РАЗГРУЗКА НОЧНОЙ ОЧЕРЕДИ УТРОМ ---
 async def start_billing_clock():
     while True:
@@ -935,23 +1023,25 @@ async def admin_trigger_billing(callback: types.CallbackQuery):
     await callback.message.answer("🔄 Система биллинга и очередей успешно синхронизирована.")
     await callback.answer()
 
-# === СИСТЕМНЫЙ ЗАПУСК В ОДНОМ ПОТОКЕ БЕЗ БЛОКИРОВОК ===
+# === АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ КОМАНД В ТЕЛЕГРАМ-МЕНЮ ===
+async def set_bot_commands():
+    commands = [
+        types.BotCommand(command="start", description="🔄 Запустить бота / Главное меню"),
+    ]
+    await bot.set_my_commands(commands)
+
 async def run_webapp():
     config = uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="info")
     server = uvicorn.Server(config)
     await server.serve()
 
 async def main():
-    # Запускаем FastAPI и фоновые задачи параллельно встроенными средствами asyncio
+    await set_bot_commands()
     asyncio.create_task(run_webapp())
     asyncio.create_task(start_billing_clock())
     asyncio.create_task(start_parsing_engine())
-    
-    # Запускаем поллинг бота (главный процесс)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        log.info("Бот остановлен.")
+    try: asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit): log.info("Бот остановлен.")
