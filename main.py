@@ -109,12 +109,10 @@ def init_db():
     except sqlite3.OperationalError:
         log.info("⚠️ Запуск обновления структуры таблицы night_queue (post_text -> post_data)...")
         try:
-            # Переименовываем старую колонку, если она существовала
             cursor.execute("ALTER TABLE night_queue RENAME COLUMN post_text TO post_data")
             conn.commit()
             log.info("✅ Колонка ночной очереди успешно переименована!")
         except Exception:
-            # Если переименование не удалось, просто пересоздаем колонку безопасно
             cursor.execute("ALTER TABLE night_queue ADD COLUMN post_data TEXT DEFAULT ''")
             conn.commit()
     
@@ -652,6 +650,44 @@ async def web_index():
     rows = cursor.fetchall()
     conn.close()
     
+    # Сборка строк таблицы через безопасную склейку Python, исключающую баги с f-строками
+    rows_html = ""
+    for r in rows:
+        status_badge = f'<span class="badge-active">{r[4]}</span>' if "Активен" in r[4] else f'<span class="badge-disabled">{r[4]}</span>'
+        role_type = "SaaS (Личный API)" if r[7] == "saas" else "Блогер (Твой API)"
+        
+        rows_html += (
+            "<tr>"
+            "<td>" + str(r[0]) + "</td>"
+            "<td>@" + str(r[1]) + "</td>"
+            "<td>" + str(r[2]) + "</td>"
+            "<td>" + str(r[3]) + "</td>"
+            "<td>" + str(r[3]) + "</td>"
+            "<td><b>" + role_type + "</b></td>"
+            "<td>" + status_badge + "</td>"
+            "<td>" + str(r[5]) + "</td>"
+            "<td>" + str(r[6]) + "</td>"
+            "<td>"
+            '<form action="/web-toggle-status" method="post">'
+            '<input type="hidden" name="user_id" value="' + str(r[0]) + '">'
+            '<input type="hidden" name="current_status" value="' + str(r[4]) + '">'
+            '<button type="submit" class="btn ' + ('btn-red' if 'Активен' in r[4] else 'btn-green') + '">'
+            + ('🔴 Отключить' if 'Активен' in r[4] else '🟢 Включить') +
+            '</button>'
+            '</form> '
+            '<form action="/web-change-role" method="post">'
+            '<input type="hidden" name="user_id" value="' + str(r[0]) + '">'
+            '<input type="hidden" name="current_role" value="' + str(r[7]) + '">'
+            '<button type="submit" class="btn btn-blue">🔄 Роль</button>'
+            '</form> '
+            '<form action="/web-clear-history" method="post">'
+            '<input type="hidden" name="user_id" value="' + str(r[0]) + '">'
+            '<button type="submit" class="btn btn-orange" onclick="return confirm(\'Сбросить историю постов?\')">🗑 Очистить логи</button>'
+            '</form>'
+            "</td>"
+            "</tr>"
+        )
+    
     html_content = """
     <!DOCTYPE html>
     <html>
@@ -701,47 +737,9 @@ async def web_index():
                 <th>Постов</th>
                 <th>Действия управления</th>
             </tr>
-    """
-    rows_html = ""
-    for r in rows:
-        status_badge = f'<span class="badge-active">{r[4]}</span>' if "Активен" in r[4] else f'<span class="badge-disabled">{r[4]}</span>'
-        role_type = "SaaS (Личный API)" if r[7] == "saas" else "Блогер (Твой API)"
-        
-        rows_html += (
-            "<tr>"
-            "<td>" + str(r[0]) + "</td>"
-            "<td>@" + str(r[1]) + "</td>"
-            "<td>" + str(r[2]) + "</td>"
-            "<td>" + str(r[3]) + "</td>"
-            "<td>" + str(r[3]) + "</td>"
-            "<td><b>" + role_type + "</b></td>"
-            "<td>" + status_badge + "</td>"
-            "<td>" + str(r[5]) + "</td>"
-            "<td>" + str(r[6]) + "</td>"
-            "<td>"
-            '<form action="/web-toggle-status" method="post">'
-            '<input type="hidden" name="user_id" value="' + str(r[0]) + '">'
-            '<input type="hidden" name="current_status" value="' + str(r[4]) + '">'
-            '<button type="submit" class="btn ' + ('btn-red' if 'Активен' in r[4] else 'btn-green') + '">'
-            + ('🔴 Отключить' if 'Активен' in r[4] else '🟢 Включить') +
-            '</button>'
-            '</form> '
-            '<form action="/web-change-role" method="post">'
-            '<input type="hidden" name="user_id" value="' + str(r[0]) + '">'
-            '<input type="hidden" name="current_role" value="' + str(r[7]) + '">'
-            '<button type="submit" class="btn btn-blue">🔄 Роль</button>'
-            '</form> '
-            '<form action="/web-clear-history" method="post">'
-            '<input type="hidden" name="user_id" value="' + str(r[0]) + '">'
-            '<button type="submit" class="btn btn-orange" onclick="return confirm(\'Сбросить историю постов?\')">🗑 Очистить логи</button>'
-            '</form>'
-            "</td>"
-            "</tr>"
-        ""
-        
-    html_content += """
-</table>
     """ + rows_html + """
+        </table>
+
         <div class="form-box">
             <form action="/web-extend-sub" method="post" style="display: flex; gap: 15px; width: 100%; flex-wrap: wrap;">
                 <div class="form-group">
