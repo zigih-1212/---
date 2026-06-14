@@ -783,14 +783,47 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 # Онбординг: привязка канала
 # -----------------------------------------------------------------------------
 
+# -----------------------------------------------------------------------------
+# Починка: Умное меню управления каналом
+# -----------------------------------------------------------------------------
+
 @router.callback_query(F.data == "menu:channel")
 async def cb_menu_channel(callback: CallbackQuery, state: FSMContext) -> None:
+    user_id = callback.from_user.id
+    conn = get_db()
+    row = conn.execute("SELECT channel_title, channel_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+
+    # Если канал уже привязан — показываем панель управления
+    if row and row["channel_id"]:
+        await callback.message.edit_text(
+            f"📢 <b>Управление каналом</b>\n\n"
+            f"Привязанный канал: <b>{html.escape(row['channel_title'] or 'Без названия')}</b>\n"
+            f"ID: <code>{row['channel_id']}</code>\n\n"
+            "Что хочешь сделать?",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Изменить канал", callback_data="channel:change")],
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
+            ])
+        )
+    else:
+        # Если канала нет — запускаем онбординг
+        await callback.message.edit_text(
+            "📢 <b>Привязка канала</b>\n\n"
+            "Перешли сюда любое сообщение из твоего канала, либо отправь <code>@username</code>.",
+            parse_mode=ParseMode.HTML,
+        )
+        await state.set_state(OnboardingStates.waiting_channel)
+    
+    await callback.answer()
+
+# Добавляем обработчик для смены канала
+@router.callback_query(F.data == "channel:change")
+async def cb_change_channel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
-        "📢 <b>Привязка канала</b>\n\n"
-        "Перешли сюда любое сообщение из твоего канала, либо отправь username "
-        "канала в формате <code>@mychannel</code>.\n\n"
-        "<i>Убедись, что бот добавлен в канал как администратор с правом публикации.</i>",
-        parse_mode=ParseMode.HTML,
+        "📢 Введи <code>@username</code> нового канала или перешли сообщение из него:",
+        parse_mode=ParseMode.HTML
     )
     await state.set_state(OnboardingStates.waiting_channel)
     await callback.answer()
