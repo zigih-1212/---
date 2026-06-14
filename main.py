@@ -2063,20 +2063,26 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
 
     return scheduler
 async def check_all_bloggers(bot: Bot):
-    """Цикл проверки всех блогеров."""
     conn = get_db()
     bloggers = conn.execute("SELECT user_id, channel_id FROM users WHERE role='blogger'").fetchall()
     conn.close()
 
     for b in bloggers:
         video = get_latest_video(b['channel_id'])
-        if video:
-            # 1. Сравниваем ID видео с БД, чтобы не постить одно и то же
-            # 2. Если видео новое -> парсим описание через ydl.extract_info
-            # 3. Ищем артикул (re.search)
-            # 4. Если нашли -> процесс обработки поста
-            pass
+        if not video: continue
+        
+        video_id = video.get('id')
+        if not video_id or is_video_processed(video_id):
+            continue # Видео старое или уже в базе
 
+        # Если дошли сюда, видео НОВОЕ
+        # 1. Забираем описание (полный парсинг)
+        # 2. Ищем артикул/ссылку через re.search
+        # 3. Если находим -> запускаем process_donor_post
+        # 4. Если не находим -> шлем сообщение без ERID (как вы просили)
+        
+        logger.info(f"Найдено новое видео: {video_id} от пользователя {b['user_id']}")
+        # Здесь будет вызов публикации...
 # =============================================================================
 # === MAIN ENTRYPOINT =========================================================
 # =============================================================================
