@@ -1793,7 +1793,10 @@ async def main() -> None:
     logger.info("=== AutoPost Bot запускается ===")
     init_db()
 
-    bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML) # Добавили parse_mode
+    bot = Bot(
+    token=BOT_TOKEN, 
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     dp.include_router(router)
