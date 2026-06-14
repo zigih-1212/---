@@ -1749,17 +1749,33 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
 async def scheduler_job(bot: Bot):
     """Задача, которая будет выполняться каждые N минут."""
     logger.info("Запуск цикла парсинга...")
-    await scan_donor_channels(bot)
+    def get_donor_channels_list() -> list:
+    """Извлекает список каналов из переменных окружения."""
+    channels = os.getenv("DONOR_CHANNELS", "")
+    return [ch.strip() for ch in channels.split(",") if ch.strip()]
 
-    # Запуск бота (polling)
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    try:
-        import asyncio
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Бот остановлен")
+async def scan_donor_channels(bot: Bot):
+    """Основной цикл парсинга каналов."""
+    channels = get_donor_channels_list()
+    for channel in channels:
+        try:
+            # Получаем последние сообщения
+            history = await bot.get_chat_history(channel, limit=5)
+            for message in history:
+                text = message.caption or message.text or ""
+                photo_url = None
+                if message.photo:
+                    file = await bot.get_file(message.photo[-1].file_id)
+                    photo_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
+                
+                # Поиск SKU (артикула) для ТакПродам
+                sku_match = re.search(r'\d{6,12}', text)
+                if sku_match:
+                    sku = sku_match.group(0)
+                    # Вызываем обработку (упрощенно: берем всех активных пользователей)
+                    await process_donor_post(bot, ADMIN_IDS[0], f"donor_{message.message_id}", sku, "wb", "Товар", "0", photo_url)
+        except Exception as e:
+            logger.error(f"Ошибка при парсинге {channel}: {e}")
 
 async def main() -> None:
     logger.info("=== AutoPost Bot запускается ===")
