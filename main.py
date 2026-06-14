@@ -33,6 +33,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram import F
+from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, Message  # <--- ВОТ ЭТОТ ИМПОРТ
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -44,9 +45,6 @@ class PaymentFSM(StatesGroup):
     choosing_tariff = State()        # Шаг 1: Пользователь выбирает срок подписки
     choosing_method = State()        # Шаг 2: Пользователь выбирает способ оплаты (РФ, КГ, Крипта)
     waiting_for_receipt = State()    # Шаг 3: Бот ждет фото чека от пользователя
-
-from aiogram import types, F
-from aiogram.fsm.context import FSMContext
 
 # 1. Точка входа: Вызов меню оплат
 async def start_payment_process(message: types.Message, state: FSMContext):
