@@ -54,7 +54,7 @@ logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler])
 logger = logging.getLogger("autopost_bot")
 
 # ---------- Конфигурация (замените на os.getenv в проде) ---------------------
-BOT_TOKEN: str = "YOUR_BOT_TOKEN"
+BOT_TOKEN: str = os.getenv("OT_TOKEN")
 ADMIN_IDS: list[int] = [123456789]          # Telegram ID администраторов
 QUARANTINE_CHAT_ID: int = -1001234567890    # Чат для карантинных постов
 ADMIN_VIP_CHANNEL_ID: int = -1009876543210  # Главный канал для VIP-закрепа
