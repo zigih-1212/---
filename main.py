@@ -191,9 +191,12 @@ def transliterate(text):
     res = "".join(tr.get(c, c) for c in cleaned)
     return res if res else "user"
 
-# --- ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ---
+# --- ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ НА ПОСТОЯННОМ ДИСКЕ ---
 def init_db():
-    conn = sqlite3.connect('database.db')
+    # Создаем папку /app/data, если её ещё нет на диске
+    os.makedirs('/app/data', exist_ok=True)
+    
+    conn = sqlite3.connect('/app/data/database.db')
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS clients 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, 
