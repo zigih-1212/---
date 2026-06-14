@@ -166,54 +166,40 @@ circuit_breaker = CircuitBreaker()
 # =============================================================================
 
 async def get_takprodam_data(sku: str, api_key: str) -> Optional[dict]:
-    """
-    Запрашивает API ТакПродам. Возвращает dict с ключами:
-      - link      : партнёрская ссылка со вшитым sub_id
-      - erid      : маркировка рекламы (может быть пустой!)
-      - advertiser: наименование рекламодателя
-
-    Возвращает None при ошибке сети или если Circuit Breaker разомкнут.
-    """
-    if circuit_breaker.is_open():
-        logger.warning("Circuit Breaker разомкнут — запрос к API заблокирован")
-        return None
-
-    url = f"{TAKPRODAM_API_BASE}/products/info"
-    headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
-    params = {"sku": sku}
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers=headers, params=params)
-
-        if resp.status_code == 500:
-            circuit_breaker.record_failure()
+    # Логика обращения к API TakProdam
+    url = "https://api.takprodam.ru/v1/products/info"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(url, params={"sku": sku}, headers=headers)
+            if resp.status_code == 200:
+                return resp.json() # Возвращает link, erid, advertiser
+        except:
             return None
+    return None
 
-        if resp.status_code == 401:
-            logger.error(f"API: неверный api_key для SKU={sku}")
-            return None
+async def resolve_erid(bot: Bot, user_id: int, sku: str, donor_post_id: str, channel_id: str) -> Optional[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT api_key, client_erid_override FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
 
-        if resp.status_code != 200:
-            logger.warning(f"API: неожиданный статус {resp.status_code} для SKU={sku}")
-            return None
+    if not row: return None
+    
+    api_key, override = row
+    
+    # 1. Пробуем API (если ключ есть)
+    if api_key:
+        data = await get_takprodam_data(sku, api_key)
+        if data and data.get("erid"):
+            return data
 
-        data = resp.json()
-        circuit_breaker.record_success()
+    # 2. Пробуем override (если в API пусто или ключа нет)
+    if override:
+        return {"erid": override, "link": "https://ваша_ссылка", "advertiser": "Рекламодатель"}
 
-        return {
-            "link":       data.get("link", ""),
-            "erid":       data.get("erid", "").strip(),
-            "advertiser": data.get("advertiser", "").strip(),
-        }
-
-    except httpx.TimeoutException:
-        logger.error(f"API: таймаут при запросе SKU={sku}")
-        circuit_breaker.record_failure()
-        return None
-    except Exception as e:
-        logger.exception(f"API: неожиданная ошибка SKU={sku}: {e}")
-        return None
+    # 3. Карантин (если ничего не нашли)
+    await bot.send_message(QUARANTINE_CHAT_ID, f"🚨 Требуется ручная маркировка для поста {donor_post_id}")
+    return None
 
 
 # =============================================================================
