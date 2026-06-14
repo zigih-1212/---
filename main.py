@@ -55,70 +55,74 @@ app = FastAPI()
 # =====================================================================
 
 def init_db():
-    os.makedirs("/app/data", exist_ok=True)
-    conn = sqlite3.connect("/app/data/database.db")
-    cursor = conn.cursor()
-    
-    # Таблица клиентов платформы
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS clients (
-            user_id TEXT PRIMARY KEY,
-            username TEXT,
-            channel_id TEXT DEFAULT '-',
-            sub_id TEXT DEFAULT '-',
-            tariff TEXT DEFAULT 'Базовый',
-            status TEXT DEFAULT '🔴 Отключен',
-            sub_start TEXT DEFAULT '-',
-            sub_end TEXT DEFAULT '-',
-            posts_sent INTEGER DEFAULT 0,
-            platform_filter TEXT DEFAULT 'Все',
-            role TEXT DEFAULT 'blogger',
-            api_key TEXT DEFAULT '-'
-        )
-    """)
-    
-    # Миграция таблицы clients: проверка наличия колонки api_key
     try:
-        cursor.execute("SELECT api_key FROM clients LIMIT 1")
-    except sqlite3.OperationalError:
-        log.info("⚠️ Запуск обновления структуры БД (добавление api_key)...")
-        cursor.execute("ALTER TABLE clients ADD COLUMN api_key TEXT DEFAULT '-'")
-        conn.commit()
-    
-    # Таблица истории отправленных постов (защита от дублей)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS post_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            client_id TEXT,
-            donor_post_id TEXT,
-            sent_at TEXT
-        )
-    """)
-    
-    # Таблица буфера ночной очереди
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS night_queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            client_id TEXT,
-            post_data TEXT,
-            added_at TEXT
-        )
-    """)
-    
-    # Миграция таблицы night_queue: проверка перехода со старой колонки post_text на post_data
-    try:
-        cursor.execute("SELECT post_data FROM night_queue LIMIT 1")
-    except sqlite3.OperationalError:
-        log.info("⚠️ Запуск обновления структуры таблицы night_queue (post_text -> post_data)...")
+        os.makedirs("/app/data", exist_ok=True)
+        conn = sqlite3.connect("/app/data/database.db")
+        cursor = conn.cursor()
+        
+        # Таблица клиентов платформы
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS clients (
+                user_id TEXT PRIMARY KEY,
+                username TEXT,
+                channel_id TEXT DEFAULT '-',
+                sub_id TEXT DEFAULT '-',
+                tariff TEXT DEFAULT 'Базовый',
+                status TEXT DEFAULT '🔴 Отключен',
+                sub_start TEXT DEFAULT '-',
+                sub_end TEXT DEFAULT '-',
+                posts_sent INTEGER DEFAULT 0,
+                platform_filter TEXT DEFAULT 'Все',
+                role TEXT DEFAULT 'blogger',
+                api_key TEXT DEFAULT '-'
+            )
+        """)
+        
+        # Миграция таблицы clients: проверка наличия колонки api_key
         try:
-            cursor.execute("ALTER TABLE night_queue RENAME COLUMN post_text TO post_data")
+            cursor.execute("SELECT api_key FROM clients LIMIT 1")
+        except sqlite3.OperationalError:
+            log.info("⚠️ Запуск обновления структуры БД (добавление api_key)...")
+            cursor.execute("ALTER TABLE clients ADD COLUMN api_key TEXT DEFAULT '-'")
             conn.commit()
-        except Exception:
-            cursor.execute("ALTER TABLE night_queue ADD COLUMN post_data TEXT DEFAULT ''")
-            conn.commit()
-    
-    conn.commit()
-    conn.close()
+        
+        # Таблица истории отправленных постов (защита от дублей)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS post_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id TEXT,
+                donor_post_id TEXT,
+                sent_at TEXT
+            )
+        """)
+        
+        # Таблица буфера ночной очереди
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS night_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id TEXT,
+                post_data TEXT,
+                added_at TEXT
+            )
+        """)
+        
+        # Миграция таблицы night_queue: проверка перехода со старой колонки post_text на post_data
+        try:
+            cursor.execute("SELECT post_data FROM night_queue LIMIT 1")
+        except sqlite3.OperationalError:
+            log.info("⚠️ Запуск обновления структуры таблицы night_queue (post_text -> post_data)...")
+            try:
+                cursor.execute("ALTER TABLE night_queue RENAME COLUMN post_text TO post_data")
+                conn.commit()
+            except Exception as e:
+                log.error(f"Не удалось переименовать колонку night_queue: {e}. Пересоздаем безопасно.")
+                cursor.execute("ALTER TABLE night_queue ADD COLUMN post_data TEXT DEFAULT ''")
+                conn.commit()
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log.error(f"Критическая ошибка инициализации базы данных: {e}")
 
 init_db()
 
@@ -196,15 +200,19 @@ async def get_takprodam_data(sku: str, api_key: str):
 async def rewrite_text_via_ai(text: str) -> str:
     if not text:
         return ""
-    cleaned_text = re.sub(r'@[A-Za-z0-9_]+', '', text)
-    cleaned_text = re.sub(r'https?://\S+', '', cleaned_text)
-    
-    ai_prefixes = [
-        "🔥 Отличный выбор на сегодня! \n\n",
-        "✨ Гляньте, какую полезную штуку удалось найти: \n\n",
-        "🌟 Находка дня по супер-цене! \n\n"
-    ]
-    return f"{random.choice(ai_prefixes)}{cleaned_text.strip()}"
+    try:
+        cleaned_text = re.sub(r'@[A-Za-z0-9_]+', '', text)
+        cleaned_text = re.sub(r'https?://\S+', '', cleaned_text)
+        
+        ai_prefixes = [
+            "🔥 Отличный выбор на сегодня! \n\n",
+            "✨ Гляньте, какую полезную штуку удалось найти: \n\n",
+            "🌟 Находка дня по супер-цене! \n\n"
+        ]
+        return f"{random.choice(ai_prefixes)}{cleaned_text.strip()}"
+    except Exception as e:
+        log.error(f"Ошибка ИИ-рерайта текста: {e}")
+        return text
 
 # =====================================================================
 # === БЛОК 6: ПАРСЕР TG-КАНАЛОВ И МОДУЛЬ АВТОПОСТИНГА И ОЧЕРЕДЕЙ ===
@@ -278,121 +286,133 @@ async def auto_posting_engine():
             conn.close()
             
             for donor in DONOR_CHANNELS:
-                posts = await parse_telegram_html(donor)
-                if not posts:
+                try:
+                    posts = await parse_telegram_html(donor)
+                    if not posts:
+                        continue
+                except Exception as e:
+                    log.error(f"Пропуск донора {donor} из-за ошибки сбора данных: {e}")
                     continue
                     
                 for post in posts:
-                    found_skus = re.findall(r'\b\d{8,11}\b', f"{post['text']} {post['comment_text']}")
-                    if not found_skus:
-                        continue
-                    sku = found_skus[0]
-                    detected_platform = "Wildberries" if len(sku) <= 9 else "Ozon"
-                    
-                    # 1. ОБРАБОТКА ДЛЯ ТВОЕГО ЛИЧНОГО VIP-КАНАЛА
-                    if MY_MAIN_CHANNEL:
-                        conn = sqlite3.connect("/app/data/database.db")
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT id FROM post_history WHERE client_id='ADMIN_MAIN' AND donor_post_id=?", (post['id'],))
+                    try:
+                        found_skus = re.findall(r'\b\d{8,11}\b', f"{post['text']} {post['comment_text']}")
+                        if not found_skus:
+                            continue
+                        sku = found_skus[0]
+                        detected_platform = "Wildberries" if len(sku) <= 9 else "Ozon"
                         
-                        if not cursor.fetchone():
-                            tp_data_admin = await get_takprodam_data(sku, TAKPRODAM_MASTER_TOKEN)
-                            ai_text = await rewrite_text_via_ai(post['text'])
-                            final_link = f"{tp_data_admin['base_url']}?subid=admin_vip"
-                            promo_str = f"🎁 Промокод: {escape_html(tp_data_admin['promo'])}\n" if tp_data_admin['promo'] else ""
-                            
-                            main_post_text = (
-                                f"{escape_html(ai_text)}\n\n"
-                                f"{promo_str}"
-                                f"🛍 <a href='{final_link}'>Заказать на {detected_platform}</a>\n\n"
-                                f"🔗 Наш канал: {MY_MAIN_CHANNEL}\n"
-                                f"  Реклама. {escape_html(tp_data_admin['advertiser'])}, ИНН {escape_html(tp_data_admin['inn'])}, erid: {escape_html(tp_data_admin['erid'])}"
-                            )
-                            
+                        # 1. ОБРАБОТКА ДЛЯ ТВОЕГО ЛИЧНОГО VIP-КАНАЛА
+                        if MY_MAIN_CHANNEL:
                             try:
-                                if post['photos'] and len(post['photos']) > 0 and is_valid_tg_media_url(post['photos'][0]):
-                                    await bot.send_photo(chat_id=MY_MAIN_CHANNEL, photo=post['photos'][0], caption=safe_truncate_html(main_post_text), parse_mode="HTML")
-                                else:
-                                    await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=main_post_text, parse_mode="HTML")
-                                    
-                                cursor.execute("INSERT INTO post_history (client_id, donor_post_id, sent_at) VALUES (?, ?, ?)", 
-                                               ('ADMIN_MAIN', post['id'], datetime.now().isoformat()))
-                                conn.commit()
-                            except Exception as e:
-                                log.error(f"Не удалось отправить пост в админ-канал: {e}")
-                        conn.close()
-
-                    # 2. РАССЫЛКА ПО КАНАЛАМ КЛИЕНТОВ (БЛОГЕРЫ И SAAS)
-                    for client in active_clients:
-                        c_user_id, c_channel_id, c_sub_id, c_filter, c_role, c_api_key = client
-                        
-                        if not c_channel_id or c_channel_id == '-':
-                            continue
-                            
-                        if c_filter != 'Все' and c_filter.lower() != detected_platform.lower():
-                            continue
-                            
-                        conn = sqlite3.connect("/app/data/database.db")
-                        cursor = conn.cursor()
-                        
-                        cursor.execute("SELECT id FROM post_history WHERE client_id=? AND donor_post_id=?", (c_user_id, post['id']))
-                        already_sent = cursor.fetchone()
-                        
-                        cursor.execute("SELECT id FROM night_queue WHERE client_id=? AND post_data LIKE ?", (c_user_id, f"%{post['id']}%"))
-                        already_queued = cursor.fetchone()
-                        
-                        if already_sent or already_queued:
-                            conn.close()
-                            continue
-                            
-                        tp_data = await get_takprodam_data(sku, c_api_key)
-                        client_link = f"{tp_data['base_url']}?subid={c_sub_id if c_sub_id != '-' else 'saas'}"
-                        promo_str = f"🎁 Промокод: {escape_html(tp_data['promo'])}\n" if tp_data['promo'] else ""
-                        
-                        if donor.replace("@", "").lower() in c_channel_id.lower() or c_role == "blogger":
-                            base_body = post['text'] if post['text'] else "🔥 Товар с обзора доступен к покупке!"
-                        else:
-                            base_body = await rewrite_text_via_ai(post['text'])
-                            
-                        client_post_text = (
-                            f"{escape_html(base_body)}\n\n"
-                            f"{promo_str}"
-                            f"🛍 <a href='{client_link}'>Купить на {detected_platform}</a>\n\n"
-                            f"  Реклама. {escape_html(tp_data['advertiser'])}, ИНН {escape_html(tp_data['inn'])}, erid: {escape_html(tp_data['erid'])}"
-                        )
-                        
-                        if is_night:
-                            payload = {
-                                "chat_id": c_channel_id,
-                                "text": client_post_text,
-                                "photo": post['photos'][0] if (post['photos'] and is_valid_tg_media_url(post['photos'][0])) else None,
-                                "donor_post_id": post['id']
-                            }
-                            cursor.execute("INSERT INTO night_queue (client_id, post_data, added_at) VALUES (?, ?, ?)",
-                                           (c_user_id, json.dumps(payload), datetime.now().isoformat()))
-                            conn.commit()
-                        else:
-                            try:
-                                if post['photos'] and len(post['photos']) > 0 and is_valid_tg_media_url(post['photos'][0]):
-                                    await bot.send_photo(chat_id=c_channel_id, photo=post['photos'][0], caption=safe_truncate_html(client_post_text), parse_mode="HTML")
-                                else:
-                                    await bot.send_message(chat_id=c_channel_id, text=client_post_text, parse_mode="HTML")
-                                    
-                                cursor.execute("INSERT INTO post_history (client_id, donor_post_id, sent_at) VALUES (?, ?, ?)",
-                                               (c_user_id, post['id'], datetime.now().isoformat()))
-                                cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (c_user_id,))
-                                conn.commit()
-                            except Exception as e:
-                                log.error(f"Ошибка отправки в канал {c_channel_id}: {e}")
+                                conn = sqlite3.connect("/app/data/database.db")
+                                cursor = conn.cursor()
+                                cursor.execute("SELECT id FROM post_history WHERE client_id='ADMIN_MAIN' AND donor_post_id=?", (post['id'],))
                                 
-                        conn.close()
-                        await asyncio.sleep(1.5)
+                                if not cursor.fetchone():
+                                    tp_data_admin = await get_takprodam_data(sku, TAKPRODAM_MASTER_TOKEN)
+                                    ai_text = await rewrite_text_via_ai(post['text'])
+                                    final_link = f"{tp_data_admin['base_url']}?subid=admin_vip"
+                                    promo_str = f"🎁 Промокод: {escape_html(tp_data_admin['promo'])}\n" if tp_data_admin['promo'] else ""
+                                    
+                                    main_post_text = (
+                                        f"{escape_html(ai_text)}\n\n"
+                                        f"{promo_str}"
+                                        f"🛍 <a href='{final_link}'>Заказать на {detected_platform}</a>\n\n"
+                                        f"🔗 Наш канал: {MY_MAIN_CHANNEL}\n"
+                                        f"  Реклама. {escape_html(tp_data_admin['advertiser'])}, ИНН {escape_html(tp_data_admin['inn'])}, erid: {escape_html(tp_data_admin['erid'])}"
+                                    )
+                                    
+                                    if post['photos'] and len(post['photos']) > 0 and is_valid_tg_media_url(post['photos'][0]):
+                                        await bot.send_photo(chat_id=MY_MAIN_CHANNEL, photo=post['photos'][0], caption=safe_truncate_html(main_post_text), parse_mode="HTML")
+                                    else:
+                                        await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=main_post_text, parse_mode="HTML")
+                                        
+                                    cursor.execute("INSERT INTO post_history (client_id, donor_post_id, sent_at) VALUES (?, ?, ?)", 
+                                                   ('ADMIN_MAIN', post['id'], datetime.now().isoformat()))
+                                    conn.commit()
+                                conn.close()
+                            except Exception as e:
+                                log.error(f"Не удалось отправить пост в админ-канал (пропускаем): {e}")
+
+                        # 2. РАССЫЛКА ПО КАНАЛАМ КЛИЕНТОВ (БЛОГЕРЫ И SAAS)
+                        for client in active_clients:
+                            try:
+                                c_user_id, c_channel_id, c_sub_id, c_filter, c_role, c_api_key = client
+                                
+                                if not c_channel_id or c_channel_id == '-':
+                                    continue
+                                    
+                                if c_filter != 'All' and c_filter != 'Все' and c_filter.lower() != detected_platform.lower():
+                                    continue
+                                    
+                                conn = sqlite3.connect("/app/data/database.db")
+                                cursor = conn.cursor()
+                                
+                                cursor.execute("SELECT id FROM post_history WHERE client_id=? AND donor_post_id=?", (c_user_id, post['id']))
+                                already_sent = cursor.fetchone()
+                                
+                                cursor.execute("SELECT id FROM night_queue WHERE client_id=? AND post_data LIKE ?", (c_user_id, f"%{post['id']}%"))
+                                already_queued = cursor.fetchone()
+                                
+                                if already_sent or already_queued:
+                                    conn.close()
+                                    continue
+                                    
+                                tp_data = await get_takprodam_data(sku, c_api_key)
+                                client_link = f"{tp_data['base_url']}?subid={c_sub_id if c_sub_id != '-' else 'saas'}"
+                                promo_str = f"🎁 Промокод: {escape_html(tp_data['promo'])}\n" if tp_data['promo'] else ""
+                                
+                                if donor.replace("@", "").lower() in c_channel_id.lower() or c_role == "blogger":
+                                    base_body = post['text'] if post['text'] else "🔥 Товар с обзора доступен к покупке!"
+                                else:
+                                    base_body = await rewrite_text_via_ai(post['text'])
+                                    
+                                client_post_text = (
+                                    f"{escape_html(base_body)}\n\n"
+                                    f"{promo_str}"
+                                    f"🛍 <a href='{client_link}'>Купить на {detected_platform}</a>\n\n"
+                                    f"  Реклама. {escape_html(tp_data['advertiser'])}, ИНН {escape_html(tp_data['inn'])}, erid: {escape_html(tp_data['erid'])}"
+                                )
+                                
+                                if is_night:
+                                    payload = {
+                                        "chat_id": c_channel_id,
+                                        "text": client_post_text,
+                                        "photo": post['photos'][0] if (post['photos'] and is_valid_tg_media_url(post['photos'][0])) else None,
+                                        "donor_post_id": post['id']
+                                    }
+                                    cursor.execute("INSERT INTO night_queue (client_id, post_data, added_at) VALUES (?, ?, ?)",
+                                                   (c_user_id, json.dumps(payload), datetime.now().isoformat()))
+                                    conn.commit()
+                                else:
+                                    if post['photos'] and len(post['photos']) > 0 and is_valid_tg_media_url(post['photos'][0]):
+                                        await bot.send_photo(chat_id=c_channel_id, photo=post['photos'][0], caption=safe_truncate_html(client_post_text), parse_mode="HTML")
+                                    else:
+                                        await bot.send_message(chat_id=c_channel_id, text=client_post_text, parse_mode="HTML")
+                                        
+                                    cursor.execute("INSERT INTO post_history (client_id, donor_post_id, sent_at) VALUES (?, ?, ?)",
+                                                   (c_user_id, post['id'], datetime.now().isoformat()))
+                                    cursor.execute("UPDATE clients SET posts_sent = posts_sent + 1 WHERE user_id=?", (c_user_id,))
+                                    conn.commit()
+                                    
+                                conn.close()
+                                await asyncio.sleep(1.0)
+                            except Exception as client_err:
+                                log.error(f"Ошибка обработки поста для клиента {client[0]} (продолжаем): {client_err}")
+                                continue
+                    except Exception as post_err:
+                        log.error(f"Ошибка разбора конкретного поста {post.get('id')} (продолжаем): {post_err}")
+                        continue
                         
             if not is_night:
-                await flush_night_queue()
+                try:
+                    await flush_night_queue()
+                except Exception as queue_err:
+                    log.error(f"Ошибка разгрузки ночной очереди: {queue_err}")
                 
         except Exception as e:
-            log.error(f"Ошибка в цикле автопостинга: {e}")
+            log.error(f"Общая ошибка в фоновом движке автопостинга: {e}")
             
         await asyncio.sleep(CHANNELS_COOLDOWN_MINUTES * 60)
 
@@ -425,14 +445,14 @@ async def flush_night_queue():
             conn.commit()
             conn.close()
         except Exception as e:
-            log.error(f"Не удалось отправить пост из очереди: {e}")
+            log.error(f"Не удалось выпустить пост из ночного буфера: {e}")
             conn = sqlite3.connect("/app/data/database.db")
             cursor = conn.cursor()
             cursor.execute("DELETE FROM night_queue WHERE id=?", (q_id,))
             conn.commit()
             conn.close()
             
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
 
 # =====================================================================
 # === БЛОК 7: ИНТЕРФЕЙС ТЕЛЕГРАМ-БОТА (AIOGRAM) ===
@@ -440,59 +460,64 @@ async def flush_night_queue():
 
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
-    user_id = str(message.from_user.id)
-    
-    conn = sqlite3.connect("/app/data/database.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO clients (user_id, username) VALUES (?, ?)", (user_id, message.from_user.username))
-    conn.commit()
-    conn.close()
-    
-    # Полная аппаратная защита кнопок через KeyboardBuilder фабрику
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="💎 Личный кабинет / Статус", callback_query_data="view_profile"))
-    builder.row(types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel"))
-    builder.row(types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key"))
-    builder.row(types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription"))
-    
-    if is_admin(message.from_user.id):
-        builder.row(types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel"))
+    try:
+        user_id = str(message.from_user.id)
         
-    welcome_text = (
-        f"👋 Приветствуем, {message.from_user.full_name}!\n\n"
-        f"Я — ваш автоматический ТГ-ассистент.\n"
-        f"🔥 Для блогеров: я беру ваши обзоры, нахожу артикулы и маркирую посты с вашим SubID.\n"
-        f"🚀 Для покупателей подписки (SaaS): подключите собственный API ТакПродам, и вся прибыль пойдет на ваш личный баланс!"
-    )
-    await message.answer(welcome_text, reply_markup=builder.as_markup())
+        conn = sqlite3.connect("/app/data/database.db")
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO clients (user_id, username) VALUES (?, ?)", (user_id, message.from_user.username))
+        conn.commit()
+        conn.close()
+        
+        builder = InlineKeyboardBuilder()
+        builder.row(types.InlineKeyboardButton(text="💎 Личный кабинет / Статус", callback_query_data="view_profile"))
+        builder.row(types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel"))
+        builder.row(types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key"))
+        builder.row(types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription"))
+        
+        if is_admin(message.from_user.id):
+            builder.row(types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel"))
+            
+        welcome_text = (
+            f"👋 Приветствуем, {message.from_user.full_name}!\n\n"
+            f"Я — ваш автоматический ТГ-ассистент.\n"
+            f"🔥 Для блогеров: я беру ваши обзоры, нахожу артикулы и маркирую посты с вашим SubID.\n"
+            f"🚀 Для покупателей подписки (SaaS): подключите собственный API ТакПродам, и вся прибыль пойдет на ваш личный баланс!"
+        )
+        await message.answer(welcome_text, reply_markup=builder.as_markup())
+    except Exception as e:
+        log.error(f"Ошибка обработки команды /start: {e}")
 
 @dp.callback_query(F.data == "view_profile")
 async def view_profile(callback: types.CallbackQuery):
-    user_id = str(callback.from_user.id)
-    conn = sqlite3.connect("/app/data/database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT tariff, status, sub_end, channel_id, sub_id, posts_sent, platform_filter, api_key FROM clients WHERE user_id=?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    tariff, status, sub_end, channel_id, sub_id, sent, p_filter, api_key = row
-    masked_api = "🔒 Настроен" if api_key and api_key != '-' else "❌ Не указан (используется мастер-ключ)"
-    
-    text = (
-        f"👤 *Ваш профиль в системе:*\n\n"
-        f"🔹 *Статус работы:* {status}\n"
-        f"🔹 *Тариф:* {tariff}\n"
-        f"🔹 *Подписка активна до:* {sub_end}\n"
-        f"🔹 *ID Канала:* `{channel_id}`\n"
-        f"🔹 *Ваш SubID:* `{sub_id}`\n"
-        f"🔹 *Ваш API ТакПродам:* `{masked_api}`\n"
-        f"🔹 *Фильтр платформ:* {p_filter}\n"
-        f"📊 *Всего опубликовано постов:* {sent}"
-    )
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="⬅️ Назад", callback_query_data="main_menu"))
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
+    try:
+        user_id = str(callback.from_user.id)
+        conn = sqlite3.connect("/app/data/database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT tariff, status, sub_end, channel_id, sub_id, posts_sent, platform_filter, api_key FROM clients WHERE user_id=?", (user_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        tariff, status, sub_end, channel_id, sub_id, sent, p_filter, api_key = row
+        masked_api = "🔒 Настроен" if api_key and api_key != '-' else "❌ Не указан (используется мастер-ключ)"
+        
+        text = (
+            f"👤 *Ваш профиль в системе:*\n\n"
+            f"🔹 *Статус работы:* {status}\n"
+            f"🔹 *Тариф:* {tariff}\n"
+            f"🔹 *Подписка активна до:* {sub_end}\n"
+            f"🔹 *ID Канала:* `{channel_id}`\n"
+            f"🔹 *Ваш SubID:* `{sub_id}`\n"
+            f"🔹 *Ваш API ТакПродам:* `{masked_api}`\n"
+            f"🔹 *Фильтр платформ:* {p_filter}\n"
+            f"📊 *Всего опубликовано постов:* {sent}"
+        )
+        
+        builder = InlineKeyboardBuilder()
+        builder.row(types.InlineKeyboardButton(text="⬅️ Назад", callback_query_data="main_menu"))
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
+    except Exception as e:
+        log.error(f"Ошибка профиля: {e}")
 
 @dp.callback_query(F.data == "setup_channel")
 async def setup_channel_start(callback: types.CallbackQuery, state: FSMContext):
@@ -608,18 +633,21 @@ async def admin_get_uid(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.waiting_for_days)
 async def admin_finalize_sub(message: types.Message, state: FSMContext):
-    days_input = int(message.text.strip())
-    data = await state.get_data()
-    target_uid = data['target_uid']
-    end_date = datetime.now().date() + timedelta(days=days_input)
-    
-    conn = sqlite3.connect("/app/data/database.db")
-    cursor = conn.cursor()
-    cursor.execute("UPDATE clients SET status='🟢 Активен', sub_end=? WHERE user_id=?", (end_date.isoformat(), target_uid))
-    conn.commit()
-    conn.close()
-    await state.clear()
-    await message.answer("✅ Доступ успешно продлен!")
+    try:
+        days_input = int(message.text.strip())
+        data = await state.get_data()
+        target_uid = data['target_uid']
+        end_date = datetime.now().date() + timedelta(days=days_input)
+        
+        conn = sqlite3.connect("/app/data/database.db")
+        cursor = conn.cursor()
+        cursor.execute("UPDATE clients SET status='🟢 Активен', sub_end=? WHERE user_id=?", (end_date.isoformat(), target_uid))
+        conn.commit()
+        conn.close()
+        await state.clear()
+        await message.answer("✅ Доступ успешно продлен!")
+    except Exception as e:
+        log.error(f"Ошибка выдачи прав админом: {e}")
 
 # =====================================================================
 # === БЛОК 9: АВТОМАТИЧЕСКИЙ БИЛЛИНГ СИСТЕМЫ ===
@@ -644,7 +672,10 @@ async def billing_scheduler_loop():
         await asyncio.sleep(3600)
 
 async def set_bot_commands():
-    await bot.set_my_commands([types.BotCommand(command="start", description="🔄 Запустить бота")])
+    try:
+        await bot.set_my_commands([types.BotCommand(command="start", description="🔄 Запустить бота")])
+    except Exception as e:
+        log.error(f"Не удалось установить команды бота: {e}")
 
 # =====================================================================
 # === БЛОК 10: ПОЛНОЦЕННАЯ ИНТЕРАКТИВНАЯ ВЕБ-ПАНЕЛЬ (FASTAPI НА PORT 8080) ===
@@ -652,11 +683,15 @@ async def set_bot_commands():
 
 @app.get("/", response_class=HTMLResponse)
 async def web_index():
-    conn = sqlite3.connect("/app/data/database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, username, channel_id, tariff, status, sub_end, posts_sent, role, api_key FROM clients")
-    rows = cursor.fetchall()
-    conn.close()
+    try:
+        conn = sqlite3.connect("/app/data/database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, username, channel_id, tariff, status, sub_end, posts_sent, role, api_key FROM clients")
+        rows = cursor.fetchall()
+        conn.close()
+    except Exception as e:
+        log.error(f"Ошибка чтения БД для сайта: {e}")
+        rows = []
     
     rows_list = []
     for r in rows:
@@ -772,7 +807,7 @@ async def web_index():
             <form action="/web-broadcast" method="post" style="width: 100%;">
                 <h3 style="margin-top: 0; color: #0c5460;">📣 Массовая системная рассылка всем блогерам</h3>
                 <div class="form-group" style="margin-bottom: 10px;">
-                    <textarea name="message_text" rows="3" required placeholder="Введите text сообщения..."></textarea>
+                    <textarea name="message_text" rows="3" required placeholder="Введите текст сообщения..."></textarea>
                 </div>
                 <button type="submit" class="btn btn-blue" style="padding: 8px 20px;">🚀 Запустить рассылку</button>
             </form>
@@ -850,4 +885,24 @@ async def web_broadcast(message_text: str = Form(...)):
     return RedirectResponse(url="/", status_code=303)
 
 def run_fastapi_server():
-    uvicorn.run(app,
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8080, log_level="warning")
+    except Exception as e:
+        log.error(f"Авария веб-сервера FastAPI: {e}")
+
+# =====================================================================
+# === БЛОК 11: ТОЧКА ВХОДА И АСИНХРОННЫЙ ЗАПУСК СЕРВИСОВ ===
+# =====================================================================
+
+async def main():
+    await set_bot_commands()
+    asyncio.create_task(auto_posting_engine())
+    asyncio.create_task(billing_scheduler_loop())
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    # Запуск интерактивной FastAPI веб-панели в отдельном параллельном потоке с изоляцией ошибок
+    threading.Thread(target=run_fastapi_server, daemon=True).start()
+    
+    # Старт основного asyncio цикла
+    asyncio.run(main())
