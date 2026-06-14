@@ -79,6 +79,8 @@ def init_db():
     try:
         cur = conn.cursor()
         cur.execute("PRAGMA journal_mode=WAL;")
+        
+        # 1. Создаем основные таблицы (как у вас было)
         cur.executescript("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -111,8 +113,17 @@ def init_db():
                 erid TEXT
             );
         """)
+        
+        # 2. БЕЗОПАСНО добавляем колонку referrer_id, если её нет
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER")
+            logger.info("Колонка referrer_id добавлена")
+        except sqlite3.OperationalError:
+            # Если колонка уже существует, sqlite3 выдаст ошибку - мы её просто игнорируем
+            pass
+            
         conn.commit()
-        logger.info("БД инициализирована")
+        logger.info("БД инициализирована (структура проверена)")
     finally:
         conn.close()
 
