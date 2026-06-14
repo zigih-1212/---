@@ -6,6 +6,7 @@ import re
 import random
 import threading
 import json
+import html
 import uvicorn
 from fastapi import FastAPI, Form
 from starlette.responses import HTMLResponse, RedirectResponse
@@ -136,6 +137,12 @@ class AdminStates(StatesGroup):
 
 def is_admin(user_id: int) -> bool:
     return str(user_id) in ADMIN_IDS
+
+def escape_html(text: str) -> str:
+    """ Безопасно экранирует текст от опасных HTML-тегов, ломающих отправку """
+    if not text:
+        return ""
+    return html.escape(text)
 
 # =====================================================================
 # === БЛОК 4: ИНТЕГРАЦИЯ С ИНСТРУМЕНТАМИ ТАКПРОДАМ И МАРКИРОВКОЙ ERID ===
@@ -287,21 +294,21 @@ async def auto_posting_engine():
                             tp_data_admin = await get_takprodam_data(sku, TAKPRODAM_MASTER_TOKEN)
                             ai_text = await rewrite_text_via_ai(post['text'])
                             final_link = f"{tp_data_admin['base_url']}?subid=admin_vip"
-                            promo_str = f"🎁 Промокод: {tp_data_admin['promo']}\n" if tp_data_admin['promo'] else ""
+                            promo_str = f"🎁 Промокод: {escape_html(tp_data_admin['promo'])}\n" if tp_data_admin['promo'] else ""
                             
                             main_post_text = (
-                                f"{ai_text}\n\n"
+                                f"{escape_html(ai_text)}\n\n"
                                 f"{promo_str}"
-                                f"🛍 [Заказать на {detected_platform}]({final_link})\n\n"
+                                f"🛍 <a href='{final_link}'>Заказать на {detected_platform}</a>\n\n"
                                 f"🔗 Наш канал: {MY_MAIN_CHANNEL}\n"
-                                f"  Реклама. {tp_data_admin['advertiser']}, ИНН {tp_data_admin['inn']}, erid: {tp_data_admin['erid']}"
+                                f"  Реклама. {escape_html(tp_data_admin['advertiser'])}, ИНН {escape_html(tp_data_admin['inn'])}, erid: {escape_html(tp_data_admin['erid'])}"
                             )
                             
                             try:
                                 if post['photos']:
-                                    await bot.send_photo(chat_id=MY_MAIN_CHANNEL, photo=post['photos'][0], caption=main_post_text[:1024], parse_mode="Markdown")
+                                    await bot.send_photo(chat_id=MY_MAIN_CHANNEL, photo=post['photos'][0], caption=main_post_text[:1024], parse_mode="HTML")
                                 else:
-                                    await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=main_post_text, parse_mode="Markdown")
+                                    await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=main_post_text, parse_mode="HTML")
                                     
                                 cursor.execute("INSERT INTO post_history (client_id, donor_post_id, sent_at) VALUES (?, ?, ?)", 
                                                ('ADMIN_MAIN', post['id'], datetime.now().isoformat()))
@@ -335,7 +342,7 @@ async def auto_posting_engine():
                             
                         tp_data = await get_takprodam_data(sku, c_api_key)
                         client_link = f"{tp_data['base_url']}?subid={c_sub_id if c_sub_id != '-' else 'saas'}"
-                        promo_str = f"🎁 Промокод: {tp_data['promo']}\n" if tp_data['promo'] else ""
+                        promo_str = f"🎁 Промокод: {escape_html(tp_data['promo'])}\n" if tp_data['promo'] else ""
                         
                         if donor.replace("@", "").lower() in c_channel_id.lower() or c_role == "blogger":
                             base_body = post['text'] if post['text'] else "🔥 Товар с обзора доступен к покупке!"
@@ -343,10 +350,10 @@ async def auto_posting_engine():
                             base_body = await rewrite_text_via_ai(post['text'])
                             
                         client_post_text = (
-                            f"{base_body}\n\n"
+                            f"{escape_html(base_body)}\n\n"
                             f"{promo_str}"
-                            f"🛍 [Купить на {detected_platform}]({client_link})\n\n"
-                            f"  Реклама. {tp_data['advertiser']}, ИНН {tp_data['inn']}, erid: {tp_data['erid']}"
+                            f"🛍 <a href='{client_link}'>Купить на {detected_platform}</a>\n\n"
+                            f"  Реклама. {escape_html(tp_data['advertiser'])}, ИНН {escape_html(tp_data['inn'])}, erid: {escape_html(tp_data['erid'])}"
                         )
                         
                         if is_night:
@@ -363,9 +370,9 @@ async def auto_posting_engine():
                         else:
                             try:
                                 if post['photos']:
-                                    await bot.send_photo(chat_id=c_channel_id, photo=post['photos'][0], caption=client_post_text[:1024], parse_mode="Markdown")
+                                    await bot.send_photo(chat_id=c_channel_id, photo=post['photos'][0], caption=client_post_text[:1024], parse_mode="HTML")
                                 else:
-                                    await bot.send_message(chat_id=c_channel_id, text=client_post_text, parse_mode="Markdown")
+                                    await bot.send_message(chat_id=c_channel_id, text=client_post_text, parse_mode="HTML")
                                     
                                 cursor.execute("INSERT INTO post_history (client_id, donor_post_id, sent_at) VALUES (?, ?, ?)",
                                                (c_user_id, post['id'], datetime.now().isoformat()))
@@ -403,9 +410,9 @@ async def flush_night_queue():
         
         try:
             if payload.get("photo"):
-                await bot.send_photo(chat_id=payload["chat_id"], photo=payload["photo"], caption=payload["text"][:1024], parse_mode="Markdown")
+                await bot.send_photo(chat_id=payload["chat_id"], photo=payload["photo"], caption=payload["text"][:1024], parse_mode="HTML")
             else:
-                await bot.send_message(chat_id=payload["chat_id"], text=payload["text"], parse_mode="Markdown")
+                await bot.send_message(chat_id=payload["chat_id"], text=payload["text"], parse_mode="HTML")
                 
             conn = sqlite3.connect("/app/data/database.db")
             cursor = conn.cursor()
@@ -650,10 +657,9 @@ async def web_index():
     rows = cursor.fetchall()
     conn.close()
     
-    # Сборка строк таблицы через безопасную склейку Python, исключающую баги с f-строками
     rows_html = ""
     for r in rows:
-        status_badge = f'<span class="badge-active">{r[4]}</span>' if "Активен" in r[4] else f'<span class="badge-disabled">{r[4]}</span>'
+        status_badge = f'<span class="badge-active">{r[4]}</span>' if "Accum" in r[4] or "Активен" in r[4] else f'<span class="badge-disabled">{r[4]}</span>'
         role_type = "SaaS (Личный API)" if r[7] == "saas" else "Блогер (Твой API)"
         
         rows_html += (
