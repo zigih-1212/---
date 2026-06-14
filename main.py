@@ -16,6 +16,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest
 
 # Для парсинга каналов-доноров
@@ -58,7 +59,7 @@ def init_db():
     conn = sqlite3.connect("/app/data/database.db")
     cursor = conn.cursor()
     
-    # Таблица clients
+    # Таблица клиентов платформы
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             user_id TEXT PRIMARY KEY,
@@ -76,6 +77,7 @@ def init_db():
         )
     """)
     
+    # Миграция таблицы clients: проверка наличия колонки api_key
     try:
         cursor.execute("SELECT api_key FROM clients LIMIT 1")
     except sqlite3.OperationalError:
@@ -83,7 +85,7 @@ def init_db():
         cursor.execute("ALTER TABLE clients ADD COLUMN api_key TEXT DEFAULT '-'")
         conn.commit()
     
-    # Таблица истории постов
+    # Таблица истории отправленных постов (защита от дублей)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS post_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,7 +95,7 @@ def init_db():
         )
     """)
     
-    # Таблица ночной очереди
+    # Таблица буфера ночной очереди
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS night_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +105,7 @@ def init_db():
         )
     """)
     
+    # Миграция таблицы night_queue: проверка перехода со старой колонки post_text на post_data
     try:
         cursor.execute("SELECT post_data FROM night_queue LIMIT 1")
     except sqlite3.OperationalError:
@@ -148,11 +151,17 @@ def safe_truncate_html(text: str, max_len: int = 1000) -> str:
         truncated += "...</a>"
     return truncated
 
+def is_valid_tg_media_url(url: str) -> bool:
+    if not url or not isinstance(url, str):
+        return False
+    return url.startswith("http://") or url.startswith("https://")
+
 # =====================================================================
 # === БЛОК 4: ИНТЕГРАЦИЯ С ИНСТРУМЕНТАМИ ТАКПРОДАМ И МАРКИРОВКОЙ ERID ===
 # =====================================================================
 
 async def get_takprodam_data(sku: str, api_key: str):
+    """ Запрашивает целевую ссылку, промокоды и erid маркировки у ТакПродам """
     active_token = TAKPRODAM_MASTER_TOKEN if not api_key or api_key == '-' else api_key
     url = "https://api.takprodam.ru/v1/products/info"
     params = {"api_key": active_token, "sku": sku}
@@ -301,7 +310,7 @@ async def auto_posting_engine():
                             )
                             
                             try:
-                                if post['photos'] and len(post['photos']) > 0 and "http" in post['photos'][0]:
+                                if post['photos'] and len(post['photos']) > 0 and is_valid_tg_media_url(post['photos'][0]):
                                     await bot.send_photo(chat_id=MY_MAIN_CHANNEL, photo=post['photos'][0], caption=safe_truncate_html(main_post_text), parse_mode="HTML")
                                 else:
                                     await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=main_post_text, parse_mode="HTML")
@@ -356,7 +365,7 @@ async def auto_posting_engine():
                             payload = {
                                 "chat_id": c_channel_id,
                                 "text": client_post_text,
-                                "photo": post['photos'][0] if (post['photos'] and "http" in post['photos'][0]) else None,
+                                "photo": post['photos'][0] if (post['photos'] and is_valid_tg_media_url(post['photos'][0])) else None,
                                 "donor_post_id": post['id']
                             }
                             cursor.execute("INSERT INTO night_queue (client_id, post_data, added_at) VALUES (?, ?, ?)",
@@ -364,7 +373,7 @@ async def auto_posting_engine():
                             conn.commit()
                         else:
                             try:
-                                if post['photos'] and len(post['photos']) > 0 and "http" in post['photos'][0]:
+                                if post['photos'] and len(post['photos']) > 0 and is_valid_tg_media_url(post['photos'][0]):
                                     await bot.send_photo(chat_id=c_channel_id, photo=post['photos'][0], caption=safe_truncate_html(client_post_text), parse_mode="HTML")
                                 else:
                                     await bot.send_message(chat_id=c_channel_id, text=client_post_text, parse_mode="HTML")
@@ -402,7 +411,7 @@ async def flush_night_queue():
         payload = json.loads(raw_payload)
         
         try:
-            if payload.get("photo"):
+            if payload.get("photo") and is_valid_tg_media_url(payload.get("photo")):
                 await bot.send_photo(chat_id=payload["chat_id"], photo=payload["photo"], caption=safe_truncate_html(payload["text"]), parse_mode="HTML")
             else:
                 await bot.send_message(chat_id=payload["chat_id"], text=payload["text"], parse_mode="HTML")
@@ -439,25 +448,23 @@ async def cmd_start(message: types.Message):
     conn.commit()
     conn.close()
     
-    kb = [
-        [types.InlineKeyboardButton(text="💎 Личный кабинет / Статус", callback_query_data="view_profile")],
-        [types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel")],
-        [types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key")],
-        [types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription")]
-    ]
+    # Полная аппаратная защита кнопок через KeyboardBuilder фабрику
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="💎 Личный кабинет / Статус", callback_query_data="view_profile"))
+    builder.row(types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel"))
+    builder.row(types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key"))
+    builder.row(types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription"))
     
     if is_admin(message.from_user.id):
-        kb.append([types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel")])
+        builder.row(types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel"))
         
-    markup = types.InlineKeyboardMarkup(inline_keyboard=kb)
-    
     welcome_text = (
         f"👋 Приветствуем, {message.from_user.full_name}!\n\n"
         f"Я — ваш автоматический ТГ-ассистент.\n"
         f"🔥 Для блогеров: я беру ваши обзоры, нахожу артикулы и маркирую посты с вашим SubID.\n"
         f"🚀 Для покупателей подписки (SaaS): подключите собственный API ТакПродам, и вся прибыль пойдет на ваш личный баланс!"
     )
-    await message.answer(welcome_text, reply_markup=markup)
+    await message.answer(welcome_text, reply_markup=builder.as_markup())
 
 @dp.callback_query(F.data == "view_profile")
 async def view_profile(callback: types.CallbackQuery):
@@ -483,8 +490,9 @@ async def view_profile(callback: types.CallbackQuery):
         f"📊 *Всего опубликовано постов:* {sent}"
     )
     
-    kb = [[types.InlineKeyboardButton(text="⬅️ Назад", callback_query_data="main_menu")]]
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="⬅️ Назад", callback_query_data="main_menu"))
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
 
 @dp.callback_query(F.data == "setup_channel")
 async def setup_channel_start(callback: types.CallbackQuery, state: FSMContext):
@@ -512,8 +520,9 @@ async def process_subid(message: types.Message, state: FSMContext):
     conn.close()
     
     await state.clear()
-    kb = [[types.InlineKeyboardButton(text="📱 В главное меню", callback_query_data="main_menu")]]
-    await message.answer("🎉 Настройки успешно обновлены! Перейдите в меню.", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="📱 В главное меню", callback_query_data="main_menu"))
+    await message.answer("🎉 Настройки успешно обновлены! Перейдите в меню.", reply_markup=builder.as_markup())
 
 @dp.callback_query(F.data == "setup_api_key")
 async def setup_api_key_start(callback: types.CallbackQuery, state: FSMContext):
@@ -533,8 +542,9 @@ async def process_api_key(message: types.Message, state: FSMContext):
     conn.close()
     
     await state.clear()
-    kb = [[types.InlineKeyboardButton(text="📱 В меню", callback_query_data="main_menu")]]
-    await message.answer("✅ Ваш персональный токен API ТакПродам привязан!", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="📱 В меню", callback_query_data="main_menu"))
+    await message.answer("✅ Ваш персональный токен API ТакПродам привязан!", reply_markup=builder.as_markup())
 
 @dp.callback_query(F.data == "buy_subscription")
 async def buy_sub(callback: types.CallbackQuery):
@@ -548,20 +558,20 @@ async def buy_sub(callback: types.CallbackQuery):
         f"🔹 *Международные карты (VISA):* `{PAY_VISA}`\n\n"
         f"⚠️ После совершения транзакции пришлите скриншот чека администратору!"
     )
-    kb = [[types.InlineKeyboardButton(text="⬅️ В меню", callback_query_data="main_menu")]]
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="⬅️ В меню", callback_query_data="main_menu"))
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
 
 @dp.callback_query(F.data == "main_menu")
 async def back_to_menu(callback: types.CallbackQuery):
-    kb = [
-        [types.InlineKeyboardButton(text="💎 Личный кабинет / Статус", callback_query_data="view_profile")],
-        [types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel")],
-        [types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key")],
-        [types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription")]
-    ]
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="💎 Личный кабинет / Статус", callback_query_data="view_profile"))
+    builder.row(types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel"))
+    builder.row(types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key"))
+    builder.row(types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription"))
     if is_admin(callback.from_user.id):
-        kb.append([types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel")])
-    await callback.message.edit_text("📱 Главное меню менеджера:", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+        builder.row(types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel"))
+    await callback.message.edit_text("📱 Главное меню менеджера:", reply_markup=builder.as_markup())
     await callback.answer()
 
 # =====================================================================
@@ -578,11 +588,10 @@ async def view_admin(callback: types.CallbackQuery):
     conn.close()
     
     text = f"👑 *Панель управления создателя*\n\n📈 Пользователей в базе: {total}"
-    kb = [
-        [types.InlineKeyboardButton(text="➕ Выдать доступ через TG", callback_query_data="admin_give_sub")],
-        [types.InlineKeyboardButton(text="⬅️ Назад в меню", callback_query_data="main_menu")]
-    ]
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="➕ Выдать доступ через TG", callback_query_data="admin_give_sub"))
+    builder.row(types.InlineKeyboardButton(text="⬅️ Назад в меню", callback_query_data="main_menu"))
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
 
 @dp.callback_query(F.data == "admin_give_sub")
 async def admin_give_sub_start(callback: types.CallbackQuery, state: FSMContext):
@@ -649,13 +658,12 @@ async def web_index():
     rows = cursor.fetchall()
     conn.close()
     
-    # Полностью переписанная, безопасная сборка строк
     rows_list = []
     for r in rows:
         badge = '<span class="badge-active">Активен</span>' if "Активен" in str(r[4]) else '<span class="badge-disabled">Отключен</span>'
         rtype = "SaaS (Личный API)" if str(r[7]) == "saas" else "Блогер (Твой API)"
         btn_cls = "btn-red" if "Активен" in str(r[4]) else "btn-green"
-        btn_txt = "🔴 Отключить" if "Ac" in str(r[4]) or "Ак" in str(r[4]) else "🟢 Включить"
+        btn_txt = "🔴 Отключить" if "Активен" in str(r[4]) else "🟢 Включить"
         
         row_string = (
             f"<tr>"
@@ -720,7 +728,7 @@ async def web_index():
     <body>
     <div class="container">
         <h2>📊 Интерактивная Панель Создателя Платформы</h2>
-        <div class="filter-section">💡 Логи и кнопки синхронизированы. Клавиатура Telegram полностью защищена от синтаксических сдвигов.</div>
+        <div class="filter-section">💡 Аппаратная защита кнопок активна. База данных и интерфейс работают асинхронно.</div>
         <table>
             <tr>
                 <th>User ID</th>
@@ -764,7 +772,7 @@ async def web_index():
             <form action="/web-broadcast" method="post" style="width: 100%;">
                 <h3 style="margin-top: 0; color: #0c5460;">📣 Массовая системная рассылка всем блогерам</h3>
                 <div class="form-group" style="margin-bottom: 10px;">
-                    <textarea name="message_text" rows="3" required placeholder="Введите текст сообщения..."></textarea>
+                    <textarea name="message_text" rows="3" required placeholder="Введите text сообщения..."></textarea>
                 </div>
                 <button type="submit" class="btn btn-blue" style="padding: 8px 20px;">🚀 Запустить рассылку</button>
             </form>
@@ -842,18 +850,4 @@ async def web_broadcast(message_text: str = Form(...)):
     return RedirectResponse(url="/", status_code=303)
 
 def run_fastapi_server():
-    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="warning")
-
-# =====================================================================
-# === БЛОК 11: ТОЧКА ВХОДА И АСИНХРОННЫЙ ЗАПУСК СЕРВИСОВ ===
-# =====================================================================
-
-async def main():
-    await set_bot_commands()
-    asyncio.create_task(auto_posting_engine())
-    asyncio.create_task(billing_scheduler_loop())
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    threading.Thread(target=run_fastapi_server, daemon=True).start()
-    asyncio.run(main())
+    uvicorn.run(app,
