@@ -2062,7 +2062,20 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     )
 
     return scheduler
+async def check_all_bloggers(bot: Bot):
+    """Цикл проверки всех блогеров."""
+    conn = get_db()
+    bloggers = conn.execute("SELECT user_id, channel_id FROM users WHERE role='blogger'").fetchall()
+    conn.close()
 
+    for b in bloggers:
+        video = get_latest_video(b['channel_id'])
+        if video:
+            # 1. Сравниваем ID видео с БД, чтобы не постить одно и то же
+            # 2. Если видео новое -> парсим описание через ydl.extract_info
+            # 3. Ищем артикул (re.search)
+            # 4. Если нашли -> процесс обработки поста
+            pass
 
 # =============================================================================
 # === MAIN ENTRYPOINT =========================================================
