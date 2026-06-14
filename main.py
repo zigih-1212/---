@@ -1785,8 +1785,9 @@ def get_db():
   
 async def main() -> None:
     logger.info("=== AutoPost Bot запускается ===")
-  
-    bot = Bot(token=BOT_TOKEN)
+    init_db()
+
+    bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML) # Добавили parse_mode
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     dp.include_router(router)
@@ -1795,21 +1796,21 @@ async def main() -> None:
     scheduler.start()
     logger.info("Планировщик задач запущен")
 
-    # FastAPI WebApp в отдельном потоке
+    # FastAPI WebApp
     fastapi_app = create_fastapi_app(bot)
     config = uvicorn.Config(
         fastapi_app,
-        host=WEBAPP_HOST,
+        host=os.getenv("WEBAPP_HOST", "0.0.0.0"),
         port=WEBAPP_PORT,
         log_level="warning",
     )
     server = uvicorn.Server(config)
 
-    logger.info(f"WebApp доступен на http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
+    logger.info(f"WebApp доступен на http://{os.getenv('WEBAPP_HOST', '0.0.0.0')}:{WEBAPP_PORT}/admin")
 
     # Запускаем бот и веб-сервер параллельно
     await asyncio.gather(
-        dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()),
+        dp.start_polling(bot),
         server.serve(),
     )
 
