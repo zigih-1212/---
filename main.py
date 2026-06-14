@@ -24,6 +24,7 @@ from typing import Optional
 
 import httpx
 import uvicorn
+from aiogram.client.default import DefaultBotProperties
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
