@@ -10,14 +10,13 @@
 # === IMPORTS & CONFIG ========================================================
 # =============================================================================
 
-import asyncio
+import os
 import html
 import logging
 import re
 import sqlite3
 import time
 from collections import deque
-from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Optional
@@ -27,44 +26,29 @@ import uvicorn
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import (
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    LabeledPrice,
-    Message,
-    PreCheckoutQuery,
-    SuccessfulPayment,
-)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
-# ---------- Логирование (RotatingFileHandler — защита памяти контейнера) -----
+# --- Логирование ---
 log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 file_handler = RotatingFileHandler("bot.log", maxBytes=5 * 1024 * 1024, backupCount=3)
 file_handler.setFormatter(log_formatter)
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(log_formatter)
-logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler])
+logging.basicConfig(level=logging.INFO, handlers=[file_handler, logging.StreamHandler()])
 logger = logging.getLogger("autopost_bot")
 
-# ---------- Конфигурация (берем из переменных окружения Railway) ----------
-BOT_TOKEN: str = os.getenv("OT_TOKEN")
-# Преобразуем строку ADMIN_IDS из переменной (например, "7152107861,6373151051") в список чисел
-ADMIN_IDS: list[int] = [int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip()]
-QUARANTINE_CHAT_ID: int = int(os.getenv("QUARANTINE_CHAT_ID", "-1001234567890"))
-ADMIN_VIP_CHANNEL_ID: int = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "-1009876543210"))
-TAKPRODAM_API_BASE: str = "https://api.takprodam.ru/v1"
-WEBAPP_HOST: str = "0.0.0.0"
-WEBAPP_PORT: int = int(os.getenv("WEBAPP_PORT", 8000))
-STARS_PROVIDER_TOKEN: str = os.getenv("STARS_PROVIDER_TOKEN", "")
-# Новая переменная для ИИ-рерайтинга
-DEEPINFRA_API_KEY: str = os.getenv("DEEPINFRA_API_KEY", "")
+# --- Конфигурация ---
+BOT_TOKEN = os.getenv("OT_TOKEN")
+ADMIN_IDS = [int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip()]
+QUARANTINE_CHAT_ID = int(os.getenv("QUARANTINE_CHAT_ID", "-1001234567890"))
+ADMIN_VIP_CHANNEL_ID = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "-1009876543210"))
+TAKPRODAM_MASTER_TOKEN = os.getenv("TAKPRODAM_MASTER_TOKEN")
+DEEPINFRA_API_KEY = os.getenv("DEEPINFRA_API_KEY")
+WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", 8000))
 
 # ---------- Тарифная сетка (Цены в рублях и эквивалент в Telegram Stars) --------
 # Курс: 1 рубль ≈ 1.5 Stars
