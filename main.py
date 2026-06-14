@@ -2136,6 +2136,14 @@ async def main() -> None:
     scheduler.start()
     logger.info("Планировщик задач запущен")
 
+  scheduler.add_job(
+    check_all_bloggers,
+    trigger="interval",
+    hours=1,
+    kwargs={"bot": bot},
+    id="blogger_monitor"
+)
+
     # 1. Создаем веб-приложение
     fastapi_app = create_fastapi_app(bot)
     
