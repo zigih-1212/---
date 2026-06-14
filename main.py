@@ -724,33 +724,79 @@ async def admin_broadcast_execute(message: types.Message, state: FSMContext):
     await message.answer(f"📢 Доставлено сообщений: **{sent}**", reply_markup=builder)
     await state.clear()
 
-# --- ПОДДЕРЖКА И ТАРИФЫ ЮЗЕРА ---
+# --- НОВАЯ СИСТЕМА ОПЛАТЫ (РАЗДЕЛЬНЫЕ КНОПКИ СПОСОБА И СРОКА) ---
+
 @dp.callback_query(F.data == "pay_sub")
 async def pay_sub_menu(callback: types.CallbackQuery):
+    # Шаг 1: Сначала выбираем СПОСОБ оплаты, кнопки разделены
     builder = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text=f"📅 15 дней — {TARIF_PLAN[15][0]}₽", callback_data="select_days_15")],
-        [types.InlineKeyboardButton(text=f"📅 30 дней — {TARIF_PLAN[30][0]}₽", callback_data="select_days_30")],
+        [types.InlineKeyboardButton(text="🇷🇺 Банковская Карта РФ", callback_data="paymethod_card")],
+        [types.InlineKeyboardButton(text="⭐️ Telegram Stars (Звёзды)", callback_data="paymethod_stars")],
         [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
     ])
-    await callback.message.edit_text("📦 **Выберите желаемый срок подписки:**", reply_markup=builder)
+    await callback.message.edit_text("💳 **Выберите удобный способ оплаты подписки:**", reply_markup=builder, parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("select_days_"))
-async def select_payment_method(callback: types.CallbackQuery):
+@dp.callback_query(F.data.startswith("paymethod_"))
+async def pay_method_selected(callback: types.CallbackQuery):
+    method = callback.data.split("_")[1] # 'card' или 'stars'
+    
+    # Формируем кнопки подписок от 15 до 360 дней со скидками
+    buttons = []
+    for days, (rub_p, star_p, label) in TARIF_PLAN.items():
+        if method == "card":
+            text = f"{label} {days} дней — {rub_p}₽"
+            callback_path = f"checkout_card_Sberbank_{days}"
+        else:
+            text = f"{label} {days} дней — {star_p} ⭐️"
+            callback_path = f"checkout_stars_{days}"
+        buttons.append([types.InlineKeyboardButton(text=text, callback_data=callback_path)])
+        
+    # Кнопка возврата ведет строго на шаг выбора способа оплаты
+    buttons.append([types.InlineKeyboardButton(text="⬅️ Назад", callback_data="pay_sub")])
+    
+    title = "🇷🇺 **Доступные тарифы при оплате Картой:**" if method == "card" else "⭐️ **Доступные тарифы при оплате Звёздами:**"
+    await callback.message.edit_text(title, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+    await callback.answer()
+
+# Хендлер для симуляции/запуска чекаута карт
+@dp.callback_query(F.data.startswith("checkout_card_"))
+async def checkout_card_handler(callback: types.CallbackQuery):
+    parts = callback.data.split("_")
+    bank = parts[2]
+    days = int(parts[3])
+    price = TARIF_PLAN[days][0]
+    
+    reквизиты = PAY_SBER if bank == "Sberbank" else PAY_TBANK
+    
+    text = (
+        f"💳 **Оплата подписки на {days} дней**\n\n"
+        f"Сумма к оплате: **{price} Рублей**\n"
+        f"Банк назначения: **{bank}**\n"
+        f"Реквизиты для перевода: `{reквизиты}`\n\n"
+        "⚠️ После совершения перевода, пожалуйста, отправьте чек в службу поддержки @Zigih90 для мгновенной активации."
+    )
+    # Возвращаемся обратно к тарифам карт
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="paymethod_card")]])
+    await callback.message.edit_text(text, reply_markup=builder, parse_mode="Markdown")
+    await callback.answer()
+
+# Хендлер для запуска чекаута Telegram Stars
+@dp.callback_query(F.data.startswith("checkout_stars_"))
+async def checkout_stars_handler(callback: types.CallbackQuery):
     days = int(callback.data.split("_")[2])
-    rub_p, star_p, _ = TARIF_PLAN[days]
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text=f"⭐️ Звёздами ({star_p} ⭐️)", callback_data=f"checkout_stars_{days}")],
-        [types.InlineKeyboardButton(text=f"🇷🇺 Карта РФ ({rub_p}₽)", callback_data=f"checkout_card_Sberbank_{days}")],
-        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="select_days_") if days == 15 or days == 30 else types.InlineKeyboardButton(text="⬅️ Назад", callback_data="pay_sub")]
-    ])
-    await callback.message.edit_text(f"💳 Выберите способ оплаты ({days} дней):", reply_markup=builder)
-    await callback.answer()
-
-@dp.callback_query(F.data == "user_support")
-async def user_support_contact(callback: types.CallbackQuery):
-    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]])
-    await callback.message.edit_text("💬 По всем техническим вопросам пишите создателю проекта: @Zigih90", reply_markup=builder)
+    stars_price = TARIF_PLAN[days][1]
+    
+    # Заглушка отправки инвойса (в будущем здесь будет bot.send_invoice)
+    text = (
+        f"⭐️ **Оплата подписки через Telegram Stars**\n\n"
+        f"Срок: **{days} дней**\n"
+        f"Стоимость: **{stars_price} ⭐️**\n\n"
+        "⚙️ Инвойс формируется мессенджером..."
+    )
+    # Возвращаемся обратно к тарифам звёзд
+    builder = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_data="paymethod_stars")]])
+    await callback.message.edit_text(text, reply_markup=builder, parse_mode="Markdown")
     await callback.answer()
 
 # =====================================================================
