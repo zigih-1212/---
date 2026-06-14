@@ -68,99 +68,48 @@ CARD_DETAILS_KG: str = "Mbank: +996 XXX XXX XXX | Получатель: ..."
 # === DATABASE (SQLite WAL-Mode) ===============================================
 # =============================================================================
 
-DB_PATH: str = "autopost.db"
+DB_PATH = "autopost.db"
 
-
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db() -> None:
-    """Инициализация базы данных с WAL-режимом для защиты от database is locked."""
-    conn = get_db()
-    try:
-        cur = conn.cursor()
-        # WAL-mode: защита от коллизий при параллельных чтении/записи
-        cur.execute("PRAGMA journal_mode=WAL;")
-        cur.execute("PRAGMA foreign_keys=ON;")
-
-        cur.executescript("""
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL;")
+    cur.executescript("""
         CREATE TABLE IF NOT EXISTS users (
-            user_id         INTEGER PRIMARY KEY,
-            username        TEXT,
-            role            TEXT NOT NULL DEFAULT 'blogger',
-            -- role: 'blogger' | 'saas' | 'admin'
-            channel_id      TEXT,
-            channel_title   TEXT,
-            sub_id          TEXT UNIQUE,
-            -- Биллинг
-            sub_end         TEXT,
-            is_active       INTEGER NOT NULL DEFAULT 0,
-            traffic_source  TEXT NOT NULL DEFAULT 'organic',
-            -- traffic_source: 'organic' | 'affiliate'
-            referrer_id     INTEGER,
-            -- SaaS-настройки
-            api_key         TEXT,
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            role TEXT DEFAULT 'blogger',
+            channel_id TEXT,
+            channel_title TEXT,
+            sub_id TEXT UNIQUE,
+            sub_end TEXT,
+            is_active INTEGER DEFAULT 0,
+            traffic_source TEXT DEFAULT 'organic',
+            api_key TEXT,
             client_erid_override TEXT,
-            filter_wb       INTEGER NOT NULL DEFAULT 1,
-            filter_ozon     INTEGER NOT NULL DEFAULT 1,
-            -- Формат блогера: 'direct' (в свой канал) | 'vip_pin' (VIP-закреп)
-            blogger_mode    TEXT NOT NULL DEFAULT 'direct',
-            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (referrer_id) REFERENCES users(user_id)
+            filter_wb INTEGER DEFAULT 1,
+            filter_ozon INTEGER DEFAULT 1,
+            blogger_mode TEXT DEFAULT 'direct'
         );
-
+        CREATE TABLE IF NOT EXISTS promocodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE,
+            days INTEGER,
+            used BOOLEAN DEFAULT 0,
+            used_by INTEGER
+        );
         CREATE TABLE IF NOT EXISTS posts (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id         INTEGER NOT NULL,
-            donor_post_id   TEXT NOT NULL,
-            channel_id      TEXT NOT NULL,
-            marketplace     TEXT,
-            -- marketplace: 'wb' | 'ozon'
-            sku             TEXT,
-            erid            TEXT,
-            advertiser      TEXT,
-            status          TEXT NOT NULL DEFAULT 'pending',
-            -- status: 'pending' | 'published' | 'quarantine' | 'failed'
-            quarantine_reason TEXT,
-            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-            published_at    TEXT,
-            FOREIGN KEY (user_id) REFERENCES users(user_id)
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            donor_post_id TEXT,
+            status TEXT,
+            erid TEXT
         );
-
-        CREATE TABLE IF NOT EXISTS night_queue (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id         INTEGER NOT NULL,
-            channel_id      TEXT NOT NULL,
-            text            TEXT NOT NULL,
-            photo_url       TEXT,
-            erid            TEXT NOT NULL,
-            advertiser      TEXT NOT NULL,
-            affiliate_url   TEXT NOT NULL,
-            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(user_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS billing_log (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id         INTEGER NOT NULL,
-            plan            TEXT NOT NULL,
-            stars_paid      INTEGER,
-            payment_method  TEXT,
-            -- payment_method: 'stars' | 'card_ru' | 'card_kg'
-            payment_id      TEXT,
-            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(user_id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);
-        CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
-        CREATE INDEX IF NOT EXISTS idx_night_queue_user ON night_queue(user_id);
-        """)
-        conn.commit()
-        logger.info("БД инициализирована (WAL-mode активен)")
+        -- (Остальные таблицы создадим на следующих шагах)
+    """)
+    conn.commit()
+    conn.close()
+    logger.info("БД инициализирована")
     finally:
         conn.close()
 
