@@ -16,7 +16,6 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest
 
 # Для парсинга каналов-доноров
@@ -78,7 +77,7 @@ def init_db():
             )
         """)
         
-        # Миграция таблицы clients: проверка наличия колонки api_key
+        # Миграция таблицы clients: проверка наличика колонки api_key
         try:
             cursor.execute("SELECT api_key FROM clients LIMIT 1")
         except sqlite3.OperationalError:
@@ -469,14 +468,21 @@ async def cmd_start(message: types.Message):
         conn.commit()
         conn.close()
         
-        builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="💎 Личный кабинет / Статус", callback_query_data="view_profile"))
-        builder.row(types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel"))
-        builder.row(types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key"))
-        builder.row(types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription"))
-        
+        # Жёсткая классическая JSON-структура кнопок. Больше никаких сбоев в считывании типов!
+        admin_row = []
         if is_admin(message.from_user.id):
-            builder.row(types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel"))
+            admin_row = [types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel")]
+
+        markup = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [types.InlineKeyboardButton(text="💎 Личный кабинет / Статус", callback_query_data="view_profile")],
+                [types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel")],
+                [types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key")],
+                [types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription")]
+            ]
+        )
+        if admin_row:
+            markup.inline_keyboard.append(admin_row)
             
         welcome_text = (
             f"👋 Приветствуем, {message.from_user.full_name}!\n\n"
@@ -484,7 +490,7 @@ async def cmd_start(message: types.Message):
             f"🔥 Для блогеров: я беру ваши обзоры, нахожу артикулы и маркирую посты с вашим SubID.\n"
             f"🚀 Для покупателей подписки (SaaS): подключите собственный API ТакПродам, и вся прибыль пойдет на ваш личный баланс!"
         )
-        await message.answer(welcome_text, reply_markup=builder.as_markup())
+        await message.answer(welcome_text, reply_markup=markup)
     except Exception as e:
         log.error(f"Ошибка обработки команды /start: {e}")
 
@@ -513,9 +519,10 @@ async def view_profile(callback: types.CallbackQuery):
             f"📊 *Всего опубликовано постов:* {sent}"
         )
         
-        builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="⬅️ Назад", callback_query_data="main_menu"))
-        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
+        markup = types.InlineKeyboardMarkup(
+            inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_query_data="main_menu")]]
+        )
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=markup)
     except Exception as e:
         log.error(f"Ошибка профиля: {e}")
 
@@ -545,9 +552,10 @@ async def process_subid(message: types.Message, state: FSMContext):
     conn.close()
     
     await state.clear()
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="📱 В главное меню", callback_query_data="main_menu"))
-    await message.answer("🎉 Настройки успешно обновлены! Перейдите в меню.", reply_markup=builder.as_markup())
+    markup = types.InlineKeyboardMarkup(
+        inline_keyboard=[[types.InlineKeyboardButton(text="📱 В главное меню", callback_query_data="main_menu")]]
+    )
+    await message.answer("🎉 Настройки успешно обновлены! Перейдите в меню.", reply_markup=markup)
 
 @dp.callback_query(F.data == "setup_api_key")
 async def setup_api_key_start(callback: types.CallbackQuery, state: FSMContext):
@@ -567,9 +575,10 @@ async def process_api_key(message: types.Message, state: FSMContext):
     conn.close()
     
     await state.clear()
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="📱 В меню", callback_query_data="main_menu"))
-    await message.answer("✅ Ваш персональный токен API ТакПродам привязан!", reply_markup=builder.as_markup())
+    markup = types.InlineKeyboardMarkup(
+        inline_keyboard=[[types.InlineKeyboardButton(text="📱 В меню", callback_query_data="main_menu")]]
+    )
+    await message.answer("✅ Ваш персональный токен API ТакПродам привязан!", reply_markup=markup)
 
 @dp.callback_query(F.data == "buy_subscription")
 async def buy_sub(callback: types.CallbackQuery):
@@ -583,20 +592,24 @@ async def buy_sub(callback: types.CallbackQuery):
         f"🔹 *Международные карты (VISA):* `{PAY_VISA}`\n\n"
         f"⚠️ После совершения транзакции пришлите скриншот чека администратору!"
     )
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="⬅️ В меню", callback_query_data="main_menu"))
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
+    markup = types.InlineKeyboardMarkup(
+        inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ В меню", callback_query_data="main_menu")]]
+    )
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=markup)
 
 @dp.callback_query(F.data == "main_menu")
 async def back_to_menu(callback: types.CallbackQuery):
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="💎 Личный кабинет / Статус", callback_query_data="view_profile"))
-    builder.row(types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel"))
-    builder.row(types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key"))
-    builder.row(types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription"))
+    markup = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="💎 Личный кабинет / Status", callback_query_data="view_profile")],
+            [types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel")],
+            [types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key")],
+            [types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription")]
+        ]
+    )
     if is_admin(callback.from_user.id):
-        builder.row(types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel"))
-    await callback.message.edit_text("📱 Главное меню менеджера:", reply_markup=builder.as_markup())
+        markup.inline_keyboard.append([types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel")])
+    await callback.message.edit_text("📱 Главное меню менеджера:", reply_markup=markup)
     await callback.answer()
 
 # =====================================================================
@@ -613,10 +626,13 @@ async def view_admin(callback: types.CallbackQuery):
     conn.close()
     
     text = f"👑 *Панель управления создателя*\n\n📈 Пользователей в базе: {total}"
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="➕ Выдать доступ через TG", callback_query_data="admin_give_sub"))
-    builder.row(types.InlineKeyboardButton(text="⬅️ Назад в меню", callback_query_data="main_menu"))
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
+    markup = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="➕ Выдать доступ через TG", callback_query_data="admin_give_sub")],
+            [types.InlineKeyboardButton(text="⬅️ Назад в меню", callback_query_data="main_menu")]
+        ]
+    )
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=markup)
 
 @dp.callback_query(F.data == "admin_give_sub")
 async def admin_give_sub_start(callback: types.CallbackQuery, state: FSMContext):
