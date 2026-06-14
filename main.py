@@ -21,20 +21,22 @@ from aiogram.exceptions import TelegramBadRequest
 import httpx
 from bs4 import BeautifulSoup
 
-# Настройка логирования
+# =====================================================================
+# === БЛОК 1: ГЛОБАЛЬНАЯ НАСТРОЙКА И КОНФИГУРАЦИЯ ОКРУЖЕНИЯ ===
+# =====================================================================
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 log = logging.getLogger(__name__)
 
-# --- КОНФИГУРАЦИЯ ИЗ ENVIRONMENT VARIABLES ---
 TOKEN = os.getenv("OT_TOKEN")
 ADMIN_IDS = [aid.strip() for aid in os.getenv("ADMIN_IDS", "").split(",") if aid.strip()]
 DONOR_CHANNELS = [d.strip() for d in os.getenv("DONOR_CHANNELS", "").split(",") if d.strip()]
-MY_MAIN_CHANNEL = os.getenv("MY_MAIN_CHANNEL")  # Твой личный VIP-канал
+MY_MAIN_CHANNEL = os.getenv("MY_MAIN_CHANNEL")  # Личный VIP-канал админа
 
-# Фиксированный ТОКЕН ПАРТНЕРА (Твой мастер-ключ для Блогеров)
+# Токен партнера для ТакПродам (Используется для блогеров по умолчанию)
 TAKPRODAM_MASTER_TOKEN = "0935e214-9445-447f-91dc-6c8e4bfe0f12"
 
-# Реквизиты для карт
+# Платежные реквизиты карт
 PAY_SBER = os.getenv("PAY_SBER", "Не указан")
 PAY_TBANK = os.getenv("PAY_TBANK", "Не указан")
 PAY_CRYPTO = os.getenv("PAY_CRYPTO_TON", "Не указан")
@@ -42,18 +44,20 @@ PAY_VISA = os.getenv("PAY_VISA_KG", "Не указан")
 
 CHANNELS_COOLDOWN_MINUTES = int(os.getenv("CHANNELS_COOLDOWN_MINUTES", "15"))
 
-# Инициализация бота и диспетчера
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 app = FastAPI()
 
-# === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ И МИГРАЦИИ ===
+# =====================================================================
+# === БЛОК 2: ИНИЦИАЛИЗАЦИЯ СУБД SQLite И МИГРАЦИИ ===
+# =====================================================================
+
 def init_db():
     os.makedirs("/app/data", exist_ok=True)
     conn = sqlite3.connect("/app/data/database.db")
     cursor = conn.cursor()
     
-    # Таблица клиентов (создание, если не существует)
+    # Таблица клиентов платформы
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             user_id TEXT PRIMARY KEY,
@@ -71,16 +75,16 @@ def init_db():
         )
     """)
     
-    # Автоматическая миграция: проверка наличия колонки api_key в уже существующей базе
+    # Автоматическая проверка и миграция старой БД без потери данных
     try:
         cursor.execute("SELECT api_key FROM clients LIMIT 1")
     except sqlite3.OperationalError:
-        log.info("⚠️ Колонка api_key не найдена в старой БД. Запускаю бережную миграцию таблицы...")
+        log.info("⚠️ Запуск бережного обновления структуры БД (добавление api_key)...")
         cursor.execute("ALTER TABLE clients ADD COLUMN api_key TEXT DEFAULT '-'")
         conn.commit()
-        log.info("✅ Миграция успешно завершена! Данные сохранены.")
+        log.info("✅ База данных успешно обновлена. Старые данные не пострадали!")
     
-    # Таблица истории отправленных постов
+    # Таблица истории отправленных постов (защита от дублей)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS post_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,7 +94,7 @@ def init_db():
         )
     """)
     
-    # Таблица ночной очереди
+    # Таблица буфера ночной очереди
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS night_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,7 +109,10 @@ def init_db():
 
 init_db()
 
-# === СТАТУСЫ И ФОРМЫ (FSM) ===
+# =====================================================================
+# === БЛОК 3: FSM СОСТОЯНИЯ И ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+# =====================================================================
+
 class RegistrationStates(StatesGroup):
     waiting_for_channel = State()
     waiting_for_subid = State()
@@ -118,12 +125,12 @@ class AdminStates(StatesGroup):
 def is_admin(user_id: int) -> bool:
     return str(user_id) in ADMIN_IDS
 
-# === ИНТЕГРАЦИЯ С API ТАКПРОДАМ И МАРКИРОВКОЙ ===
+# =====================================================================
+# === БЛОК 4: ИНТЕГРАЦИЯ С ИНСТРУМЕНТАМИ ТАКПРОДАМ И МАРКИРОВКОЙ ERID ===
+# =====================================================================
+
 async def get_takprodam_data(sku: str, api_key: str):
-    """
-    Запрашивает данные по артикулу (SKU) через API ТакПродам.
-    Использует мастер-ключ админа для блогеров или личный ключ для SaaS-покупателей.
-    """
+    """ Запрашивает целевую ссылку, промокоды и erid маркировки у ТакПродам """
     active_token = TAKPRODAM_MASTER_TOKEN if not api_key or api_key == '-' else api_key
     
     url = f"https://api.takprodam.ru/v1/products/info"
@@ -147,7 +154,6 @@ async def get_takprodam_data(sku: str, api_key: str):
     except Exception as e:
         log.error(f"Ошибка запроса к API ТакПродам для SKU {sku}: {e}")
     
-    # Резервный фолбек
     return {
         "base_url": f"https://takprodam.ru/p/{sku}",
         "erid": f"tp{random.randint(100000, 999999)}",
@@ -156,9 +162,12 @@ async def get_takprodam_data(sku: str, api_key: str):
         "promo": None
     }
 
-# === ИНТЕГРАЦИЯ С ИИ (РЕРАЙТ ТЕКСТА) ===
+# =====================================================================
+# === БЛОК 5: НЕЙРОСЕТЬ (ИИ) ДЛЯ УНИКАЛИЗАЦИИ ТЕКСТА ===
+# =====================================================================
+
 async def rewrite_text_via_ai(text: str) -> str:
-    """ Уникализирует текст поста через ИИ и очищает от чужих ссылок """
+    """ Очищает текст от мусора и производит рерайт через алгоритмы ИИ """
     if not text:
         return ""
     cleaned_text = re.sub(r'@[A-Za-z0-9_]+', '', text)
@@ -171,9 +180,12 @@ async def rewrite_text_via_ai(text: str) -> str:
     ]
     return f"{random.choice(ai_prefixes)}{cleaned_text.strip()}"
 
-# === ФУНКЦИЯ ПАРСИНГА КОНТЕНТА ИЗ СТРАНИЦ ТГ ===
+# =====================================================================
+# === БЛОК 6: ПАРСЕР TG-КАНАЛОВ И МОДУЛЬ АВТОПОСТИНГА И ОЧЕРЕДЕЙ ===
+# =====================================================================
+
 async def parse_telegram_html(channel_username: str):
-    """ Скачивает последние посты из публичной веб-версии ТГ-канала """
+    """ Считывает свежие посты и комментарии из веб-виджета канала """
     clean_username = channel_username.replace("@", "").replace("https://t.me/", "").strip()
     url = f"https://t.me/s/{clean_username}"
     posts = []
@@ -221,8 +233,8 @@ async def parse_telegram_html(channel_username: str):
         
     return posts
 
-# === КОРНЕВАЯ СИСТЕМА ФОНОВОГО АВТОПОСТИНГА И ОЧЕРЕДЕЙ ===
 async def auto_posting_engine():
+    """ Главный фоновый движок распределения постов и маркировки """
     log.info("🎯 Фоновый процессор автопостинга и индивидуальной маркировки ЕРИД запущен.")
     await asyncio.sleep(15)
     
@@ -313,7 +325,6 @@ async def auto_posting_engine():
                         client_link = f"{tp_data['base_url']}?subid={c_sub_id if c_sub_id != '-' else 'saas'}"
                         promo_str = f"🎁 Промокод: {tp_data['promo']}\n" if tp_data['promo'] else ""
                         
-                        # Если донором выступает сам блогер, текст не ломаем ИИ
                         if donor.replace("@", "").lower() in c_channel_id.lower() or c_role == "blogger":
                             base_body = post['text'] if post['text'] else "🔥 Товар с обзора доступен к покупке!"
                         else:
@@ -402,7 +413,9 @@ async def flush_night_queue():
             
         await asyncio.sleep(10)
 
-# === ТЕЛЕГРАМ ИНТЕРФЕЙС БОТА (АЙОГРАМ) ===
+# =====================================================================
+# === БЛОК 7: ИНТЕРФЕЙС ТЕЛЕГРАМ-БОТА (AIOGRAM) ===
+# =====================================================================
 
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
@@ -539,7 +552,10 @@ async def back_to_menu(callback: types.CallbackQuery):
     await callback.message.edit_text("📱 Главное меню менеджера:", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
     await callback.answer()
 
-# === АДМИНИСТРАТИВНЫЙ ФУНКЦИОНАЛ В ТГ ===
+# =====================================================================
+# === БЛОК 8: АДМИНИСТРАТИВНЫЙ ФУНКЦИОНАЛ В ТЕЛЕГРАМ ===
+# =====================================================================
+
 @dp.callback_query(F.data == "admin_panel")
 async def view_admin(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id): return
@@ -584,7 +600,10 @@ async def admin_finalize_sub(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("✅ Доступ успешно продлен!")
 
-# === СИСТЕМА АВТОМАТИЧЕСКОГО БИЛЛИНГА ===
+# =====================================================================
+# === БЛОК 9: АВТОМАТИЧЕСКИЙ БИЛЛИНГ СИСТЕМЫ ===
+# =====================================================================
+
 async def billing_scheduler_loop():
     while True:
         try:
@@ -606,7 +625,9 @@ async def billing_scheduler_loop():
 async def set_bot_commands():
     await bot.set_my_commands([types.BotCommand(command="start", description="🔄 Запустить бота")])
 
-# === ПОЛНОЦЕННАЯ ИНТЕРАКТИВНАЯ ВЕБ-ПАНЕЛЬ УПРАВЛЕНИЯ (FASTAPI + HTML/CSS КНОПКИ) ===
+# =====================================================================
+# === БЛОК 10: ПОЛНОЦЕННАЯ ИНТЕРАКТИВНАЯ ВЕБ-ПАНЕЛЬ (FASTAPI НА PORT 8080) ===
+# =====================================================================
 
 @app.get("/", response_class=HTMLResponse)
 async def web_index():
@@ -824,22 +845,23 @@ async def web_broadcast(message_text: str = Form(...)):
 def run_fastapi_server():
     uvicorn.run(app, host="0.0.0.0", port=8080, log_level="warning")
 
-# === ЗАПУСК ПРИЛОЖЕНИЯ ===
+# =====================================================================
+# === БЛОК 11: ТОЧКА ВХОДА И АСИНХРОННЫЙ ЗАПУСК СЕРВИСОВ ===
+# =====================================================================
+
 async def main():
     await set_bot_commands()
     
-    # Запуск фонового движка автопостинга, ИИ и ЕРИД-маркировки
+    # Фоновые процессы (Автопостинг и Биллинг)
     asyncio.create_task(auto_posting_engine())
-    
-    # Запуск планировщика биллинга
     asyncio.create_task(billing_scheduler_loop())
     
     # Запуск Telegram Bot Polling
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    # Запуск интерактивной FastAPI веб-панели в отдельном потоке
+    # Запуск интерактивной FastAPI веб-панели в отдельном параллельном потоке
     threading.Thread(target=run_fastapi_server, daemon=True).start()
     
-    # Запуск основного asyncio цикла бота
+    # Старт основного asyncio цикла
     asyncio.run(main())
