@@ -47,13 +47,13 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 app = FastAPI()
 
-# === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ===
+# === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ И МИГРАЦИИ ===
 def init_db():
     os.makedirs("/app/data", exist_ok=True)
     conn = sqlite3.connect("/app/data/database.db")
     cursor = conn.cursor()
     
-    # Таблица клиентов (со всеми необходимыми полями)
+    # Таблица клиентов (создание, если не существует)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             user_id TEXT PRIMARY KEY,
@@ -70,6 +70,15 @@ def init_db():
             api_key TEXT DEFAULT '-'
         )
     """)
+    
+    # Автоматическая миграция: проверка наличия колонки api_key в уже существующей базе
+    try:
+        cursor.execute("SELECT api_key FROM clients LIMIT 1")
+    except sqlite3.OperationalError:
+        log.info("⚠️ Колонка api_key не найдена в старой БД. Запускаю бережную миграцию таблицы...")
+        cursor.execute("ALTER TABLE clients ADD COLUMN api_key TEXT DEFAULT '-'")
+        conn.commit()
+        log.info("✅ Миграция успешно завершена! Данные сохранены.")
     
     # Таблица истории отправленных постов
     cursor.execute("""
@@ -304,7 +313,7 @@ async def auto_posting_engine():
                         client_link = f"{tp_data['base_url']}?subid={c_sub_id if c_sub_id != '-' else 'saas'}"
                         promo_str = f"🎁 Промокод: {tp_data['promo']}\n" if tp_data['promo'] else ""
                         
-                        # Если донором выступает сам блогер, текст не меняем ИИ
+                        # Если донором выступает сам блогер, текст не ломаем ИИ
                         if donor.replace("@", "").lower() in c_channel_id.lower() or c_role == "blogger":
                             base_body = post['text'] if post['text'] else "🔥 Товар с обзора доступен к покупке!"
                         else:
@@ -387,8 +396,7 @@ async def flush_night_queue():
         except Exception as e:
             log.error(f"Не удалось отправить пост из очереди: {e}")
             conn = sqlite3.connect("/app/data/database.db")
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM night_queue WHERE id=?", (q_id,))
+            cursor = cursor.execute("DELETE FROM night_queue WHERE id=?", (q_id,))
             conn.commit()
             conn.close()
             
@@ -548,7 +556,7 @@ async def view_admin(callback: types.CallbackQuery):
     ]
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
 
-@dp.make_declarative if False else dp.callback_query(F.data == "admin_give_sub")
+@dp.callback_query(F.data == "admin_give_sub")
 async def admin_give_sub_start(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id): return
     await state.set_state(AdminStates.waiting_for_user_id)
@@ -608,7 +616,6 @@ async def web_index():
     rows = cursor.fetchall()
     conn.close()
     
-    # HTML ВЕРСТКА С КНОПКАМИ, ФОРМАМИ УПРАВЛЕНИЯ И НОВЫМИ ФУНКЦИЯМИ
     html_content = """
     <!DOCTYPE html>
     <html>
@@ -669,7 +676,7 @@ async def web_index():
                 <td>@{r[1]}</td>
                 <td>{r[2]}</td>
                 <td>{r[3]}</td>
-                <td>{r[ tariffs if False else 3]}</td>
+                <td>{r[3 if False else 3]}</td>
                 <td><b>{role_type}</b></td>
                 <td>{status_badge}</td>
                 <td>{r[5]}</td>
@@ -691,7 +698,7 @@ async def web_index():
 
                     <form action="/web-clear-history" method="post">
                         <input type="hidden" name="user_id" value="{r[0]}">
-                        <button type="submit" class="btn btn-orange" onclick="return confirm('Сбросить историю постов для этого пользователя?')">🗑 Очистить логи</button>
+                        <button type="submit" class="btn btn-orange" onclick="return confirm('Сбросить историю постов?')">🗑 Очистить логи</button>
                     </form>
                 </td>
             </tr>
@@ -728,7 +735,7 @@ async def web_index():
             <form action="/web-broadcast" method="post" style="width: 100%;">
                 <h3 style="margin-top: 0; color: #0c5460;">📣 Массовая системная рассылка всем блогерам</h3>
                 <div class="form-group" style="margin-bottom: 10px;">
-                    <textarea name="message_text" rows="3" required placeholder="Введите текст сообщения... Оно придет всем пользователям бота в личные сообщения от имени бота."></textarea>
+                    <textarea name="message_text" rows="3" required placeholder="Введите текст сообщения..."></textarea>
                 </div>
                 <button type="submit" class="btn btn-blue" style="padding: 8px 20px;">🚀 Запустить рассылку</button>
             </form>
@@ -739,7 +746,7 @@ async def web_index():
     """
     return html_content
 
-# --- ЭНДПОИНТЫ ДЕЙСТВИЙ ВЕБ-САЙТА (ОБРАБОТЧИКИ КНОПОК) ---
+# --- ЭНДПОИНТЫ ДЕЙСТВИЙ ВЕБ-САЙТА ---
 
 @app.post("/web-toggle-status")
 async def web_toggle_status(user_id: str = Form(...), current_status: str = Form(...)):
@@ -750,7 +757,6 @@ async def web_toggle_status(user_id: str = Form(...), current_status: str = Form
     conn.commit()
     conn.close()
     
-    # Отправляем уведомление пользователю в ТГ о смене статуса
     try:
         msg = "🟢 Ваш бот-ассистент успешно активирован администратором!" if "Активен" in new_status else "🔴 Ваш бот-ассистент временно приостановлен администратором."
         await bot.send_message(chat_id=user_id, text=msg)
@@ -810,9 +816,8 @@ async def web_broadcast(message_text: str = Form(...)):
     for u in users:
         try:
             await bot.send_message(chat_id=u[0], text=f"📢 *Важное уведомление от платформы:*\n\n{message_text}", parse_mode="Markdown")
-            await asyncio.sleep(0.1) # Защита от спам-фильтра Telegram
-        except Exception:
-            pass
+            await asyncio.sleep(0.1)
+        except Exception: pass
             
     return RedirectResponse(url="/", status_code=303)
 
