@@ -24,13 +24,13 @@ from typing import Optional
 import httpx
 import uvicorn
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.types import InlineKeyboardMarkup, Message 
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import InlineKeyboardMarkup, Message  # <--- ВОТ ЭТОТ ИМПОРТ
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
