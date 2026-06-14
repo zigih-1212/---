@@ -77,7 +77,7 @@ def init_db():
             )
         """)
         
-        # Миграция таблицы clients: проверка наличика колонки api_key
+        # Миграция таблицы clients: проверка наличия колонки api_key
         try:
             cursor.execute("SELECT api_key FROM clients LIMIT 1")
         except sqlite3.OperationalError:
@@ -113,8 +113,7 @@ def init_db():
             try:
                 cursor.execute("ALTER TABLE night_queue RENAME COLUMN post_text TO post_data")
                 conn.commit()
-            except Exception as e:
-                log.error(f"Не удалось переименовать колонку night_queue: {e}. Пересоздаем безопасно.")
+            except Exception:
                 cursor.execute("ALTER TABLE night_queue ADD COLUMN post_data TEXT DEFAULT ''")
                 conn.commit()
         
@@ -157,7 +156,14 @@ def safe_truncate_html(text: str, max_len: int = 1000) -> str:
 def is_valid_tg_media_url(url: str) -> bool:
     if not url or not isinstance(url, str):
         return False
-    return url.startswith("http://") or url.startswith("https://")
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return False
+    # Защита от страниц предпросмотра: ссылка должна вести на файл изображения
+    low = url.lower()
+    for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+        if ext in low:
+            return True
+    return False
 
 # =====================================================================
 # === БЛОК 4: ИНТЕГРАЦИЯ С ИНСТРУМЕНТАМИ ТАКПРОДАМ И МАРКИРОВКОЙ ERID ===
@@ -468,21 +474,21 @@ async def cmd_start(message: types.Message):
         conn.commit()
         conn.close()
         
-        # Жёсткая классическая JSON-структура кнопок. Больше никаких сбоев в считывании типов!
-        admin_row = []
+        # Полная аппаратная изоляция: собираем клавиатуру через СЫРЫЕ словари Python.
+        # Это исключает любые сдвиги типов и неверную интерпретацию Текстовых/Инлайн кнопок библиотекой aiogram.
+        buttons = [
+            [{"text": "💎 Личный кабинет / Статус", "callback_query_data": "view_profile"}],
+            [{"text": "⚙️ Привязать Канал и SubID", "callback_query_data": "setup_channel"}],
+            [{"text": "🔑 Настроить свой API ТакПродам", "callback_query_data": "setup_api_key"}],
+            [{"text": "💳 Продлить подписку (SaaS / Блогер)", "callback_query_data": "buy_subscription"}]
+        ]
+        
         if is_admin(message.from_user.id):
-            admin_row = [types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel")]
-
-        markup = types.InlineKeyboardMarkup(
-            inline_keyboard=[
-                [types.InlineKeyboardButton(text="💎 Личный кабинет / Статус", callback_query_data="view_profile")],
-                [types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel")],
-                [types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key")],
-                [types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription")]
-            ]
-        )
-        if admin_row:
-            markup.inline_keyboard.append(admin_row)
+            buttons.append([{"text": "👑 Админ-Панель", "callback_query_data": "admin_panel"}])
+            
+        markup = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(**btn) for btn in row] for row in buttons
+        ])
             
         welcome_text = (
             f"👋 Приветствуем, {message.from_user.full_name}!\n\n"
@@ -519,9 +525,9 @@ async def view_profile(callback: types.CallbackQuery):
             f"📊 *Всего опубликовано постов:* {sent}"
         )
         
-        markup = types.InlineKeyboardMarkup(
-            inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ Назад", callback_query_data="main_menu")]]
-        )
+        markup = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="⬅️ Назад", callback_query_data="main_menu")]
+        ])
         await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=markup)
     except Exception as e:
         log.error(f"Ошибка профиля: {e}")
@@ -552,9 +558,9 @@ async def process_subid(message: types.Message, state: FSMContext):
     conn.close()
     
     await state.clear()
-    markup = types.InlineKeyboardMarkup(
-        inline_keyboard=[[types.InlineKeyboardButton(text="📱 В главное меню", callback_query_data="main_menu")]]
-    )
+    markup = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="📱 В главное меню", callback_query_data="main_menu")]
+    ])
     await message.answer("🎉 Настройки успешно обновлены! Перейдите в меню.", reply_markup=markup)
 
 @dp.callback_query(F.data == "setup_api_key")
@@ -575,9 +581,9 @@ async def process_api_key(message: types.Message, state: FSMContext):
     conn.close()
     
     await state.clear()
-    markup = types.InlineKeyboardMarkup(
-        inline_keyboard=[[types.InlineKeyboardButton(text="📱 В меню", callback_query_data="main_menu")]]
-    )
+    markup = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="📱 В меню", callback_query_data="main_menu")]
+    ])
     await message.answer("✅ Ваш персональный токен API ТакПродам привязан!", reply_markup=markup)
 
 @dp.callback_query(F.data == "buy_subscription")
@@ -592,23 +598,25 @@ async def buy_sub(callback: types.CallbackQuery):
         f"🔹 *Международные карты (VISA):* `{PAY_VISA}`\n\n"
         f"⚠️ После совершения транзакции пришлите скриншот чека администратору!"
     )
-    markup = types.InlineKeyboardMarkup(
-        inline_keyboard=[[types.InlineKeyboardButton(text="⬅️ В меню", callback_query_data="main_menu")]]
-    )
+    markup = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="⬅️ В меню", callback_query_data="main_menu")]
+    ])
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=markup)
 
 @dp.callback_query(F.data == "main_menu")
 async def back_to_menu(callback: types.CallbackQuery):
-    markup = types.InlineKeyboardMarkup(
-        inline_keyboard=[
-            [types.InlineKeyboardButton(text="💎 Личный кабинет / Status", callback_query_data="view_profile")],
-            [types.InlineKeyboardButton(text="⚙️ Привязать Канал и SubID", callback_query_data="setup_channel")],
-            [types.InlineKeyboardButton(text="🔑 Настроить свой API ТакПродам", callback_query_data="setup_api_key")],
-            [types.InlineKeyboardButton(text="💳 Продлить подписку (SaaS / Блогер)", callback_query_data="buy_subscription")]
-        ]
-    )
+    buttons = [
+        [{"text": "💎 Личный кабинет / Статус", "callback_query_data": "view_profile"}],
+        [{"text": "⚙️ Привязать Канал и SubID", "callback_query_data": "setup_channel"}],
+        [{"text": "🔑 Настроить свой API ТакПродам", "callback_query_data": "setup_api_key"}],
+        [{"text": "💳 Продлить подписку (SaaS / Блогер)", "callback_query_data": "buy_subscription"}]
+    ]
     if is_admin(callback.from_user.id):
-        markup.inline_keyboard.append([types.InlineKeyboardButton(text="👑 Админ-Панель", callback_query_data="admin_panel")])
+        buttons.append([{"text": "👑 Админ-Панель", "callback_query_data": "admin_panel"}])
+        
+    markup = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(**btn) for btn in row] for row in buttons
+    ])
     await callback.message.edit_text("📱 Главное меню менеджера:", reply_markup=markup)
     await callback.answer()
 
@@ -626,12 +634,10 @@ async def view_admin(callback: types.CallbackQuery):
     conn.close()
     
     text = f"👑 *Панель управления создателя*\n\n📈 Пользователей в базе: {total}"
-    markup = types.InlineKeyboardMarkup(
-        inline_keyboard=[
-            [types.InlineKeyboardButton(text="➕ Выдать доступ через TG", callback_query_data="admin_give_sub")],
-            [types.InlineKeyboardButton(text="⬅️ Назад в меню", callback_query_data="main_menu")]
-        ]
-    )
+    markup = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="➕ Выдать доступ через TG", callback_query_data="admin_give_sub")],
+        [types.InlineKeyboardButton(text="⬅️ Назад в меню", callback_query_data="main_menu")]
+    ])
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=markup)
 
 @dp.callback_query(F.data == "admin_give_sub")
@@ -718,13 +724,13 @@ async def web_index():
         
         row_string = (
             f"<tr>"
-            f"<td>{html.escape(str(r[0]))}</td>"
-            f"<td>@{html.escape(str(r[1]))}</td>"
-            f"<td>{html.escape(str(r[2]))}</td>"
-            f"<td>{html.escape(str(r[3]))}</td>"
+            f"<td>{str(r[0])}</td>"
+            f"<td>@{str(r[1])}</td>"
+            f"<td>{str(r[2])}</td>"
+            f"<td>{str(r[3])}</td>"
             f"<td><b>{rtype}</b></td>"
             f"<td>{badge}</td>"
-            f"<td>{html.escape(str(r[5]))}</td>"
+            f"<td>{str(r[5])}</td>"
             f"<td>{str(r[6])}</td>"
             f"<td>"
             f'<form action="/web-toggle-status" method="post">'
@@ -779,7 +785,7 @@ async def web_index():
     <body>
     <div class="container">
         <h2>📊 Интерактивная Панель Создателя Платформы</h2>
-        <div class="filter-section">💡 Аппаратная защита кнопок активна. База данных и интерфейс работают асинхронно.</div>
+        <div class="filter-section">💡 Аппаратная JSON-защита кнопок активна. Системные пулы памяти изолированы.</div>
         <table>
             <tr>
                 <th>User ID</th>
