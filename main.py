@@ -1794,9 +1794,9 @@ async def main() -> None:
     init_db()
 
     bot = Bot(
-    token=BOT_TOKEN, 
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
+        token=BOT_TOKEN, 
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     dp.include_router(router)
@@ -1805,14 +1805,24 @@ async def main() -> None:
     scheduler.start()
     logger.info("Планировщик задач запущен")
 
-    # FastAPI WebApp
+    # 1. Создаем веб-приложение
     fastapi_app = create_fastapi_app(bot)
-    uvicorn
+    
+    # 2. Создаем сервер (ВАЖНО: переменная server должна быть здесь!)
+    config = uvicorn.Config(
+        fastapi_app,
+        host=os.getenv("WEBAPP_HOST", "0.0.0.0"),
+        port=int(os.getenv("WEBAPP_PORT", 8000)),
+        log_level="warning",
+    )
+    server = uvicorn.Server(config) # Вот она!
 
-    # Запускаем бот и веб-сервер параллельно
+    logger.info(f"WebApp запущен")
+
+    # 3. Теперь вызываем gather
     await asyncio.gather(
         dp.start_polling(bot),
-        server.serve(),
+        server.serve(), # Теперь server здесь виден
     )
 
 
