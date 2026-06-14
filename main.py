@@ -1821,10 +1821,9 @@ async def main() -> None:
 
     # 3. Теперь вызываем gather
     await asyncio.gather(
-        dp.start_polling(bot),
-        server.serve(), # Теперь server здесь виден
+        dp.start_polling(bot), # Здесь должны быть скобки, так как это вызов
+        server.serve(),        # Здесь должны быть скобки
     )
-
 
 if __name__ == "__main__":
     asyncio.run(main())
