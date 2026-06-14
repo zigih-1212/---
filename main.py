@@ -782,7 +782,45 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 # -----------------------------------------------------------------------------
 # Онбординг: привязка канала
 # -----------------------------------------------------------------------------
+# --- Регистрация блогера ---
 
+@router.callback_query(OnboardingStates.waiting_role, F.data == "role:blogger")
+async def cb_blogger_reg(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_text(
+        "👤 <b>Регистрация блогера</b>\n\n"
+        "Отправь ссылку на свою основную площадку (YouTube, TikTok или Instagram), "
+        "чтобы я мог начать мониторинг.",
+        parse_mode=ParseMode.HTML
+    )
+    await state.set_state(OnboardingStates.waiting_channel) # Используем существующее состояние
+
+@router.message(OnboardingStates.waiting_channel)
+async def handle_blogger_channel(message: Message, state: FSMContext) -> None:
+    link = message.text.strip()
+    user_id = message.from_user.id
+    username = message.from_user.username or "user"
+    
+    # Определяем площадку из ссылки (простая логика)
+    platform = "yt" if "youtube" in link.lower() else "tt" if "tiktok" in link.lower() else "inst"
+    
+    # Генерация хвостика: имя_платформа (пример: nastyayt)
+    sub_id = f"{username.lower()}{platform}"
+    
+    conn = get_db()
+    conn.execute(
+        "UPDATE users SET role='blogger', channel_id=?, traffic_source=?, sub_id=? WHERE user_id=?",
+        (link, 'affiliate', sub_id, user_id)
+    )
+    conn.commit()
+    conn.close()
+    
+    await state.clear()
+    await message.answer(
+        f"✅ <b>Готово!</b>\n"
+        f"Твой личный хвост для партнёрки: <code>{sub_id}</code>\n"
+        f"Теперь я буду мониторить этот канал.",
+        parse_mode=ParseMode.HTML
+    )
 # -----------------------------------------------------------------------------
 # Починка: Умное меню управления каналом
 # -----------------------------------------------------------------------------
