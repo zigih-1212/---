@@ -960,6 +960,55 @@ async def process_payment_method(callback_query: CallbackQuery, state: FSMContex
     await state.set_state(PaymentFSM.waiting_receipt)
     await callback_query.answer()
 
+# --- Шаг 4: Прием чека и пересылка админу ---
+@router.message(PaymentFSM.waiting_receipt, F.photo)
+async def process_receipt_photo(message: Message, state: FSMContext):
+    # Берем ID самого качественного фото
+    photo_id = message.photo[-1].file_id
+    user = message.from_user
+    data = await state.get_data()
+    plan_id = data.get("selected_plan")
+    plan = TARIFF_PLANS.get(plan_id)
+
+    # Сообщение пользователю
+    await message.answer("✅ Чек получен! Администратор проверит его в течение 30 минут и активирует подписку.")
+
+    # Формируем сообщение для админа
+    admin_text = (
+        f"💰 <b>Новая заявка на оплату!</b>\n\n"
+        f"👤 Пользователь: @{user.username or 'без юзернейма'}\n"
+        f"🆔 ID: <code>{user.id}</code>\n"
+        f"💎 Тариф: {plan['label']}\n\n"
+        f"Ожидает подтверждения."
+    )
+
+    # Клавиатура для админа
+    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Активировать", callback_data=f"adm_pay:ok:{user.id}:{plan_id}")],
+        [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"adm_pay:no:{user.id}")]
+    ])
+
+    # Рассылаем всем админам (в списке ADMIN_IDS)
+    for admin_id in ADMIN_IDS:
+        try:
+            await message.bot.send_photo(
+                chat_id=admin_id,
+                photo=photo_id,
+                caption=admin_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=admin_kb
+            )
+        except Exception as e:
+            logger.error(f"Не удалось отправить чек админу {admin_id}: {e}")
+
+    # Сбрасываем состояние
+    await state.clear()
+
+# Если пользователь прислал не фото, а текст
+@router.message(PaymentFSM.waiting_receipt)
+async def process_receipt_wrong_type(message: Message):
+    await message.answer("⚠️ Пожалуйста, пришлите именно фотографию (скриншот) чека.")
+
 # -----------------------------------------------------------------------------
 # Оплата Stars
 # -----------------------------------------------------------------------------
