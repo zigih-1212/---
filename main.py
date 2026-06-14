@@ -1746,6 +1746,36 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
 # =============================================================================
 # === MAIN ENTRYPOINT =========================================================
 # =============================================================================
+async def scheduler_job(bot: Bot):
+    """Задача, которая будет выполняться каждые N минут."""
+    logger.info("Запуск цикла парсинга...")
+    await scan_donor_channels(bot)
+
+async def main():
+    # Инициализация
+    init_db()
+    bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+    dp = Dispatcher(storage=MemoryStorage())
+    
+    # Регистрация роутеров
+    dp.include_router(router)
+    
+    # Настройка планировщика
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(scheduler_job, "interval", minutes=15, args=(bot,))
+    scheduler.start()
+    
+    logger.info("=== AutoPost Bot запускается ===")
+    
+    # Запуск бота (polling)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    try:
+        import asyncio
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Бот остановлен")
 
 async def main() -> None:
     logger.info("=== AutoPost Bot запускается ===")
