@@ -325,7 +325,7 @@ async def rewrite_text_with_ai(text: str) -> str:
             logger.error(f"Ошибка рерайта: {e}")
     return text
 
-  async def process_donor_post(bot: Bot, channel_id: str, message_text: str, photo_url: Optional[str]):
+async def process_donor_post(bot: Bot, channel_id: str, message_text: str, photo_url: Optional[str]):
     """Обрабатывает один пост: поиск товара -> ERID -> Рерайт -> Публикация."""
     
     # 1. Поиск артикула/ссылки (упрощенно: ищем число от 6 до 12 знаков)
