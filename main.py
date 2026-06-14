@@ -795,7 +795,24 @@ async def cb_menu_channel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(OnboardingStates.waiting_channel)
     await callback.answer()
 
-
+@router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
+async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
+    role = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+    
+    conn = get_db()
+    conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
+    conn.commit()
+    conn.close()
+    
+    await state.clear()
+    await callback.message.edit_text(
+        f"✅ Выбрана роль: <b>{'Блогер' if role == 'blogger' else 'SaaS'}</b>\n\n"
+        "Теперь привяжи канал, чтобы начать.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_main_menu(role)
+    )
+  
 @router.message(OnboardingStates.waiting_channel)
 async def handle_channel_input(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
