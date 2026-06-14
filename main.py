@@ -1009,6 +1009,70 @@ async def process_receipt_photo(message: Message, state: FSMContext):
 async def process_receipt_wrong_type(message: Message):
     await message.answer("⚠️ Пожалуйста, пришлите именно фотографию (скриншот) чека.")
 
+# --- Шаг 5: Обработка решения админа (нажатие кнопок под чеком) ---
+@router.callback_query(F.data.startswith("adm_pay:"))
+async def admin_payment_decision(callback_query: CallbackQuery):
+    # Разбираем данные: [тип_действия, id_юзера, id_тарифа(если есть)]
+    parts = callback_query.data.split(":")
+    action = parts[1]
+    user_id = int(parts[2])
+    
+    if action == "ok":
+        plan_id = parts[3]
+        plan = TARIFF_PLANS.get(plan_id)
+        
+        # Обновляем БД (продлеваем подписку)
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT sub_end FROM users WHERE user_id=?", (user_id,)).fetchone()
+            now = datetime.now(tz=timezone.utc)
+            
+            # Логика продления (аналогично автоматическому продлению)
+            if row and row["sub_end"]:
+                try:
+                    current_end = datetime.fromisoformat(row["sub_end"])
+                    base = max(current_end, now)
+                except ValueError:
+                    base = now
+            else:
+                base = now
+            new_end = base + timedelta(days=plan["days"])
+            
+            conn.execute(
+                "UPDATE users SET sub_end=?, is_active=1 WHERE user_id=?",
+                (new_end.isoformat(), user_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        
+        # Уведомляем пользователя
+        try:
+            await callback_query.bot.send_message(
+                user_id, 
+                f"✅ <b>Оплата подтверждена!</b>\n\n"
+                f"Ваш тариф <b>{plan['label']}</b> активирован до {new_end.strftime('%d.%m.%Y')}."
+            )
+        except Exception:
+            pass
+            
+        await callback_query.message.edit_caption(caption=f"✅ Подписка активирована для {user_id}")
+        await callback_query.answer("Подписка активирована")
+        
+    elif action == "no":
+        # Просто отклоняем
+        try:
+            await callback_query.bot.send_message(
+                user_id, 
+                "❌ <b>Оплата отклонена.</b>\n\n"
+                "Администратор не смог подтвердить ваш перевод. Пожалуйста, обратитесь в поддержку."
+            )
+        except Exception:
+            pass
+            
+        await callback_query.message.edit_caption(caption=f"❌ Оплата отклонена для {user_id}")
+        await callback_query.answer("Заявка отклонена")
+
 # -----------------------------------------------------------------------------
 # Оплата Stars
 # -----------------------------------------------------------------------------
