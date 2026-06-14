@@ -676,7 +676,7 @@ async def web_index():
                 <td>@{r[1]}</td>
                 <td>{r[2]}</td>
                 <td>{r[3]}</td>
-                <td>{r[3 if False else 3]}</td>
+                <td>{r[3]}</td>
                 <td><b>{role_type}</b></td>
                 <td>{status_badge}</td>
                 <td>{r[5]}</td>
