@@ -53,15 +53,18 @@ stream_handler.setFormatter(log_formatter)
 logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler])
 logger = logging.getLogger("autopost_bot")
 
-# ---------- Конфигурация (замените на os.getenv в проде) ---------------------
+# ---------- Конфигурация (берем из переменных окружения Railway) ----------
 BOT_TOKEN: str = os.getenv("OT_TOKEN")
-ADMIN_IDS: list[int] = [123456789]          # Telegram ID администраторов
-QUARANTINE_CHAT_ID: int = -1001234567890    # Чат для карантинных постов
-ADMIN_VIP_CHANNEL_ID: int = -1009876543210  # Главный канал для VIP-закрепа
+# Преобразуем строку ADMIN_IDS из переменной (например, "7152107861,6373151051") в список чисел
+ADMIN_IDS: list[int] = [int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip()]
+QUARANTINE_CHAT_ID: int = int(os.getenv("QUARANTINE_CHAT_ID", "-1001234567890"))
+ADMIN_VIP_CHANNEL_ID: int = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "-1009876543210"))
 TAKPRODAM_API_BASE: str = "https://api.takprodam.ru/v1"
 WEBAPP_HOST: str = "0.0.0.0"
-WEBAPP_PORT: int = 8000
-STARS_PROVIDER_TOKEN: str = ""              # Пустая строка = Telegram Stars
+WEBAPP_PORT: int = int(os.getenv("WEBAPP_PORT", 8000))
+STARS_PROVIDER_TOKEN: str = os.getenv("STARS_PROVIDER_TOKEN", "")
+# Новая переменная для ИИ-рерайтинга
+DEEPINFRA_API_KEY: str = os.getenv("DEEPINFRA_API_KEY", "")
 
 # ---------- Тарифная сетка (Цены в рублях и эквивалент в Telegram Stars) --------
 # Курс: 1 рубль ≈ 1.5 Stars
