@@ -37,7 +37,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from aiogram.types import InlineKeyboardMarkup, Message, InlineKeyboardButton, LabeledPrice, SuccessfulPayment, CallbackQuery, PreCheckoutQuery
-from aiogram.fsm.state import State, StatesGroup
 
 class PaymentFSM(StatesGroup):
     choosing_tariff = State()        # Шаг 1: Пользователь выбирает срок подписки
