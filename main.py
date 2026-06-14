@@ -144,6 +144,16 @@ def escape_html(text: str) -> str:
         return ""
     return html.escape(text)
 
+def safe_truncate_html(text: str, max_len: int = 1000) -> str:
+    """ Безопасно обрезает текст для лимитов Telegram-картинок, не ломая HTML-теги ссылок """
+    if len(text) <= max_len:
+        return text
+    truncated = text[:max_len]
+    # Если мы обрезали текст внутри ссылки, корректно закрываем её тегом, чтобы Telegram не выдавал ошибку структуры
+    if "<a " in truncated and "</a>" not in truncated[truncated.rfind("<a "):]:
+        truncated += "...</a>"
+    return truncated
+
 # =====================================================================
 # === БЛОК 4: ИНТЕГРАЦИЯ С ИНСТРУМЕНТАМИ ТАКПРОДАМ И МАРКИРОВКОЙ ERID ===
 # =====================================================================
@@ -306,7 +316,7 @@ async def auto_posting_engine():
                             
                             try:
                                 if post['photos'] and len(post['photos']) > 0 and "http" in post['photos'][0]:
-                                    await bot.send_photo(chat_id=MY_MAIN_CHANNEL, photo=post['photos'][0], caption=main_post_text[:1024], parse_mode="HTML")
+                                    await bot.send_photo(chat_id=MY_MAIN_CHANNEL, photo=post['photos'][0], caption=safe_truncate_html(main_post_text), parse_mode="HTML")
                                 else:
                                     await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=main_post_text, parse_mode="HTML")
                                     
@@ -370,7 +380,7 @@ async def auto_posting_engine():
                         else:
                             try:
                                 if post['photos'] and len(post['photos']) > 0 and "http" in post['photos'][0]:
-                                    await bot.send_photo(chat_id=c_channel_id, photo=post['photos'][0], caption=client_post_text[:1024], parse_mode="HTML")
+                                    await bot.send_photo(chat_id=c_channel_id, photo=post['photos'][0], caption=safe_truncate_html(client_post_text), parse_mode="HTML")
                                 else:
                                     await bot.send_message(chat_id=c_channel_id, text=client_post_text, parse_mode="HTML")
                                     
@@ -410,7 +420,7 @@ async def flush_night_queue():
         
         try:
             if payload.get("photo"):
-                await bot.send_photo(chat_id=payload["chat_id"], photo=payload["photo"], caption=payload["text"][:1024], parse_mode="HTML")
+                await bot.send_photo(chat_id=payload["chat_id"], photo=payload["photo"], caption=safe_truncate_html(payload["text"]), parse_mode="HTML")
             else:
                 await bot.send_message(chat_id=payload["chat_id"], text=payload["text"], parse_mode="HTML")
                 
