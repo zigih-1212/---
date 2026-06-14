@@ -741,33 +741,27 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             "SELECT user_id, role FROM users WHERE user_id=?", (user_id,)
         ).fetchone()
 
+        # ... внутри cmd_start ...
         if not existing:
             sub_id = generate_sub_id(username, user_id)
+            # Временно ставим 'pending', пока пользователь не выберет роль
             conn.execute(
-                """INSERT INTO users
-                   (user_id, username, sub_id, traffic_source, referrer_id)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (user_id, username, sub_id, traffic_source, referrer_id)
+                "INSERT INTO users (user_id, username, sub_id, traffic_source, referrer_id, role) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, username, sub_id, traffic_source, referrer_id, 'pending')
             )
             conn.commit()
-            role = "blogger"
-        else:
-            role = existing["role"]
-            conn.execute(
-                "UPDATE users SET username=? WHERE user_id=?", (username, user_id)
+            
+            # Отправляем меню выбора роли
+            await message.answer(
+                "👋 Привет! Выбери свой режим работы:",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="👤 Блогер", callback_data="role:blogger")],
+                    [InlineKeyboardButton(text="🏢 SaaS / Бизнес", callback_data="role:saas")]
+                ])
             )
-            conn.commit()
-    finally:
-        conn.close()
-
-    if user_id in ADMIN_IDS:
-        await message.answer(
-            "👋 <b>Панель администратора</b>\n\n"
-            "Управляй платформой: рассылки, биллинг, продления подписок.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb_admin_panel(),
-        )
-        return
+            await state.set_state(OnboardingStates.waiting_role)
+            return
+# ... остальной код (если existing есть, то оставляем как было) ...
 
     # Приветствие для блогера/SaaS (язык профессионала рынка)
     welcome_text = (
