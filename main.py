@@ -1807,15 +1807,7 @@ async def main() -> None:
 
     # FastAPI WebApp
     fastapi_app = create_fastapi_app(bot)
-    config = uvicorn.Config(
-        fastapi_app,
-        host=os.getenv("WEBAPP_HOST", "0.0.0.0"),
-        port=WEBAPP_PORT,
-        log_level="warning",
-    )
-    server = uvicorn.Server(config)
-
-    logger.info(f"WebApp доступен на http://{os.getenv('WEBAPP_HOST', '0.0.0.0')}:{WEBAPP_PORT}/admin")
+    uvicorn
 
     # Запускаем бот и веб-сервер параллельно
     await asyncio.gather(
