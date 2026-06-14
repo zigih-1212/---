@@ -17,6 +17,8 @@ import re
 import sqlite3
 import time
 import asyncio
+import yt_dlp
+import logging
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
@@ -42,9 +44,26 @@ from fastapi.responses import HTMLResponse
 from aiogram.types import InlineKeyboardMarkup, Message, InlineKeyboardButton, LabeledPrice, SuccessfulPayment, CallbackQuery, PreCheckoutQuery
 
 class PaymentFSM(StatesGroup):
-    choosing_tariff = State()        # Шаг 1: Пользователь выбирает срок подписки
-    choosing_method = State()        # Шаг 2: Пользователь выбирает способ оплаты (РФ, КГ, Крипта)
-    waiting_for_receipt = State()    # Шаг 3: Бот ждет фото чека от пользователя
+    choosing_tariff = State()        
+    choosing_method = State()        
+    waiting_for_receipt = State() 
+
+def get_latest_video(channel_url: str):
+    """Возвращает данные о последнем видео на канале."""
+    ydl_opts = {
+        'quiet': True,
+        'extract_flat': True,
+        'force_generic_extractor': True,
+        'playlist_items': '1', # Берем только последнее
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(channel_url, download=False)
+            if 'entries' in info and info['entries']:
+                return info['entries'][0]
+    except Exception as e:
+        logger.error(f"Ошибка парсинга {channel_url}: {e}")
+    return None
 
 # --- Логирование ---
 log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -52,6 +71,7 @@ file_handler = RotatingFileHandler("bot.log", maxBytes=5 * 1024 * 1024, backupCo
 file_handler.setFormatter(log_formatter)
 logging.basicConfig(level=logging.INFO, handlers=[file_handler, logging.StreamHandler()])
 logger = logging.getLogger("autopost_bot")
+logger = logging.getLogger("parser")
 
 # --- Конфигурация ---
 BOT_TOKEN = os.getenv("OT_TOKEN")
