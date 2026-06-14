@@ -304,6 +304,26 @@ async def _send_to_quarantine(
     except TelegramAPIError as e:
         logger.error(f"Не удалось отправить пост в карантин: {e}")
 
+async def rewrite_text_with_ai(text: str) -> str:
+    """Уникализирует текст поста через API DeepInfra."""
+    if not DEEPINFRA_API_KEY:
+        return text  # Если ключ не задан, возвращаем оригинал
+
+    url = "https://api.deepinfra.com/v1/openai/chat/completions"
+    headers = {"Authorization": f"Bearer {DEEPINFRA_API_KEY}"}
+    payload = {
+        "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+        "messages": [{"role": "user", "content": f"Перепиши этот текст для рекламного поста в Telegram, сохранив суть и призыв к действию: {text}"}]
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code == 200:
+                return resp.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.error(f"Ошибка рерайта: {e}")
+    return text
 
 # =============================================================================
 # === HTML SANITIZER ==========================================================
