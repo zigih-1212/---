@@ -916,6 +916,49 @@ async def process_tariff_selection(callback_query: CallbackQuery, state: FSMCont
     await state.set_state(PaymentFSM.choosing_method)
     await callback_query.answer()
 
+# --- Шаг 3: Выдача реквизитов и ожидание чека ---
+@router.callback_query(PaymentFSM.choosing_method, F.data.startswith("pay:"))
+async def process_payment_method(callback_query: CallbackQuery, state: FSMContext):
+    method = callback_query.data.split(":")[1]
+    
+    # Достаем выбранный тариф из состояния
+    data = await state.get_data()
+    plan_id = data.get("selected_plan")
+    plan = TARIFF_PLANS.get(plan_id)
+    
+    if not plan:
+        await callback_query.answer("⚠️ Ошибка данных, начните сначала", show_alert=True)
+        return
+
+    # Подготовка текста реквизитов
+    if method == "ru":
+        text = (f"💳 <b>Оплата картой РФ</b>\n\n"
+                f"К оплате: <b>{plan['rub']} ₽</b>\n\n"
+                f"Сбербанк: <code>2202 2081 0829 0025</code> (Выборных Д.П)\n"
+                f"Т-Банк: <code>2200 7013 7009 3863</code> (Выборных Д.П)\n\n"
+                f"После перевода пришлите фото чека в этот чат.")
+    elif method == "kg":
+        text = (f"🇰🇬 <b>Оплата Visa KG</b>\n\n"
+                f"К оплате: <b>{plan['rub']} ₽</b> (по курсу банка)\n\n"
+                f"Visa: <code>4196720087839790</code>\n\n"
+                f"После перевода пришлите фото чека в этот чат.")
+    elif method == "ton":
+        text = (f"💎 <b>Оплата TON</b>\n\n"
+                f"К оплате: <b>{plan['rub']} ₽</b> (эквивалент в TON)\n\n"
+                f"Адрес: <code>UQCua97IuHkQy5F5NPHBrDpay_FJRJoWZa1OOLnq-geGIbGT</code>\n"
+                f"После перевода пришлите скриншот транзакции в этот чат.")
+    
+    await callback_query.message.edit_text(
+        text, 
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад к выбору метода", callback_data=f"tariff_{plan_id}")]
+        ])
+    )
+    
+    # Переводим бота в состояние ожидания фотографии
+    await state.set_state(PaymentFSM.waiting_receipt)
+    await callback_query.answer()
 
 # -----------------------------------------------------------------------------
 # Оплата Stars
