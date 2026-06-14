@@ -305,7 +305,7 @@ async def auto_posting_engine():
                             )
                             
                             try:
-                                if post['photos']:
+                                if post['photos'] and len(post['photos']) > 0 and "http" in post['photos'][0]:
                                     await bot.send_photo(chat_id=MY_MAIN_CHANNEL, photo=post['photos'][0], caption=main_post_text[:1024], parse_mode="HTML")
                                 else:
                                     await bot.send_message(chat_id=MY_MAIN_CHANNEL, text=main_post_text, parse_mode="HTML")
@@ -360,7 +360,7 @@ async def auto_posting_engine():
                             payload = {
                                 "chat_id": c_channel_id,
                                 "text": client_post_text,
-                                "photo": post['photos'][0] if post['photos'] else None,
+                                "photo": post['photos'][0] if (post['photos'] and "http" in post['photos'][0]) else None,
                                 "donor_post_id": post['id']
                             }
                             cursor.execute("INSERT INTO night_queue (client_id, post_data, added_at) VALUES (?, ?, ?)",
@@ -369,7 +369,7 @@ async def auto_posting_engine():
                             log.info(f"🌙 Пост {post['id']} добавлен в ночную очередь клиента {c_user_id}")
                         else:
                             try:
-                                if post['photos']:
+                                if post['photos'] and len(post['photos']) > 0 and "http" in post['photos'][0]:
                                     await bot.send_photo(chat_id=c_channel_id, photo=post['photos'][0], caption=client_post_text[:1024], parse_mode="HTML")
                                 else:
                                     await bot.send_message(chat_id=c_channel_id, text=client_post_text, parse_mode="HTML")
@@ -659,7 +659,7 @@ async def web_index():
     
     rows_html = ""
     for r in rows:
-        status_badge = f'<span class="badge-active">{r[4]}</span>' if "Accum" in r[4] or "Активен" in r[4] else f'<span class="badge-disabled">{r[4]}</span>'
+        status_badge = f'<span class="badge-active">{r[4]}</span>' if "Активен" in r[4] else f'<span class="badge-disabled">{r[4]}</span>'
         role_type = "SaaS (Личный API)" if r[7] == "saas" else "Блогер (Твой API)"
         
         rows_html += (
@@ -667,7 +667,6 @@ async def web_index():
             "<td>" + str(r[0]) + "</td>"
             "<td>@" + str(r[1]) + "</td>"
             "<td>" + str(r[2]) + "</td>"
-            "<td>" + str(r[3]) + "</td>"
             "<td>" + str(r[3]) + "</td>"
             "<td><b>" + role_type + "</b></td>"
             "<td>" + status_badge + "</td>"
@@ -735,7 +734,6 @@ async def web_index():
                 <th>User ID</th>
                 <th>Блогер</th>
                 <th>ID Канала</th>
-                <th>SubID</th>
                 <th>Тариф</th>
                 <th>Тип</th>
                 <th>Статус</th>
