@@ -1779,8 +1779,11 @@ async def scan_donor_channels(bot: Bot):
 
 async def main() -> None:
     logger.info("=== AutoPost Bot запускается ===")
-    init_db()
-
+    def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row  # Это критически важно для работы row["column_name"]
+    return conn
+  
     bot = Bot(token=BOT_TOKEN)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
