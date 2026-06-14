@@ -1750,7 +1750,11 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
 async def scheduler_job(bot: Bot):
     """Задача, которая будет выполняться каждые N минут."""
     logger.info("Запуск цикла парсинга...")
-    def get_donor_channels_list() -> list:
+    # Вот здесь нужно правильно вызвать функцию, а не определять её внутри!
+    await scan_donor_channels(bot)
+
+# А функцию get_donor_channels_list нужно вынести ВНЕ этой функции
+def get_donor_channels_list() -> list:
     """Извлекает список каналов из переменных окружения."""
     channels = os.getenv("DONOR_CHANNELS", "")
     return [ch.strip() for ch in channels.split(",") if ch.strip()]
