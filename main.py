@@ -613,17 +613,6 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
         buttons.insert(2, [InlineKeyboardButton(text="💎 Подписка", callback_data="menu:tariffs")])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-    else:
-        buttons = [
-            [InlineKeyboardButton(text="🔑 API-ключ ТакПродам", callback_data="menu:apikey")],
-            [InlineKeyboardButton(text="🏷 Корпоративный ERID", callback_data="menu:erid_override")],
-            [InlineKeyboardButton(text="🛒 Фильтры маркетплейсов", callback_data="menu:filters")],
-            [InlineKeyboardButton(text="💎 Тарифы и подписка", callback_data="menu:tariffs")],
-            [InlineKeyboardButton(text="📊 Аналитика", callback_data="menu:stats")],
-            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
-        ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
 
 def kb_tariffs(traffic_source: str) -> InlineKeyboardMarkup:
     rows = []
