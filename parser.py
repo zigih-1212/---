@@ -68,16 +68,25 @@ async def get_product_data(sku: str, sub_id: str) -> dict:
     return None
 
 async def process_new_video(bot: Bot, user_id: int, video_id: str, description: str, sku: Optional[str], photo_url: Optional[str]):
-    """Формирует пост и отправляет его в канал блогера"""
+    """Формирует пост и отправляет его в канал блогера или в VIP-канал"""
     conn = get_db()
-    user = conn.execute("SELECT sub_id, channel_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+    # Теперь достаем еще и blogger_mode
+    user = conn.execute("SELECT sub_id, channel_id, blogger_mode FROM users WHERE user_id=?", (user_id,)).fetchone()
     
-    if not user or not user["channel_id"]:
+    if not user:
         conn.close()
         return
         
     sub_id = user["sub_id"]
+    blogger_mode = user["blogger_mode"]
     
+    # Определяем, куда будем постить
+    target_channel = ADMIN_VIP_CHANNEL_ID if blogger_mode == "vip_pin" else user["channel_id"]
+    
+    if not target_channel:
+        conn.close()
+        return
+
     # 1. Получаем данные товара
     product_info = await get_product_data(sku, sub_id) if sku else None
     
@@ -96,16 +105,28 @@ async def process_new_video(bot: Bot, user_id: int, video_id: str, description: 
         caption = f"🎬 <b>{video_title}</b>\n\nСмотри новое видео на канале!"
         erid_to_save = "none"
     
-    # 3. Публикуем и сохраняем в базу
+    # 3. Публикуем
     try:
         if photo_url:
-            await bot.send_photo(chat_id=user["channel_id"], photo=photo_url, caption=caption, parse_mode="HTML")
+            msg = await bot.send_photo(chat_id=target_channel, photo=photo_url, caption=caption, parse_mode="HTML")
         else:
-            await bot.send_message(chat_id=user["channel_id"], text=caption, parse_mode="HTML")
+            msg = await bot.send_message(chat_id=target_channel, text=caption, parse_mode="HTML")
             
+        # 4. Если это VIP-режим — закрепляем сообщение
+        if blogger_mode == "vip_pin":
+            await bot.pin_chat_message(chat_id=target_channel, message_id=msg.message_id)
+            
+            # Вычисляем время открепления (сейчас + 24 часа)
+            unpin_time = datetime.now(timezone.utc) + timedelta(hours=24)
+            conn.execute(
+                "INSERT INTO pinned_posts (chat_id, message_id, unpin_at) VALUES (?, ?, ?)",
+                (target_channel, msg.message_id, unpin_time.isoformat())
+            )
+            
+        # Записываем пост в статистику
         conn.execute(
             "INSERT INTO posts (user_id, donor_post_id, target_channel_id, traffic_source, sku, erid, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, video_id, user["channel_id"], "yt", sku or "no_sku", erid_to_save, "published")
+            (user_id, video_id, target_channel, "yt", sku or "no_sku", erid_to_save, "published")
         )
         conn.commit()
     except Exception as e:
