@@ -716,7 +716,9 @@ class SaasStates(StatesGroup):
     waiting_apikey = State()
     waiting_erid_override = State()
 
-
+class PayoutStates(StatesGroup):
+    waiting_for_card = State()
+  
 # =============================================================================
 # === ROUTER & HANDLERS =======================================================
 # =============================================================================
