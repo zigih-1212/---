@@ -54,7 +54,7 @@ class ErrorLoggingMiddleware(BaseMiddleware):
         except Exception as e:
             logger.exception("Ошибка при обработке события")
             # Можно отправить уведомление админу через bot
-            raise e # Пробрасываем дальше, чтобы бот не «проглотил» ошибку
+            raise e # Пробрасываем дальше, чтобы бот не "проглотил» ошибку"
           
 class PaymentFSM(StatesGroup):
     choosing_tariff = State()        
@@ -251,7 +251,7 @@ class CircuitBreaker:
         if self._open_until is None:
             return False
         if time.monotonic() >= self._open_until:
-            # Таймаут истёк — сбрасываем и пробуем снова
+            # Таймаут истёк - сбрасываем и пробуем снова
             self._failures = 0
             self._open_until = None
             logger.info("Circuit Breaker: схема замкнута, запросы к API возобновлены")
@@ -406,7 +406,7 @@ async def _send_to_quarantine(
         conn.close()
 
     msg = (
-        f"🚨 <b>КАРАНТИН — пост заблокирован</b>\n\n"
+        f"🚨 <b>КАРАНТИН - пост заблокирован</b>\n\n"
         f"👤 User ID: <code>{user_id}</code>\n"
         f"📢 Канал: <code>{channel_id}</code>\n"
         f"🆔 Пост донора: <code>{donor_post_id}</code>\n"
@@ -535,7 +535,7 @@ async def publish_post_with_fallback(
 ) -> bool:
     """
     Публикует пост с фото. При ошибке "wrong type of web page content"
-    мгновенно делает fallback → публикует текстом (send_message).
+    мгновенно делает fallback -> публикует текстом (send_message).
     Возвращает True при успехе, False при полном провале.
     """
     # Попытка с фото (если URL валиден)
@@ -553,7 +553,7 @@ async def publish_post_with_fallback(
             err_msg = str(e).lower()
             if _WRONG_CONTENT_RE.search(err_msg) or "wrong file identifier" in err_msg:
                 logger.warning(
-                    f"Фото не принято Telegram ({e}), fallback → текстовый пост"
+                    f"Фото не принято Telegram ({e}), fallback -> текстовый пост"
                 )
                 # Fallback: публикуем без фото
             else:
@@ -652,7 +652,7 @@ _TRANSLIT_MAP = {
 def generate_sub_id(username: str, user_id: int) -> str:
     """
     Генерирует уникальный sub_id через транслитерацию username.
-    Пример: @МойКанал_123 → moikanal_123_uid7890
+    Пример: @МойКанал_123 -> moikanal_123_uid7890
     """
     username = (username or "").lstrip("@").lower()
     result = ""
@@ -985,7 +985,7 @@ async def cb_menu_channel(callback: CallbackQuery, state: FSMContext) -> None:
     row = conn.execute("SELECT channel_title, channel_id FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
 
-    # Если канал уже привязан — показываем панель управления
+    # Если канал уже привязан - показываем панель управления
     if row and row["channel_id"]:
         await callback.message.edit_text(
             f"📢 <b>Управление каналом</b>\n\n"
@@ -999,7 +999,7 @@ async def cb_menu_channel(callback: CallbackQuery, state: FSMContext) -> None:
             ])
         )
     else:
-        # Если канала нет — запускаем онбординг
+        # Если канала нет - запускаем онбординг
         await callback.message.edit_text(
             "📢 <b>Привязка канала</b>\n\n"
             "Перешли сюда любое сообщение из твоего канала, либо отправь <code>@username</code>.",
@@ -1057,7 +1057,7 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
 
     if not channel_id:
         await message.answer(
-            "⚠️ Не распознал канал. Перешли сообщение из канала или введи <code>@username</code>.",
+            "! Не распознал канал. Перешли сообщение из канала или введи <code>@username</code>.",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -1103,7 +1103,7 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
 
     if not channel_id:
         await message.answer(
-            "⚠️ Не распознал канал. Перешли сообщение из канала или введи <code>@username</code>.",
+            "! Не распознал канал. Перешли сообщение из канала или введи <code>@username</code>.",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -1191,7 +1191,7 @@ async def cb_menu_tariffs(callback: CallbackQuery) -> None:
 
     text = (
         f"💎 <b>Тарифы AutoPost</b>{sub_info}\n\n"
-        f"Выбери период — стоимость списывается в Telegram Stars "
+        f"Выбери период - стоимость списывается в Telegram Stars "
         f"{'(единственный доступный способ оплаты для партнёрского трафика)' if traffic_source == 'affiliate' else 'или банковским переводом'}.\n\n"
         f"{'💳 Для органического трафика доступны карты РФ и KG.' if traffic_source == 'organic' else ''}"
     )
@@ -1209,7 +1209,7 @@ async def process_tariff_selection(callback_query: CallbackQuery, state: FSMCont
     plan_id = callback_query.data.split("_")[1]
     
     if plan_id not in TARIFF_PLANS:
-        await callback_query.answer("⚠️ Тариф не найден", show_alert=True)
+        await callback_query.answer("! Тариф не найден", show_alert=True)
         return
         
     # Сохраняем тариф в FSM
@@ -1228,7 +1228,7 @@ async def process_tariff_selection(callback_query: CallbackQuery, state: FSMCont
     await callback_query.message.edit_text(
         f"Выбран тариф: <b>{plan['label']}</b>\n\n"
         "Выберите способ оплаты.\n"
-        "Если оплачиваете картой или TON — после перевода отправьте чек в этот чат.",
+        "Если оплачиваете картой или TON - после перевода отправьте чек в этот чат.",
         parse_mode=ParseMode.HTML,
         reply_markup=keyboard
     )
@@ -1247,7 +1247,7 @@ async def process_payment_method(callback_query: CallbackQuery, state: FSMContex
     plan = TARIFF_PLANS.get(plan_id)
     
     if not plan:
-        await callback_query.answer("⚠️ Ошибка данных, начните сначала", show_alert=True)
+        await callback_query.answer("! Ошибка данных, начните сначала", show_alert=True)
         return
 
     # Подготовка текста реквизитов
@@ -1327,7 +1327,7 @@ async def process_receipt_photo(message: Message, state: FSMContext):
 # Если пользователь прислал не фото, а текст
 @router.message(PaymentFSM.waiting_receipt)
 async def process_receipt_wrong_type(message: Message):
-    await message.answer("⚠️ Пожалуйста, пришлите именно фотографию (скриншот) чека.")
+    await message.answer("! Пожалуйста, пришлите именно фотографию (скриншот) чека.")
 
 # --- Шаг 5: Обработка решения админа (нажатие кнопок под чеком) ---
 @router.callback_query(F.data.startswith("adm_pay:"))
@@ -1407,7 +1407,7 @@ async def cb_buy_stars(callback: CallbackQuery) -> None:
 
     await callback.bot.send_invoice(
         chat_id=callback.from_user.id,
-        title=f"AutoPost — {plan['label']}",
+        title=f"AutoPost - {plan['label']}",
         description=(
             f"Подписка на автопостинг с маркировкой ERID на {plan['days']} дней. "
             f"Каждый пост соответствует требованиям ФАС."
@@ -1516,7 +1516,7 @@ async def cb_buy_card(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         f"💳 <b>Оплата переводом ({card_type.upper()})</b>\n\n"
         f"<code>{details}</code>\n\n"
-        f"После оплаты отправь скриншот чека сюда — администратор проверит "
+        f"После оплаты отправь скриншот чека сюда - администратор проверит "
         f"и активирует подписку вручную в течение 30 минут.\n\n"
         f"<i>Укажи в комментарии к переводу свой Telegram ID: "
         f"<code>{callback.from_user.id}</code></i>",
@@ -1563,7 +1563,7 @@ async def cb_menu_settings(callback: CallbackQuery) -> None:
     buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
 
     api_status = f"{'✅ задан' if row['api_key'] else '❌ не задан'}"
-    erid_status = f"{'✅ ' + row['client_erid_override'][:20] if row['client_erid_override'] else '—'}"
+    erid_status = f"{'✅ ' + row['client_erid_override'][:20] if row['client_erid_override'] else '-'}"
 
     text = (
         f"⚙️ <b>Настройки</b>\n\n"
@@ -1640,8 +1640,8 @@ async def cb_blogger_mode_menu(callback: CallbackQuery) -> None:
     mode = row["blogger_mode"] if row else "direct"
     await callback.message.edit_text(
         "📢 <b>Режим публикации</b>\n\n"
-        "<b>Напрямую</b> — посты выходят в твой канал с твоим sub_id.\n"
-        "<b>VIP-закреп</b> — твой пост публикуется и закрепляется на 24ч "
+        "<b>Напрямую</b> - посты выходят в твой канал с твоим sub_id.\n"
+        "<b>VIP-закреп</b> - твой пост публикуется и закрепляется на 24ч "
         "в главном канале администратора (аудитория платформы).",
         parse_mode=ParseMode.HTML,
         reply_markup=kb_blogger_mode(mode),
@@ -1686,7 +1686,7 @@ async def cb_menu_apikey(callback: CallbackQuery, state: FSMContext) -> None:
 async def handle_apikey_input(message: Message, state: FSMContext) -> None:
     api_key = message.text.strip() if message.text else ""
     if len(api_key) < 10:
-        await message.answer("⚠️ Ключ слишком короткий. Проверь и попробуй снова.")
+        await message.answer("! Ключ слишком короткий. Проверь и попробуй снова.")
         return
     conn = get_db()
     try:
@@ -1715,8 +1715,8 @@ async def cb_menu_erid_override(callback: CallbackQuery, state: FSMContext) -> N
     await callback.message.edit_text(
         "🏷 <b>Корпоративный ERID</b>\n\n"
         "Если твой бренд работает с рекламодателем напрямую и у тебя есть "
-        "собственный ERID — введи его здесь. Он будет применяться вместо API-данных.\n\n"
-        "⚠️ <b>Используй только реальный ERID, полученный от ОРД.</b>",
+        "собственный ERID - введи его здесь. Он будет применяться вместо API-данных.\n\n"
+        "! <b>Используй только реальный ERID, полученный от ОРД.</b>",
         parse_mode=ParseMode.HTML,
     )
     await state.set_state(SaasStates.waiting_erid_override)
@@ -1726,10 +1726,10 @@ async def cb_menu_erid_override(callback: CallbackQuery, state: FSMContext) -> N
 @router.message(SaasStates.waiting_erid_override)
 async def handle_erid_override_input(message: Message, state: FSMContext) -> None:
     erid = message.text.strip() if message.text else ""
-    # Базовая проверка формата ERID (не генерируем — только принимаем реальный)
+    # Базовая проверка формата ERID (не генерируем - только принимаем реальный)
     if len(erid) < 5 or not re.match(r"^[A-Za-z0-9\-_]+$", erid):
         await message.answer(
-            "⚠️ Неверный формат ERID. Допустимы только латинские буквы, цифры, дефис и подчёркивание.\n"
+            "! Неверный формат ERID. Допустимы только латинские буквы, цифры, дефис и подчёркивание.\n"
             "Убедись, что вводишь <b>реальный ERID от ОРД</b>, а не генерируешь его самостоятельно.",
             parse_mode=ParseMode.HTML,
         )
@@ -1849,7 +1849,7 @@ conn = get_db()
             if approved_sum >= MIN_PAYOUT:
                 keyboard.append([InlineKeyboardButton(text="💳 Запросить выплату", callback_data="payout:request")])
             elif approved_sum > 0:
-                text += f"\n\n<i>⚠️ Вывод средств доступен от {MIN_PAYOUT} руб.</i>"
+                text += f"\n\n<i>! Вывод средств доступен от {MIN_PAYOUT} руб.</i>"
                 
         else:
             # --- СТАТИСТИКА SaaS ---
@@ -1860,7 +1860,7 @@ conn = get_db()
                 "SELECT donor_post_id, status FROM posts WHERE user_id=? ORDER BY id DESC LIMIT 5", (user_id,)
             ).fetchall()
             
-            last_str = "\n".join([f"  • <code>{p['donor_post_id']}</code> — {p['status']}" for p in last_posts]) if last_posts else "  <i>Постов ещё не было</i>"
+            last_str = "\n".join([f"  • <code>{p['donor_post_id']}</code> - {p['status']}" for p in last_posts]) if last_posts else "  <i>Постов ещё не было</i>"
             
             text = (
                 f"📊 <b>Статистика постов (SaaS)</b>\n\n"
@@ -1956,7 +1956,7 @@ async def handle_broadcast_text(message: Message, state: FSMContext) -> None:
                 user["user_id"], clean_text, parse_mode=ParseMode.HTML
             )
             sent += 1
-            await asyncio.sleep(0.05)  # ~20 msg/sec — в рамках лимитов Telegram
+            await asyncio.sleep(0.05)  # ~20 msg/sec - в рамках лимитов Telegram
         except TelegramAPIError:
             failed += 1
 
@@ -1997,7 +1997,7 @@ async def handle_extend_user_id(message: Message, state: FSMContext) -> None:
     try:
         uid = int(message.text.strip())
     except (ValueError, AttributeError):
-        await message.answer("⚠️ Введи числовой Telegram ID.")
+        await message.answer("! Введи числовой Telegram ID.")
         return
     await state.update_data(extend_uid=uid)
     await state.set_state(AdminStates.extend_days)
@@ -2014,7 +2014,7 @@ async def handle_extend_days(message: Message, state: FSMContext) -> None:
         if days <= 0:
             raise ValueError
     except (ValueError, AttributeError):
-        await message.answer("⚠️ Введи положительное число дней.")
+        await message.answer("! Введи положительное число дней.")
         return
 
     data = await state.get_data()
@@ -2167,7 +2167,7 @@ async def process_donor_post(
     # Получение ERID (блокировка без реального ERID)
     erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
     if not erid_data:
-        # Пост ушёл в карантин внутри resolve_erid — ничего не делаем
+        # Пост ушёл в карантин внутри resolve_erid - ничего не делаем
         return
 
     erid = erid_data["erid"]
@@ -2208,7 +2208,7 @@ async def process_donor_post(
                 )
                 # Планируем открепление через 24ч (добавляем в отдельную таблицу при необходимости)
             except TelegramAPIError as e:
-                logger.warning(f"VIP-закреп: не удалось закрепить — {e}")
+                logger.warning(f"VIP-закреп: не удалось закрепить - {e}")
     else:
         success = await publish_post_with_fallback(
             bot=bot,
@@ -2277,11 +2277,11 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 rows_html += f"""
                 <tr>
                     <td><code>{u['user_id']}</code></td>
-                    <td>@{html.escape(u['username'] or '—')}</td>
-                    <td>{html.escape(u['channel_title'] or '—')}</td>
+                    <td>@{html.escape(u['username'] or '-')}</td>
+                    <td>{html.escape(u['channel_title'] or '-')}</td>
                     <td><span class="role">{u['role']}</span></td>
                     <td>{status_badge}</td>
-                    <td>{(u['sub_end'] or '—')[:10]}</td>
+                    <td>{(u['sub_end'] or '-')[:10]}</td>
                     <td class="posts-cell">{posts_str}</td>
                 </tr>"""
         finally:
