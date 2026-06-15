@@ -818,6 +818,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             )
             await state.set_state(OnboardingStates.waiting_role)
             return
+          except Exception as e:
 # ... остальной код (если existing есть, то оставляем как было) ...
 
     # Приветствие для блогера/SaaS (язык профессионала рынка)
@@ -830,7 +831,6 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         f"📢 Подключи канал, настрой фильтры и запусти монетизацию трафика за 2 минуты."
     )
     await message.answer(
-      except Exception as e:
     logger.error(f"Ошибка: {e}")
         welcome_text,
         parse_mode=ParseMode.HTML,
