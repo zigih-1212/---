@@ -1641,7 +1641,26 @@ async def cb_menu_stats(callback: CallbackQuery) -> None:
                 f" └ <b>{approved_sum:.2f} руб.</b>\n\n"
                 f"<i>* Баланс обновляется автоматически при выкупе товара клиентом на ПВЗ.</i>"
             )
-            
+# В самом конце функции cb_menu_stats, перед await callback.message.edit_text:
+    
+    keyboard = []
+    
+    # Если это блогер и у него на балансе больше 2000 руб (можно изменить сумму)
+    MIN_PAYOUT = 2000.0
+    if role == "blogger" and approved_sum >= MIN_PAYOUT:
+        keyboard.append([InlineKeyboardButton(text="💳 Запросить выплату", callback_data="payout:request")])
+    elif role == "blogger" and approved_sum > 0:
+        text += f"\n\n<i>⚠️ Вывод средств доступен от {MIN_PAYOUT} руб.</i>"
+        
+    keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
+
+    # Выводим сообщение
+    await callback.message.edit_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+    )
+      
         else:
             # --- СТАТИСТИКА ДЛЯ SaaS (Посты) ---
             total = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=?", (user_id,)).fetchone()[0]
