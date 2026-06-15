@@ -81,7 +81,8 @@ ADMIN_VIP_CHANNEL_ID = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "-1009876543210"))
 TAKPRODAM_MASTER_TOKEN = os.getenv("TAKPRODAM_MASTER_TOKEN")
 DEEPINFRA_API_KEY = os.getenv("DEEPINFRA_API_KEY")
 WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", 8000))
-
+STARS_PROVIDER_TOKEN = os.getenv("STARS_PROVIDER_TOKEN", "")
+WEBAPP_HOST = os.getenv("WEBAPP_HOST", "0.0.0.0")
 # ---------- Тарифная сетка (Цены в рублях и эквивалент в Telegram Stars) --------
 # Курс: 1 рубль ≈ 1.5 Stars
 TARIFF_PLANS: dict[str, dict] = {
