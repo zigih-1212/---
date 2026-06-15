@@ -610,7 +610,7 @@ async def add_to_night_queue(
 
 async def flush_night_queue(bot: Bot) -> None:
     """
-    Запускается по крону в 08:00. Последовательно публикует посты из очереди
+    Запускается по крону в "08::00". Последовательно публикует посты из очереди
     с задержкой 90 секунд между публикациями (защита от флуда).
     """
     conn = get_db()
@@ -2448,7 +2448,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
         id="cleanup_old_posts"
     )
   
-    # Утренняя публикация ночной очереди (08:00 МСК)
+    # Утренняя публикация ночной очереди ("08:00" МСК)
     scheduler.add_job(
         flush_night_queue,
         trigger="cron",
