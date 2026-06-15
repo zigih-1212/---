@@ -19,6 +19,7 @@ import time
 import asyncio
 import yt_dlp
 import logging
+from parser import check_all_bloggers
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
