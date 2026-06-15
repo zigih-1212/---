@@ -192,6 +192,6 @@ async def check_all_bloggers(bot: Bot):
             simple_match = re.search(r'\d{8,10}', description)
             sku = simple_match.group(0) if simple_match else None
             marketplace = 'wb' # по умолчанию
-        
-        # Запускаем публикацию
-        await process_new_video(bot, b['user_id'], video_id, description, sku, thumbnail)
+
+ # Запускаем публикацию, передавая marketplace
+        await process_new_video(bot, b['user_id'], video_id, description, sku, thumbnail, marketplace)
