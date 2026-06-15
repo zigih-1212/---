@@ -1104,6 +1104,25 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(OnboardingStates.waiting_channel)
     await callback.answer()
 
+@router.message(F.text == "/fix_db_target_mode")
+async def fix_database_column(message: Message) -> None:
+    # Проверка на администратора (только вы сможете выполнить эту команду)
+    if message.from_user.id not in ADMIN_IDS:
+        return
+        
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        # Пытаемся добавить колонку
+        cursor.execute("ALTER TABLE users ADD COLUMN target_mode TEXT")
+        conn.commit()
+        await message.answer("✅ Колонка 'target_mode' успешно добавлена в таблицу 'users'!")
+    except sqlite3.OperationalError as e:
+        # Если ошибка в том, что колонка уже есть - сообщаем об этом
+        await message.answer(f"⚠️ Ошибка (возможно, колонка уже есть): {e}")
+    finally:
+        conn.close()
+
 # -----------------------------------------------------------------------------
 # Партнёрская программа
 # -----------------------------------------------------------------------------
