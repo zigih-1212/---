@@ -28,15 +28,33 @@ def is_video_processed(video_id: str) -> bool:
     return row is not None
 
 def get_latest_video(channel_url: str):
-    ydl_opts = {'quiet': True, 'extract_flat': True, 'playlist_items': '1'}
+    """Универсальный парсер для YouTube, TikTok, Instagram"""
+    # yt-dlp сам понимает большинство площадок, нам нужно только сказать ему 'quiet'
+    ydl_opts = {
+        'quiet': True, 
+        'extract_flat': True, 
+        'playlist_items': '1',
+        # Добавляем настройку для обхода простых ограничений
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(channel_url, download=False)
+            
+            # Если это плейлист или канал
             if 'entries' in info and info['entries']:
-                return info['entries'][0]
+                video = info['entries'][0]
+                # Добавляем информацию о площадке, если её нет
+                if 'extractor' not in video:
+                    video['extractor'] = info.get('extractor_key', 'generic')
+                return video
+            
+            # Если это ссылка на конкретное видео/пост
+            return info
+            
         except Exception as e:
-            logger.error(f"Ошибка YT-DL для {channel_url}: {e}")
-    return None
+            logger.error(f"Ошибка парсинга {channel_url}: {e}")
+            return None
 
 def get_video_full_details(video_url: str):
     ydl_opts = {'quiet': True, 'no_warnings': True}
