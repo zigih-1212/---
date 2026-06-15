@@ -2081,11 +2081,10 @@ async def process_donor_post(
         logger.warning(f"process_donor_post: user {user_id} не найден")
         return
 
-    # Проверка подписки
-    if not user["is_active"]:
-        logger.info(f"User {user_id}: автопостинг пропущен (нет активной подписки)")
+# Проверка подписки (только для SaaS)
+    if user["role"] == "saas" and not user["is_active"]:
+        logger.info(f"SaaS User {user_id}: автопостинг пропущен (нет активной подписки)")
         return
-
     # Проверка фильтров маркетплейсов
     if marketplace == "wb" and not user["filter_wb"]:
         logger.info(f"User {user_id}: WB пост пропущен по фильтру")
