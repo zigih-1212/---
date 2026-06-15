@@ -2293,7 +2293,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AutoPost — Admin Panel</title>
+<title>AutoPost - Admin Panel</title>
 <style>
   :root {{
     --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3e;
