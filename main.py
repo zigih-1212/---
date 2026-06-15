@@ -1610,7 +1610,6 @@ async def cb_menu_settings(callback: CallbackQuery) -> None:
 
     role = row["role"]
     buttons = [
-        [InlineKeyboardButton(text="📢 Режим публикации", callback_data="settings:blogger_mode")],
         [InlineKeyboardButton(text="🛒 Фильтры маркетплейсов", callback_data="settings:filters")],
     ]
     if role == "saas":
