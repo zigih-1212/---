@@ -1324,7 +1324,7 @@ async def cb_buy_card(callback: CallbackQuery) -> None:
             [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:tariffs")]
         ]),
     )
-    await state_set = callback.answer()
+    await callback.answer()
 
 
 @router.message(PaymentFSM.waiting_for_receipt)
