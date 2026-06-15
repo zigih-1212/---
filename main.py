@@ -1738,43 +1738,51 @@ async def cb_menu_stats(callback: CallbackQuery) -> None:
             )
 # В самом конце функции cb_menu_stats, перед await callback.message.edit_text:
     
-    keyboard = []
-    
-    # Если это блогер и у него на балансе больше 2000 руб (можно изменить сумму)
-    MIN_PAYOUT = 2000.0
-    if role == "blogger" and approved_sum >= MIN_PAYOUT:
-        keyboard.append([InlineKeyboardButton(text="💳 Запросить выплату", callback_data="payout:request")])
-    elif role == "blogger" and approved_sum > 0:
-        text += f"\n\n<i>⚠️ Вывод средств доступен от {MIN_PAYOUT} руб.</i>"
+conn = get_db()
+    try:
+        user = conn.execute("SELECT role, sub_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user:
+            await callback.message.edit_text("Ошибка: пользователь не найден.")
+            return
+            
+        role = user["role"]
+        keyboard = []
+        text = ""
         
-    keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
-
-    # Выводим сообщение
-    await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
-    )
-      
+        if role == "blogger":
+            # --- СТАТИСТИКА БЛОГЕРА ---
+            sub_id = user["sub_id"]
+            approved_sum = conn.execute("SELECT SUM(payout) FROM transactions WHERE sub_id=? AND status='approved'", (sub_id,)).fetchone()[0] or 0.0
+            approved_cnt = conn.execute("SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='approved'", (sub_id,)).fetchone()[0]
+            pending_cnt = conn.execute("SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='pending'", (sub_id,)).fetchone()[0]
+            
+            text = (
+                f"📊 <b>Твоя статистика партнёра</b>\n\n"
+                f"🆔 Твой ID: <code>{sub_id}</code>\n\n"
+                f"📦 <b>Заказы:</b>\n"
+                f" ├ Ожидают получения: <b>{pending_cnt} шт.</b>\n"
+                f" └ Выкуплено: <b>{approved_cnt} шт.</b>\n\n"
+                f"💸 <b>Твой заработок:</b>\n"
+                f" └ <b>{approved_sum:.2f} руб.</b>\n\n"
+                f"<i>* Баланс обновляется автоматически.</i>"
+            )
+            
+            MIN_PAYOUT = 2000.0
+            if approved_sum >= MIN_PAYOUT:
+                keyboard.append([InlineKeyboardButton(text="💳 Запросить выплату", callback_data="payout:request")])
+            elif approved_sum > 0:
+                text += f"\n\n<i>⚠️ Вывод средств доступен от {MIN_PAYOUT} руб.</i>"
+                
         else:
-            # --- СТАТИСТИКА ДЛЯ SaaS (Посты) ---
+            # --- СТАТИСТИКА SaaS ---
             total = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=?", (user_id,)).fetchone()[0]
             published = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=? AND status='published'", (user_id,)).fetchone()[0]
             
-            # Получаем последние 5 постов
             last_posts = conn.execute(
-                "SELECT donor_post_id, status FROM posts "
-                "WHERE user_id=? ORDER BY id DESC LIMIT 5",
-                (user_id,)
+                "SELECT donor_post_id, status FROM posts WHERE user_id=? ORDER BY id DESC LIMIT 5", (user_id,)
             ).fetchall()
             
-            if not last_posts:
-                last_str = "  <i>Постов ещё не было</i>"
-            else:
-                last_str = "\n".join(
-                    f"  • <code>{p['donor_post_id']}</code> — {p['status']}"
-                    for p in last_posts
-                )
+            last_str = "\n".join([f"  • <code>{p['donor_post_id']}</code> — {p['status']}" for p in last_posts]) if last_posts else "  <i>Постов ещё не было</i>"
             
             text = (
                 f"📊 <b>Статистика постов (SaaS)</b>\n\n"
@@ -1782,7 +1790,20 @@ async def cb_menu_stats(callback: CallbackQuery) -> None:
                 f"Опубликовано: {published}\n\n"
                 f"<b>Последние 5 постов:</b>\n{last_str}"
             )
-            
+        
+        # Общая кнопка назад для всех
+        keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
+        
+        # Вывод сообщения ОДИН РАЗ после закрытия логики условий
+        await callback.message.edit_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        )
+
+    except Exception as e:
+        logger.error(f"Ошибка в статистике: {e}")
+        await callback.message.edit_text("Произошла ошибка при загрузке статистики.")
     finally:
         conn.close()
 
