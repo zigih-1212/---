@@ -2347,6 +2347,20 @@ async def unpin_old_messages(bot: Bot):
         conn.commit()
     finally:
         conn.close()
+
+async def cleanup_old_posts():
+    """Удаляет из таблицы posts записи старше 30 дней."""
+    conn = get_db()
+    try:
+        # Удаляем записи, созданные более 30 дней назад
+        thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        conn.execute("DELETE FROM posts WHERE created_at < ?", (thirty_days_ago,))
+        conn.commit()
+        logger.info("Автоматическая очистка: удалены старые посты из БД.")
+    except Exception as e:
+        logger.error(f"Ошибка при очистке БД: {e}")
+    finally:
+        conn.close()
       
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
