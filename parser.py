@@ -85,7 +85,7 @@ async def get_product_data(sku: str, sub_id: str) -> dict:
             logger.error(f"Ошибка API ТакПродам: {e}")
     return None
 
-async def process_new_video(bot: Bot, user_id: int, video_id: str, description: str, sku: Optional[str], photo_url: Optional[str]):
+async def process_new_video(bot: Bot, user_id: int, video_id: str, description: str, sku: Optional[str], photo_url: Optional[str], marketplace: str = 'wb'):
     """Формирует пост и отправляет его в канал блогера или в VIP-канал"""
     conn = get_db()
     # Теперь достаем еще и blogger_mode
@@ -194,4 +194,4 @@ async def check_all_bloggers(bot: Bot):
             marketplace = 'wb' # по умолчанию
 
  # Запускаем публикацию, передавая marketplace
-        await process_new_video(bot, b['user_id'], video_id, description, sku, thumbnail, marketplace)
+    await process_new_video(bot, b['user_id'], video_id, description, sku, thumbnail, marketplace)
