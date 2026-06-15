@@ -947,6 +947,63 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
         reply_markup=kb_main_menu(role),
     )
 
+@router.message(OnboardingStates.waiting_channel)
+async def handle_channel_input(message: Message, state: FSMContext) -> None:
+    user_id = message.from_user.id
+    channel_id: Optional[str] = None
+    channel_title: Optional[str] = None
+
+    # Принимаем: форвард из канала или @username
+    if message.forward_origin:
+        try:
+            chat = message.forward_origin.chat
+            channel_id = str(chat.id)
+            channel_title = chat.title
+        except AttributeError:
+            pass
+    elif message.text and message.text.startswith("@"):
+        channel_id = message.text.strip()
+        channel_title = channel_id
+
+    if not channel_id:
+        await message.answer(
+            "⚠️ Не распознал канал. Перешли сообщение из канала или введи <code>@username</code>.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    # --- НОВЫЙ БЛОК: Проверка прав администратора ---
+    is_admin = await check_bot_admin(message.bot, channel_id)
+    if not is_admin:
+        await message.answer(
+            "❌ <b>Ошибка доступа!</b>\n\n"
+            f"Я не являюсь администратором канала {channel_id} или у меня нет прав на публикацию постов.\n\n"
+            "👉 Сначала добавь меня в канал как администратора, разреши «Публикацию сообщений», а затем отправь ссылку снова.",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    # -----------------------------------------------
+
+    # Сохраняем в БД (если всё ок)
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE users SET channel_id=?, channel_title=? WHERE user_id=?",
+            (channel_id, channel_title, user_id)
+        )
+        conn.commit()
+        row = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        role = row["role"] if row else "blogger"
+    finally:
+        conn.close()
+
+    await state.clear()
+    await message.answer(
+        f"✅ <b>Канал привязан:</b> {html.escape(channel_title or channel_id)}\n\n"
+        f"Теперь всё настроено для работы.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_main_menu(role),
+    )
 
 # -----------------------------------------------------------------------------
 # Тарифы
