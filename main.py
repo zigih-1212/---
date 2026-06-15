@@ -814,6 +814,22 @@ async def cb_select_target(callback: CallbackQuery, state: FSMContext) -> None:
         # Показываем главное меню
         await callback.message.answer("🏠 Главное меню", reply_markup=kb_main_menu("blogger"))
 
+  @router.message(F.text == "/fix_db_target_mode")
+async def fix_database_column(message: Message) -> None:
+    # Замените ID на свой, чтобы никто другой не мог выполнить эту команду
+    if message.from_user.id != ВАШ_TELEGRAM_ID:
+        return
+        
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN target_mode TEXT")
+        conn.commit()
+        await message.answer("✅ Колонка 'target_mode' успешно добавлена!")
+    except sqlite3.OperationalError as e:
+        await message.answer(f"⚠️ Ошибка (возможно, колонка уже есть): {e}")
+    finally:
+        conn.close()
 
 # =============================================================================
 # === ОБРАБОТЧИК ДОБАВЛЕНИЯ КАНАЛА ДЛЯ SAAS ===================================
