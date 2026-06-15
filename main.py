@@ -2397,7 +2397,7 @@ def get_donor_channels_list() -> list:
 
 async def scan_donor_channels(bot: Bot):
     """Основной цикл парсинга каналов.
-    channels = get_donor_channels_list()
+    channels = get_donor_channels_list()"""
     for channel in channels:
         try:
             # Получаем последние сообщения
