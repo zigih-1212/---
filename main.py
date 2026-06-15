@@ -2011,6 +2011,45 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 </body>
 </html>""")
 
+  # ... (здесь ваш код админ-панели @app.get("/admin")) ...
+
+    # --- НОВЫЙ БЛОК: ВЕБХУК ДЛЯ ТАКПРОДАМ ---
+    @app.post("/webhook/takprodam")
+    async def takprodam_webhook(request: Request):
+        try:
+            data = await request.json()
+            # Ожидаем, что ТакПродам присылает эти поля. 
+            # Названия ключей могут отличаться в зависимости от их API.
+            order_id = str(data.get("order_id", ""))
+            sub_id = data.get("sub_id", "")
+            status = data.get("status", "pending") # pending, approved, rejected
+            payout = float(data.get("payout", 0.0))
+            
+            if not order_id or not sub_id:
+                return {"status": "error", "message": "Missing order_id or sub_id"}
+                
+            conn = get_db()
+            # Сохраняем новую транзакцию или обновляем статус старой
+            conn.execute(
+                """INSERT INTO transactions (order_id, sub_id, status, payout, updated_at) 
+                   VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(order_id) DO UPDATE SET 
+                   status=excluded.status, 
+                   payout=excluded.payout,
+                   updated_at=CURRENT_TIMESTAMP""",
+                (order_id, sub_id, status, payout)
+            )
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"Вебхук: заказ {order_id} для {sub_id} обновлен -> {status}")
+            return {"status": "success"}
+            
+        except Exception as e:
+            logger.error(f"Ошибка обработки вебхука ТакПродам: {e}")
+            return {"status": "error", "message": str(e)}
+
+    return app # Эта строка уже была, она завершает функцию
     return app
 
 
