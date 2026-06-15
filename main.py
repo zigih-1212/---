@@ -830,6 +830,8 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         f"📢 Подключи канал, настрой фильтры и запусти монетизацию трафика за 2 минуты."
     )
     await message.answer(
+      except Exception as e:
+    logger.error(f"Ошибка: {e}")
         welcome_text,
         parse_mode=ParseMode.HTML,
         reply_markup=kb_main_menu(role),
