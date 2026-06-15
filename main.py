@@ -2247,43 +2247,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
   # ... (здесь ваш код админ-панели @app.get("/admin")) ...
 
-# --- ИСПРАВЛЕННЫЙ БЛОК ВЕБХУКА ---
-@app.post("/webhook/takprodam")
-async def takprodam_webhook(request: Request):
-        try:
-            data = await request.json()
-            
-            order_id = str(data.get("order_id", ""))
-            sub_id = data.get("sub_id", "")
-            status = data.get("status", "pending")
-            
-            original_payout = float(data.get("payout", 0.0))
-            net_payout = original_payout * 0.90
-            blogger_payout = net_payout * 0.5
-            
-            if not order_id or not sub_id:
-                return {"status": "error", "message": "Missing order_id or sub_id"}
-                
-            conn = get_db()
-            conn.execute(
-                """INSERT INTO transactions (order_id, sub_id, status, payout, updated_at) 
-                   VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                   ON CONFLICT(order_id) DO UPDATE SET 
-                   status=excluded.status, 
-                   payout=excluded.payout,
-                   updated_at=CURRENT_TIMESTAMP""",
-                (order_id, sub_id, status, blogger_payout)
-            )
-            conn.commit()
-            conn.close()
-            
-            logger.info(f"Вебхук: заказ {order_id} для {sub_id} обновлен -> {status}. Доля блогера: {blogger_payout} руб.")
-            return {"status": "success"}
-            
-        except Exception as e:
-            logger.error(f"Ошибка обработки вебхука ТакПродам: {e}")
-            return {"status": "error", "message": str(e)}
-        return app # Эта строка уже была, она завершает функцию create_fastapi_app
+ # Эта строка уже была, она завершает функцию create_fastapi_app
 
 # =============================================================================
 # === SCHEDULER ===============================================================
