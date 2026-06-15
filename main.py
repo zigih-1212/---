@@ -858,7 +858,7 @@ async def handle_blogger_channel(message: Message, state: FSMContext) -> None:
         parse_mode=ParseMode.HTML
     )
 
-  @router.callback_query(F.data == "payout:request")
+@router.callback_query(F.data == "payout:request")
 async def cb_request_payout(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "💳 <b>Запрос на вывод средств</b>\n\n"
