@@ -2448,7 +2448,7 @@ async def scan_donor_channels(bot: Bot):
                 if sku_match:
                     sku = sku_match.group(0)
                     # Вызываем обработку (упрощенно: берем всех активных пользователей)
-                    await process_donor_post(bot, ADMIN_IDS[0], f"donor_{message.message_id}", sku, "wb", "Товар", "0", photo_url)
+await process_donor_post(bot, ADMIN_IDS[0], f"donor_{message.message_id}", sku, marketplace, "Товар", "0", photo_url)
         except Exception as e:
             logger.error(f"Ошибка при парсинге {channel}: {e}")
 
