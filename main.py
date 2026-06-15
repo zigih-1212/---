@@ -875,6 +875,30 @@ async def handle_saas_tg_channel(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer("✅ Канал привязан! Теперь перейдите в настройки для добавления API и корпоративного ERID.")
 
+  # =============================================================================
+# === ОБРАБОТЧИК КНОПКИ "НАЗАД" ==============================================
+# =============================================================================
+
+@router.callback_query(F.data == "menu:back")
+async def cb_back_to_main_menu(callback: CallbackQuery) -> None:
+    # 1. Сначала отвечаем Telegram, чтобы убрать "вечную загрузку"
+    await callback.answer()
+    
+    # 2. Получаем роль пользователя, чтобы показать правильное меню
+    user_id = callback.from_user.id
+    conn = get_db()
+    user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    
+    role = user["role"] if user else "blogger"
+    
+    # 3. Обновляем сообщение, возвращая его в Главное меню
+    await callback.message.edit_text(
+        "🏠 <b>Главное меню</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_main_menu(role)
+    )
+
 # =============================================================================
 # === ОБРАБОТЧИК ПРИВЯЗКИ КАНАЛА ==============================================
 # =============================================================================
