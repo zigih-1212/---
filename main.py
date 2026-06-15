@@ -793,22 +793,39 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
     # Регистрируем или обновляем пользователя
     conn = get_db()
-    try:
-        existing = conn.execute(
-            "SELECT user_id, role FROM users WHERE user_id=?", (user_id,)
-        ).fetchone()
+    @router.message(CommandStart())
+async def cmd_start(message: Message, state: FSMContext) -> None:
+    user_id = message.from_user.id
+    username = message.from_user.username or ""
+    args = message.text.split(maxsplit=1)[1] if " " in (message.text or "") else ""
 
-        # ... внутри cmd_start ...
+    # Определяем источник трафика
+    traffic_source = "organic"
+    referrer_id: Optional[int] = None
+    if args.startswith("aff_"):
+        aff_sub_id = args[4:]
+        conn = get_db()
+        try:
+            ref_row = conn.execute("SELECT user_id FROM users WHERE sub_id=?", (aff_sub_id,)).fetchone()
+            if ref_row:
+                referrer_id = ref_row["user_id"]
+                traffic_source = "affiliate"
+        finally:
+            conn.close()
+
+    # Регистрируем или обновляем пользователя
+    conn = get_db()
+    try:
+        existing = conn.execute("SELECT user_id, role FROM users WHERE user_id=?", (user_id,)).fetchone()
+
         if not existing:
             sub_id = generate_sub_id(username, user_id)
-            # Временно ставим 'pending', пока пользователь не выберет роль
             conn.execute(
                 "INSERT INTO users (user_id, username, sub_id, traffic_source, referrer_id, role) VALUES (?, ?, ?, ?, ?, ?)",
                 (user_id, username, sub_id, traffic_source, referrer_id, 'pending')
             )
             conn.commit()
             
-            # Отправляем меню выбора роли
             await message.answer(
                 "👋 Привет! Выбери свой режим работы:",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -818,10 +835,17 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             )
             await state.set_state(OnboardingStates.waiting_role)
             return
-          except Exception as e:
-# ... остальной код (если existing есть, то оставляем как было) ...
+        
+        # Если пользователь уже есть, берем его роль
+        role = existing["role"]
+    except Exception as e:
+        logger.error(f"Ошибка в cmd_start: {e}")
+        await message.answer("Произошла ошибка, попробуйте позже.")
+        return
+    finally:
+        conn.close()
 
-    # Приветствие для блогера/SaaS (язык профессионала рынка)
+    # Приветствие для существующего пользователя
     welcome_text = (
         f"👋 <b>Добро пожаловать в AutoPost</b>\n\n"
         f"Инструмент для <b>легального автопостинга</b> товаров с маркетплейсов "
@@ -831,7 +855,6 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         f"📢 Подключи канал, настрой фильтры и запусти монетизацию трафика за 2 минуты."
     )
     await message.answer(
-    logger.error(f"Ошибка: {e}")
         welcome_text,
         parse_mode=ParseMode.HTML,
         reply_markup=kb_main_menu(role),
