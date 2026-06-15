@@ -623,8 +623,10 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
 # =============================================================================
 
 class OnboardingStates(StatesGroup):
-    waiting_channel = State()
     waiting_role = State()
+    waiting_channel = State()
+    waiting_source_channel = State()        
+    waiting_saas_tg_channel = State()
 
 
 class AdminStates(StatesGroup):
