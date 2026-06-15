@@ -2228,7 +2228,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
   # ... (здесь ваш код админ-панели @app.get("/admin")) ...
 
-    # --- НОВЫЙ БЛОК: ВЕБХУК ДЛЯ ТАКПРОДАМ ---
+# --- ИСПРАВЛЕННЫЙ БЛОК ВЕБХУКА ---
     @app.post("/webhook/takprodam")
     async def takprodam_webhook(request: Request):
         try:
