@@ -791,7 +791,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         finally:
             conn.close()
 
-   @router.message(CommandStart())
+@router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
     username = message.from_user.username or ""
