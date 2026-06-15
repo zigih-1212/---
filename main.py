@@ -71,7 +71,6 @@ file_handler = RotatingFileHandler("bot.log", maxBytes=5 * 1024 * 1024, backupCo
 file_handler.setFormatter(log_formatter)
 logging.basicConfig(level=logging.INFO, handlers=[file_handler, logging.StreamHandler()])
 logger = logging.getLogger("autopost_bot")
-logger = logging.getLogger("parser")
 
 # --- Конфигурация ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
