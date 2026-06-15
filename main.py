@@ -915,6 +915,7 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
     channel_id: Optional[str] = None
     channel_title: Optional[str] = None
+    await state.clear()
 
     if message.forward_origin:
         try:
