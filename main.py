@@ -779,9 +779,6 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     finally:
         conn.close()
 
-# =============================================================================
-# === ОБРАБОТЧИК ВЫБОРА РОЛИ ==================================================
-# =============================================================================
 
 # =============================================================================
 # === ОБРАБОТЧИК ВЫБОРА РОЛИ ==================================================
@@ -855,8 +852,76 @@ async def handle_blogger_source(message: Message, state: FSMContext) -> None:
 
 
 # =============================================================================
-# === ОБРАБОТЧИК ДЛЯ SAAS: ПРИВЯЗКА ТГ-КАНАЛА ДЛЯ ПОСТИНГА ===================
+# === ОБРАБОТЧИК ДОБАВЛЕНИЯ КАНАЛА ДЛЯ SAAS ===================================
 # =============================================================================
+
+
+@router.callback_query(F.data == "menu:my_channels")
+async def cb_list_channels(callback: CallbackQuery) -> None:
+    user_id = callback.from_user.id
+    conn = get_db()
+    channels = conn.execute("SELECT * FROM channels WHERE user_id=?", (user_id,)).fetchall()
+    conn.close()
+    
+    if not channels:
+        await callback.message.edit_text(
+            "У вас пока нет добавленных каналов.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="➕ Добавить канал", callback_data="add_channel")]
+            ])
+        )
+        return
+        
+    # Формируем список кнопок для каждого канала
+    kb = []
+    for ch in channels:
+        kb.append([InlineKeyboardButton(text=f"📢 {ch['channel_title']}", callback_data=f"manage_ch:{ch['id']}")])
+    
+    kb.append([InlineKeyboardButton(text="➕ Добавить еще канал", callback_data="add_channel")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:back")])
+    
+    await callback.message.edit_text("Выберите канал для управления:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+# Обработчик нажатия на кнопку "Добавить канал"
+@router.callback_query(F.data == "add_channel")
+async def cb_add_channel(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_text(
+        "Пришлите @username канала или перешлите сообщение из него:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:my_channels")]
+        ])
+    )
+    # Переводим бота в состояние ожидания ввода канала
+    await state.set_state(OnboardingStates.waiting_saas_tg_channel)
+
+@router.message(OnboardingStates.waiting_saas_tg_channel)
+async def handle_saas_channel_addition(message: Message, state: FSMContext) -> None:
+    channel_username = message.text.strip()
+    user_id = message.from_user.id
+    
+    # Проверка прав бота в канале
+    is_admin = await check_bot_admin(message.bot, channel_username)
+    if not is_admin:
+        await message.answer("❌ Бот не является администратором в этом канале. Добавьте его и попробуйте снова.")
+        return
+        
+    # Добавляем новый канал в таблицу channels
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO channels (user_id, channel_id, channel_title) VALUES (?, ?, ?)",
+            (user_id, channel_username, channel_username)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+        
+    await message.answer(
+        f"✅ Канал <b>{html.escape(channel_username)}</b> успешно добавлен к вашему списку!",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_main_menu("saas") # Возвращаем в меню
+    )
+    await state.clear()
 
 @router.message(OnboardingStates.waiting_saas_tg_channel)
 async def handle_saas_tg_channel(message: Message, state: FSMContext) -> None:
