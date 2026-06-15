@@ -816,9 +816,9 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     conn = get_db()
 
 # -----------------------------------------------------------------------------
-# Онбординг: привязка канала
 # -----------------------------------------------------------------------------
-# --- Регистрация блогера ---
+# Онбординг и выплаты
+# -----------------------------------------------------------------------------
 
 @router.callback_query(OnboardingStates.waiting_role, F.data == "role:blogger")
 async def cb_blogger_reg(callback: CallbackQuery, state: FSMContext) -> None:
@@ -828,7 +828,7 @@ async def cb_blogger_reg(callback: CallbackQuery, state: FSMContext) -> None:
         "чтобы я мог начать мониторинг.",
         parse_mode=ParseMode.HTML
     )
-    await state.set_state(OnboardingStates.waiting_channel) # Используем существующее состояние
+    await state.set_state(OnboardingStates.waiting_channel)
 
 @router.message(OnboardingStates.waiting_channel)
 async def handle_blogger_channel(message: Message, state: FSMContext) -> None:
@@ -836,10 +836,7 @@ async def handle_blogger_channel(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
     username = message.from_user.username or "user"
     
-    # Определяем площадку из ссылки (простая логика)
     platform = "yt" if "youtube" in link.lower() else "tt" if "tiktok" in link.lower() else "inst"
-    
-    # Генерация хвостика: имя_платформа (пример: nastyayt)
     sub_id = f"{username.lower()}{platform}"
     
     conn = get_db()
@@ -879,9 +876,9 @@ async def handle_payout_card(message: Message, state: FSMContext) -> None:
     conn = get_db()
     try:
         user = conn.execute("SELECT sub_id, username FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user: return
         sub_id = user["sub_id"]
         
-        # Еще раз считаем сумму для безопасности
         approved_sum = conn.execute(
             "SELECT SUM(payout) FROM transactions WHERE sub_id=? AND status='approved'", 
             (sub_id,)
@@ -892,29 +889,27 @@ async def handle_payout_card(message: Message, state: FSMContext) -> None:
             await state.clear()
             return
             
+        await state.clear()
+        await message.answer("✅ <b>Заявка отправлена!</b>\n\nАдминистратор проверит её и переведет средства в ближайшее время.", parse_mode=ParseMode.HTML)
+        
+        admin_text = (
+            f"🚨 <b>Новая заявка на выплату!</b>\n\n"
+            f"👤 Блогер: @{user['username']} (ID: <code>{user_id}</code>, Sub_ID: {sub_id})\n"
+            f"💰 Сумма к выплате: <b>{approved_sum:.2f} руб.</b>\n\n"
+            f"💳 Реквизиты:\n<code>{card_details}</code>"
+        )
+        
+        admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Отметить как выплачено", callback_data=f"adm_payout:done:{sub_id}:{user_id}")]
+        ])
+        
+        for admin_id in ADMIN_IDS:
+            try:
+                await message.bot.send_message(chat_id=admin_id, text=admin_text, parse_mode=ParseMode.HTML, reply_markup=admin_kb)
+            except Exception:
+                pass
     finally:
         conn.close()
-
-    await state.clear()
-    await message.answer("✅ <b>Заявка отправлена!</b>\n\nАдминистратор проверит её и переведет средства в ближайшее время.", parse_mode=ParseMode.HTML)
-    
-    # Отправляем заявку всем админам
-    admin_text = (
-        f"🚨 <b>Новая заявка на выплату!</b>\n\n"
-        f"👤 Блогер: @{user['username']} (ID: <code>{user_id}</code>, Sub_ID: {sub_id})\n"
-        f"💰 Сумма к выплате: <b>{approved_sum:.2f} руб.</b>\n\n"
-        f"💳 Реквизиты:\n<code>{card_details}</code>"
-    )
-    
-    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Отметить как выплачено", callback_data=f"adm_payout:done:{sub_id}:{user_id}")]
-    ])
-    
-    for admin_id in ADMIN_IDS:
-        try:
-            await message.bot.send_message(chat_id=admin_id, text=admin_text, parse_mode=ParseMode.HTML, reply_markup=admin_kb)
-        except Exception:
-            pass
 
 @router.callback_query(F.data.startswith("adm_payout:done:"))
 async def cb_admin_payout_done(callback: CallbackQuery) -> None:
@@ -924,7 +919,6 @@ async def cb_admin_payout_done(callback: CallbackQuery) -> None:
     
     conn = get_db()
     try:
-        # Меняем статус выплаченных транзакций, чтобы они больше не плюсовались к балансу
         conn.execute("UPDATE transactions SET status='paid' WHERE sub_id=? AND status='approved'", (sub_id,))
         conn.commit()
     finally:
@@ -933,7 +927,6 @@ async def cb_admin_payout_done(callback: CallbackQuery) -> None:
     await callback.message.edit_text(callback.message.html_text + "\n\n<b>✅ ВЫПЛАЧЕНО</b>", parse_mode=ParseMode.HTML)
     await callback.answer("Баланс блогера обнулен")
     
-    # Уведомляем блогера
     try:
         await callback.bot.send_message(
             chat_id=blogger_id, 
