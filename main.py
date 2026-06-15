@@ -154,84 +154,72 @@ CARD_DETAILS_KG: str = "Mbank: +996 XXX XXX XXX | Получатель: ..."
 DB_PATH = "autopost.db"
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        cur = conn.cursor()
-        cur.execute("PRAGMA journal_mode=WAL;")
-        
-        # 1. Создаем основные таблицы (как у вас было)
-        cur.executescript("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                role TEXT DEFAULT 'blogger',
-                channel_id TEXT,
-                channel_title TEXT,
-                sub_id TEXT UNIQUE,
-                sub_end TEXT,
-                is_active INTEGER DEFAULT 0,
-                traffic_source TEXT DEFAULT 'organic',
-                api_key TEXT,
-                client_erid_override TEXT,
-                filter_wb INTEGER DEFAULT 1,
-                filter_ozon INTEGER DEFAULT 1,
-                blogger_mode TEXT DEFAULT 'direct'
-            );
-            CREATE TABLE IF NOT EXISTS promocodes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                code TEXT UNIQUE,
-                days INTEGER,
-                used BOOLEAN DEFAULT 0,
-                used_by INTEGER
-            );
-            CREATE TABLE IF NOT EXISTS posts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                donor_post_id TEXT,
-                status TEXT,
-                erid TEXT
-            );
-            -- НОВАЯ ТАБЛИЦА ДЛЯ ФИНАНСОВ БЛОГЕРОВ
-            CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sub_id TEXT,
-                order_id TEXT UNIQUE,
-                status TEXT,
-                payout REAL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS night_queue (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    channel_id TEXT,
-    text TEXT,
-    photo_url TEXT,
-    erid TEXT,
-    advertiser TEXT,
-    affiliate_url TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-        """)
-        
-        # 2. БЕЗОПАСНО добавляем колонку referrer_id, если её нет
-        try:
-            cur.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER")
-            logger.info("Колонка referrer_id добавлена")
-        except sqlite3.OperationalError:
-            # Если колонка уже существует, sqlite3 выдаст ошибку - мы её просто игнорируем
-            pass
-
-      -- ТАБЛИЦА ДЛЯ АВТООТКРЕПЛЕНИЯ ПОСТОВ (VIP-РЕЖИМ)
-            CREATE TABLE IF NOT EXISTS pinned_posts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id TEXT,
-                message_id INTEGER,
-                unpin_at TIMESTAMP
-            );
-        conn.commit()
-        logger.info("БД инициализирована (структура проверена)")
-    finally:
-        conn.close()
+    conn = sqlite3.connect("autopost.db")
+    cur = conn.cursor()
+    # Обратите внимание: строки внутри executescript должны иметь 
+    # одинаковый отступ относительно края файла
+    cur.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            role TEXT DEFAULT 'blogger',
+            channel_id TEXT,
+            channel_title TEXT,
+            sub_id TEXT UNIQUE,
+            sub_end TEXT,
+            is_active INTEGER DEFAULT 0,
+            traffic_source TEXT DEFAULT 'organic',
+            api_key TEXT,
+            client_erid_override TEXT,
+            filter_wb INTEGER DEFAULT 1,
+            filter_ozon INTEGER DEFAULT 1,
+            blogger_mode TEXT DEFAULT 'direct'
+        );
+        CREATE TABLE IF NOT EXISTS promocodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE,
+            days INTEGER,
+            used BOOLEAN DEFAULT 0,
+            used_by INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            donor_post_id TEXT,
+            target_channel_id TEXT,
+            traffic_source TEXT,
+            sku TEXT,
+            erid TEXT,
+            status TEXT
+        );
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sub_id TEXT,
+            order_id TEXT UNIQUE,
+            status TEXT,
+            payout REAL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS pinned_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id TEXT,
+            message_id INTEGER,
+            unpin_at TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS night_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            channel_id TEXT,
+            text TEXT,
+            photo_url TEXT,
+            erid TEXT,
+            advertiser TEXT,
+            affiliate_url TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+    conn.close()
 
 # =============================================================================
 # === CIRCUIT BREAKER (защита от бесконечного цикла запросов к API) ===========
