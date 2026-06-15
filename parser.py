@@ -177,9 +177,21 @@ async def check_all_bloggers(bot: Bot):
         
         logger.info(f"Найдено новое видео/пост {video_id} у блогера {b['user_id']}")
         
-        # Поиск артикула (SKU) - ищем 6-12 цифр
-        sku_match = re.search(r'\d{6,12}', description)
-        sku = sku_match.group(0) if sku_match else None
+# Ищем артикулы WB (обычно 8-10 цифр) или Ozon (могут быть цифры или буквы)
+        # Также ищем слова-подсказки "артикул", "артикул:", "wb", "ozon"
+        
+        # Регулярка ищет число, которому предшествует слово "артикул" или "арт"
+        sku_match = re.search(r'(?:арт|артикул|wb|ozon|id)\s*[:.]?\s*(\d{6,12})', description, re.IGNORECASE)
+        
+        if sku_match:
+            sku = sku_match.group(1)
+            # Определяем маркетплейс по контексту, если есть
+            marketplace = 'wb' if 'wb' in description.lower() else ('ozon' if 'ozon' in description.lower() else 'wb')
+        else:
+            # Если нет слова-подсказки, ищем просто любую последовательность 8-10 цифр
+            simple_match = re.search(r'\d{8,10}', description)
+            sku = simple_match.group(0) if simple_match else None
+            marketplace = 'wb' # по умолчанию
         
         # Запускаем публикацию
         await process_new_video(bot, b['user_id'], video_id, description, sku, thumbnail)
