@@ -775,8 +775,8 @@ async def handle_blogger_source(message: Message, state: FSMContext) -> None:
         "✅ Источник успешно привязан!\n\n"
         "Теперь выберите, куда бот должен публиковать контент:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="В мой канал", callback_data="target:own")],
-            [InlineKeyboardButton(text="В ваш канал", callback_data="target:ours")]
+            [InlineKeyboardButton(text="Общий", callback_data="target:own")],
+            [InlineKeyboardButton(text="Мой канал", callback_data="target:ours")]
         ])
     )
     await state.set_state(OnboardingStates.waiting_target_choice)
