@@ -840,6 +840,64 @@ async def handle_blogger_channel(message: Message, state: FSMContext) -> None:
         f"Теперь я буду мониторить этот канал.",
         parse_mode=ParseMode.HTML
     )
+
+  @router.callback_query(F.data == "payout:request")
+async def cb_request_payout(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_text(
+        "💳 <b>Запрос на вывод средств</b>\n\n"
+        "Введите номер вашей банковской карты (или реквизиты СБП с номером телефона и названием банка):",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Отмена", callback_data="menu:stats")]
+        ])
+    )
+    await state.set_state(PayoutStates.waiting_for_card)
+    await callback.answer()
+
+@router.message(PayoutStates.waiting_for_card)
+async def handle_payout_card(message: Message, state: FSMContext) -> None:
+    user_id = message.from_user.id
+    card_details = message.text.strip()
+    
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT sub_id, username FROM users WHERE user_id=?", (user_id,)).fetchone()
+        sub_id = user["sub_id"]
+        
+        # Еще раз считаем сумму для безопасности
+        approved_sum = conn.execute(
+            "SELECT SUM(payout) FROM transactions WHERE sub_id=? AND status='approved'", 
+            (sub_id,)
+        ).fetchone()[0] or 0.0
+        
+        if approved_sum < 2000.0:
+            await message.answer("❌ Ошибка: недостаточно средств для вывода.")
+            await state.clear()
+            return
+            
+    finally:
+        conn.close()
+
+    await state.clear()
+    await message.answer("✅ <b>Заявка отправлена!</b>\n\nАдминистратор проверит её и переведет средства в ближайшее время.", parse_mode=ParseMode.HTML)
+    
+    # Отправляем заявку всем админам
+    admin_text = (
+        f"🚨 <b>Новая заявка на выплату!</b>\n\n"
+        f"👤 Блогер: @{user['username']} (ID: <code>{user_id}</code>, Sub_ID: {sub_id})\n"
+        f"💰 Сумма к выплате: <b>{approved_sum:.2f} руб.</b>\n\n"
+        f"💳 Реквизиты:\n<code>{card_details}</code>"
+    )
+    
+    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Отметить как выплачено", callback_data=f"adm_payout:done:{sub_id}:{user_id}")]
+    ])
+    
+    for admin_id in ADMIN_IDS:
+        try:
+            await message.bot.send_message(chat_id=admin_id, text=admin_text, parse_mode=ParseMode.HTML, reply_markup=admin_kb)
+        except Exception:
+            pass
 # -----------------------------------------------------------------------------
 # Починка: Умное меню управления каналом
 # -----------------------------------------------------------------------------
