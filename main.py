@@ -781,6 +781,39 @@ async def handle_blogger_source(message: Message, state: FSMContext) -> None:
     )
     await state.set_state(OnboardingStates.waiting_target_choice)
 
+# =============================================================================
+# === ОБРАБОТЧИКИ ВЫБОРА КАНАЛА ДЛЯ БЛОГЕРА ===================================
+# =============================================================================
+
+@router.callback_query(F.data.startswith("target:"))
+async def cb_select_target(callback: CallbackQuery, state: FSMContext) -> None:
+    # 1. ОБЯЗАТЕЛЬНО закрываем загрузку
+    await callback.answer()
+    
+    target_type = callback.data.split(":")[1] # "own" или "ours"
+    user_id = callback.from_user.id
+    
+    # 2. Сохраняем выбор в БД
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET target_mode=? WHERE user_id=?", (target_type, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    
+    # 3. Если выбрали "Свой канал", просим прислать @username
+    if target_type == "own":
+        await state.set_state(OnboardingStates.waiting_channel)
+        await callback.message.edit_text(
+            "📝 Пришлите @username вашего Telegram-канала, куда бот должен делать посты:"
+        )
+    else:
+        # Если "Наш канал", просто завершаем регистрацию
+        await state.clear()
+        await callback.message.edit_text("✅ Вы успешно зарегистрированы! Вы выбрали работу через наш канал.")
+        # Показываем главное меню
+        await callback.message.answer("🏠 Главное меню", reply_markup=kb_main_menu("blogger"))
+
 
 # =============================================================================
 # === ОБРАБОТЧИК ДОБАВЛЕНИЯ КАНАЛА ДЛЯ SAAS ===================================
