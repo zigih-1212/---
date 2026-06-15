@@ -168,6 +168,17 @@ def init_db():
                 payout REAL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS night_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    channel_id TEXT,
+    text TEXT,
+    photo_url TEXT,
+    erid TEXT,
+    advertiser TEXT,
+    affiliate_url TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
         """)
         
         # 2. БЕЗОПАСНО добавляем колонку referrer_id, если её нет
