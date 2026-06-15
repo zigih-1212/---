@@ -749,8 +749,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             await state.set_state(OnboardingStates.waiting_role)
     finally:
         conn.close()
-
-  @router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
+@router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
 async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
     # 1. Получаем роль из callback_data (например, 'blogger' или 'saas')
     role = callback.data.split(":")[1]
