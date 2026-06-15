@@ -2385,7 +2385,7 @@ def get_donor_channels_list() -> list:
     return [ch.strip() for ch in channels.split(",") if ch.strip()]
 
 async def scan_donor_channels(bot: Bot):
-    """Основной цикл парсинга каналов."""
+    """Основной цикл парсинга каналов.
     channels = get_donor_channels_list()
     for channel in channels:
         try:
@@ -2409,7 +2409,7 @@ async def scan_donor_channels(bot: Bot):
                     # ВЫЗЫВАЕМ С НОВОЙ ПЕРЕМЕННОЙ:
                     await process_donor_post(bot, ADMIN_IDS[0], f"donor_{message.message_id}", sku, current_mp, "Товар", "0", photo_url)
         except Exception as e:
-            logger.error(f"Ошибка при парсинге {channel}: {e}")
+            logger.error(f"Ошибка при парсинге {channel}: {e}")"""
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
