@@ -156,8 +156,7 @@ DB_PATH = "autopost.db"
 def init_db():
     conn = sqlite3.connect("autopost.db")
     cur = conn.cursor()
-    # Обратите внимание: строки внутри executescript должны иметь 
-    # одинаковый отступ относительно края файла
+    # Сначала создаем все таблицы одним скриптом
     cur.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -217,7 +216,6 @@ def init_db():
             affiliate_url TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-        conn.execute("""
         CREATE TABLE IF NOT EXISTS blogger_channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -225,11 +223,10 @@ def init_db():
             channel_url TEXT,
             channel_id TEXT,
             FOREIGN KEY(user_id) REFERENCES users(user_id)
-        )
+        );
     """)
     conn.commit()
     conn.close()
-
 # =============================================================================
 # === CIRCUIT BREAKER (защита от бесконечного цикла запросов к API) ===========
 # =============================================================================
