@@ -113,111 +113,30 @@ def get_db():
     return db
 
 
-def init_db() -> None:
-    """Инициализация БД с WAL-режимом для защиты от database is locked."""
-    conn = get_db()
-    try:
-        cur = conn.cursor()
-        cur.execute("PRAGMA journal_mode=WAL;")
-        cur.execute("PRAGMA foreign_keys=ON;")
-        cur.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id              INTEGER PRIMARY KEY,
-            username             TEXT,
-            role                 TEXT NOT NULL DEFAULT 'blogger',
-            channel_id           TEXT,
-            channel_title        TEXT,
-            sub_id               TEXT UNIQUE,
-            sub_end              TEXT,
-            is_active            INTEGER NOT NULL DEFAULT 0,
-            traffic_source       TEXT NOT NULL DEFAULT 'organic',
-            referrer_id          INTEGER,
-            api_key              TEXT,
-            client_erid_override TEXT,
-            filter_wb            INTEGER NOT NULL DEFAULT 1,
-            filter_ozon          INTEGER NOT NULL DEFAULT 1,
-            blogger_mode         TEXT NOT NULL DEFAULT 'direct',
-            created_at           TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS posts (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id           INTEGER NOT NULL,
-            donor_post_id     TEXT NOT NULL,
-            channel_id        TEXT NOT NULL,
-            marketplace       TEXT,
-            sku               TEXT,
-            erid              TEXT,
-            advertiser        TEXT,
-            status            TEXT NOT NULL DEFAULT 'pending',
-            quarantine_reason TEXT,
-            created_at        TEXT NOT NULL DEFAULT (datetime('now')),
-            published_at      TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS transactions (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            sub_id     TEXT NOT NULL,
-            order_id   TEXT UNIQUE,
-            status     TEXT NOT NULL DEFAULT 'pending',
-            payout     REAL NOT NULL DEFAULT 0.0,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS billing_log (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id        INTEGER NOT NULL,
-            plan           TEXT NOT NULL,
-            stars_paid     INTEGER,
-            payment_method TEXT,
-            payment_id     TEXT,
-            created_at     TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS night_queue (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id       INTEGER NOT NULL,
-            channel_id    TEXT NOT NULL,
-            text          TEXT NOT NULL,
-            photo_url     TEXT,
-            erid          TEXT NOT NULL,
-            advertiser    TEXT NOT NULL,
-            affiliate_url TEXT NOT NULL,
-            created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS pinned_posts (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            chat_id    TEXT NOT NULL,
-            message_id INTEGER NOT NULL,
-            unpin_at   TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS promocodes (
-            id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            code    TEXT UNIQUE NOT NULL,
-            days    INTEGER NOT NULL,
-            used    INTEGER NOT NULL DEFAULT 0,
-            used_by INTEGER
-        );
-
-        CREATE TABLE IF NOT EXISTS blogger_channels (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL,
-            platform    TEXT,
-            channel_url TEXT NOT NULL,
-            channel_id  TEXT
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_posts_user       ON posts(user_id);
-        CREATE INDEX IF NOT EXISTS idx_posts_status     ON posts(status);
-        CREATE INDEX IF NOT EXISTS idx_transactions_sub ON transactions(sub_id);
-        CREATE INDEX IF NOT EXISTS idx_night_queue_user ON night_queue(user_id);
-        """)
+# =============================================================================
+# === БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ БД =============================================
+# =============================================================================
 
 def init_db():
     conn = get_db()
-    conn.execute("""
+    cursor = conn.cursor()
+    
+    # 1. Создаем таблицу пользователей, если ее нет
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            role TEXT DEFAULT 'blogger',
+            channel_id TEXT,
+            channel_title TEXT,
+            sub_id TEXT,
+            source_link TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # 2. Создаем таблицу каналов, если ее нет
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -228,10 +147,18 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     """)
-        conn.commit()
-        logger.info("БД инициализирована (WAL-mode активен)")
-    finally:
-        conn.close()
+    
+    # 3. БЕЗОПАСНОЕ ОБНОВЛЕНИЕ: Проверяем наличие колонок, чтобы не стереть данные
+    # Например, если вы добавили новые поля позже
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN source_link TEXT")
+    except sqlite3.OperationalError:
+        # Колонка уже существует, ничего не делаем
+        pass
+        
+    conn.commit()
+    conn.close()
+    logger.info("База данных проверена и готова к работе.")
 
 
 # =============================================================================
