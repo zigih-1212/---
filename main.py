@@ -714,7 +714,7 @@ class PayoutStates(StatesGroup):
 router = Router()
 
 # =============================================================================
-# === ОБРАБОТЧИК ВЫБОРА РОЛИ =====================
+# === ОБРАБОТЧИК ВЫБОРА РОЛИ ==================================================
 # =============================================================================
 
 @router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
@@ -724,58 +724,59 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
     
     conn = get_db()
     try:
-        # ОБЯЗАТЕЛЬНО сохраняем в базу данных
-        conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
+        # Проверяем, есть ли юзер в базе
+        cursor = conn.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,))
+        if cursor.fetchone():
+            conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
+        else:
+            # Создаем запись, если ее нет
+            conn.execute("INSERT INTO users (user_id, role) VALUES (?, ?)", (user_id, role))
         conn.commit()
     finally:
         conn.close()
     
-    # Очищаем состояние выбора роли
     await state.clear()
-    
     await callback.message.edit_text(
         f"✅ Роль <b>{role.upper()}</b> сохранена!\n\n"
         "Теперь привяжи канал: перешли сообщение из него или отправь <code>@username</code>.",
         parse_mode=ParseMode.HTML
     )
-    # Переходим к привязке канала
     await state.set_state(OnboardingStates.waiting_channel)
     await callback.answer()
 
-# -----------------------------------------------------------------------------
-# /start
-# -----------------------------------------------------------------------------
+
+# =============================================================================
+# === /start ==================================================================
+# =============================================================================
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
+    username = message.from_user.username
     
-    # 1. ПРОВЕРКА АДМИНА (всегда первая)
+    # 1. ПРОВЕРКА АДМИНА
     if user_id in ADMIN_IDS:
-        await message.answer(
-            "👋 <b>Панель администратора</b>\n\nУправляй платформой.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb_admin_panel(),
-        )
+        await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
         return
 
-    # 2. ПРОВЕРКА СУЩЕСТВУЮЩЕГО ПОЛЬЗОВАТЕЛЯ
     conn = get_db()
     try:
         user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
         
         if user:
-            # Пользователь уже есть — сразу показываем меню
-            await message.answer(
-                "🏠 <b>Главное меню</b>", 
-                parse_mode=ParseMode.HTML, 
-                reply_markup=kb_main_menu(user["role"])
-            )
+            # Юзер есть - сразу меню
+            await message.answer("🏠 Главное меню", reply_markup=kb_main_menu(user["role"]))
         else:
-            # Новый пользователь — предлагаем выбор роли
+            # Регистрация нового
+            sub_id = generate_sub_id(username, user_id)
+            conn.execute(
+                "INSERT INTO users (user_id, username, sub_id) VALUES (?, ?, ?)",
+                (user_id, username, sub_id)
+            )
+            conn.commit()
+            
             await message.answer(
-                "👋 <b>Добро пожаловать в AutoPost!</b>\n\nКто вы?",
-                parse_mode=ParseMode.HTML,
+                "👋 Добро пожаловать! Кто вы?",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
                     [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
@@ -784,70 +785,6 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             await state.set_state(OnboardingStates.waiting_role)
     finally:
         conn.close()
-@router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
-async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
-    # 1. Получаем роль из callback_data (например, 'blogger' или 'saas')
-    role = callback.data.split(":")[1]
-    user_id = callback.from_user.id
-    
-    # 2. Обновляем роль в базе данных
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-    
-    # 3. Завершаем состояние и переходим к следующему шагу (привязке канала)
-    await state.clear()
-    
-    await callback.message.edit_text(
-        f"✅ Выбрана роль: <b>{role.upper()}</b>\n\nТеперь привяжи канал (перешли сообщение или отправь @username):",
-        parse_mode=ParseMode.HTML
-    )
-    # Переводим пользователя в состояние ожидания канала
-    await state.set_state(OnboardingStates.waiting_channel)
-    await callback.answer()
-    conn = get_db()
-    try:
-        existing = conn.execute(
-            "SELECT user_id, role FROM users WHERE user_id=?", (user_id,)
-        ).fetchone()
-        if not existing:
-            sub_id = generate_sub_id(username, user_id)
-            conn.execute(
-                "INSERT INTO users (user_id, username, sub_id, traffic_source, referrer_id) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (user_id, username, sub_id, traffic_source, referrer_id)
-            )
-            conn.commit()
-            role = "blogger"
-        else:
-            role = existing["role"]
-            conn.execute("UPDATE users SET username=? WHERE user_id=?", (username, user_id))
-            conn.commit()
-    finally:
-        conn.close()
-
-    if user_id in ADMIN_IDS:
-        await message.answer(
-            "👋 <b>Панель администратора</b>\n\nУправляй платформой.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb_admin_panel(),
-        )
-        return
-
-    await message.answer(
-        "👋 <b>Добро пожаловать в AutoPost</b>\n\n"
-        "Инструмент для <b>легального автопостинга</b> товаров с маркетплейсов "
-        "в твои Telegram-каналы.\n\n"
-        "🔒 <b>Каждый пост автоматически маркируется</b> согласно требованиям ФАС "
-        "(ERID + ссылка на рекламодателя).\n\n"
-        "Подключи канал и запусти монетизацию трафика за 2 минуты.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_main_menu(role),
-    )
-
 
 # -----------------------------------------------------------------------------
 # Главное меню (единственное определение)
