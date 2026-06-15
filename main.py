@@ -2139,6 +2139,25 @@ def _record_post(
 def create_fastapi_app(bot: Bot) -> FastAPI:
     app = FastAPI(title="AutoPost Admin", docs_url=None, redoc_url=None)
 
+  def create_fastapi_app(bot: Bot):
+    app = FastAPI(title="AutoPost Admin", ...) # 1. app создается здесь
+
+    # 2. Ваши существующие декораторы (с отступом в 4 пробела)
+    @app.get("/admin", response_class=HTMLResponse)
+    async def admin_panel(request: Request):
+        ...
+
+    # 3. ВАШ ВЕБХУК (тоже с отступом в 4 пробела)
+    @app.post("/webhook/takprodam")
+    async def takprodam_webhook(request: Request):
+        try:
+            data = await request.json()
+            # ... ваш код ...
+        except Exception as e:
+            ...
+
+    return app # 4. 
+    
     @app.get("/admin", response_class=HTMLResponse)
     async def admin_panel(request: Request):
         conn = get_db()
