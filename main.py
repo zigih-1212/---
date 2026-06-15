@@ -680,6 +680,7 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
+            [InlineKeyboardButton(text="➕ Добавить канал", callback_data="menu:add_channel")],
         ]
     elif role == "saas":
         buttons = [
