@@ -2226,7 +2226,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
     return app
 
-        total_users = len(users) if users else 0
+            total_users = len(users) if users else 0
 # Убираем 'f' перед кавычками, чтобы это была обычная строка
         return HTMLResponse(content="""<!DOCTYPE html>
 <html lang="ru">
