@@ -534,7 +534,7 @@ async def publish_post_with_fallback(
     reply_markup: Optional[InlineKeyboardMarkup] = None,
 ) -> bool:
     """
-    Публикует пост с фото. При ошибке «wrong type of web page content»
+    Публикует пост с фото. При ошибке "wrong type of web page content"
     мгновенно делает fallback → публикует текстом (send_message).
     Возвращает True при успехе, False при полном провале.
     """
