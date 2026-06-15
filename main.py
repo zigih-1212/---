@@ -714,6 +714,73 @@ class PayoutStates(StatesGroup):
 router = Router()
 
 # =============================================================================
+# === ОБРАБОТЧИК СТАРТА И РЕГИСТРАЦИИ =========================================
+# =============================================================================
+
+@router.message(CommandStart())
+async def cmd_start(message: Message, state: FSMContext) -> None:
+    # Очищаем любое предыдущее состояние, чтобы начать с чистого листа
+    await state.clear()
+    
+    user_id = message.from_user.id
+    username = message.from_user.username
+    
+    # 1. ПРОВЕРКА АДМИНИСТРАТОРА
+    if user_id in ADMIN_IDS:
+        logger.info(f"Администратор {user_id} вошел в систему.")
+        await message.answer(
+            "👋 Панель администратора.\nИспользуйте кнопки для управления платформой.",
+            reply_markup=kb_admin_panel()
+        )
+        return
+
+    # 2. ПРОВЕРКА ПОЛЬЗОВАТЕЛЯ В БАЗЕ
+    conn = get_db()
+    try:
+        user_record = conn.execute(
+            "SELECT role, channel_id FROM users WHERE user_id=?", 
+            (user_id,)
+        ).fetchone()
+        
+        # 3. ЕСЛИ ПОЛЬЗОВАТЕЛЬ УЖЕ ЕСТЬ
+        if user_record:
+            role = user_record["role"]
+            logger.info(f"Пользователь {user_id} вернулся. Роль: {role}")
+            await message.answer(
+                "🏠 Главное меню", 
+                reply_markup=kb_main_menu(role)
+            )
+            return
+
+        # 4. ЕСЛИ НОВЫЙ ПОЛЬЗОВАТЕЛЬ — РЕГИСТРИРУЕМ
+        logger.info(f"Регистрация нового пользователя: {user_id} (@{username})")
+        sub_id = generate_sub_id(username, user_id)
+        
+        conn.execute(
+            "INSERT INTO users (user_id, username, sub_id) VALUES (?, ?, ?)",
+            (user_id, username, sub_id)
+        )
+        conn.commit()
+        
+        # Запускаем онбординг (выбор роли)
+        await message.answer(
+            "👋 Добро пожаловать в AutoPost!\n\n"
+            "Для начала работы выберите вашу роль:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
+                [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
+            ])
+        )
+        await state.set_state(OnboardingStates.waiting_role)
+        
+    except Exception as e:
+        logger.error(f"Ошибка при обработке cmd_start: {e}")
+        await message.answer("Произошла ошибка при регистрации. Попробуйте позже.")
+    finally:
+        conn.close()
+
+
+# =============================================================================
 # === ОБРАБОТЧИК ВЫБОРА РОЛИ ==================================================
 # =============================================================================
 
@@ -722,69 +789,100 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
     role = callback.data.split(":")[1]
     user_id = callback.from_user.id
     
+    logger.info(f"Пользователь {user_id} выбрал роль: {role}")
+    
     conn = get_db()
     try:
-        # Проверяем, есть ли юзер в базе
-        cursor = conn.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,))
-        if cursor.fetchone():
-            conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
-        else:
-            # Создаем запись, если ее нет
-            conn.execute("INSERT INTO users (user_id, role) VALUES (?, ?)", (user_id, role))
+        # Явное обновление роли
+        cursor = conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
         conn.commit()
+        
+        if cursor.rowcount == 0:
+            logger.warning(f"Не удалось обновить роль для {user_id}: запись не найдена.")
+    except Exception as e:
+        logger.error(f"Ошибка при записи роли в БД: {e}")
     finally:
         conn.close()
     
-    await state.clear()
+    # Переходим к следующему шагу — привязке канала
+    await state.set_state(OnboardingStates.waiting_channel)
+    
     await callback.message.edit_text(
-        f"✅ Роль <b>{role.upper()}</b> сохранена!\n\n"
-        "Теперь привяжи канал: перешли сообщение из него или отправь <code>@username</code>.",
+        f"✅ Вы выбрали роль: <b>{role.upper()}</b>.\n\n"
+        "Теперь привяжите канал. Перешлите любое сообщение из вашего канала "
+        "или отправьте его @username.",
         parse_mode=ParseMode.HTML
     )
-    await state.set_state(OnboardingStates.waiting_channel)
     await callback.answer()
 
 
 # =============================================================================
-# === /start ==================================================================
+# === ОБРАБОТЧИК ПРИВЯЗКИ КАНАЛА ==============================================
 # =============================================================================
 
-@router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
+@router.message(OnboardingStates.waiting_channel)
+async def handle_channel_input(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
-    username = message.from_user.username
-    
-    # 1. ПРОВЕРКА АДМИНА
-    if user_id in ADMIN_IDS:
-        await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
+    channel_id: Optional[str] = None
+    channel_title: Optional[str] = None
+
+    # Подробный парсинг канала
+    if message.forward_origin:
+        try:
+            chat = message.forward_origin.chat
+            channel_id = str(chat.id)
+            channel_title = chat.title
+            logger.info(f"Получен ID канала из пересылки: {channel_id}")
+        except AttributeError:
+            pass
+    elif message.text and message.text.startswith("@"):
+        channel_id = message.text.strip()
+        channel_title = channel_id
+        logger.info(f"Получен username канала: {channel_id}")
+
+    if not channel_id:
+        await message.answer("⚠️ Не удалось распознать канал. Пожалуйста, пришлите пересланное сообщение или @username.")
         return
 
+    # Проверка прав (Бот должен быть админом)
+    is_admin_ok = await check_bot_admin(message.bot, channel_id)
+    if not is_admin_ok:
+        await message.answer(
+            "❌ Бот не имеет прав администратора в этом канале.\n"
+            "Добавьте бота в администраторы (с правом публикации) и попробуйте снова."
+        )
+        return
+
+    # Запись канала в базу
     conn = get_db()
     try:
-        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        conn.execute(
+            "UPDATE users SET channel_id=?, channel_title=? WHERE user_id=?", 
+            (channel_id, channel_title, user_id)
+        )
+        conn.commit()
         
-        if user:
-            # Юзер есть - сразу меню
-            await message.answer("🏠 Главное меню", reply_markup=kb_main_menu(user["role"]))
-        else:
-            # Регистрация нового
-            sub_id = generate_sub_id(username, user_id)
-            conn.execute(
-                "INSERT INTO users (user_id, username, sub_id) VALUES (?, ?, ?)",
-                (user_id, username, sub_id)
-            )
-            conn.commit()
-            
-            await message.answer(
-                "👋 Добро пожаловать! Кто вы?",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
-                    [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
-                ])
-            )
-            await state.set_state(OnboardingStates.waiting_role)
+        # Получаем роль для возврата меню
+        row = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        role = row["role"] if row else "blogger"
+        
+        logger.info(f"Канал {channel_id} успешно привязан к пользователю {user_id}")
+    except Exception as e:
+        logger.error(f"Ошибка сохранения канала в БД: {e}")
+        await message.answer("Ошибка при сохранении данных в базу.")
+        return
     finally:
         conn.close()
+
+    # Завершаем процесс регистрации
+    await state.clear()
+    
+    await message.answer(
+        f"✅ <b>Канал успешно привязан:</b> {html.escape(channel_title or channel_id)}\n\n"
+        "Теперь вы можете полноценно пользоваться ботом.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_main_menu(role)
+    )
 
 # -----------------------------------------------------------------------------
 # Главное меню (единственное определение)
