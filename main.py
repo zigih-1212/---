@@ -84,6 +84,16 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         # Если бот вообще не добавлен в канал или канал не существует
         return False
 
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        RotatingFileHandler("bot_errors.log", maxBytes=5*1024*1024, backupCount=3),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("autopost_bot")
 # --- Логирование ---
 log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 file_handler = RotatingFileHandler("bot.log", maxBytes=5 * 1024 * 1024, backupCount=3)
