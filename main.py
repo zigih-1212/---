@@ -1515,48 +1515,89 @@ async def handle_erid_override_input(message: Message, state: FSMContext) -> Non
 
 
 # -----------------------------------------------------------------------------
-# Статистика
+#  --- ОБНОВЛЕННАЯ СТАТИСТИКА (Разделение SaaS и Блогер) ---
 # -----------------------------------------------------------------------------
 
 @router.callback_query(F.data == "menu:stats")
 async def cb_menu_stats(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
-    
-    # 1. Сразу отвечаем Telegram, чтобы убрать "зависание" кнопки
-    await callback.answer() 
+    await callback.answer() # Убираем "часики" загрузки
     
     conn = get_db()
     try:
-        # Получаем общие цифры
-        total = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=?", (user_id,)).fetchone()[0]
-        published = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=? AND status='published'", (user_id,)).fetchone()[0]
-        quarantine = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=? AND status='quarantine'", (user_id,)).fetchone()[0]
+        # Узнаем роль пользователя
+        user = conn.execute("SELECT role, sub_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user:
+            await callback.message.edit_text("Ошибка: пользователь не найден.")
+            return
+            
+        role = user["role"]
         
-        # Получаем список последних постов
-        last_posts = conn.execute(
-            "SELECT donor_post_id, status, created_at FROM posts "
-            "WHERE user_id=? ORDER BY created_at DESC LIMIT 5",
-            (user_id,)
-        ).fetchall()
+        if role == "blogger":
+            # --- СТАТИСТИКА ДЛЯ БЛОГЕРА (Деньги) ---
+            sub_id = user["sub_id"]
+            
+            # Считаем сумму заработка (только Выкупленные)
+            approved_sum = conn.execute(
+                "SELECT SUM(payout) FROM transactions WHERE sub_id=? AND status='approved'", 
+                (sub_id,)
+            ).fetchone()[0] or 0.0
+            
+            # Считаем количество заказов по статусам
+            approved_cnt = conn.execute(
+                "SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='approved'", 
+                (sub_id,)
+            ).fetchone()[0]
+            
+            pending_cnt = conn.execute(
+                "SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='pending'", 
+                (sub_id,)
+            ).fetchone()[0]
+            
+            text = (
+                f"📊 <b>Твоя статистика партнёра</b>\n\n"
+                f"🆔 Твой ID: <code>{sub_id}</code>\n\n"
+                f"📦 <b>Заказы:</b>\n"
+                f" ├ Ожидают получения: <b>{pending_cnt} шт.</b>\n"
+                f" └ Выкуплено: <b>{approved_cnt} шт.</b>\n\n"
+                f"💸 <b>Твой заработок:</b>\n"
+                f" └ <b>{approved_sum:.2f} руб.</b>\n\n"
+                f"<i>* Баланс обновляется автоматически при выкупе товара клиентом на ПВЗ.</i>"
+            )
+            
+        else:
+            # --- СТАТИСТИКА ДЛЯ SaaS (Посты) ---
+            total = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=?", (user_id,)).fetchone()[0]
+            published = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=? AND status='published'", (user_id,)).fetchone()[0]
+            
+            # Получаем последние 5 постов
+            last_posts = conn.execute(
+                "SELECT donor_post_id, status FROM posts "
+                "WHERE user_id=? ORDER BY id DESC LIMIT 5",
+                (user_id,)
+            ).fetchall()
+            
+            if not last_posts:
+                last_str = "  <i>Постов ещё не было</i>"
+            else:
+                last_str = "\n".join(
+                    f"  • <code>{p['donor_post_id']}</code> — {p['status']}"
+                    for p in last_posts
+                )
+            
+            text = (
+                f"📊 <b>Статистика постов (SaaS)</b>\n\n"
+                f"Всего: {total}\n"
+                f"Опубликовано: {published}\n\n"
+                f"<b>Последние 5 постов:</b>\n{last_str}"
+            )
+            
     finally:
         conn.close()
 
-    # 2. Безопасная сборка текста (если постов нет)
-    if not last_posts:
-        last_str = "  <i>Постов ещё не было</i>"
-    else:
-        last_str = "\n".join(
-            f"  • <code>{p['donor_post_id']}</code> — {p['status']} ({p['created_at'][:10]})"
-            for p in last_posts
-        )
-
-    # 3. Вывод данных
+    # Выводим сообщение и кнопку "Назад"
     await callback.message.edit_text(
-        f"📊 <b>Статистика постов</b>\n\n"
-        f"Всего: {total}\n"
-        f"Опубликовано: {published}\n"
-        f"Карантин: {quarantine}\n\n"
-        f"<b>Последние 5 постов:</b>\n{last_str}",
+        text,
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
