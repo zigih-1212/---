@@ -24,6 +24,8 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Optional
+from aiogram import BaseMiddleware
+from aiogram.types import TelegramObject
 
 import httpx
 import uvicorn
@@ -45,6 +47,15 @@ from fastapi.responses import HTMLResponse
 from aiogram.types import InlineKeyboardMarkup, Message, InlineKeyboardButton, LabeledPrice, SuccessfulPayment, CallbackQuery, PreCheckoutQuery
 from aiogram.exceptions import TelegramAPIError
 
+class ErrorLoggingMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event: TelegramObject, data: dict):
+        try:
+            return await handler(event, data)
+        except Exception as e:
+            logger.exception("Ошибка при обработке события")
+            # Можно отправить уведомление админу через bot
+            raise e # Пробрасываем дальше, чтобы бот не «проглотил» ошибку
+          
 class PaymentFSM(StatesGroup):
     choosing_tariff = State()        
     choosing_method = State()        
