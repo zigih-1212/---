@@ -141,6 +141,15 @@ def init_db():
                 status TEXT,
                 erid TEXT
             );
+            -- НОВАЯ ТАБЛИЦА ДЛЯ ФИНАНСОВ БЛОГЕРОВ
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sub_id TEXT,
+                order_id TEXT UNIQUE,
+                status TEXT,
+                payout REAL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
         """)
         
         # 2. БЕЗОПАСНО добавляем колонку referrer_id, если её нет
