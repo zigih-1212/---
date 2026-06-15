@@ -56,6 +56,7 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("autopost_bot")
+logger.info(f"DEBUG: Попытка отправить пост в канал {channel_id}...")
 
 # ---------- Конфигурация из переменных окружения -----------------------------
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
