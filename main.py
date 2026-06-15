@@ -2148,8 +2148,8 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         ...
 
     # 3. ВАШ ВЕБХУК (тоже с отступом в 4 пробела)
-    @app.post("/webhook/takprodam")
-    async def takprodam_webhook(request: Request):
+@app.post("/webhook/takprodam")
+async def takprodam_webhook(request: Request):
         try:
             data = await request.json()
             # ... ваш код ...
