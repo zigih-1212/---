@@ -2372,19 +2372,6 @@ async def check_all_bloggers(bot: Bot):
             sku=sku,
             photo_url=full_info.get('thumbnail')
         )
-        async def check_all_bloggers(bot: Bot):
-    conn = get_db()
-    # Берем ВСЕ каналы всех блогеров
-    all_channels = conn.execute("SELECT user_id, channel_url FROM blogger_channels").fetchall()
-    conn.close()
-
-    for channel in all_channels:
-        b_user_id = channel['user_id']
-        url = channel['channel_url']
-        
-        # Парсим конкретный канал
-        latest = get_latest_video(url)
-        # ... дальше логика проверки (is_video_processed и т.д.) ...
 # =============================================================================
 # === MAIN ENTRYPOINT =========================================================
 # =============================================================================
