@@ -2334,6 +2334,15 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
         id="flush_night_queue",
     )
 
+  # Проверка открепления VIP-сообщений
+    scheduler.add_job(
+        unpin_old_messages,
+        trigger="interval",
+        minutes=30,
+        kwargs={"bot": bot},
+        id="unpin_vip_posts",
+    )
+  
     return scheduler
 async def check_all_bloggers(bot: Bot):
     conn = get_db()
