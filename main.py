@@ -729,15 +729,13 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
     
     # 4. Сообщаем пользователю и переходим к следующему шагу (привязке канала)
     await callback.message.edit_text(
-        f"✅ Роль <b>{role.upper()}</b> сохранена!\n\n"
-        "Теперь привяжи канал: перешли сообщение из него или отправь <code>@username</code>.",
+        f"✅ Выбрана роль: <b>{role.upper()}</b>. Теперь привяжи канал.",
         parse_mode=ParseMode.HTML
     )
     
-    # Переводим пользователя в состояние ожидания канала
+    # Переходим к привязке канала
     await state.set_state(OnboardingStates.waiting_channel)
     await callback.answer()
-
 
 # -----------------------------------------------------------------------------
 # /start
