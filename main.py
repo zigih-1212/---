@@ -2265,7 +2265,7 @@ async def takprodam_webhook(request: Request):
             logger.error(f"Ошибка обработки вебхука ТакПродам: {e}")
             return {"status": "error", "message": str(e)}
 
-    return app # Эта строка уже была, она завершает функцию create_fastapi_app
+        return app # Эта строка уже была, она завершает функцию create_fastapi_app
 
 # =============================================================================
 # === SCHEDULER ===============================================================
