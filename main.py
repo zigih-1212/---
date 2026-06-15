@@ -613,6 +613,7 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
         buttons.insert(2, [InlineKeyboardButton(text="💎 Подписка", callback_data="menu:tariffs")])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+  
     else:
         buttons = [
             [InlineKeyboardButton(text="🔑 API-ключ ТакПродам", callback_data="menu:apikey")],
