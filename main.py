@@ -1761,7 +1761,7 @@ async def cb_admin_webapp_link(callback: CallbackQuery) -> None:
     # Используем ваш реальный домен Railway
     public_url = "https://main-production-8221.up.railway.app"
     await callback.answer(f"🌐 WebApp: {public_url}/admin", show_alert=True)
-    )
+    ()
 
 
 # =============================================================================
