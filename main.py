@@ -10,309 +10,285 @@
 # === IMPORTS & CONFIG ========================================================
 # =============================================================================
 
-import os
+import asyncio
 import html
 import logging
+import os
 import re
 import sqlite3
 import time
-import asyncio
-import yt_dlp
-import logging
-from parser import check_all_bloggers
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Optional
-from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject
 
 import httpx
 import uvicorn
+from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
-from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram import F
-from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import InlineKeyboardMarkup, Message  # <--- ВОТ ЭТОТ ИМПОРТ
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LabeledPrice,
+    Message,
+    PreCheckoutQuery,
+    SuccessfulPayment,
+    TelegramObject,
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from aiogram.types import InlineKeyboardMarkup, Message, InlineKeyboardButton, LabeledPrice, SuccessfulPayment, CallbackQuery, PreCheckoutQuery
-from aiogram.exceptions import TelegramAPIError
+
+# ---------- Логирование (RotatingFileHandler — защита памяти контейнера) -----
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        RotatingFileHandler("bot.log", maxBytes=5 * 1024 * 1024, backupCount=3),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger("autopost_bot")
+
+# ---------- Конфигурация из переменных окружения -----------------------------
+BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
+ADMIN_IDS: list[int] = [
+    int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()
+]
+QUARANTINE_CHAT_ID: int = int(os.getenv("QUARANTINE_CHAT_ID", "0"))
+ADMIN_VIP_CHANNEL_ID: int = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "0"))
+DEEPINFRA_API_KEY: str = os.getenv("DEEPINFRA_API_KEY", "")
+STARS_PROVIDER_TOKEN: str = os.getenv("STARS_PROVIDER_TOKEN", "")
+WEBAPP_HOST: str = os.getenv("WEBAPP_HOST", "0.0.0.0")
+WEBAPP_PORT: int = int(os.getenv("PORT", os.getenv("WEBAPP_PORT", "8000")))
+
+# ---------- Реквизиты оплаты -------------------------------------------------
+CARD_SBER: str = os.getenv("PAY_SBER", "2202 2081 0829 0025")
+CARD_TBANK: str = os.getenv("PAY_TBANK", "2200 7013 7009 3863")
+CARD_TON: str = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBrDpay_FJRJoWZa1OOLnq-geGIbGT")
+CARD_VISA_KG: str = os.getenv("PAY_VISA_KG", "4196720087839790")
+
+# ---------- Тарифная сетка ---------------------------------------------------
+TARIFF_PLANS: dict[str, dict] = {
+    "15d":  {"days": 15,  "stars": 900,   "rub": 600,  "label": "15 дней — 600 руб. / 900 ⭐"},
+    "30d":  {"days": 30,  "stars": 1500,  "rub": 1000, "label": "30 дней — 1000 руб. / 1500 ⭐ (−17%)"},
+    "90d":  {"days": 90,  "stars": 3800,  "rub": 2550, "label": "90 дней — 2550 руб. / 3800 ⭐ (−25%)"},
+    "180d": {"days": 180, "stars": 6800,  "rub": 4500, "label": "180 дней — 4500 руб. / 6800 ⭐ (−33%)"},
+    "360d": {"days": 360, "stars": 10500, "rub": 7000, "label": "360 дней — 7000 руб. / 10500 ⭐ (−42%)"},
+}
+
+MIN_PAYOUT: float = 2000.0
+
+
+# =============================================================================
+# === MIDDLEWARE ==============================================================
+# =============================================================================
 
 class ErrorLoggingMiddleware(BaseMiddleware):
     async def __call__(self, handler, event: TelegramObject, data: dict):
         try:
             return await handler(event, data)
         except Exception as e:
-            logger.exception("Ошибка при обработке события")
-            # Можно отправить уведомление админу через bot
-            raise e # Пробрасываем дальше, чтобы бот не "проглотил» ошибку"
-          
-class PaymentFSM(StatesGroup):
-    choosing_tariff = State()        
-    choosing_method = State()        
-    waiting_for_receipt = State() 
+            logger.exception(f"Ошибка при обработке события: {e}")
+            raise
 
-def get_latest_video(channel_url: str):
-    """Возвращает данные о последнем видео на канале."""
-    ydl_opts = {
-        'quiet': True,
-        'extract_flat': True,
-        'force_generic_extractor': True,
-        'playlist_items': '1', # Берем только последнее
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(channel_url, download=False)
-            if 'entries' in info and info['entries']:
-                return info['entries'][0]
-    except Exception as e:
-        logger.error(f"Ошибка парсинга {channel_url}: {e}")
-    return None
-
-async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
-    """Проверяет, есть ли у бота права администратора в канале и может ли он постить."""
-    try:
-        bot_me = await bot.get_me()
-        member = await bot.get_chat_member(chat_id=channel_id, user_id=bot_me.id)
-        
-        # Если статус administrator/creator и есть права писать сообщения
-        if member.status == "creator":
-            return True
-        if member.status == "administrator" and member.can_post_messages:
-            return True
-            
-        return False
-    except TelegramAPIError:
-        # Если бот вообще не добавлен в канал или канал не существует
-        return False
-
-  
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        RotatingFileHandler("bot_errors.log", maxBytes=5*1024*1024, backupCount=3),
-        logging.StreamHandler()
-    ]
-)
-
-# Убедитесь, что перед 'async' вообще нет пробелов (находится у левого края)
-async def notify_admin_about_error(bot: Bot, error: Exception):
-    admin_id = os.getenv("ADMIN_ID")
-    if admin_id:
-        try:
-            error_msg = f"🚨 <b>Критическая ошибка!</b>\n\n<code>{str(error)[:400]}</code>"
-            await bot.send_message(chat_id=admin_id, text=error_msg, parse_mode="HTML")
-        except:
-            pass
-logger = logging.getLogger("autopost_bot")
-# --- Логирование ---
-log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-file_handler = RotatingFileHandler("bot.log", maxBytes=5 * 1024 * 1024, backupCount=3)
-file_handler.setFormatter(log_formatter)
-logging.basicConfig(level=logging.INFO, handlers=[file_handler, logging.StreamHandler()])
-logger = logging.getLogger("autopost_bot")
-
-# --- Конфигурация ---
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_IDS = [int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip()]
-QUARANTINE_CHAT_ID = int(os.getenv("QUARANTINE_CHAT_ID", "-1001234567890"))
-ADMIN_VIP_CHANNEL_ID = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "-1009876543210"))
-TAKPRODAM_MASTER_TOKEN = os.getenv("TAKPRODAM_MASTER_TOKEN")
-DEEPINFRA_API_KEY = os.getenv("DEEPINFRA_API_KEY")
-WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", 8000))
-STARS_PROVIDER_TOKEN = os.getenv("STARS_PROVIDER_TOKEN", "")
-WEBAPP_HOST = os.getenv("WEBAPP_HOST", "0.0.0.0")
-# ---------- Тарифная сетка (Цены в рублях и эквивалент в Telegram Stars) --------
-# Курс: 1 рубль ≈ 1.5 Stars
-TARIFF_PLANS: dict[str, dict] = {
-    "15d":  {"days": 15,  "stars": 900,  "rub": 600,  "label": "15 дней - 600₽ / 900 ⭐"},
-    "30d":  {"days": 30,  "stars": 1500, "rub": 1000, "label": "30 дней - 1000₽ / 1500 ⭐ (−17%)"},
-    "90d":  {"days": 90,  "stars": 3800, "rub": 2550, "label": "90 дней - 2550₽ / 3800 ⭐ (−25%)"},
-    "180d": {"days": 180, "stars": 6800, "rub": 4500, "label": "180 дней - 4500₽ / 6800 ⭐ (−33%)"},
-    "360d": {"days": 360, "stars": 10500, "rub": 7000, "label": "360 дней - 7000₽ / 10500 ⭐ (−42%)"},
-}
-
-# Реквизиты для органического трафика (карты РФ/KG)
-CARD_DETAILS_RU: str = "Сбербанк: 4276 XXXX XXXX XXXX | Получатель: ИП Иванов И.И."
-CARD_DETAILS_KG: str = "Mbank: +996 XXX XXX XXX | Получатель: ..."
 
 # =============================================================================
 # === DATABASE (SQLite WAL-Mode) ===============================================
 # =============================================================================
 
-DB_PATH = "autopost.db"
+DB_PATH: str = "autopost.db"
 
-def init_db():
-    conn = sqlite3.connect("autopost.db")
-    cur = conn.cursor()
-    # Сначала создаем все таблицы одним скриптом
-    cur.executescript("""
+
+def get_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    """Инициализация БД с WAL-режимом для защиты от database is locked."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL;")
+        cur.execute("PRAGMA foreign_keys=ON;")
+        cur.executescript("""
         CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            role TEXT DEFAULT 'blogger',
-            channel_id TEXT,
-            channel_title TEXT,
-            sub_id TEXT UNIQUE,
-            sub_end TEXT,
-            is_active INTEGER DEFAULT 0,
-            traffic_source TEXT DEFAULT 'organic',
-            api_key TEXT,
+            user_id              INTEGER PRIMARY KEY,
+            username             TEXT,
+            role                 TEXT NOT NULL DEFAULT 'blogger',
+            channel_id           TEXT,
+            channel_title        TEXT,
+            sub_id               TEXT UNIQUE,
+            sub_end              TEXT,
+            is_active            INTEGER NOT NULL DEFAULT 0,
+            traffic_source       TEXT NOT NULL DEFAULT 'organic',
+            referrer_id          INTEGER,
+            api_key              TEXT,
             client_erid_override TEXT,
-            filter_wb INTEGER DEFAULT 1,
-            filter_ozon INTEGER DEFAULT 1,
-            blogger_mode TEXT DEFAULT 'direct'
+            filter_wb            INTEGER NOT NULL DEFAULT 1,
+            filter_ozon          INTEGER NOT NULL DEFAULT 1,
+            blogger_mode         TEXT NOT NULL DEFAULT 'direct',
+            created_at           TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS posts (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id           INTEGER NOT NULL,
+            donor_post_id     TEXT NOT NULL,
+            channel_id        TEXT NOT NULL,
+            marketplace       TEXT,
+            sku               TEXT,
+            erid              TEXT,
+            advertiser        TEXT,
+            status            TEXT NOT NULL DEFAULT 'pending',
+            quarantine_reason TEXT,
+            created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+            published_at      TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS transactions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            sub_id     TEXT NOT NULL,
+            order_id   TEXT UNIQUE,
+            status     TEXT NOT NULL DEFAULT 'pending',
+            payout     REAL NOT NULL DEFAULT 0.0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS billing_log (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id        INTEGER NOT NULL,
+            plan           TEXT NOT NULL,
+            stars_paid     INTEGER,
+            payment_method TEXT,
+            payment_id     TEXT,
+            created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS night_queue (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id       INTEGER NOT NULL,
+            channel_id    TEXT NOT NULL,
+            text          TEXT NOT NULL,
+            photo_url     TEXT,
+            erid          TEXT NOT NULL,
+            advertiser    TEXT NOT NULL,
+            affiliate_url TEXT NOT NULL,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS pinned_posts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id    TEXT NOT NULL,
+            message_id INTEGER NOT NULL,
+            unpin_at   TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS promocodes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE,
-            days INTEGER,
-            used BOOLEAN DEFAULT 0,
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            code    TEXT UNIQUE NOT NULL,
+            days    INTEGER NOT NULL,
+            used    INTEGER NOT NULL DEFAULT 0,
             used_by INTEGER
         );
-        CREATE TABLE IF NOT EXISTS posts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            donor_post_id TEXT,
-            target_channel_id TEXT,
-            traffic_source TEXT,
-            sku TEXT,
-            erid TEXT,
-            status TEXT
-        );
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sub_id TEXT,
-            order_id TEXT UNIQUE,
-            status TEXT,
-            payout REAL,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS pinned_posts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chat_id TEXT,
-            message_id INTEGER,
-            unpin_at TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS night_queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            channel_id TEXT,
-            text TEXT,
-            photo_url TEXT,
-            erid TEXT,
-            advertiser TEXT,
-            affiliate_url TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+
         CREATE TABLE IF NOT EXISTS blogger_channels (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            platform TEXT,
-            channel_url TEXT,
-            channel_id TEXT,
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL,
+            platform    TEXT,
+            channel_url TEXT NOT NULL,
+            channel_id  TEXT
         );
-    """)
-    conn.commit()
-    conn.close()
+
+        CREATE INDEX IF NOT EXISTS idx_posts_user       ON posts(user_id);
+        CREATE INDEX IF NOT EXISTS idx_posts_status     ON posts(status);
+        CREATE INDEX IF NOT EXISTS idx_transactions_sub ON transactions(sub_id);
+        CREATE INDEX IF NOT EXISTS idx_night_queue_user ON night_queue(user_id);
+        """)
+        conn.commit()
+        logger.info("БД инициализирована (WAL-mode активен)")
+    finally:
+        conn.close()
+
+
 # =============================================================================
-# === CIRCUIT BREAKER (защита от бесконечного цикла запросов к API) ===========
+# === CIRCUIT BREAKER =========================================================
 # =============================================================================
 
 class CircuitBreaker:
-    """
-    Если API 5 раз подряд вернуло 500-ошибку - делаем паузу 15 минут.
-    Защита от бесконечного цикла и исчерпания лимитов API.
-    """
     MAX_FAILURES: int = 5
-    PAUSE_SECONDS: int = 15 * 60  # 15 минут
+    PAUSE_SECONDS: int = 15 * 60
 
     def __init__(self) -> None:
         self._failures: int = 0
         self._open_until: Optional[float] = None
 
     def is_open(self) -> bool:
-        """True = схема разомкнута, запросы запрещены."""
         if self._open_until is None:
             return False
         if time.monotonic() >= self._open_until:
-            # Таймаут истёк - сбрасываем и пробуем снова
             self._failures = 0
             self._open_until = None
-            logger.info("Circuit Breaker: схема замкнута, запросы к API возобновлены")
+            logger.info("Circuit Breaker: схема замкнута, запросы возобновлены")
             return False
         return True
 
     def record_failure(self) -> None:
         self._failures += 1
-        logger.warning(f"Circuit Breaker: ошибка API #{self._failures}/{self.MAX_FAILURES}")
+        logger.warning(f"Circuit Breaker: ошибка #{self._failures}/{self.MAX_FAILURES}")
         if self._failures >= self.MAX_FAILURES:
             self._open_until = time.monotonic() + self.PAUSE_SECONDS
-            logger.error(
-                f"Circuit Breaker: СХЕМА РАЗОМКНУТА на {self.PAUSE_SECONDS // 60} мин "
-                f"(5 последовательных 500-ошибок)"
-            )
+            logger.error(f"Circuit Breaker: РАЗОМКНУТ на {self.PAUSE_SECONDS // 60} мин")
 
     def record_success(self) -> None:
-        if self._failures > 0:
-            logger.info("Circuit Breaker: успешный запрос, счётчик ошибок сброшен")
         self._failures = 0
         self._open_until = None
 
 
 circuit_breaker = CircuitBreaker()
 
+
 # =============================================================================
 # === API INTEGRATION (ТакПродам) =============================================
 # =============================================================================
 
 async def get_takprodam_data(sku: str, api_key: str) -> Optional[dict]:
-    # Логика обращения к API TakProdam
+    """Запрашивает API ТакПродам. Возвращает dict{link, erid, advertiser} или None."""
+    if circuit_breaker.is_open():
+        return None
     url = "https://api.takprodam.ru/v1/products/info"
-    headers = {"Authorization": f"Bearer {api_key}"}
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(url, params={"sku": sku}, headers=headers)
-            if resp.status_code == 200:
-                return resp.json() # Возвращает link, erid, advertiser
-        except:
+    headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers, params={"sku": sku})
+        if resp.status_code == 500:
+            circuit_breaker.record_failure()
             return None
-    return None
-
-async def resolve_erid(bot: Bot, user_id: int, sku: str, donor_post_id: str, channel_id: str) -> Optional[dict]:
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT api_key, client_erid_override FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-
-    if not row: return None
-    
-    api_key, override = row
-    
-    # 1. Пробуем API (если ключ есть)
-    if api_key:
-        data = await get_takprodam_data(sku, api_key)
-        if data and data.get("erid"):
-            return data
-
-    # 2. Пробуем override (если в API пусто или ключа нет)
-    if override:
-        return {"erid": override, "link": "https://ваша_ссылка", "advertiser": "Рекламодатель"}
-
-    # 3. Карантин (если ничего не нашли)
-    await bot.send_message(QUARANTINE_CHAT_ID, f"🚨 Требуется ручная маркировка для поста {donor_post_id}")
-    return None
+        if resp.status_code != 200:
+            logger.warning(f"API: статус {resp.status_code} для SKU={sku}")
+            return None
+        data = resp.json()
+        circuit_breaker.record_success()
+        return {
+            "link":       data.get("link", ""),
+            "erid":       data.get("erid", "").strip(),
+            "advertiser": data.get("advertiser", "").strip(),
+        }
+    except httpx.TimeoutException:
+        circuit_breaker.record_failure()
+        return None
+    except Exception as e:
+        logger.exception(f"API: ошибка SKU={sku}: {e}")
+        return None
 
 
 # =============================================================================
@@ -327,20 +303,13 @@ async def resolve_erid(
     channel_id: str,
 ) -> Optional[dict]:
     """
-    Иерархия получения ERID:
-      1. API ТакПродам (api_key пользователя)
-      2. client_erid_override из настроек пользователя
-      3. Карантин (пост блокируется, уходит на ручную проверку)
-
-      Фейковые ERID ЗАПРЕЩЕНЫ. Только реальные данные или блокировка.
-
-    Возвращает dict с ключами link, erid, advertiser или None (= карантин).
+    Иерархия: API ТакПродам → client_erid_override → карантин.
+    Фейковые ERID ЗАПРЕЩЕНЫ. Только реальные данные или блокировка.
     """
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT api_key, client_erid_override FROM users WHERE user_id=?",
-            (user_id,)
+            "SELECT api_key, client_erid_override FROM users WHERE user_id=?", (user_id,)
         ).fetchone()
     finally:
         conn.close()
@@ -353,28 +322,23 @@ async def resolve_erid(
     api_key: str = row["api_key"] or ""
     override_erid: str = (row["client_erid_override"] or "").strip()
 
-    # --- Шаг 1: Запрос к API -------------------------------------------------
     api_data: Optional[dict] = None
     if api_key:
         api_data = await get_takprodam_data(sku, api_key)
 
     if api_data and api_data.get("erid"):
-        logger.info(f"ERID получен из API для SKU={sku}, user={user_id}")
         return api_data
 
-    # --- Шаг 2: Клиентский override ------------------------------------------
     if override_erid:
-        logger.info(f"ERID взят из client_erid_override для user={user_id}")
         link = api_data["link"] if api_data else ""
         advertiser = api_data["advertiser"] if api_data else "Не определён"
         return {"link": link, "erid": override_erid, "advertiser": advertiser}
 
-    # --- Шаг 3: Карантин (публикация запрещена) ------------------------------
     reason = "API не вернул ERID, client_erid_override не задан"
     if not api_key:
         reason = "api_key не настроен, client_erid_override не задан"
     elif circuit_breaker.is_open():
-        reason = "Circuit Breaker активен (API недоступен), client_erid_override не задан"
+        reason = "Circuit Breaker активен, client_erid_override не задан"
 
     await _send_to_quarantine(bot, user_id, donor_post_id, channel_id, reason=reason)
     return None
@@ -387,15 +351,12 @@ async def _send_to_quarantine(
     channel_id: str,
     reason: str,
 ) -> None:
-    """
-    Отправляет уведомление в карантинный чат администратора.
-    Пост НЕ публикуется до ручного одобрения.
-    """
+    """Блокирует публикацию и уведомляет карантинный чат администратора."""
     conn = get_db()
     try:
         conn.execute(
-            """INSERT INTO posts (user_id, donor_post_id, channel_id, status, quarantine_reason)
-               VALUES (?, ?, ?, 'quarantine', ?)""",
+            "INSERT INTO posts (user_id, donor_post_id, channel_id, status, quarantine_reason) "
+            "VALUES (?, ?, ?, 'quarantine', ?)",
             (user_id, donor_post_id, channel_id, reason)
         )
         conn.commit()
@@ -403,39 +364,42 @@ async def _send_to_quarantine(
         conn.close()
 
     msg = (
-        f"🚨 <b>КАРАНТИН - пост заблокирован</b>\n\n"
+        f"🚨 <b>КАРАНТИН — пост заблокирован</b>\n\n"
         f"👤 User ID: <code>{user_id}</code>\n"
         f"📢 Канал: <code>{channel_id}</code>\n"
         f"🆔 Пост донора: <code>{donor_post_id}</code>\n"
         f"❌ Причина: {html.escape(reason)}\n\n"
         f"<i>Для публикации вручную добавьте ERID и одобрите пост.</i>"
     )
-
     try:
         await bot.send_message(QUARANTINE_CHAT_ID, msg, parse_mode=ParseMode.HTML)
-        logger.warning(f"Пост {donor_post_id} отправлен в карантин. Причина: {reason}")
     except TelegramAPIError as e:
-        logger.error(f"Не удалось отправить пост в карантин: {e}")
+        logger.error(f"Не удалось отправить в карантин: {e}")
+
+
+# =============================================================================
+# === AI REWRITE (DeepInfra) ==================================================
+# =============================================================================
 
 async def rewrite_text_with_ai(text: str) -> str:
-    """Уникализирует текст поста через API DeepInfra."""
+    """Уникализирует текст поста через DeepInfra. Если ключа нет — оригинал."""
     if not DEEPINFRA_API_KEY:
-        return text  # Если ключ не задан, возвращаем оригинал
-
+        return text
     url = "https://api.deepinfra.com/v1/openai/chat/completions"
     headers = {"Authorization": f"Bearer {DEEPINFRA_API_KEY}"}
     payload = {
         "model": "meta-llama/Meta-Llama-3-8B-Instruct",
-        "messages": [{"role": "user", "content": f"Перепиши этот текст для рекламного поста в Telegram, сохранив суть и призыв к действию: {text}"}]
+        "messages": [{"role": "user", "content": (
+            f"Перепиши текст для рекламного поста в Telegram, сохранив суть: {text}"
+        )}],
     }
-
-    async with httpx.AsyncClient() as client:
-        try:
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(url, headers=headers, json=payload)
-            if resp.status_code == 200:
-                return resp.json()["choices"][0]["message"]["content"]
-        except Exception as e:
-            logger.error(f"Ошибка рерайта: {e}")
+        if resp.status_code == 200:
+            return resp.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        logger.error(f"Ошибка AI-рерайта: {e}")
     return text
 
 
@@ -443,32 +407,18 @@ async def rewrite_text_with_ai(text: str) -> str:
 # === HTML SANITIZER ==========================================================
 # =============================================================================
 
-# Разрешённые Telegram HTML-теги (избегаем Can't find end of entity)
 _ALLOWED_TAGS = {"b", "i", "u", "s", "code", "pre", "a"}
 _OPEN_TAG_RE = re.compile(r"<([a-zA-Z]+)(?:\s[^>]*)?>")
 _CLOSE_TAG_RE = re.compile(r"</([a-zA-Z]+)>")
 
 
 def sanitize_html(text: str) -> str:
-    """
-    Очищает HTML для Telegram:
-    1. Удаляет теги не из белого списка.
-    2. Закрывает все незакрытые допустимые теги (висячие теги -> ошибка Telegram).
-    3. Усекает текст до лимита Telegram (4096 символов для caption).
-    """
+    """Удаляет запрещённые теги, закрывает висячие, обрезает до 4096 символов."""
     if not text:
         return ""
-
-    # Удаляем запрещённые теги (оставляем содержимое)
-    def strip_disallowed(m: re.Match) -> str:
-        tag = m.group(1).lower()
-        return m.group(0) if tag in _ALLOWED_TAGS else ""
-
     text = re.sub(r"</?([a-zA-Z]+)(?:\s[^>]*)?>", lambda m: (
         m.group(0) if m.group(1).lower() in _ALLOWED_TAGS else ""
     ), text)
-
-    # Закрываем висячие теги (стек открытых тегов)
     open_tags: deque[str] = deque()
     for m in _OPEN_TAG_RE.finditer(text):
         tag = m.group(1).lower()
@@ -478,12 +428,7 @@ def sanitize_html(text: str) -> str:
         tag = m.group(1).lower()
         if open_tags and open_tags[-1] == tag:
             open_tags.pop()
-
-    # Закрываем в обратном порядке
-    closing = "".join(f"</{t}>" for t in reversed(open_tags))
-    text = text + closing
-
-    # Лимит Telegram: 1024 для caption, 4096 для message
+    text += "".join(f"</{t}>" for t in reversed(open_tags))
     return text[:4096]
 
 
@@ -494,10 +439,6 @@ def build_post_caption(
     erid: str,
     advertiser: str,
 ) -> str:
-    """
-    Формирует финальный текст поста с обязательной маркировкой.
-    Формат маркировки: "Реклама. {advertiser}. Erid: {erid}"
-    """
     raw = (
         f"<b>{product_title}</b>\n\n"
         f"💰 Цена: {price}\n\n"
@@ -516,11 +457,9 @@ _WRONG_CONTENT_RE = re.compile(r"wrong type of web page content", re.IGNORECASE)
 
 
 def is_valid_image_url(url: str) -> bool:
-    """Проверяет расширение URL изображения."""
     if not url:
         return False
-    path = url.split("?")[0].lower()
-    return any(path.endswith(ext) for ext in _VALID_IMAGE_EXTENSIONS)
+    return any(url.split("?")[0].lower().endswith(ext) for ext in _VALID_IMAGE_EXTENSIONS)
 
 
 async def publish_post_with_fallback(
@@ -530,12 +469,6 @@ async def publish_post_with_fallback(
     photo_url: Optional[str] = None,
     reply_markup: Optional[InlineKeyboardMarkup] = None,
 ) -> bool:
-    """
-    Публикует пост с фото. При ошибке "wrong type of web page content"
-    мгновенно делает fallback -> публикует текстом (send_message).
-    Возвращает True при успехе, False при полном провале.
-    """
-    # Попытка с фото (если URL валиден)
     if photo_url and is_valid_image_url(photo_url):
         try:
             await bot.send_photo(
@@ -547,69 +480,53 @@ async def publish_post_with_fallback(
             )
             return True
         except TelegramAPIError as e:
-            err_msg = str(e).lower()
-            if _WRONG_CONTENT_RE.search(err_msg) or "wrong file identifier" in err_msg:
-                logger.warning(
-                    f"Фото не принято Telegram ({e}), fallback -> текстовый пост"
-                )
-                # Fallback: публикуем без фото
-            else:
+            err = str(e).lower()
+            if not (_WRONG_CONTENT_RE.search(err) or "wrong file identifier" in err):
                 logger.error(f"Ошибка публикации с фото: {e}")
                 return False
-
-    # Текстовый fallback
+            logger.warning(f"Фото отклонено Telegram, fallback → текст: {e}")
     try:
         await bot.send_message(
             chat_id=channel_id,
             text=caption,
             parse_mode=ParseMode.HTML,
             reply_markup=reply_markup,
-            disable_web_page_preview=False,
         )
         return True
     except TelegramAPIError as e:
-        logger.error(f"Ошибка публикации текстового поста: {e}")
+        logger.error(f"Ошибка публикации текста: {e}")
         return False
 
 
 # =============================================================================
-# === NIGHT QUEUE (очередь постов 23:00 – 8:00) ==============================
+# === NIGHT QUEUE =============================================================
 # =============================================================================
 
 def is_night_time() -> bool:
-    """True с "23:00" до 8:00 по UTC+3 (Москва)."""
+    """True с 23:00 до 08:00 по МСК (UTC+3)."""
     now = datetime.now(tz=timezone(timedelta(hours=3)))
     return now.hour >= 23 or now.hour < 8
 
 
 async def add_to_night_queue(
-    user_id: int,
-    channel_id: str,
-    text: str,
-    photo_url: Optional[str],
-    erid: str,
-    advertiser: str,
-    affiliate_url: str,
+    user_id: int, channel_id: str, text: str,
+    photo_url: Optional[str], erid: str, advertiser: str, affiliate_url: str,
 ) -> None:
     conn = get_db()
     try:
         conn.execute(
-            """INSERT INTO night_queue
-               (user_id, channel_id, text, photo_url, erid, advertiser, affiliate_url)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            "INSERT INTO night_queue "
+            "(user_id, channel_id, text, photo_url, erid, advertiser, affiliate_url) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (user_id, channel_id, text, photo_url, erid, advertiser, affiliate_url)
         )
         conn.commit()
-        logger.info(f"Пост добавлен в ночную очередь (user={user_id}, канал={channel_id})")
     finally:
         conn.close()
 
 
 async def flush_night_queue(bot: Bot) -> None:
-    """
-    Запускается по крону в "8:00". Последовательно публикует посты из очереди
-    с задержкой 90 секунд между публикациями (защита от флуда).
-    """
+    """Публикует посты из ночной очереди с паузой 90 сек между постами."""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -617,7 +534,7 @@ async def flush_night_queue(bot: Bot) -> None:
         ).fetchall()
         if not rows:
             return
-        logger.info(f"Ночная очередь: {len(rows)} постов к публикации")
+        logger.info(f"Ночная очередь: {len(rows)} постов")
         for row in rows:
             success = await publish_post_with_fallback(
                 bot=bot,
@@ -634,7 +551,7 @@ async def flush_night_queue(bot: Bot) -> None:
 
 
 # =============================================================================
-# === TRANSLITERATION (генерация sub_id из username) ==========================
+# === TRANSLITERATION =========================================================
 # =============================================================================
 
 _TRANSLIT_MAP = {
@@ -647,39 +564,46 @@ _TRANSLIT_MAP = {
 
 
 def generate_sub_id(username: str, user_id: int) -> str:
-    """
-    Генерирует уникальный sub_id через транслитерацию username.
-    Пример: @МойКанал_123 -> moikanal_123_uid7890
-    """
     username = (username or "").lstrip("@").lower()
     result = ""
     for ch in username:
         result += _TRANSLIT_MAP.get(ch, ch if ch.isalnum() or ch == "_" else "")
-    # Убираем повторяющиеся символы, нечитаемые символы
     result = re.sub(r"[^a-z0-9_]", "", result)
-    result = re.sub(r"_+", "_", result).strip("_")
-    if not result:
-        result = f"user{user_id}"
+    result = re.sub(r"_+", "_", result).strip("_") or f"user{user_id}"
     return f"{result}_uid{user_id}"
 
 
 # =============================================================================
-# === KEYBOARD HELPERS (безопасные callback_data через словари) ================
+# === BOT ADMIN CHECK =========================================================
+# =============================================================================
+
+async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
+    try:
+        bot_me = await bot.get_me()
+        member = await bot.get_chat_member(chat_id=channel_id, user_id=bot_me.id)
+        if member.status == "creator":
+            return True
+        if member.status == "administrator" and getattr(member, "can_post_messages", False):
+            return True
+        return False
+    except TelegramAPIError:
+        return False
+
+
+# =============================================================================
+# === KEYBOARD HELPERS ========================================================
 # =============================================================================
 
 def kb_main_menu(role: str) -> InlineKeyboardMarkup:
-    """Главное меню. Разные кнопки для Блогера и SaaS-подписчика."""
-    buttons = []
     if role == "blogger":
         buttons = [
-            [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:channels")],
-            [InlineKeyboardButton(text="🤝 Партнерская программа", callback_data="menu:partner")],
+            [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")],
+            [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            [InlineKeyboardButton(text="➕ Добавить канал", callback_data="menu:add_channel")],
         ]
-    elif role == "saas":
+    else:
         buttons = [
             [InlineKeyboardButton(text="🔑 API-ключ ТакПродам", callback_data="menu:apikey")],
             [InlineKeyboardButton(text="🏷 Корпоративный ERID", callback_data="menu:erid_override")],
@@ -692,44 +616,47 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
 
 
 def kb_tariffs(traffic_source: str) -> InlineKeyboardMarkup:
-    """
-    Умное разделение платёжных методов:
-    - organic: Stars + карты РФ/KG
-    - affiliate: только Stars
-    """
     rows = []
     for plan_id, plan in TARIFF_PLANS.items():
         rows.append([
             InlineKeyboardButton(
-                text=f"⭐ {plan['label']}",
-                callback_data=f"buy:stars:{plan_id}"
+                text=f"⭐ {plan['label']}", callback_data=f"buy:stars:{plan_id}"
             )
         ])
     if traffic_source == "organic":
         rows.append([
-            InlineKeyboardButton(text="💳 Карта РФ (перевод)", callback_data="buy:card:ru"),
-            InlineKeyboardButton(text="💳 Карта KG", callback_data="buy:card:kg"),
+            InlineKeyboardButton(text="💳 Карта РФ (Сбер/Т-Банк)", callback_data="buy:card:ru"),
+            InlineKeyboardButton(text="💳 Visa KG", callback_data="buy:card:kg"),
+        ])
+        rows.append([
+            InlineKeyboardButton(text="💎 TON-крипта", callback_data="buy:card:ton"),
         ])
     rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def kb_filter_settings(wb: int, ozon: int) -> InlineKeyboardMarkup:
-    wb_label = f"{'✅' if wb else '❌'} Wildberries"
-    ozon_label = f"{'✅' if ozon else '❌'} Ozon"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=wb_label, callback_data="filter:toggle:wb")],
-        [InlineKeyboardButton(text=ozon_label, callback_data="filter:toggle:ozon")],
+        [InlineKeyboardButton(
+            text=f"{'✅' if wb else '❌'} Wildberries", callback_data="filter:toggle:wb"
+        )],
+        [InlineKeyboardButton(
+            text=f"{'✅' if ozon else '❌'} Ozon", callback_data="filter:toggle:ozon"
+        )],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:settings")],
     ])
 
 
 def kb_blogger_mode(mode: str) -> InlineKeyboardMarkup:
-    direct_label = f"{'✅' if mode == 'direct' else '☐'} Напрямую в мой канал"
-    vip_label = f"{'✅' if mode == 'vip_pin' else '☐'} VIP-закреп в главном канале (24ч)"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=direct_label, callback_data="blogger_mode:direct")],
-        [InlineKeyboardButton(text=vip_label, callback_data="blogger_mode:vip_pin")],
+        [InlineKeyboardButton(
+            text=f"{'✅' if mode == 'direct' else '☐'} Напрямую в мой канал",
+            callback_data="blogger_mode:direct",
+        )],
+        [InlineKeyboardButton(
+            text=f"{'✅' if mode == 'vip_pin' else '☐'} VIP-закреп в главном канале (24ч)",
+            callback_data="blogger_mode:vip_pin",
+        )],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:settings")],
     ])
 
@@ -750,11 +677,8 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
 class OnboardingStates(StatesGroup):
     waiting_channel = State()
     waiting_role = State()
-    waiting_role_confirm = State()
 
-class AddChannelStates(StatesGroup):
-    waiting_channel_url = State()
-    
+
 class AdminStates(StatesGroup):
     broadcast_text = State()
     extend_user_id = State()
@@ -765,9 +689,17 @@ class SaasStates(StatesGroup):
     waiting_apikey = State()
     waiting_erid_override = State()
 
+
+class PaymentFSM(StatesGroup):
+    choosing_tariff = State()
+    choosing_method = State()
+    waiting_for_receipt = State()
+
+
 class PayoutStates(StatesGroup):
     waiting_for_card = State()
-  
+
+
 # =============================================================================
 # === ROUTER & HANDLERS =======================================================
 # =============================================================================
@@ -785,16 +717,13 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     username = message.from_user.username or ""
     args = message.text.split(maxsplit=1)[1] if " " in (message.text or "") else ""
 
-    # Определяем источник трафика
     traffic_source = "organic"
     referrer_id: Optional[int] = None
     if args.startswith("aff_"):
-        # Аффилиатный трафик: ищем реферера по sub_id
-        aff_sub_id = args[4:]  # убираем "aff_"
         conn = get_db()
         try:
             ref_row = conn.execute(
-                "SELECT user_id FROM users WHERE sub_id=?", (aff_sub_id,)
+                "SELECT user_id FROM users WHERE sub_id=?", (args[4:],)
             ).fetchone()
             if ref_row:
                 referrer_id = ref_row["user_id"]
@@ -802,214 +731,115 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         finally:
             conn.close()
 
-
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
-# Онбординг и выплаты
-# -----------------------------------------------------------------------------
-
-@router.callback_query(OnboardingStates.waiting_role, F.data == "role:blogger")
-async def cb_blogger_reg(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.message.edit_text(
-        "👤 <b>Регистрация блогера</b>\n\n"
-        "Отправь ссылку на свою основную площадку (YouTube, TikTok или Instagram), "
-        "чтобы я мог начать мониторинг.",
-        parse_mode=ParseMode.HTML
-    )
-    await state.set_state(OnboardingStates.waiting_channel)
-
-@router.message(OnboardingStates.waiting_channel)
-async def handle_blogger_channel(message: Message, state: FSMContext) -> None:
-    link = message.text.strip()
-    user_id = message.from_user.id
-    username = message.from_user.username or "user"
-    
-    platform = "yt" if "youtube" in link.lower() else "tt" if "tiktok" in link.lower() else "inst"
-    sub_id = f"{username.lower()}{platform}"
-    
     conn = get_db()
-    conn.execute(
-        "UPDATE users SET role='blogger', channel_id=?, traffic_source=?, sub_id=? WHERE user_id=?",
-        (link, 'affiliate', sub_id, user_id)
-    )
-    conn.commit()
-    conn.close()
-    
-    await state.clear()
+    try:
+        existing = conn.execute(
+            "SELECT user_id, role FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        if not existing:
+            sub_id = generate_sub_id(username, user_id)
+            conn.execute(
+                "INSERT INTO users (user_id, username, sub_id, traffic_source, referrer_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, username, sub_id, traffic_source, referrer_id)
+            )
+            conn.commit()
+            role = "blogger"
+        else:
+            role = existing["role"]
+            conn.execute("UPDATE users SET username=? WHERE user_id=?", (username, user_id))
+            conn.commit()
+    finally:
+        conn.close()
+
+    if user_id in ADMIN_IDS:
+        await message.answer(
+            "👋 <b>Панель администратора</b>\n\nУправляй платформой.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb_admin_panel(),
+        )
+        return
+
     await message.answer(
-        f"✅ <b>Готово!</b>\n"
-        f"Твой личный хвост для партнёрки: <code>{sub_id}</code>\n"
-        f"Теперь я буду мониторить этот канал.",
-        parse_mode=ParseMode.HTML
+        "👋 <b>Добро пожаловать в AutoPost</b>\n\n"
+        "Инструмент для <b>легального автопостинга</b> товаров с маркетплейсов "
+        "в твои Telegram-каналы.\n\n"
+        "🔒 <b>Каждый пост автоматически маркируется</b> согласно требованиям ФАС "
+        "(ERID + ссылка на рекламодателя).\n\n"
+        "Подключи канал и запусти монетизацию трафика за 2 минуты.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_main_menu(role),
     )
 
-@router.callback_query(F.data == "payout:request")
-async def cb_request_payout(callback: CallbackQuery, state: FSMContext) -> None:
+
+# -----------------------------------------------------------------------------
+# Главное меню (единственное определение)
+# -----------------------------------------------------------------------------
+
+@router.callback_query(F.data == "menu:main")
+async def cb_menu_main(callback: CallbackQuery) -> None:
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT role FROM users WHERE user_id=?", (callback.from_user.id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    role = row["role"] if row else "blogger"
     await callback.message.edit_text(
-        "💳 <b>Запрос на вывод средств</b>\n\n"
-        "Введите номер вашей банковской карты (или реквизиты СБП с номером телефона и названием банка):",
+        "🏠 <b>Главное меню</b>",
         parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Отмена", callback_data="menu:stats")]
-        ])
+        reply_markup=kb_main_menu(role),
     )
-    await state.set_state(PayoutStates.waiting_for_card)
     await callback.answer()
 
-@router.callback_query(F.data == "menu:instructions")
-async def cb_menu_instructions(callback: CallbackQuery) -> None:
-    await callback.message.edit_text(
-        "📖 <b>Центр инструкций</b>\n\nВыбери нужный раздел:",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="👤 Для Блогеров", callback_data="instr:blogger")],
-            [InlineKeyboardButton(text="🔑 Для SaaS", callback_data="instr:saas")],
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
-        ])
-    )
 
-@router.callback_query(F.data == "menu:partner")
-async def cb_partner_program(callback: CallbackQuery) -> None:
-    # Здесь позже мы будем подставлять реальный sub_id из базы
-    await callback.message.edit_text(
-        "🤝 <b>Партнерская программа</b>\n\n"
-        "Приводи других блогеров и получай повышенный % с их продаж!\n\n"
-        "🔗 Твоя реферальная ссылка: <code>t.me/ваш_бот?start=aff_id123</code>",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
-        ])
-    )
-
-@router.message(PayoutStates.waiting_for_card)
-async def handle_payout_card(message: Message, state: FSMContext) -> None:
-    user_id = message.from_user.id
-    card_details = message.text.strip()
-    
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT sub_id, username FROM users WHERE user_id=?", (user_id,)).fetchone()
-        if not user: return
-        sub_id = user["sub_id"]
-        
-        approved_sum = conn.execute(
-            "SELECT SUM(payout) FROM transactions WHERE sub_id=? AND status='approved'", 
-            (sub_id,)
-        ).fetchone()[0] or 0.0
-        
-        if approved_sum < 2000.0:
-            await message.answer("❌ Ошибка: недостаточно средств для вывода.")
-            await state.clear()
-            return
-            
-        await state.clear()
-        await message.answer("✅ <b>Заявка отправлена!</b>\n\nАдминистратор проверит её и переведет средства в ближайшее время.", parse_mode=ParseMode.HTML)
-        
-        admin_text = (
-            f"🚨 <b>Новая заявка на выплату!</b>\n\n"
-            f"👤 Блогер: @{user['username']} (ID: <code>{user_id}</code>, Sub_ID: {sub_id})\n"
-            f"💰 Сумма к выплате: <b>{approved_sum:.2f} руб.</b>\n\n"
-            f"💳 Реквизиты:\n<code>{card_details}</code>"
-        )
-        
-        admin_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Отметить как выплачено", callback_data=f"adm_payout:done:{sub_id}:{user_id}")]
-        ])
-        
-        for admin_id in ADMIN_IDS:
-            try:
-                await message.bot.send_message(chat_id=admin_id, text=admin_text, parse_mode=ParseMode.HTML, reply_markup=admin_kb)
-            except Exception:
-                pass
-    finally:
-        conn.close()
-
-@router.callback_query(F.data.startswith("adm_payout:done:"))
-async def cb_admin_payout_done(callback: CallbackQuery) -> None:
-    parts = callback.data.split(":")
-    sub_id = parts[2]
-    blogger_id = int(parts[3])
-    
-    conn = get_db()
-    try:
-        conn.execute("UPDATE transactions SET status='paid' WHERE sub_id=? AND status='approved'", (sub_id,))
-        conn.commit()
-    finally:
-        conn.close()
-        
-    await callback.message.edit_text(callback.message.html_text + "\n\n<b>✅ ВЫПЛАЧЕНО</b>", parse_mode=ParseMode.HTML)
-    await callback.answer("Баланс блогера обнулен")
-    
-    try:
-        await callback.bot.send_message(
-            chat_id=blogger_id, 
-            text="💸 <b>Ваша выплата успешно отправлена!</b> Проверьте баланс карты.", 
-            parse_mode=ParseMode.HTML
-        )
-    except Exception:
-        pass
 # -----------------------------------------------------------------------------
-# Починка: Умное меню управления каналом
+# Канал
 # -----------------------------------------------------------------------------
 
 @router.callback_query(F.data == "menu:channel")
 async def cb_menu_channel(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
     conn = get_db()
-    row = conn.execute("SELECT channel_title, channel_id FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
+    try:
+        row = conn.execute(
+            "SELECT channel_title, channel_id FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
 
-    # Если канал уже привязан - показываем панель управления
     if row and row["channel_id"]:
         await callback.message.edit_text(
             f"📢 <b>Управление каналом</b>\n\n"
             f"Привязанный канал: <b>{html.escape(row['channel_title'] or 'Без названия')}</b>\n"
-            f"ID: <code>{row['channel_id']}</code>\n\n"
-            "Что хочешь сделать?",
+            f"ID: <code>{row['channel_id']}</code>",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔄 Изменить канал", callback_data="channel:change")],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
-            ])
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
+            ]),
         )
     else:
-        # Если канала нет - запускаем онбординг
         await callback.message.edit_text(
             "📢 <b>Привязка канала</b>\n\n"
-            "Перешли сюда любое сообщение из твоего канала, либо отправь <code>@username</code>.",
+            "Перешли сюда любое сообщение из твоего канала или отправь <code>@username</code>.\n\n"
+            "<i>Убедись, что бот добавлен в канал как администратор с правом публикации.</i>",
             parse_mode=ParseMode.HTML,
         )
         await state.set_state(OnboardingStates.waiting_channel)
-    
     await callback.answer()
 
-# Добавляем обработчик для смены канала
+
 @router.callback_query(F.data == "channel:change")
 async def cb_change_channel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "📢 Введи <code>@username</code> нового канала или перешли сообщение из него:",
-        parse_mode=ParseMode.HTML
+        parse_mode=ParseMode.HTML,
     )
     await state.set_state(OnboardingStates.waiting_channel)
     await callback.answer()
 
-@router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
-async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
-    role = callback.data.split(":")[1]
-    user_id = callback.from_user.id
-    
-    conn = get_db()
-    conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
-    conn.commit()
-    conn.close()
-    
-    await state.clear()
-    await callback.message.edit_text(
-        f"✅ Выбрана роль: <b>{'Блогер' if role == 'blogger' else 'SaaS'}</b>\n\n"
-        "Теперь привяжи канал, чтобы начать.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_main_menu(role)
-    )
 
 @router.message(OnboardingStates.waiting_channel)
 async def handle_channel_input(message: Message, state: FSMContext) -> None:
@@ -1017,7 +847,6 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
     channel_id: Optional[str] = None
     channel_title: Optional[str] = None
 
-    # Принимаем: форвард из канала или @username
     if message.forward_origin:
         try:
             chat = message.forward_origin.chat
@@ -1031,24 +860,22 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
 
     if not channel_id:
         await message.answer(
-            "! Не распознал канал. Перешли сообщение из канала или введи <code>@username</code>.",
+            "⚠️ Не распознал канал. Перешли сообщение или введи <code>@username</code>.",
             parse_mode=ParseMode.HTML,
         )
         return
 
-    # --- НОВЫЙ БЛОК: Проверка прав администратора ---
-    is_admin = await check_bot_admin(message.bot, channel_id)
-    if not is_admin:
+    is_admin_ok = await check_bot_admin(message.bot, channel_id)
+    if not is_admin_ok:
         await message.answer(
-        "❌ <b>Ошибка доступа!</b>\n\n"
-        f"Я не являюсь администратором канала {channel_id} или у меня нет прав на публикацию постов.\n\n"
-        "👉 Сначала добавь меня в канал как администратора, разреши \"Публикацию сообщений\", а затем отправь ссылку снова.",
-        parse_mode=ParseMode.HTML
-    )
+            "❌ <b>Ошибка доступа!</b>\n\n"
+            f"Бот не является администратором канала <code>{channel_id}</code> "
+            "или у него нет права публикации.\n\n"
+            "Добавь бота как администратора и попробуй снова.",
+            parse_mode=ParseMode.HTML,
+        )
         return
-    # -----------------------------------------------
 
-    # Сохраняем в БД (если всё ок)
     conn = get_db()
     try:
         conn.execute(
@@ -1064,37 +891,279 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
         f"✅ <b>Канал привязан:</b> {html.escape(channel_title or channel_id)}\n\n"
-        f"Теперь всё настроено для работы.",
+        "Настрой тариф и запускай автопостинг.",
         parse_mode=ParseMode.HTML,
         reply_markup=kb_main_menu(role),
     )
-@router.callback_query(F.data == "menu:add_channel")
-async def cb_add_channel_start(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.message.edit_text(
-        "➕ <b>Добавление канала</b>\n\n"
-        "Отправьте ссылку на канал (YouTube, TikTok или Instagram), который хотите добавить для мониторинга.",
-        parse_mode="HTML"
-    )
-    await state.set_state(AddChannelStates.waiting_channel_url)
 
-@router.message(AddChannelStates.waiting_channel_url)
-async def handle_channel_url(message: Message, state: FSMContext) -> None:
-    url = message.text.strip()
+
+# -----------------------------------------------------------------------------
+# Партнёрская программа
+# -----------------------------------------------------------------------------
+
+@router.callback_query(F.data == "menu:partner")
+async def cb_partner_program(callback: CallbackQuery) -> None:
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT sub_id FROM users WHERE user_id=?", (callback.from_user.id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    sub_id = row["sub_id"] if row else "—"
+    bot_info = await callback.bot.get_me()
+    ref_link = f"https://t.me/{bot_info.username}?start=aff_{sub_id}"
+    await callback.message.edit_text(
+        "🤝 <b>Партнёрская программа</b>\n\n"
+        "Приводи других блогеров и получай повышенный % с их продаж!\n\n"
+        f"🔗 Твоя реферальная ссылка:\n<code>{ref_link}</code>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
+        ]),
+    )
+    await callback.answer()
+
+
+# -----------------------------------------------------------------------------
+# Инструкции
+# -----------------------------------------------------------------------------
+
+@router.callback_query(F.data == "menu:instructions")
+async def cb_menu_instructions(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(
+        "📖 <b>Центр инструкций</b>\n\nВыбери нужный раздел:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👤 Для блогеров", callback_data="instr:blogger")],
+            [InlineKeyboardButton(text="🔑 Для SaaS", callback_data="instr:saas")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
+        ]),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "instr:blogger")
+async def cb_instr_blogger(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(
+        "📖 <b>Инструкция для блогеров</b>\n\n"
+        "1. Привяжи Telegram-канал через «📢 Мой канал»\n"
+        "2. Бот автоматически публикует посты с маркировкой ERID\n"
+        "3. По каждому выкупу начисляется вознаграждение в «📊 Статистика»\n"
+        "4. Минимальная сумма для вывода: 2000 руб.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:instructions")]
+        ]),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "instr:saas")
+async def cb_instr_saas(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(
+        "📖 <b>Инструкция для SaaS-клиентов</b>\n\n"
+        "1. Введи API-ключ от ТакПродам в настройках\n"
+        "2. Привяжи канал и настрой фильтры маркетплейсов\n"
+        "3. Активируй подписку — посты публикуются автоматически с ERID\n"
+        "4. При отсутствии ERID пост уходит в карантин на ручную проверку",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:instructions")]
+        ]),
+    )
+    await callback.answer()
+
+
+# -----------------------------------------------------------------------------
+# Статистика (единственное определение, с разделением blogger/saas)
+# -----------------------------------------------------------------------------
+
+@router.callback_query(F.data == "menu:stats")
+async def cb_menu_stats(callback: CallbackQuery) -> None:
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT role, sub_id FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+
+        if not user:
+            await callback.message.edit_text("❌ Ошибка: пользователь не найден.")
+            await callback.answer()
+            return
+
+        role = user["role"]
+        keyboard: list = []
+
+        if role == "blogger":
+            sub_id = user["sub_id"] or ""
+            approved_sum = conn.execute(
+                "SELECT COALESCE(SUM(payout), 0.0) FROM transactions "
+                "WHERE sub_id=? AND status='approved'", (sub_id,)
+            ).fetchone()[0]
+            approved_cnt = conn.execute(
+                "SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='approved'",
+                (sub_id,)
+            ).fetchone()[0]
+            pending_cnt = conn.execute(
+                "SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='pending'",
+                (sub_id,)
+            ).fetchone()[0]
+
+            text = (
+                f"📊 <b>Твоя статистика партнёра</b>\n\n"
+                f"🆔 sub_id: <code>{sub_id}</code>\n\n"
+                f"📦 <b>Заказы:</b>\n"
+                f" ├ Ожидают выкупа: <b>{pending_cnt} шт.</b>\n"
+                f" └ Выкуплено: <b>{approved_cnt} шт.</b>\n\n"
+                f"💸 <b>Твой заработок:</b>\n"
+                f" └ <b>{approved_sum:.2f} руб.</b>\n\n"
+                f"<i>* Баланс обновляется при выкупе товара клиентом.</i>"
+            )
+            if approved_sum >= MIN_PAYOUT:
+                keyboard.append([
+                    InlineKeyboardButton(
+                        text="💳 Запросить выплату", callback_data="payout:request"
+                    )
+                ])
+            elif approved_sum > 0:
+                text += f"\n\n<i>⚠️ Вывод доступен от {MIN_PAYOUT:.0f} руб.</i>"
+        else:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM posts WHERE user_id=?", (user_id,)
+            ).fetchone()[0]
+            published = conn.execute(
+                "SELECT COUNT(*) FROM posts WHERE user_id=? AND status='published'", (user_id,)
+            ).fetchone()[0]
+            quarantine = conn.execute(
+                "SELECT COUNT(*) FROM posts WHERE user_id=? AND status='quarantine'", (user_id,)
+            ).fetchone()[0]
+            last_posts = conn.execute(
+                "SELECT donor_post_id, status, created_at FROM posts "
+                "WHERE user_id=? ORDER BY id DESC LIMIT 5", (user_id,)
+            ).fetchall()
+            last_str = "\n".join(
+                f"  • <code>{p['donor_post_id']}</code> — {p['status']} ({p['created_at'][:10]})"
+                for p in last_posts
+            ) or "  <i>Постов ещё не было</i>"
+            text = (
+                f"📊 <b>Статистика постов (SaaS)</b>\n\n"
+                f"Всего: {total}  |  Опубликовано: {published}  |  Карантин: {quarantine}\n\n"
+                f"<b>Последние 5 постов:</b>\n{last_str}"
+            )
+
+        keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
+        await callback.message.edit_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в menu:stats: {e}")
+        await callback.message.edit_text("⚠️ Ошибка при загрузке статистики.")
+    finally:
+        conn.close()
+
+    await callback.answer()
+
+
+# -----------------------------------------------------------------------------
+# Выплаты
+# -----------------------------------------------------------------------------
+
+@router.callback_query(F.data == "payout:request")
+async def cb_request_payout(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_text(
+        "💳 <b>Запрос на вывод средств</b>\n\n"
+        "Введи номер карты или реквизиты СБП (номер телефона + банк):",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Отмена", callback_data="menu:stats")]
+        ]),
+    )
+    await state.set_state(PayoutStates.waiting_for_card)
+    await callback.answer()
+
+
+@router.message(PayoutStates.waiting_for_card)
+async def handle_payout_card(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
-    
-    # Сохраняем в таблицу blogger_channels (которую мы добавили ранее)
+    card_details = message.text.strip() if message.text else ""
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT sub_id, username FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        if not user:
+            await state.clear()
+            return
+        sub_id = user["sub_id"]
+        approved_sum = conn.execute(
+            "SELECT COALESCE(SUM(payout), 0.0) FROM transactions "
+            "WHERE sub_id=? AND status='approved'", (sub_id,)
+        ).fetchone()[0]
+        if approved_sum < MIN_PAYOUT:
+            await message.answer("❌ Недостаточно средств для вывода.")
+            await state.clear()
+            return
+        await state.clear()
+        await message.answer(
+            "✅ <b>Заявка отправлена!</b>\n\nАдминистратор переведёт средства в ближайшее время.",
+            parse_mode=ParseMode.HTML,
+        )
+        admin_text = (
+            f"🚨 <b>Новая заявка на выплату!</b>\n\n"
+            f"👤 @{user['username']} (ID: <code>{user_id}</code>, sub_id: {sub_id})\n"
+            f"💰 Сумма: <b>{approved_sum:.2f} руб.</b>\n\n"
+            f"💳 Реквизиты:\n<code>{card_details}</code>"
+        )
+        admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="✅ Выплачено",
+                callback_data=f"adm_payout:done:{sub_id}:{user_id}",
+            )]
+        ])
+        for admin_id in ADMIN_IDS:
+            try:
+                await message.bot.send_message(
+                    chat_id=admin_id, text=admin_text,
+                    parse_mode=ParseMode.HTML, reply_markup=admin_kb,
+                )
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
+@router.callback_query(F.data.startswith("adm_payout:done:"))
+async def cb_admin_payout_done(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    sub_id = parts[2]
+    blogger_id = int(parts[3])
     conn = get_db()
     try:
         conn.execute(
-            "INSERT INTO blogger_channels (user_id, channel_url, platform) VALUES (?, ?, ?)",
-            (user_id, url, "auto") # 'auto' - парсер сам определит платформу
+            "UPDATE transactions SET status='paid' WHERE sub_id=? AND status='approved'",
+            (sub_id,)
         )
         conn.commit()
     finally:
         conn.close()
-        
-    await state.clear()
-    await message.answer("✅ Канал успешно добавлен и отправлен на проверку!")
+    await callback.message.edit_text(
+        callback.message.html_text + "\n\n<b>✅ ВЫПЛАЧЕНО</b>",
+        parse_mode=ParseMode.HTML,
+    )
+    await callback.answer("Баланс блогера обнулён")
+    try:
+        await callback.bot.send_message(
+            chat_id=blogger_id,
+            text="💸 <b>Выплата отправлена!</b> Проверь баланс карты.",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception:
+        pass
+
 
 # -----------------------------------------------------------------------------
 # Тарифы
@@ -1115,211 +1184,21 @@ async def cb_menu_tariffs(callback: CallbackQuery) -> None:
     sub_info = ""
     if row and row["sub_end"]:
         status = "✅ Активна" if row["is_active"] else "❌ Истекла"
-        sub_info = f"\n\n<b>Текущая подписка:</b> {status} до {row['sub_end']}"
+        sub_info = f"\n\n<b>Текущая подписка:</b> {status} до {row['sub_end'][:10]}"
 
     text = (
         f"💎 <b>Тарифы AutoPost</b>{sub_info}\n\n"
-        f"Выбери период - стоимость списывается в Telegram Stars "
-        f"{'(единственный доступный способ оплаты для партнёрского трафика)' if traffic_source == 'affiliate' else 'или банковским переводом'}.\n\n"
-        f"{'💳 Для органического трафика доступны карты РФ и KG.' if traffic_source == 'organic' else ''}"
+        + (
+            "Оплата только через Telegram Stars (аффилиатный трафик)."
+            if traffic_source == "affiliate"
+            else "Доступны Stars, карты РФ, Visa KG и TON."
+        )
     )
     await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_tariffs(traffic_source),
+        text, parse_mode=ParseMode.HTML, reply_markup=kb_tariffs(traffic_source),
     )
     await callback.answer()
 
-# --- Шаг 2: Обработка выбранного тарифа (Ожидает состояние choosing_tariff) ---
-@router.callback_query(PaymentFSM.choosing_tariff, F.data.startswith("tariff_"))
-async def process_tariff_selection(callback_query: CallbackQuery, state: FSMContext):
-    # Извлекаем ID тарифа (например, '30d')
-    plan_id = callback_query.data.split("_")[1]
-    
-    if plan_id not in TARIFF_PLANS:
-        await callback_query.answer("! Тариф не найден", show_alert=True)
-        return
-        
-    # Сохраняем тариф в FSM
-    await state.update_data(selected_plan=plan_id)
-    
-    # Создаем клавиатуру выбора метода оплаты
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Карта РФ (Сбер, Т-Банк)", callback_data="pay:ru")],
-        [InlineKeyboardButton(text="💳 Карта КГ (Visa)", callback_data="pay:kg")],
-        [InlineKeyboardButton(text="💎 Криптовалюта (TON)", callback_data="pay:ton")],
-        [InlineKeyboardButton(text="⭐️ Telegram Stars", callback_data=f"buy:stars:{plan_id}")],
-        [InlineKeyboardButton(text="◀️ Назад к тарифам", callback_data="menu:tariffs")]
-    ])
-    
-    plan = TARIFF_PLANS[plan_id]
-    await callback_query.message.edit_text(
-        f"Выбран тариф: <b>{plan['label']}</b>\n\n"
-        "Выберите способ оплаты.\n"
-        "Если оплачиваете картой или TON - после перевода отправьте чек в этот чат.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=keyboard
-    )
-    # Переводим в состояние выбора метода
-    await state.set_state(PaymentFSM.choosing_method)
-    await callback_query.answer()
-
-# --- Шаг 3: Выдача реквизитов и ожидание чека ---
-@router.callback_query(PaymentFSM.choosing_method, F.data.startswith("pay:"))
-async def process_payment_method(callback_query: CallbackQuery, state: FSMContext):
-    method = callback_query.data.split(":")[1]
-    
-    # Достаем выбранный тариф из состояния
-    data = await state.get_data()
-    plan_id = data.get("selected_plan")
-    plan = TARIFF_PLANS.get(plan_id)
-    
-    if not plan:
-        await callback_query.answer("! Ошибка данных, начните сначала", show_alert=True)
-        return
-
-    # Подготовка текста реквизитов
-    if method == "ru":
-        text = (f"💳 <b>Оплата картой РФ</b>\n\n"
-                f"К оплате: <b>{plan['rub']} ₽</b>\n\n"
-                f"Сбербанк: <code>2202 2081 0829 0025</code> (Выборных Д.П)\n"
-                f"Т-Банк: <code>2200 7013 7009 3863</code> (Выборных Д.П)\n\n"
-                f"После перевода пришлите фото чека в этот чат.")
-    elif method == "kg":
-        text = (f"🇰🇬 <b>Оплата Visa KG</b>\n\n"
-                f"К оплате: <b>{plan['rub']} ₽</b> (по курсу банка)\n\n"
-                f"Visa: <code>4196720087839790</code>\n\n"
-                f"После перевода пришлите фото чека в этот чат.")
-    elif method == "ton":
-        text = (f"💎 <b>Оплата TON</b>\n\n"
-                f"К оплате: <b>{plan['rub']} ₽</b> (эквивалент в TON)\n\n"
-                f"Адрес: <code>UQCua97IuHkQy5F5NPHBrDpay_FJRJoWZa1OOLnq-geGIbGT</code>\n"
-                f"После перевода пришлите скриншот транзакции в этот чат.")
-    
-    await callback_query.message.edit_text(
-        text, 
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад к выбору метода", callback_data=f"tariff_{plan_id}")]
-        ])
-    )
-    
-    # Переводим бота в состояние ожидания фотографии
-    await state.set_state(PaymentFSM.waiting_receipt)
-    await callback_query.answer()
-
-# --- Шаг 4: Прием чека и пересылка админу ---
-@router.message(PaymentFSM.waiting_for_receipt)
-async def process_receipt_photo(message: Message, state: FSMContext):
-    # Берем ID самого качественного фото
-    photo_id = message.photo[-1].file_id
-    user = message.from_user
-    data = await state.get_data()
-    plan_id = data.get("selected_plan")
-    plan = TARIFF_PLANS.get(plan_id)
-
-    # Сообщение пользователю
-    await message.answer("✅ Чек получен! Администратор проверит его в течение 30 минут и активирует подписку.")
-
-    # Формируем сообщение для админа
-    admin_text = (
-        f"💰 <b>Новая заявка на оплату!</b>\n\n"
-        f"👤 Пользователь: @{user.username or 'без юзернейма'}\n"
-        f"🆔 ID: <code>{user.id}</code>\n"
-        f"💎 Тариф: {plan['label']}\n\n"
-        f"Ожидает подтверждения."
-    )
-
-    # Клавиатура для админа
-    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Активировать", callback_data=f"adm_pay:ok:{user.id}:{plan_id}")],
-        [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"adm_pay:no:{user.id}")]
-    ])
-
-    # Рассылаем всем админам (в списке ADMIN_IDS)
-    for admin_id in ADMIN_IDS:
-        try:
-            await message.bot.send_photo(
-                chat_id=admin_id,
-                photo=photo_id,
-                caption=admin_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=admin_kb
-            )
-        except Exception as e:
-            logger.error(f"Не удалось отправить чек админу {admin_id}: {e}")
-
-    # Сбрасываем состояние
-    await state.clear()
-
-# Если пользователь прислал не фото, а текст
-@router.message(PaymentFSM.waiting_for_receipt)
-async def process_receipt_wrong_type(message: Message):
-    await message.answer("! Пожалуйста, пришлите именно фотографию (скриншот) чека.")
-
-# --- Шаг 5: Обработка решения админа (нажатие кнопок под чеком) ---
-@router.callback_query(F.data.startswith("adm_pay:"))
-async def admin_payment_decision(callback_query: CallbackQuery):
-    # Разбираем данные: [тип_действия, id_юзера, id_тарифа(если есть)]
-    parts = callback_query.data.split(":")
-    action = parts[1]
-    user_id = int(parts[2])
-    
-    if action == "ok":
-        plan_id = parts[3]
-        plan = TARIFF_PLANS.get(plan_id)
-        
-        # Обновляем БД (продлеваем подписку)
-        conn = get_db()
-        try:
-            row = conn.execute("SELECT sub_end FROM users WHERE user_id=?", (user_id,)).fetchone()
-            now = datetime.now(tz=timezone.utc)
-            
-            # Логика продления (аналогично автоматическому продлению)
-            if row and row["sub_end"]:
-                try:
-                    current_end = datetime.fromisoformat(row["sub_end"])
-                    base = max(current_end, now)
-                except ValueError:
-                    base = now
-            else:
-                base = now
-            new_end = base + timedelta(days=plan["days"])
-            
-            conn.execute(
-                "UPDATE users SET sub_end=?, is_active=1 WHERE user_id=?",
-                (new_end.isoformat(), user_id)
-            )
-            conn.commit()
-        finally:
-            conn.close()
-        
-        # Уведомляем пользователя
-        try:
-            await callback_query.bot.send_message(
-                user_id, 
-                f"✅ <b>Оплата подтверждена!</b>\n\n"
-                f"Ваш тариф <b>{plan['label']}</b> активирован до {new_end.strftime('%d.%m.%Y')}."
-            )
-        except Exception:
-            pass
-            
-        await callback_query.message.edit_caption(caption=f"✅ Подписка активирована для {user_id}")
-        await callback_query.answer("Подписка активирована")
-        
-    elif action == "no":
-        # Просто отклоняем
-        try:
-            await callback_query.bot.send_message(
-                user_id, 
-                "❌ <b>Оплата отклонена.</b>\n\n"
-                "Администратор не смог подтвердить ваш перевод. Пожалуйста, обратитесь в поддержку."
-            )
-        except Exception:
-            pass
-            
-        await callback_query.message.edit_caption(caption=f"❌ Оплата отклонена для {user_id}")
-        await callback_query.answer("Заявка отклонена")
 
 # -----------------------------------------------------------------------------
 # Оплата Stars
@@ -1332,17 +1211,16 @@ async def cb_buy_stars(callback: CallbackQuery) -> None:
     if not plan:
         await callback.answer("Тариф не найден", show_alert=True)
         return
-
     await callback.bot.send_invoice(
         chat_id=callback.from_user.id,
-        title=f"AutoPost - {plan['label']}",
+        title=f"AutoPost — {plan['label']}",
         description=(
-            f"Подписка на автопостинг с маркировкой ERID на {plan['days']} дней. "
-            f"Каждый пост соответствует требованиям ФАС."
+            f"Подписка на {plan['days']} дней. "
+            "Каждый пост маркируется ERID согласно требованиям ФАС."
         ),
         payload=f"autopost:{plan_id}:{callback.from_user.id}",
         provider_token=STARS_PROVIDER_TOKEN,
-        currency="XTR",  # Telegram Stars
+        currency="XTR",
         prices=[LabeledPrice(label=plan["label"], amount=plan["stars"])],
     )
     await callback.answer()
@@ -1350,9 +1228,7 @@ async def cb_buy_stars(callback: CallbackQuery) -> None:
 
 @router.pre_checkout_query()
 async def handle_pre_checkout(pre_checkout: PreCheckoutQuery) -> None:
-    """Обязательная обработка pre_checkout_query для Stars."""
-    payload = pre_checkout.invoice_payload
-    if not payload.startswith("autopost:"):
+    if not pre_checkout.invoice_payload.startswith("autopost:"):
         await pre_checkout.answer(ok=False, error_message="Неверный платёж")
         return
     await pre_checkout.answer(ok=True)
@@ -1360,46 +1236,35 @@ async def handle_pre_checkout(pre_checkout: PreCheckoutQuery) -> None:
 
 @router.message(F.successful_payment)
 async def handle_successful_payment(message: Message) -> None:
-    """Автоматическое продление подписки после успешного платежа Stars."""
     payment: SuccessfulPayment = message.successful_payment
-    payload = payment.invoice_payload
-    parts = payload.split(":")
+    parts = payment.invoice_payload.split(":")
     if len(parts) != 3 or parts[0] != "autopost":
-        logger.error(f"Неверный payload платежа: {payload}")
         return
-
     plan_id = parts[1]
     user_id = int(parts[2])
     plan = TARIFF_PLANS.get(plan_id)
     if not plan:
-        logger.error(f"Неизвестный тариф в payload: {plan_id}")
         return
 
     conn = get_db()
     try:
-        row = conn.execute(
-            "SELECT sub_end FROM users WHERE user_id=?", (user_id,)
-        ).fetchone()
+        row = conn.execute("SELECT sub_end FROM users WHERE user_id=?", (user_id,)).fetchone()
         now = datetime.now(tz=timezone.utc)
         if row and row["sub_end"]:
             try:
-                current_end = datetime.fromisoformat(row["sub_end"])
-                if current_end > now:
-                    new_end = current_end + timedelta(days=plan["days"])
-                else:
-                    new_end = now + timedelta(days=plan["days"])
+                base = max(datetime.fromisoformat(row["sub_end"]), now)
             except ValueError:
-                new_end = now + timedelta(days=plan["days"])
+                base = now
         else:
-            new_end = now + timedelta(days=plan["days"])
-
+            base = now
+        new_end = base + timedelta(days=plan["days"])
         conn.execute(
             "UPDATE users SET sub_end=?, is_active=1 WHERE user_id=?",
             (new_end.isoformat(), user_id)
         )
         conn.execute(
-            """INSERT INTO billing_log (user_id, plan, stars_paid, payment_method, payment_id)
-               VALUES (?, ?, ?, 'stars', ?)""",
+            "INSERT INTO billing_log (user_id, plan, stars_paid, payment_method, payment_id) "
+            "VALUES (?, ?, ?, 'stars', ?)",
             (user_id, plan_id, plan["stars"], payment.telegram_payment_charge_id)
         )
         conn.commit()
@@ -1410,14 +1275,14 @@ async def handle_successful_payment(message: Message) -> None:
         f"✅ <b>Подписка активирована</b>\n\n"
         f"Тариф: {plan['label']}\n"
         f"Активна до: {new_end.strftime('%d.%m.%Y')}\n\n"
-        f"Автопостинг с маркировкой ERID запущен.",
+        "Автопостинг с маркировкой ERID запущен.",
         parse_mode=ParseMode.HTML,
     )
-    logger.info(f"Подписка продлена: user={user_id}, план={plan_id}, до={new_end.date()}")
+    logger.info(f"Подписка: user={user_id}, план={plan_id}, до={new_end.date()}")
 
 
 # -----------------------------------------------------------------------------
-# Оплата картой (только organic)
+# Оплата картой / TON
 # -----------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("buy:card:"))
@@ -1425,35 +1290,129 @@ async def cb_buy_card(callback: CallbackQuery) -> None:
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT traffic_source FROM users WHERE user_id=?",
-            (callback.from_user.id,)
+            "SELECT traffic_source FROM users WHERE user_id=?", (callback.from_user.id,)
         ).fetchone()
     finally:
         conn.close()
 
     if row and row["traffic_source"] == "affiliate":
         await callback.answer(
-            "❌ Для партнёрского трафика доступна только оплата Telegram Stars.",
-            show_alert=True
+            "❌ Для аффилиатного трафика — только Telegram Stars.",
+            show_alert=True,
         )
         return
 
     card_type = callback.data.split(":")[2]
-    details = CARD_DETAILS_RU if card_type == "ru" else CARD_DETAILS_KG
+    if card_type == "ru":
+        details = (
+            f"Сбербанк: <code>{CARD_SBER}</code>\n"
+            f"Т-Банк: <code>{CARD_TBANK}</code>\n"
+            "Получатель: Выборных Д.П."
+        )
+    elif card_type == "kg":
+        details = f"Visa KG: <code>{CARD_VISA_KG}</code>"
+    else:
+        details = f"TON: <code>{CARD_TON}</code>"
 
     await callback.message.edit_text(
-        f"💳 <b>Оплата переводом ({card_type.upper()})</b>\n\n"
-        f"<code>{details}</code>\n\n"
-        f"После оплаты отправь скриншот чека сюда - администратор проверит "
-        f"и активирует подписку вручную в течение 30 минут.\n\n"
-        f"<i>Укажи в комментарии к переводу свой Telegram ID: "
-        f"<code>{callback.from_user.id}</code></i>",
+        f"💳 <b>Оплата ({card_type.upper()})</b>\n\n"
+        f"{details}\n\n"
+        "После перевода отправь скриншот чека. Активация в течение 30 минут.\n\n"
+        f"<i>Укажи в комментарии ID: <code>{callback.from_user.id}</code></i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:tariffs")]
-        ])
+        ]),
     )
-    await callback.answer()
+    await state_set = callback.answer()
+
+
+@router.message(PaymentFSM.waiting_for_receipt)
+async def process_receipt_photo(message: Message, state: FSMContext) -> None:
+    if not message.photo:
+        await message.answer("⚠️ Пришли именно фото (скриншот) чека.")
+        return
+    photo_id = message.photo[-1].file_id
+    user = message.from_user
+    data = await state.get_data()
+    plan_id = data.get("selected_plan", "—")
+    plan = TARIFF_PLANS.get(plan_id, {})
+    await message.answer(
+        "✅ Чек получен! Администратор активирует подписку в течение 30 минут."
+    )
+    admin_text = (
+        f"💰 <b>Новая заявка на оплату!</b>\n\n"
+        f"👤 @{user.username or 'без юзернейма'} (ID: <code>{user.id}</code>)\n"
+        f"💎 Тариф: {plan.get('label', plan_id)}"
+    )
+    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Активировать", callback_data=f"adm_pay:ok:{user.id}:{plan_id}")],
+        [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"adm_pay:no:{user.id}")],
+    ])
+    for admin_id in ADMIN_IDS:
+        try:
+            await message.bot.send_photo(
+                chat_id=admin_id, photo=photo_id,
+                caption=admin_text, parse_mode=ParseMode.HTML, reply_markup=admin_kb,
+            )
+        except Exception as e:
+            logger.error(f"Не удалось отправить чек админу {admin_id}: {e}")
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("adm_pay:"))
+async def admin_payment_decision(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    action = parts[1]
+    user_id = int(parts[2])
+
+    if action == "ok":
+        plan_id = parts[3] if len(parts) > 3 else ""
+        plan = TARIFF_PLANS.get(plan_id)
+        if not plan:
+            await callback.answer("Тариф не найден", show_alert=True)
+            return
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT sub_end FROM users WHERE user_id=?", (user_id,)).fetchone()
+            now = datetime.now(tz=timezone.utc)
+            if row and row["sub_end"]:
+                try:
+                    base = max(datetime.fromisoformat(row["sub_end"]), now)
+                except ValueError:
+                    base = now
+            else:
+                base = now
+            new_end = base + timedelta(days=plan["days"])
+            conn.execute(
+                "UPDATE users SET sub_end=?, is_active=1 WHERE user_id=?",
+                (new_end.isoformat(), user_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        try:
+            await callback.bot.send_message(
+                user_id,
+                f"✅ <b>Оплата подтверждена!</b>\n\n"
+                f"Тариф <b>{plan['label']}</b> активирован до {new_end.strftime('%d.%m.%Y')}.",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        await callback.message.edit_caption(caption=f"✅ Подписка активирована для {user_id}")
+        await callback.answer("Подписка активирована")
+    else:
+        try:
+            await callback.bot.send_message(
+                user_id,
+                "❌ <b>Оплата отклонена.</b>\n\nОбратитесь в поддержку.",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        await callback.message.edit_caption(caption=f"❌ Оплата отклонена для {user_id}")
+        await callback.answer("Заявка отклонена")
 
 
 # -----------------------------------------------------------------------------
@@ -1466,8 +1425,7 @@ async def cb_menu_settings(callback: CallbackQuery) -> None:
     try:
         row = conn.execute(
             "SELECT role, filter_wb, filter_ozon, blogger_mode, api_key, client_erid_override "
-            "FROM users WHERE user_id=?",
-            (callback.from_user.id,)
+            "FROM users WHERE user_id=?", (callback.from_user.id,)
         ).fetchone()
     finally:
         conn.close()
@@ -1482,44 +1440,36 @@ async def cb_menu_settings(callback: CallbackQuery) -> None:
         [InlineKeyboardButton(text="🛒 Фильтры маркетплейсов", callback_data="settings:filters")],
     ]
     if role == "saas":
-        buttons.insert(0, [
-            InlineKeyboardButton(text="🔑 API-ключ ТакПродам", callback_data="menu:apikey")
-        ])
-        buttons.insert(1, [
-            InlineKeyboardButton(text="🏷 Корпоративный ERID", callback_data="menu:erid_override")
-        ])
+        buttons.insert(0, [InlineKeyboardButton(text="🔑 API-ключ", callback_data="menu:apikey")])
+        buttons.insert(1, [InlineKeyboardButton(text="🏷 Корп. ERID", callback_data="menu:erid_override")])
     buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
 
-    api_status = f"{'✅ задан' if row['api_key'] else '❌ не задан'}"
-    erid_status = f"{'✅ ' + row['client_erid_override'][:20] if row['client_erid_override'] else '-'}"
-
+    erid_val = row["client_erid_override"] or ""
     text = (
         f"⚙️ <b>Настройки</b>\n\n"
-        f"API-ключ: {api_status}\n"
-        f"Корп. ERID: {erid_status}\n"
+        f"API-ключ: {'✅ задан' if row['api_key'] else '❌ не задан'}\n"
+        f"Корп. ERID: {'✅ ' + erid_val[:20] if erid_val else '—'}\n"
         f"WB: {'✅' if row['filter_wb'] else '❌'}  |  Ozon: {'✅' if row['filter_ozon'] else '❌'}\n"
         f"Режим: {'Напрямую' if row['blogger_mode'] == 'direct' else 'VIP-закреп'}"
     )
     await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        text, parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
     await callback.answer()
 
 
-@router.callback_query(F.data == "settings:filters")
+@router.callback_query(F.data.in_({"menu:filters", "settings:filters"}))
 async def cb_settings_filters(callback: CallbackQuery) -> None:
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT filter_wb, filter_ozon FROM users WHERE user_id=?",
-            (callback.from_user.id,)
+            "SELECT filter_wb, filter_ozon FROM users WHERE user_id=?", (callback.from_user.id,)
         ).fetchone()
     finally:
         conn.close()
     await callback.message.edit_text(
-        "🛒 <b>Фильтры маркетплейсов</b>\n\nВыбери, какие площадки включить в автопостинг:",
+        "🛒 <b>Фильтры маркетплейсов</b>\n\nВыбери площадки для автопостинга:",
         parse_mode=ParseMode.HTML,
         reply_markup=kb_filter_settings(row["filter_wb"], row["filter_ozon"]),
     )
@@ -1528,24 +1478,20 @@ async def cb_settings_filters(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("filter:toggle:"))
 async def cb_filter_toggle(callback: CallbackQuery) -> None:
-    field = callback.data.split(":")[2]  # "wb" или "ozon"
+    field = callback.data.split(":")[2]
     db_field = f"filter_{field}"
     conn = get_db()
     try:
         row = conn.execute(
-            f"SELECT {db_field} FROM users WHERE user_id=?",
-            (callback.from_user.id,)
+            f"SELECT {db_field} FROM users WHERE user_id=?", (callback.from_user.id,)
         ).fetchone()
-        current = row[db_field] if row else 1
-        new_val = 0 if current else 1
+        new_val = 0 if (row[db_field] if row else 1) else 1
         conn.execute(
-            f"UPDATE users SET {db_field}=? WHERE user_id=?",
-            (new_val, callback.from_user.id)
+            f"UPDATE users SET {db_field}=? WHERE user_id=?", (new_val, callback.from_user.id)
         )
         conn.commit()
         row2 = conn.execute(
-            "SELECT filter_wb, filter_ozon FROM users WHERE user_id=?",
-            (callback.from_user.id,)
+            "SELECT filter_wb, filter_ozon FROM users WHERE user_id=?", (callback.from_user.id,)
         ).fetchone()
     finally:
         conn.close()
@@ -1560,17 +1506,15 @@ async def cb_blogger_mode_menu(callback: CallbackQuery) -> None:
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT blogger_mode FROM users WHERE user_id=?",
-            (callback.from_user.id,)
+            "SELECT blogger_mode FROM users WHERE user_id=?", (callback.from_user.id,)
         ).fetchone()
     finally:
         conn.close()
     mode = row["blogger_mode"] if row else "direct"
     await callback.message.edit_text(
         "📢 <b>Режим публикации</b>\n\n"
-        "<b>Напрямую</b> - посты выходят в твой канал с твоим sub_id.\n"
-        "<b>VIP-закреп</b> - твой пост публикуется и закрепляется на 24ч "
-        "в главном канале администратора (аудитория платформы).",
+        "<b>Напрямую</b> — посты выходят в твой канал.\n"
+        "<b>VIP-закреп</b> — пост закрепляется на 24ч в главном канале платформы.",
         parse_mode=ParseMode.HTML,
         reply_markup=kb_blogger_mode(mode),
     )
@@ -1583,27 +1527,26 @@ async def cb_blogger_mode_set(callback: CallbackQuery) -> None:
     conn = get_db()
     try:
         conn.execute(
-            "UPDATE users SET blogger_mode=? WHERE user_id=?",
-            (mode, callback.from_user.id)
+            "UPDATE users SET blogger_mode=? WHERE user_id=?", (mode, callback.from_user.id)
         )
         conn.commit()
     finally:
         conn.close()
-    label = "Напрямую в канал" if mode == "direct" else "VIP-закреп"
-    await callback.answer(f"✅ Режим: {label}", show_alert=False)
+    await callback.answer(
+        f"✅ {'Напрямую' if mode == 'direct' else 'VIP-закреп'}", show_alert=False
+    )
     await cb_blogger_mode_menu(callback)
 
 
 # -----------------------------------------------------------------------------
-# SaaS: ввод API-ключа
+# SaaS: API-ключ
 # -----------------------------------------------------------------------------
 
 @router.callback_query(F.data == "menu:apikey")
 async def cb_menu_apikey(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "🔑 <b>API-ключ ТакПродам</b>\n\n"
-        "Введи api_key от личного кабинета ТакПродам. "
-        "Ключ используется для получения ERID и партнёрских ссылок.",
+        "Введи api_key из личного кабинета ТакПродам.",
         parse_mode=ParseMode.HTML,
     )
     await state.set_state(SaasStates.waiting_apikey)
@@ -1614,7 +1557,7 @@ async def cb_menu_apikey(callback: CallbackQuery, state: FSMContext) -> None:
 async def handle_apikey_input(message: Message, state: FSMContext) -> None:
     api_key = message.text.strip() if message.text else ""
     if len(api_key) < 10:
-        await message.answer("! Ключ слишком короткий. Проверь и попробуй снова.")
+        await message.answer("⚠️ Ключ слишком короткий. Проверь и попробуй снова.")
         return
     conn = get_db()
     try:
@@ -1627,24 +1570,22 @@ async def handle_apikey_input(message: Message, state: FSMContext) -> None:
         conn.close()
     await state.clear()
     await message.answer(
-        "✅ <b>API-ключ сохранён.</b>\n\n"
-        "Теперь ERID будет получаться автоматически для каждого поста.",
+        "✅ <b>API-ключ сохранён.</b>\n\nERID будет получаться автоматически для каждого поста.",
         parse_mode=ParseMode.HTML,
         reply_markup=kb_main_menu("saas"),
     )
 
 
 # -----------------------------------------------------------------------------
-# SaaS: корпоративный ERID override
+# SaaS: ERID override
 # -----------------------------------------------------------------------------
 
 @router.callback_query(F.data == "menu:erid_override")
 async def cb_menu_erid_override(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "🏷 <b>Корпоративный ERID</b>\n\n"
-        "Если твой бренд работает с рекламодателем напрямую и у тебя есть "
-        "собственный ERID - введи его здесь. Он будет применяться вместо API-данных.\n\n"
-        "! <b>Используй только реальный ERID, полученный от ОРД.</b>",
+        "Введи реальный ERID, полученный от ОРД.\n\n"
+        "⚠️ <b>Фейковые ERID запрещены — только реальные данные от ОРД.</b>",
         parse_mode=ParseMode.HTML,
     )
     await state.set_state(SaasStates.waiting_erid_override)
@@ -1654,11 +1595,10 @@ async def cb_menu_erid_override(callback: CallbackQuery, state: FSMContext) -> N
 @router.message(SaasStates.waiting_erid_override)
 async def handle_erid_override_input(message: Message, state: FSMContext) -> None:
     erid = message.text.strip() if message.text else ""
-    # Базовая проверка формата ERID (не генерируем - только принимаем реальный)
     if len(erid) < 5 or not re.match(r"^[A-Za-z0-9\-_]+$", erid):
         await message.answer(
-            "! Неверный формат ERID. Допустимы только латинские буквы, цифры, дефис и подчёркивание.\n"
-            "Убедись, что вводишь <b>реальный ERID от ОРД</b>, а не генерируешь его самостоятельно.",
+            "⚠️ Неверный формат. Допустимы латинские буквы, цифры, дефис, подчёркивание.\n"
+            "Вводи только <b>реальный ERID от ОРД</b>.",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -1673,137 +1613,10 @@ async def handle_erid_override_input(message: Message, state: FSMContext) -> Non
         conn.close()
     await state.clear()
     await message.answer(
-        f"✅ <b>Корпоративный ERID сохранён:</b> <code>{html.escape(erid)}</code>\n\n"
-        f"Будет применяться при публикации, если API не вернёт ERID.",
+        f"✅ <b>ERID сохранён:</b> <code>{html.escape(erid)}</code>",
         parse_mode=ParseMode.HTML,
         reply_markup=kb_main_menu("saas"),
     )
-
-
-# -----------------------------------------------------------------------------
-#  --- ОБНОВЛЕННАЯ СТАТИСТИКА (Разделение SaaS и Блогер) ---
-# -----------------------------------------------------------------------------
-
-@router.callback_query(F.data == "menu:main")
-async def cb_menu_main(callback: CallbackQuery) -> None:
-    conn = get_db()
-    try:
-        row = conn.execute(
-            "SELECT role FROM users WHERE user_id=?", (callback.from_user.id,)
-        ).fetchone()
-        
-        # Получаем роль или дефолтное значение
-        role = row["role"] if row else "blogger"
-        
-        await callback.message.edit_text(
-            "🏠 <b>Главное меню</b>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb_main_menu(role),
-        )
-    except Exception as e:
-        logger.error(f"Ошибка в menu:main: {e}")
-        await callback.message.answer("Произошла ошибка при загрузке меню.")
-    finally:
-        conn.close()
-    
-    await callback.answer()
-    
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT role, sub_id FROM users WHERE user_id=?", (user_id,)).fetchone()
-        if not user:
-            await callback.message.edit_text("Ошибка: пользователь не найден.")
-            return
-            
-        role = user["role"]
-        keyboard = []
-        text = ""
-        
-        if role == "blogger":
-            # --- СТАТИСТИКА БЛОГЕРА ---
-            sub_id = user["sub_id"]
-            approved_sum = conn.execute("SELECT SUM(payout) FROM transactions WHERE sub_id=? AND status='approved'", (sub_id,)).fetchone()[0] or 0.0
-            approved_cnt = conn.execute("SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='approved'", (sub_id,)).fetchone()[0]
-            pending_cnt = conn.execute("SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='pending'", (sub_id,)).fetchone()[0]
-            
-            text = (
-                f"📊 <b>Твоя статистика партнёра</b>\n\n"
-                f"🆔 Твой ID: <code>{sub_id}</code>\n\n"
-                f"📦 <b>Заказы:</b>\n"
-                f" ├ Ожидают получения: <b>{pending_cnt} шт.</b>\n"
-                f" └ Выкуплено: <b>{approved_cnt} шт.</b>\n\n"
-                f"💸 <b>Твой заработок:</b>\n"
-                f" └ <b>{approved_sum:.2f} руб.</b>\n\n"
-                f"<i>* Баланс обновляется автоматически.</i>"
-            )
-            
-            MIN_PAYOUT = 2000.0
-            if approved_sum >= MIN_PAYOUT:
-                keyboard.append([InlineKeyboardButton(text="💳 Запросить выплату", callback_data="payout:request")])
-            elif approved_sum > 0:
-                text += f"\n\n<i>! Вывод средств доступен от {MIN_PAYOUT} руб.</i>"
-                
-        else:
-            # --- СТАТИСТИКА SaaS ---
-            total = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=?", (user_id,)).fetchone()[0]
-            published = conn.execute("SELECT COUNT(*) FROM posts WHERE user_id=? AND status='published'", (user_id,)).fetchone()[0]
-            
-            last_posts = conn.execute(
-                "SELECT donor_post_id, status FROM posts WHERE user_id=? ORDER BY id DESC LIMIT 5", (user_id,)
-            ).fetchall()
-            
-            last_str = "\n".join([f"  • <code>{p['donor_post_id']}</code> - {p['status']}" for p in last_posts]) if last_posts else "  <i>Постов ещё не было</i>"
-            
-            text = (
-                f"📊 <b>Статистика постов (SaaS)</b>\n\n"
-                f"Всего: {total}\n"
-                f"Опубликовано: {published}\n\n"
-                f"<b>Последние 5 постов:</b>\n{last_str}"
-            )
-        
-        # Общая кнопка назад для всех
-        keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
-        
-        # Вывод сообщения ОДИН РАЗ после закрытия логики условий
-        await callback.message.edit_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
-        )
-
-    except Exception as e:
-        logger.error(f"Ошибка в статистике: {e}")
-        await callback.message.edit_text("Произошла ошибка при загрузке статистики.")
-    finally:
-        conn.close()
-
-    # Выводим сообщение и кнопку "Назад"
-    await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
-        ])
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "menu:main")
-async def cb_menu_main(callback: CallbackQuery) -> None:
-    conn = get_db()
-    try:
-        row = conn.execute(
-            "SELECT role FROM users WHERE user_id=?", (callback.from_user.id,)
-        ).fetchone()
-    finally:
-        conn.close()
-    role = row["role"] if row else "blogger"
-    await callback.message.edit_text(
-        "🏠 <b>Главное меню</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_main_menu(role),
-    )
-    await callback.answer()
 
 
 # =============================================================================
@@ -1820,8 +1633,7 @@ async def cb_admin_broadcast(callback: CallbackQuery, state: FSMContext) -> None
         await callback.answer("⛔ Нет доступа", show_alert=True)
         return
     await callback.message.edit_text(
-        "📣 <b>Рассылка</b>\n\nВведи текст сообщения для отправки всем пользователям платформы.\n"
-        "Поддерживается HTML-разметка.",
+        "📣 <b>Рассылка</b>\n\nВведи текст (HTML поддерживается):",
         parse_mode=ParseMode.HTML,
     )
     await state.set_state(AdminStates.broadcast_text)
@@ -1832,15 +1644,12 @@ async def cb_admin_broadcast(callback: CallbackQuery, state: FSMContext) -> None
 async def handle_broadcast_text(message: Message, state: FSMContext) -> None:
     if not is_admin(message.from_user.id):
         return
-    text = message.html_text or message.text or ""
-    clean_text = sanitize_html(text)
-
+    clean_text = sanitize_html(message.html_text or message.text or "")
     conn = get_db()
     try:
         users = conn.execute("SELECT user_id FROM users").fetchall()
     finally:
         conn.close()
-
     sent, failed = 0, 0
     for user in users:
         try:
@@ -1848,16 +1657,14 @@ async def handle_broadcast_text(message: Message, state: FSMContext) -> None:
                 user["user_id"], clean_text, parse_mode=ParseMode.HTML
             )
             sent += 1
-            await asyncio.sleep(0.05)  # ~20 msg/sec - в рамках лимитов Telegram
+            await asyncio.sleep(0.05)
         except TelegramAPIError:
             failed += 1
-
     await state.clear()
     await message.answer(
-        f"✅ Рассылка завершена.\n✉️ Доставлено: {sent}  |  ❌ Ошибок: {failed}",
+        f"✅ Рассылка завершена. Доставлено: {sent} | Ошибок: {failed}",
         reply_markup=kb_admin_panel(),
     )
-    logger.info(f"Рассылка: отправлено {sent}, ошибок {failed}")
 
 
 @router.callback_query(F.data == "admin:billing_check")
@@ -1875,7 +1682,7 @@ async def cb_admin_extend_sub(callback: CallbackQuery, state: FSMContext) -> Non
         await callback.answer("⛔ Нет доступа", show_alert=True)
         return
     await callback.message.edit_text(
-        "🔧 <b>Ручное продление подписки</b>\n\nВведи Telegram ID пользователя:",
+        "🔧 <b>Ручное продление</b>\n\nВведи Telegram ID пользователя:",
         parse_mode=ParseMode.HTML,
     )
     await state.set_state(AdminStates.extend_user_id)
@@ -1889,12 +1696,14 @@ async def handle_extend_user_id(message: Message, state: FSMContext) -> None:
     try:
         uid = int(message.text.strip())
     except (ValueError, AttributeError):
-        await message.answer("! Введи числовой Telegram ID.")
+        await message.answer("⚠️ Введи числовой Telegram ID.")
         return
     await state.update_data(extend_uid=uid)
     await state.set_state(AdminStates.extend_days)
-    await message.answer(f"Пользователь: <code>{uid}</code>\nСколько дней добавить?",
-                         parse_mode=ParseMode.HTML)
+    await message.answer(
+        f"Пользователь: <code>{uid}</code>\nСколько дней добавить?",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @router.message(AdminStates.extend_days)
@@ -1906,9 +1715,8 @@ async def handle_extend_days(message: Message, state: FSMContext) -> None:
         if days <= 0:
             raise ValueError
     except (ValueError, AttributeError):
-        await message.answer("! Введи положительное число дней.")
+        await message.answer("⚠️ Введи положительное число дней.")
         return
-
     data = await state.get_data()
     uid = data.get("extend_uid")
     conn = get_db()
@@ -1921,8 +1729,7 @@ async def handle_extend_days(message: Message, state: FSMContext) -> None:
         now = datetime.now(tz=timezone.utc)
         if row["sub_end"]:
             try:
-                current_end = datetime.fromisoformat(row["sub_end"])
-                base = max(current_end, now)
+                base = max(datetime.fromisoformat(row["sub_end"]), now)
             except ValueError:
                 base = now
         else:
@@ -1935,10 +1742,10 @@ async def handle_extend_days(message: Message, state: FSMContext) -> None:
         conn.commit()
     finally:
         conn.close()
-
     await state.clear()
     await message.answer(
-        f"✅ Подписка продлена.\nUser: <code>{uid}</code> | Новый конец: {new_end.strftime('%d.%m.%Y')}",
+        f"✅ Подписка продлена.\n"
+        f"User: <code>{uid}</code> | До: {new_end.strftime('%d.%m.%Y')}",
         parse_mode=ParseMode.HTML,
         reply_markup=kb_admin_panel(),
     )
@@ -1951,53 +1758,40 @@ async def cb_admin_webapp_link(callback: CallbackQuery) -> None:
         await callback.answer("⛔ Нет доступа", show_alert=True)
         return
     await callback.answer(
-        f"🌐 WebApp доступен по адресу:\nhttp://{WEBAPP_HOST}:{WEBAPP_PORT}/admin",
-        show_alert=True
+        f"🌐 WebApp: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin", show_alert=True
     )
 
 
 # =============================================================================
-# === CRON BILLING CHECK (ежечасная проверка подписок) ========================
+# === BILLING CHECK ===========================================================
 # =============================================================================
 
 async def run_billing_check(bot: Bot) -> int:
-    """
-    Ежечасно деактивирует пользователей с истёкшей подпиской.
-    Возвращает количество деактивированных аккаунтов.
-    """
     now = datetime.now(tz=timezone.utc).isoformat()
     conn = get_db()
     try:
         expired = conn.execute(
-            """SELECT user_id FROM users
-               WHERE is_active=1 AND sub_end IS NOT NULL AND sub_end < ?""",
-            (now,)
+            "SELECT user_id FROM users "
+            "WHERE is_active=1 AND sub_end IS NOT NULL AND sub_end < ?", (now,)
         ).fetchall()
-
         if not expired:
             return 0
-
         for row in expired:
-            conn.execute(
-                "UPDATE users SET is_active=0 WHERE user_id=?", (row["user_id"],)
-            )
+            conn.execute("UPDATE users SET is_active=0 WHERE user_id=?", (row["user_id"],))
             try:
                 await bot.send_message(
                     row["user_id"],
-                    "⏰ <b>Подписка истекла.</b>\n\n"
-                    "Автопостинг приостановлен. Для продления выбери тариф в главном меню.",
+                    "⏰ <b>Подписка истекла.</b>\n\nАвтопостинг приостановлен.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="💎 Продлить", callback_data="menu:tariffs")]
-                    ])
+                    ]),
                 )
             except TelegramAPIError:
                 pass
-
         conn.commit()
-        count = len(expired)
-        logger.info(f"Биллинг: деактивировано {count} аккаунтов")
-        return count
+        logger.info(f"Биллинг: деактивировано {len(expired)} аккаунтов")
+        return len(expired)
     finally:
         conn.close()
 
@@ -2011,121 +1805,104 @@ async def process_donor_post(
     user_id: int,
     donor_post_id: str,
     sku: str,
-    marketplace: str,   # 'wb' | 'ozon'
+    marketplace: str,
     product_title: str,
     price: str,
     photo_url: Optional[str],
 ) -> None:
-    """
-    Главная функция обработки поста донора:
-    1. Проверяет активность подписки.
-    2. Проверяет фильтры маркетплейсов.
-    3. Получает ERID через resolve_erid() (карантин при отсутствии).
-    4. Формирует caption с маркировкой.
-    5. Кладёт в ночную очередь или публикует немедленно.
-    6. Записывает результат в БД.
-    """
     conn = get_db()
     try:
         user = conn.execute(
-            """SELECT channel_id, is_active, filter_wb, filter_ozon, blogger_mode
-               FROM users WHERE user_id=?""",
-            (user_id,)
+            "SELECT channel_id, is_active, filter_wb, filter_ozon, blogger_mode, role "
+            "FROM users WHERE user_id=?", (user_id,)
         ).fetchone()
     finally:
         conn.close()
 
     if not user:
-        logger.warning(f"process_donor_post: user {user_id} не найден")
         return
-
-# Проверка подписки (только для SaaS)
     if user["role"] == "saas" and not user["is_active"]:
-        logger.info(f"SaaS User {user_id}: автопостинг пропущен (нет активной подписки)")
         return
-    # Проверка фильтров маркетплейсов
     if marketplace == "wb" and not user["filter_wb"]:
-        logger.info(f"User {user_id}: WB пост пропущен по фильтру")
         return
     if marketplace == "ozon" and not user["filter_ozon"]:
-        logger.info(f"User {user_id}: Ozon пост пропущен по фильтру")
         return
 
     channel_id = user["channel_id"]
     if not channel_id:
-        logger.warning(f"User {user_id}: канал не привязан")
         return
 
-    # Получение ERID (блокировка без реального ERID)
     erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
     if not erid_data:
-        # Пост ушёл в карантин внутри resolve_erid - ничего не делаем
         return
 
-    erid = erid_data["erid"]
-    advertiser = erid_data["advertiser"]
-    affiliate_url = erid_data["link"]
+    caption = build_post_caption(
+        product_title, price,
+        erid_data["link"], erid_data["erid"], erid_data["advertiser"],
+    )
 
-    caption = build_post_caption(product_title, price, affiliate_url, erid, advertiser)
-
-    blogger_mode = user["blogger_mode"]
-
-    # Ночная очередь
     if is_night_time():
         await add_to_night_queue(
-            user_id, channel_id, caption, photo_url, erid, advertiser, affiliate_url
+            user_id, channel_id, caption, photo_url,
+            erid_data["erid"], erid_data["advertiser"], erid_data["link"],
         )
-        _record_post(user_id, donor_post_id, channel_id, marketplace, sku, erid, advertiser,
-                     status="pending")
+        _record_post(
+            user_id, donor_post_id, channel_id, marketplace, sku,
+            erid_data["erid"], erid_data["advertiser"], "pending",
+        )
         return
 
-    # Публикация
-    if blogger_mode == "vip_pin":
-        # VIP-закреп в главном канале администратора
+    success = False
+    if user["blogger_mode"] == "vip_pin":
         success = await publish_post_with_fallback(
-            bot=bot,
-            channel_id=str(ADMIN_VIP_CHANNEL_ID),
-            caption=caption,
-            photo_url=photo_url,
+            bot=bot, channel_id=str(ADMIN_VIP_CHANNEL_ID),
+            caption=caption, photo_url=photo_url,
         )
         if success:
             try:
-                # Закрепляем пост на 24 часа (снятие через крон)
                 msg = await bot.send_message(
-                    chat_id=ADMIN_VIP_CHANNEL_ID, text=caption,
-                    parse_mode=ParseMode.HTML
+                    ADMIN_VIP_CHANNEL_ID, caption, parse_mode=ParseMode.HTML
                 )
-                await bot.pin_chat_message(
-                    chat_id=ADMIN_VIP_CHANNEL_ID, message_id=msg.message_id
-                )
-                # Планируем открепление через 24ч (добавляем в отдельную таблицу при необходимости)
+                await bot.pin_chat_message(ADMIN_VIP_CHANNEL_ID, msg.message_id)
+                unpin_at = (datetime.now(tz=timezone.utc) + timedelta(hours=24)).isoformat()
+                conn2 = get_db()
+                try:
+                    conn2.execute(
+                        "INSERT INTO pinned_posts (chat_id, message_id, unpin_at) "
+                        "VALUES (?, ?, ?)",
+                        (str(ADMIN_VIP_CHANNEL_ID), msg.message_id, unpin_at)
+                    )
+                    conn2.commit()
+                finally:
+                    conn2.close()
             except TelegramAPIError as e:
-                logger.warning(f"VIP-закреп: не удалось закрепить - {e}")
+                logger.warning(f"VIP-закреп: {e}")
     else:
         success = await publish_post_with_fallback(
-            bot=bot,
-            channel_id=channel_id,
-            caption=caption,
-            photo_url=photo_url,
+            bot=bot, channel_id=channel_id, caption=caption, photo_url=photo_url,
         )
 
-    status = "published" if success else "failed"
-    _record_post(user_id, donor_post_id, channel_id, marketplace, sku, erid, advertiser,
-                 status=status)
+    _record_post(
+        user_id, donor_post_id, channel_id, marketplace, sku,
+        erid_data["erid"], erid_data["advertiser"],
+        "published" if success else "failed",
+    )
 
 
 def _record_post(
     user_id: int, donor_post_id: str, channel_id: str,
-    marketplace: str, sku: str, erid: str, advertiser: str, status: str
+    marketplace: str, sku: str, erid: str, advertiser: str, status: str,
 ) -> None:
     conn = get_db()
     try:
         conn.execute(
-            """INSERT INTO posts
-               (user_id, donor_post_id, channel_id, marketplace, sku, erid, advertiser, status, published_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, donor_post_id, channel_id, marketplace, sku, erid, advertiser, status,
-             datetime.now(tz=timezone.utc).isoformat() if status == "published" else None)
+            "INSERT INTO posts (user_id, donor_post_id, channel_id, marketplace, sku, "
+            "erid, advertiser, status, published_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                user_id, donor_post_id, channel_id, marketplace, sku,
+                erid, advertiser, status,
+                datetime.now(tz=timezone.utc).isoformat() if status == "published" else None,
+            )
         )
         conn.commit()
     finally:
@@ -2144,55 +1921,76 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         conn = get_db()
         try:
             users = conn.execute(
-                """SELECT user_id, username, channel_title, role, is_active, sub_end
-                   FROM users ORDER BY created_at DESC"""
+                "SELECT user_id, username, channel_title, role, is_active, sub_end "
+                "FROM users ORDER BY created_at DESC"
             ).fetchall()
-
             rows_html = ""
             for u in users:
                 posts = conn.execute(
-                    """SELECT donor_post_id, status, created_at FROM posts
-                       WHERE user_id=? ORDER BY created_at DESC LIMIT 5""",
-                    (u["user_id"],)
+                    "SELECT donor_post_id, status FROM posts "
+                    "WHERE user_id=? ORDER BY id DESC LIMIT 5", (u["user_id"],)
                 ).fetchall()
                 posts_str = ", ".join(
-                    f'<span class="post-{p["status"]}">{html.escape(p["donor_post_id"])} '
-                    f'({p["status"]})</span>'
+                    f'<span class="post-{p["status"]}">'
+                    f'{html.escape(p["donor_post_id"])} ({p["status"]})</span>'
                     for p in posts
                 ) or "<em>нет постов</em>"
-                status_badge = (
+                badge = (
                     '<span class="badge active">Active</span>'
-                    if u["is_active"]
-                    else '<span class="badge inactive">Inactive</span>'
+                    if u["is_active"] else
+                    '<span class="badge inactive">Inactive</span>'
                 )
-                rows_html += f"""
-                <tr>
-                    <td><code>{u['user_id']}</code></td>
-                    <td>@{html.escape(u['username'] or '-')}</td>
-                    <td>{html.escape(u['channel_title'] or '-')}</td>
-                    <td><span class="role">{u['role']}</span></td>
-                    <td>{status_badge}</td>
-                    <td>{(u['sub_end'] or '-')[:10]}</td>
-                    <td class="posts-cell">{posts_str}</td>
-                </tr>"""
+                rows_html += (
+                    f"<tr>"
+                    f"<td><code>{u['user_id']}</code></td>"
+                    f"<td>@{html.escape(u['username'] or '—')}</td>"
+                    f"<td>{html.escape(u['channel_title'] or '—')}</td>"
+                    f"<td>{u['role']}</td>"
+                    f"<td>{badge}</td>"
+                    f"<td>{(u['sub_end'] or '—')[:10]}</td>"
+                    f"<td>{posts_str}</td>"
+                    f"</tr>"
+                )
+            total_users = len(users)
         finally:
             conn.close()
 
-        return HTMLResponse(content=f"""<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<title>AutoPost - Admin Panel</title>
-<style>
-  :root {{ --bg: #0f1117; --surface: #1a1d27; --text: #e0e0e8; }}
-  body {{ background: var(--bg); color: var(--text); font-family: sans-serif; }}
-</style>
-</head>
-<body>
-    <h1>Управление пользователями</h1>
-    <table>{rows_html}</table>
-</body>
-</html>""")
+        page = (
+            "<!DOCTYPE html><html lang='ru'><head><meta charset='UTF-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>AutoPost Admin</title><style>"
+            ":root{--bg:#0f1117;--surface:#1a1d27;--border:#2a2d3e;"
+            "--accent:#7c6aff;--green:#2ecc71;--red:#e74c3c;--text:#e0e0e8;}"
+            "*{box-sizing:border-box;margin:0;padding:0;}"
+            "body{font-family:system-ui,sans-serif;background:var(--bg);"
+            "color:var(--text);padding:2rem;}"
+            "h1{color:var(--accent);margin-bottom:1rem;font-size:1.4rem;}"
+            "p{color:#6b7280;margin-bottom:1.5rem;font-size:.85rem;}"
+            "table{width:100%;border-collapse:collapse;font-size:.82rem;}"
+            "th{background:var(--surface);padding:.75rem 1rem;text-align:left;"
+            "border-bottom:1px solid var(--border);color:#6b7280;"
+            "text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;}"
+            "td{padding:.7rem 1rem;border-bottom:1px solid var(--border);vertical-align:top;}"
+            "tr:hover td{background:var(--surface);}"
+            "code{color:var(--accent);}"
+            ".badge{display:inline-block;padding:.2rem .55rem;border-radius:9999px;"
+            "font-size:.72rem;font-weight:600;}"
+            ".badge.active{background:#1a3a2a;color:var(--green);}"
+            ".badge.inactive{background:#3a1a1a;color:var(--red);}"
+            ".post-published{color:var(--green);}"
+            ".post-quarantine{color:var(--red);}"
+            ".post-failed{color:#f39c12;}"
+            "</style></head><body>"
+            f"<h1>AutoPost Admin Panel</h1>"
+            f"<p>Пользователей: <b>{total_users}</b> | "
+            f"Обновлено: {datetime.now().strftime('%d.%m.%Y %H:%M')}</p>"
+            "<table><thead><tr>"
+            "<th>User ID</th><th>Username</th><th>Канал</th>"
+            "<th>Роль</th><th>Статус</th><th>До</th><th>Последние 5 постов</th>"
+            f"</tr></thead><tbody>{rows_html}</tbody></table>"
+            "</body></html>"
+        )
+        return HTMLResponse(content=page)
 
     @app.post("/webhook/takprodam")
     async def takprodam_webhook(request: Request):
@@ -2201,284 +1999,147 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             order_id = str(data.get("order_id", ""))
             sub_id = data.get("sub_id", "")
             status = data.get("status", "pending")
-            
             original_payout = float(data.get("payout", 0.0))
-            blogger_payout = (original_payout * 0.90) * 0.5
-            
+            blogger_payout = original_payout * 0.90 * 0.5
+
             if not order_id or not sub_id:
                 return {"status": "error", "message": "Missing order_id or sub_id"}
-                
+
             conn = get_db()
-            conn.execute(
-                """INSERT INTO transactions (order_id, sub_id, status, payout, updated_at) 
-                   VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                   ON CONFLICT(order_id) DO UPDATE SET 
-                   status=excluded.status, 
-                   payout=excluded.payout,
-                   updated_at=CURRENT_TIMESTAMP""",
-                (order_id, sub_id, status, blogger_payout)
-            )
-            conn.commit()
-            conn.close()
+            try:
+                conn.execute(
+                    "INSERT INTO transactions (order_id, sub_id, status, payout, updated_at) "
+                    "VALUES (?, ?, ?, ?, datetime('now')) "
+                    "ON CONFLICT(order_id) DO UPDATE SET "
+                    "status=excluded.status, payout=excluded.payout, "
+                    "updated_at=datetime('now')",
+                    (order_id, sub_id, status, blogger_payout)
+                )
+                conn.commit()
+            finally:
+                conn.close()
             return {"status": "success"}
         except Exception as e:
+            logger.error(f"Webhook error: {e}")
             return {"status": "error", "message": str(e)}
 
     return app
 
-            total_users = len(users) if users else 0
-# Убираем 'f' перед кавычками, чтобы это была обычная строка
-        return HTMLResponse(content="""<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AutoPost - Admin Panel</title>
-<style>
-  :root {
-    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3e;
-    --accent: #7c6aff; --green: #2ecc71; --red: #e74c3c;
-    --text: #e0e0e8; --muted: #6b7280; --code: #a78bfa;
-  }
-</style>
-</head>
-<body>
-<h1>AutoPost Admin Panel</h1>
-<p class="meta">Всего пользователей: <strong>""" + str(total_users) + """</strong> &nbsp;|&nbsp;
-Обновлено: """ + datetime.now().strftime('%d.%m.%Y %H:%M:%S') + """</p>
-<table>
-  <thead>
-    <tr>
-      <th>User ID</th><th>Username</th><th>Канал</th><th>Роль</th>
-      <th>Статус</th><th>Подписка до</th><th>Последние 5 постов</th>
-    </tr>
-  </thead>
-  <tbody>""" + rows_html + """</tbody>
-</table>
-</body>
-</html>""")
-  
-"""<h1>AutoPost Admin Panel</h1>
-<p class="meta">Всего пользователей: <strong>{total_users}</strong> &nbsp;|&nbsp;
-Обновлено: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}</p>
-<table>
-  <thead>
-    <tr>
-      <th>User ID</th><th>Username</th><th>Канал</th><th>Роль</th>
-      <th>Статус</th><th>Подписка до</th><th>Последние 5 постов (аудит)</th>
-    </tr>
-  </thead>
-  <tbody>{rows_html}</tbody>
-</table>
-</body>
-</html>"""
-
-  # ... (здесь ваш код админ-панели @app.get("/admin")) ...
-
- # Эта строка уже была, она завершает функцию create_fastapi_app
 
 # =============================================================================
 # === SCHEDULER ===============================================================
 # =============================================================================
 
-async def unpin_old_messages(bot: Bot):
-    """Снимает закреп с VIP-постов старше 24 часов."""
+async def unpin_old_messages(bot: Bot) -> None:
     conn = get_db()
     now = datetime.now(timezone.utc).isoformat()
     try:
-        # Ищем посты, чье время (unpin_at) уже наступило
-        posts = conn.execute("SELECT id, chat_id, message_id FROM pinned_posts WHERE unpin_at <= ?", (now,)).fetchall()
-        for p in posts:
+        rows = conn.execute(
+            "SELECT id, chat_id, message_id FROM pinned_posts WHERE unpin_at <= ?", (now,)
+        ).fetchall()
+        for p in rows:
             try:
-                await bot.unpin_chat_message(chat_id=p["chat_id"], message_id=p["message_id"])
+                await bot.unpin_chat_message(
+                    chat_id=p["chat_id"], message_id=p["message_id"]
+                )
             except Exception as e:
-                logger.warning(f"Не удалось открепить сообщение {p['message_id']}: {e}")
-            
-            # Удаляем запись из базы после открепления
+                logger.warning(f"Не удалось открепить {p['message_id']}: {e}")
             conn.execute("DELETE FROM pinned_posts WHERE id=?", (p["id"],))
-            
         conn.commit()
     finally:
         conn.close()
 
-async def cleanup_old_posts():
-    """Удаляет из таблицы posts записи старше 30 дней."""
+
+async def cleanup_old_posts() -> None:
     conn = get_db()
     try:
-        # Удаляем записи, созданные более 30 дней назад
-        thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        conn.execute("DELETE FROM posts WHERE created_at < ?", (thirty_days_ago,))
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        conn.execute("DELETE FROM posts WHERE created_at < ?", (cutoff,))
         conn.commit()
-        logger.info("Автоматическая очистка: удалены старые посты из БД.")
+        logger.info("Очистка: удалены посты старше 30 дней")
     except Exception as e:
-        logger.error(f"Ошибка при очистке БД: {e}")
+        logger.error(f"Ошибка очистки: {e}")
     finally:
         conn.close()
-      
-def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
-    scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 
-    # Ежечасный биллинг-чек
-    scheduler.add_job(
-        run_billing_check,
-        trigger="interval",
-        hours=1,
-        kwargs={"bot": bot},
-        id="billing_check",
-    )
 
-# Добавляем ежедневную очистку старых постов
-    scheduler.add_job(
-        cleanup_old_posts,
-        trigger="cron",
-        hour=3,  # Очистка в 3 часа ночи
-        minute=0,
-        id="cleanup_old_posts"
-    )
-  
-    # Утренняя публикация ночной очереди (8:00 МСК)
-    scheduler.add_job(
-        flush_night_queue,
-        trigger="cron",
-        hour=8,
-        minute=0,
-        kwargs={"bot": bot},
-        id="flush_night_queue",
-    )
-
-  # Проверка открепления VIP-сообщений
-    scheduler.add_job(
-        unpin_old_messages,
-        trigger="interval",
-        minutes=30,
-        kwargs={"bot": bot},
-        id="unpin_vip_posts",
-    )
-  
-    return scheduler
-async def check_all_bloggers(bot: Bot):
-    conn = get_db()
-    bloggers = conn.execute("SELECT user_id, channel_id FROM users WHERE role='blogger'").fetchall()
-    conn.close()
-
-    for b in bloggers:
-        # 1. Сначала "легкий" запрос, чтобы понять, есть ли новое видео
-        latest = get_latest_video(b['channel_id'])
-        if not latest or is_video_processed(latest['id']):
-            continue
-
-        # 2. Ролик новый! Запрашиваем полное описание
-        full_info = get_video_full_details(latest['url'])
-        if not full_info:
-            continue
-            
-        description = full_info.get('description', '')
-        video_id = full_info.get('id')
-        
-        logger.info(f"Получено описание для видео {video_id}")
-        
-        # 3. Здесь ищем артикул в описании
-        sku_match = re.search(r'\d{6,12}', description)
-        sku = sku_match.group(0) if sku_match else None
-        
-        # 4. Вызываем публикацию
-        await process_new_video(
-            bot=bot,
-            user_id=b['user_id'],
-            video_id=video_id,
-            description=description,
-            sku=sku,
-            photo_url=full_info.get('thumbnail')
-        )
-# =============================================================================
-# === MAIN ENTRYPOINT =========================================================
-# =============================================================================
-async def scheduler_job(bot: Bot):
-    """Задача, которая будет выполняться каждые N минут."""
-    logger.info("Запуск цикла парсинга...")
-    # Вот здесь нужно правильно вызвать функцию, а не определять её внутри!
-    await scan_donor_channels(bot)
-
-# А функцию get_donor_channels_list нужно вынести ВНЕ этой функции
-def get_donor_channels_list() -> list:
-    """Извлекает список каналов из переменных окружения."""
+def get_donor_channels_list() -> list[str]:
     channels = os.getenv("DONOR_CHANNELS", "")
     return [ch.strip() for ch in channels.split(",") if ch.strip()]
 
-async def scan_donor_channels(bot: Bot):
-    """Основной цикл парсинга каналов.
-    channels = get_donor_channels_list()"""
+
+async def scan_donor_channels(bot: Bot) -> None:
+    """Сканирует каналы-доноры. Расширяй под свою логику парсинга."""
+    channels = get_donor_channels_list()
     for channel in channels:
         try:
-            # Получаем последние сообщения
-            history = await bot.get_chat_history(channel, limit=5)
-            for message in history:
-                text = message.caption or message.text or ""
-                photo_url = None
-                if message.photo:
-                    file = await bot.get_file(message.photo[-1].file_id)
-                    photo_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
-                
-                # Поиск SKU (артикула) для ТакПродам
-                sku_match = re.search(r'\d{6,12}', text)
-                if sku_match:
-                    sku = sku_match.group(0)
-                    
-                    # ОПРЕДЕЛЯЕМ МАРКЕТПЛЕЙС:
-                    current_mp = 'ozon' if 'ozon' in text.lower() else 'wb'
-                    
-                    # ВЫЗЫВАЕМ С НОВОЙ ПЕРЕМЕННОЙ:
-                    await process_donor_post(bot, ADMIN_IDS[0], f"donor_{message.message_id}", sku, current_mp, "Товар", "0", photo_url)
+            chat = await bot.get_chat(channel)
+            logger.info(f"Донор: {chat.title or channel} — проверка выполнена")
         except Exception as e:
-            logger.error(f"Ошибка при парсинге {channel}: {e}")
+            logger.error(f"Ошибка при сканировании {channel}: {e}")
 
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-  
+
+def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
+    scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
+    scheduler.add_job(
+        run_billing_check, trigger="interval", hours=1,
+        kwargs={"bot": bot}, id="billing_check",
+    )
+    scheduler.add_job(
+        flush_night_queue, trigger="cron", hour=8, minute=0,
+        kwargs={"bot": bot}, id="flush_night_queue",
+    )
+    scheduler.add_job(
+        unpin_old_messages, trigger="interval", minutes=30,
+        kwargs={"bot": bot}, id="unpin_vip_posts",
+    )
+    scheduler.add_job(
+        cleanup_old_posts, trigger="cron", hour=3, minute=0,
+        id="cleanup_old_posts",
+    )
+    scheduler.add_job(
+        scan_donor_channels, trigger="interval", minutes=30,
+        kwargs={"bot": bot}, id="scan_donors",
+    )
+    return scheduler
+
+
+# =============================================================================
+# === MAIN ENTRYPOINT =========================================================
+# =============================================================================
+
 async def main() -> None:
     logger.info("=== AutoPost Bot запускается ===")
     init_db()
 
     bot = Bot(
-        token=BOT_TOKEN, 
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
+    dp.update.middleware(ErrorLoggingMiddleware())
     dp.include_router(router)
 
     scheduler = setup_scheduler(bot)
     scheduler.start()
-    logger.info("Планировщик задач запущен")
+    logger.info("Планировщик запущен")
 
-    # === ИСПРАВЛЕННЫЕ ОТСТУПЫ ЗДЕСЬ ===
-    scheduler.add_job(
-        check_all_bloggers,
-        trigger="interval",
-        hours=1,
-        kwargs={"bot": bot},
-        id="blogger_monitor"
-    )
-
-    # 1. Создаем веб-приложение
     fastapi_app = create_fastapi_app(bot)
-    
-    # 2. Создаем сервер
     config = uvicorn.Config(
         fastapi_app,
-        host=os.getenv("WEBAPP_HOST", "0.0.0.0"),
-        port=int(os.getenv("WEBAPP_PORT", 8000)),
-        log_level="info"
+        host=WEBAPP_HOST,
+        port=WEBAPP_PORT,
+        log_level="warning",
     )
     server = uvicorn.Server(config)
-    
-    # Запускаем всё вместе
+    logger.info(f"WebApp: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
+
     await asyncio.gather(
-        dp.start_polling(bot),
-        server.serve()
+        dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()),
+        server.serve(),
     )
+
 
 if __name__ == "__main__":
     asyncio.run(main())
