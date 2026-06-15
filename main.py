@@ -814,7 +814,7 @@ async def cb_select_target(callback: CallbackQuery, state: FSMContext) -> None:
         # Показываем главное меню
         await callback.message.answer("🏠 Главное меню", reply_markup=kb_main_menu("blogger"))
 
-  @router.message(F.text == "/fix_db_target_mode")
+@router.message(F.text == "/fix_db_target_mode")
 async def fix_database_column(message: Message) -> None:
     # Замените ID на свой, чтобы никто другой не мог выполнить эту команду
     if message.from_user.id != ВАШ_TELEGRAM_ID:
