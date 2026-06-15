@@ -215,7 +215,7 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_night_queue_user ON night_queue(user_id);
         """)
 
-      def init_db():
+def init_db():
     conn = get_db()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS channels (
