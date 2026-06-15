@@ -104,7 +104,7 @@ class ErrorLoggingMiddleware(BaseMiddleware):
 # === DATABASE (SQLite WAL-Mode) ===============================================
 # =============================================================================
 
-DB_PATH: str = "autopost.db"
+DB_PATH: str = "/app/data/autopost.db"
 
 
 def get_db() -> sqlite3.Connection:
