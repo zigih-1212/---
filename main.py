@@ -1690,17 +1690,29 @@ async def handle_erid_override_input(message: Message, state: FSMContext) -> Non
 #  --- ОБНОВЛЕННАЯ СТАТИСТИКА (Разделение SaaS и Блогер) ---
 # -----------------------------------------------------------------------------
 
-@router.callback_query(F.data == "menu:stats")
-async def cb_menu_stats(callback: CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    await callback.answer() # Убираем "часики" загрузки
-    
+@router.callback_query(F.data == "menu:main")
+async def cb_menu_main(callback: CallbackQuery) -> None:
     conn = get_db()
     try:
-        # Узнаем роль пользователя
-        user = conn.execute("SELECT role, sub_id FROM users WHERE user_id=?", (user_id,)).fetchone()
-        if not user:
-            await callback.message.edit_text("Ошибка: пользователь не найден.")
+        row = conn.execute(
+            "SELECT role FROM users WHERE user_id=?", (callback.from_user.id,)
+        ).fetchone()
+        
+        # Получаем роль или дефолтное значение
+        role = row["role"] if row else "blogger"
+        
+        await callback.message.edit_text(
+            "🏠 <b>Главное меню</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb_main_menu(role),
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в menu:main: {e}")
+        await callback.message.answer("Произошла ошибка при загрузке меню.")
+    finally:
+        conn.close()
+    
+    await callback.answer()
             return
             
         role = user["role"]
