@@ -795,9 +795,9 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     conn = get_db()
     @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
-    user_id = message.from_user.id
-    username = message.from_user.username or ""
-    args = message.text.split(maxsplit=1)[1] if " " in (message.text or "") else ""
+  user_id = message.from_user.id
+  username = message.from_user.username or ""
+  args = message.text.split(maxsplit=1)[1] if " " in (message.text or "") else ""
 
     # Определяем источник трафика
     traffic_source = "organic"
