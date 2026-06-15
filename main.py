@@ -754,7 +754,9 @@ class OnboardingStates(StatesGroup):
     waiting_role = State()
     waiting_role_confirm = State()
 
-
+class AddChannelStates(StatesGroup):
+    waiting_channel_url = State()
+    
 class AdminStates(StatesGroup):
     broadcast_text = State()
     extend_user_id = State()
