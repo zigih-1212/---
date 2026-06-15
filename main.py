@@ -580,7 +580,7 @@ async def publish_post_with_fallback(
 # =============================================================================
 
 def is_night_time() -> bool:
-    """True с 23:00 до 08:00 по UTC+3 (Москва)."""
+    """True с "23:00" до "08:00" по UTC+3 (Москва)."""
     now = datetime.now(tz=timezone(timedelta(hours=3)))
     return now.hour >= 23 or now.hour < 8
 
