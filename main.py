@@ -2229,14 +2229,14 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
   # ... (здесь ваш код админ-панели @app.get("/admin")) ...
 
 # --- ИСПРАВЛЕННЫЙ БЛОК ВЕБХУКА ---
-    @app.post("/webhook/takprodam")
-    async def takprodam_webhook(request: Request):
-        try:
-            data = await request.json()
+@app.post("/webhook/takprodam")
+async def takprodam_webhook(request: Request):
+    try:
+    data = await request.json()
             
-            order_id = str(data.get("order_id", ""))
-            sub_id = data.get("sub_id", "")
-            status = data.get("status", "pending") # pending, approved, rejected
+    order_id = str(data.get("order_id", ""))
+    sub_id = data.get("sub_id", "")
+    status = data.get("status", "pending") # pending, approved, rejected
             
             # 1. Получаем грязную выплату от партнерки
             original_payout = float(data.get("payout", 0.0))
