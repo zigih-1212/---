@@ -1253,7 +1253,7 @@ async def process_receipt_photo(message: Message, state: FSMContext):
     await state.clear()
 
 # Если пользователь прислал не фото, а текст
-@router.message(PaymentFSM.waiting_receipt)
+@router.message(PaymentFSM.waiting_for_receipt)
 async def process_receipt_wrong_type(message: Message):
     await message.answer("! Пожалуйста, пришлите именно фотографию (скриншот) чека.")
 
