@@ -1209,7 +1209,7 @@ async def process_payment_method(callback_query: CallbackQuery, state: FSMContex
     await callback_query.answer()
 
 # --- Шаг 4: Прием чека и пересылка админу ---
-@router.message(PaymentFSM.waiting_receipt, F.photo)
+@router.message(PaymentFSM.waiting_for_receipt)
 async def process_receipt_photo(message: Message, state: FSMContext):
     # Берем ID самого качественного фото
     photo_id = message.photo[-1].file_id
