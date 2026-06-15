@@ -366,37 +366,6 @@ async def rewrite_text_with_ai(text: str) -> str:
             logger.error(f"Ошибка рерайта: {e}")
     return text
 
-async def process_donor_post(bot: Bot, channel_id: str, message_text: str, photo_url: Optional[str]):
-    """Обрабатывает один пост: поиск товара -> ERID -> Рерайт -> Публикация."""
-    
-    # 1. Поиск артикула/ссылки (упрощенно: ищем число от 6 до 12 знаков)
-    sku_match = re.search(r'\d{6,12}', message_text)
-    if not sku_match:
-        return # Нет артикула - пропускаем
-    
-    sku = sku_match.group(0)
-    user_id = ADMIN_IDS[0] # Пока берем первого админа как владельца
-    
-    # 2. Получение ERID
-    erid_data = await resolve_erid(bot, user_id, sku, "donor_id", channel_id)
-    if not erid_data:
-        return # Ушло в карантин
-        
-    # 3. Рерайт текста
-    new_text = await rewrite_text_with_ai(message_text)
-    
-    # 4. Сборка поста
-    final_caption = build_post_caption(
-        product_title="Товар с WB",
-        price="Уточняйте по ссылке",
-        affiliate_url=erid_data['link'],
-        erid=erid_data['erid'],
-        advertiser=erid_data['advertiser'],
-        unique_text=new_text
-    )
-    
-    # 5. Публикация
-    await publish_post_with_fallback(bot, MY_MAIN_CHANNEL, final_caption, photo_url)
 
 # =============================================================================
 # === HTML SANITIZER ==========================================================
