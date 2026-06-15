@@ -948,6 +948,7 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
 
     conn = get_db()
     try:
+        logger.info(f"DEBUG: Пытаюсь записать в БД: user={user_id}, channel={channel_id}")
         conn.execute(
             "UPDATE users SET channel_id=?, channel_title=? WHERE user_id=?",
             (channel_id, channel_title, user_id)
