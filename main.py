@@ -2300,32 +2300,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     --accent: #7c6aff; --green: #2ecc71; --red: #e74c3c;
     --text: #e0e0e8; --muted: #6b7280; --code: #a78bfa;
   }}
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: 'Inter', system-ui, sans-serif; background: var(--bg);
-          color: var(--text); padding: 2rem; }}
-  h1 {{ color: var(--accent); font-size: 1.5rem; margin-bottom: 0.25rem; }}
-  .meta {{ color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }}
-  table {{ width: 100%; border-collapse: collapse; font-size: 0.85rem; }}
-  th {{ background: var(--surface); color: var(--muted); text-transform: uppercase;
-        font-size: 0.7rem; letter-spacing: 0.08em; padding: 0.75rem 1rem;
-        text-align: left; border-bottom: 1px solid var(--border); }}
-  td {{ padding: 0.7rem 1rem; border-bottom: 1px solid var(--border);
-        vertical-align: top; }}
-  tr:hover td {{ background: var(--surface); }}
-  code {{ color: var(--code); font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
-  .badge {{ display: inline-block; padding: 0.2rem 0.55rem; border-radius: 9999px;
-             font-size: 0.72rem; font-weight: 600; }}
-  .badge.active {{ background: #1a3a2a; color: var(--green); }}
-  .badge.inactive {{ background: #3a1a1a; color: var(--red); }}
-  .role {{ color: var(--accent); font-size: 0.78rem; }}
-  .posts-cell {{ font-size: 0.75rem; color: var(--muted); max-width: 280px; }}
-  .post-published {{ color: var(--green); }}
-  .post-quarantine {{ color: var(--red); }}
-  .post-failed {{ color: #f39c12; }}
-  .post-pending {{ color: var(--muted); }}
-</style>
-</head>
-<body>
+  
 <h1>⚡ AutoPost Admin Panel</h1>
 <p class="meta">Всего пользователей: <strong>{total_users}</strong> &nbsp;|&nbsp;
 Обновлено: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}</p>
