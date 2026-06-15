@@ -923,8 +923,8 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
     channel_id: Optional[str] = None
     channel_title: Optional[str] = None
-    await state.clear()
 
+    # Парсинг канала
     if message.forward_origin:
         try:
             chat = message.forward_origin.chat
@@ -936,6 +936,7 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
         channel_id = message.text.strip()
         channel_title = channel_id
 
+    # Проверка на пустой результат
     if not channel_id:
         await message.answer(
             "⚠️ Не распознал канал. Перешли сообщение или введи <code>@username</code>.",
@@ -943,36 +944,41 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
         )
         return
 
+    # Проверка админки
     is_admin_ok = await check_bot_admin(message.bot, channel_id)
     if not is_admin_ok:
         await message.answer(
             "❌ <b>Ошибка доступа!</b>\n\n"
-            f"Бот не является администратором канала <code>{channel_id}</code> "
-            "или у него нет права публикации.\n\n"
-            "Добавь бота как администратора и попробуй снова.",
+            f"Бот не администратор канала <code>{channel_id}</code> или нет прав постинга.\n"
+            "Добавь бота в администраторы и попробуй снова.",
             parse_mode=ParseMode.HTML,
         )
         return
 
+    # Запись в БД
     conn = get_db()
     try:
-        logger.info(f"DEBUG: Пытаюсь записать в БД: user={user_id}, channel={channel_id}")
+        logger.info(f"DEBUG: Запись канала {channel_id} для юзера {user_id}")
         conn.execute(
             "UPDATE users SET channel_id=?, channel_title=? WHERE user_id=?",
             (channel_id, channel_title, user_id)
         )
         conn.commit()
+        
+        # Получаем роль для меню
         row = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
         role = row["role"] if row else "blogger"
     finally:
         conn.close()
 
+    # Сначала очищаем состояние, потом шлем ответ
     await state.clear()
+    
     await message.answer(
         f"✅ <b>Канал привязан:</b> {html.escape(channel_title or channel_id)}\n\n"
-        "Настрой тариф и запускай автопостинг.",
+        "Теперь всё готово к работе.",
         parse_mode=ParseMode.HTML,
-        reply_markup=kb_main_menu(role),
+        reply_markup=kb_main_menu(role)
     )
 
 
