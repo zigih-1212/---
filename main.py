@@ -2374,6 +2374,15 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
         id="billing_check",
     )
 
+# Добавляем ежедневную очистку старых постов
+    scheduler.add_job(
+        cleanup_old_posts,
+        trigger="cron",
+        hour=3,  # Очистка в 3 часа ночи
+        minute=0,
+        id="cleanup_old_posts"
+    )
+  
     # Утренняя публикация ночной очереди (08:00 МСК)
     scheduler.add_job(
         flush_night_queue,
