@@ -316,7 +316,7 @@ async def _send_to_quarantine(
         await bot.send_message(QUARANTINE_CHAT_ID, msg, parse_mode=ParseMode.HTML)
     except TelegramAPIError as e:
         logger.error(f"Не удалось отправить в карантин: {e}")
-
+        logger.info(f"DEBUG: Попытка отправить пост в канал {channel_id}...")
 
 # =============================================================================
 # === AI REWRITE (DeepInfra) ==================================================
