@@ -769,37 +769,102 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 # === ОБРАБОТЧИК ВЫБОРА РОЛИ ==================================================
 # =============================================================================
 
+# =============================================================================
+# === ОБРАБОТЧИК ВЫБОРА РОЛИ ==================================================
+# =============================================================================
+
 @router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
 async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
+    # Разбираем данные, полученные из нажатия кнопки (например, "role:blogger")
     role = callback.data.split(":")[1]
     user_id = callback.from_user.id
     
-    logger.info(f"Пользователь {user_id} выбрал роль: {role}")
-    
+    # Записываем выбранную роль в базу данных
     conn = get_db()
     try:
-        # Явное обновление роли
-        cursor = conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
+        conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
         conn.commit()
-        
-        if cursor.rowcount == 0:
-            logger.warning(f"Не удалось обновить роль для {user_id}: запись не найдена.")
-    except Exception as e:
-        logger.error(f"Ошибка при записи роли в БД: {e}")
     finally:
         conn.close()
     
-    # Переходим к следующему шагу — привязке канала
-    await state.set_state(OnboardingStates.waiting_channel)
+    # ВЕТКА ДЛЯ БЛОГЕРОВ
+    if role == "blogger":
+        # Блогеру нужно привязать источник контента (YT/TT/Insta)
+        await state.set_state(OnboardingStates.waiting_source_channel)
+        await callback.message.edit_text(
+            "✅ Выбрана роль: <b>БЛОГЕР</b>.\n\n"
+            "Чтобы мы могли забирать видео для автопостинга, пожалуйста, пришлите ссылку "
+            "на ваш основной канал (YouTube, TikTok или Instagram).",
+            parse_mode=ParseMode.HTML
+        )
+        
+    # ВЕТКА ДЛЯ SAAS-КЛИЕНТОВ
+    else:
+        # SaaS-клиенты не привязывают источник контента, они настраивают постинг
+        await state.set_state(OnboardingStates.waiting_saas_tg_channel)
+        await callback.message.edit_text(
+            "✅ Выбрана роль: <b>SaaS-клиент</b>.\n\n"
+            "Пришлите @username вашего Telegram-канала, куда наш бот должен делать "
+            "автоматический постинг товаров из каналов-доноров.",
+            parse_mode=ParseMode.HTML
+        )
     
-    await callback.message.edit_text(
-        f"✅ Вы выбрали роль: <b>{role.upper()}</b>.\n\n"
-        "Теперь привяжите канал. Перешлите любое сообщение из вашего канала "
-        "или отправьте его @username.",
-        parse_mode=ParseMode.HTML
-    )
     await callback.answer()
 
+# =============================================================================
+# === ОБРАБОТЧИК ДЛЯ БЛОГЕРА: ПРИВЯЗКА ИСТОЧНИКА ВИДЕО ========================
+# =============================================================================
+
+@router.message(OnboardingStates.waiting_source_channel)
+async def handle_blogger_source(message: Message, state: FSMContext) -> None:
+    source_link = message.text
+    user_id = message.from_user.id
+    
+    # Сохраняем ссылку на донора в базу данных
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET source_link=? WHERE user_id=?", (source_link, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+        
+    # Предлагаем выбор: свой канал или наш
+    await message.answer(
+        "✅ Источник успешно привязан!\n\n"
+        "Теперь выберите, куда бот должен публиковать контент:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="В мой канал", callback_data="target:own")],
+            [InlineKeyboardButton(text="В ваш канал", callback_data="target:ours")]
+        ])
+    )
+    await state.set_state(OnboardingStates.waiting_target_choice)
+
+
+# =============================================================================
+# === ОБРАБОТЧИК ДЛЯ SAAS: ПРИВЯЗКА ТГ-КАНАЛА ДЛЯ ПОСТИНГА ===================
+# =============================================================================
+
+@router.message(OnboardingStates.waiting_saas_tg_channel)
+async def handle_saas_tg_channel(message: Message, state: FSMContext) -> None:
+    channel_username = message.text
+    user_id = message.from_user.id
+    
+    # Проверка, является ли бот администратором в указанном канале
+    is_admin = await check_bot_admin(message.bot, channel_username)
+    if not is_admin:
+        await message.answer("❌ Бот не является администратором в этом канале. Добавьте бота.")
+        return
+        
+    # Сохраняем канал в базу для SaaS
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET channel_id=? WHERE user_id=?", (channel_username, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+        
+    await state.clear()
+    await message.answer("✅ Канал привязан! Теперь перейдите в настройки для добавления API и корпоративного ERID.")
 
 # =============================================================================
 # === ОБРАБОТЧИК ПРИВЯЗКИ КАНАЛА ==============================================
