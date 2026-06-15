@@ -2125,6 +2125,7 @@ async def main() -> None:
     scheduler.start()
     logger.info("Планировщик задач запущен")
 
+    # === ИСПРАВЛЕННЫЕ ОТСТУПЫ ЗДЕСЬ ===
     scheduler.add_job(
         check_all_bloggers,
         trigger="interval",
@@ -2136,21 +2137,19 @@ async def main() -> None:
     # 1. Создаем веб-приложение
     fastapi_app = create_fastapi_app(bot)
     
-    # 2. Создаем сервер (ВАЖНО: переменная server должна быть здесь!)
+    # 2. Создаем сервер
     config = uvicorn.Config(
         fastapi_app,
         host=os.getenv("WEBAPP_HOST", "0.0.0.0"),
         port=int(os.getenv("WEBAPP_PORT", 8000)),
-        log_level="warning",
+        log_level="info"
     )
-    server = uvicorn.Server(config) # Вот она!
-
-    logger.info(f"WebApp запущен")
-
-    # 3. Теперь вызываем gather
+    server = uvicorn.Server(config)
+    
+    # Запускаем всё вместе
     await asyncio.gather(
-        dp.start_polling(bot), # Здесь должны быть скобки, так как это вызов
-        server.serve(),        # Здесь должны быть скобки
+        dp.start_polling(bot),
+        server.serve()
     )
 
 if __name__ == "__main__":
