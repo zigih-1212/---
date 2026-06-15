@@ -2023,11 +2023,14 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             sub_id = data.get("sub_id", "")
             status = data.get("status", "pending") # pending, approved, rejected
             
-            # 1. Получаем полную выплату от партнерки
+            # 1. Получаем грязную выплату от партнерки
             original_payout = float(data.get("payout", 0.0))
             
-            # 2. Вычисляем долю блогера (50%)
-            blogger_payout = original_payout * 0.5
+            # 2. Вычитаем комиссию ТакПродам на вывод (10%)
+            net_payout = original_payout * 0.90
+            
+            # 3. Вычисляем долю блогера (50% от ЧИСТОЙ прибыли)
+            blogger_payout = net_payout * 0.5
             
             if not order_id or not sub_id:
                 return {"status": "error", "message": "Missing order_id or sub_id"}
