@@ -177,7 +177,14 @@ def init_db():
         except sqlite3.OperationalError:
             # Если колонка уже существует, sqlite3 выдаст ошибку - мы её просто игнорируем
             pass
-            
+
+      -- ТАБЛИЦА ДЛЯ АВТООТКРЕПЛЕНИЯ ПОСТОВ (VIP-РЕЖИМ)
+            CREATE TABLE IF NOT EXISTS pinned_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT,
+                message_id INTEGER,
+                unpin_at TIMESTAMP
+            );
         conn.commit()
         logger.info("БД инициализирована (структура проверена)")
     finally:
