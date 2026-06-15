@@ -2447,8 +2447,12 @@ async def scan_donor_channels(bot: Bot):
                 sku_match = re.search(r'\d{6,12}', text)
                 if sku_match:
                     sku = sku_match.group(0)
-                    # Вызываем обработку (упрощенно: берем всех активных пользователей)
-await process_donor_post(bot, ADMIN_IDS[0], f"donor_{message.message_id}", sku, marketplace, "Товар", "0", photo_url)
+                    
+                    # ОПРЕДЕЛЯЕМ МАРКЕТПЛЕЙС:
+                    current_mp = 'ozon' if 'ozon' in text.lower() else 'wb'
+                    
+                    # ВЫЗЫВАЕМ С НОВОЙ ПЕРЕМЕННОЙ:
+                    await process_donor_post(bot, ADMIN_IDS[0], f"donor_{message.message_id}", sku, current_mp, "Товар", "0", photo_url)
         except Exception as e:
             logger.error(f"Ошибка при парсинге {channel}: {e}")
 
