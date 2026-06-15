@@ -2292,6 +2292,26 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 # === SCHEDULER ===============================================================
 # =============================================================================
 
+async def unpin_old_messages(bot: Bot):
+    """Снимает закреп с VIP-постов старше 24 часов."""
+    conn = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        # Ищем посты, чье время (unpin_at) уже наступило
+        posts = conn.execute("SELECT id, chat_id, message_id FROM pinned_posts WHERE unpin_at <= ?", (now,)).fetchall()
+        for p in posts:
+            try:
+                await bot.unpin_chat_message(chat_id=p["chat_id"], message_id=p["message_id"])
+            except Exception as e:
+                logger.warning(f"Не удалось открепить сообщение {p['message_id']}: {e}")
+            
+            # Удаляем запись из базы после открепления
+            conn.execute("DELETE FROM pinned_posts WHERE id=?", (p["id"],))
+            
+        conn.commit()
+    finally:
+        conn.close()
+      
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 
