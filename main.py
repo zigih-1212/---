@@ -2180,18 +2180,36 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             conn.close()
 
         total_users = len(users) if users else 0
-        return HTMLResponse(content=f"""<!DOCTYPE html>
+# Убираем 'f' перед кавычками, чтобы это была обычная строка
+        return HTMLResponse(content="""<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AutoPost - Admin Panel</title>
 <style>
-  :root {{
+  :root {
     --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3e;
     --accent: #7c6aff; --green: #2ecc71; --red: #e74c3c;
     --text: #e0e0e8; --muted: #6b7280; --code: #a78bfa;
-  }}
+  }
+</style>
+</head>
+<body>
+<h1>AutoPost Admin Panel</h1>
+<p class="meta">Всего пользователей: <strong>""" + str(total_users) + """</strong> &nbsp;|&nbsp;
+Обновлено: """ + datetime.now().strftime('%d.%m.%Y %H:%M:%S') + """</p>
+<table>
+  <thead>
+    <tr>
+      <th>User ID</th><th>Username</th><th>Канал</th><th>Роль</th>
+      <th>Статус</th><th>Подписка до</th><th>Последние 5 постов</th>
+    </tr>
+  </thead>
+  <tbody>""" + rows_html + """</tbody>
+</table>
+</body>
+</html>""")
   
 """<h1>AutoPost Admin Panel</h1>
 <p class="meta">Всего пользователей: <strong>{total_users}</strong> &nbsp;|&nbsp;
