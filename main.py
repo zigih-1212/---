@@ -595,7 +595,7 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
 # =============================================================================
 
 def kb_main_menu(role: str) -> InlineKeyboardMarkup:
-    # Базовые кнопки для всех
+    # Базовый набор кнопок (есть у всех)
     buttons = [
         [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")],
         [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
@@ -603,17 +603,16 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
     ]
     
-    # Кнопки ТОЛЬКО для блогера
+    # Добавляем кнопки только для БЛОГЕРА
     if role == "blogger":
         buttons.insert(1, [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")])
     
-    # Кнопки ТОЛЬКО для SaaS
+    # Добавляем кнопки только для SAAS
     if role == "saas":
         buttons.insert(1, [InlineKeyboardButton(text="🛒 Фильтры маркетплейсов", callback_data="menu:filters")])
         buttons.insert(2, [InlineKeyboardButton(text="💎 Подписка", callback_data="menu:tariffs")])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-  
     else:
         buttons = [
             [InlineKeyboardButton(text="🔑 API-ключ ТакПродам", callback_data="menu:apikey")],
@@ -723,27 +722,25 @@ router = Router()
 
 @router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
 async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
-    # 1. Извлекаем выбранную роль (blogger или saas)
     role = callback.data.split(":")[1]
     user_id = callback.from_user.id
     
-    # 2. Обновляем роль в базе данных
     conn = get_db()
     try:
+        # ОБЯЗАТЕЛЬНО сохраняем в базу данных
         conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
         conn.commit()
     finally:
         conn.close()
     
-    # 3. Завершаем состояние выбора
+    # Очищаем состояние выбора роли
     await state.clear()
     
-    # 4. Сообщаем пользователю и переходим к следующему шагу (привязке канала)
     await callback.message.edit_text(
-        f"✅ Выбрана роль: <b>{role.upper()}</b>. Теперь привяжи канал.",
+        f"✅ Роль <b>{role.upper()}</b> сохранена!\n\n"
+        "Теперь привяжи канал: перешли сообщение из него или отправь <code>@username</code>.",
         parse_mode=ParseMode.HTML
     )
-    
     # Переходим к привязке канала
     await state.set_state(OnboardingStates.waiting_channel)
     await callback.answer()
