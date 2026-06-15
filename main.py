@@ -2196,7 +2196,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     --text: #e0e0e8; --muted: #6b7280; --code: #a78bfa;
   }}
   
-<h1>⚡ AutoPost Admin Panel</h1>
+"""<h1>⚡ AutoPost Admin Panel</h1>
 <p class="meta">Всего пользователей: <strong>{total_users}</strong> &nbsp;|&nbsp;
 Обновлено: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}</p>
 <table>
@@ -2209,7 +2209,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
   <tbody>{rows_html}</tbody>
 </table>
 </body>
-</html>""")
+</html>"""
 
   # ... (здесь ваш код админ-панели @app.get("/admin")) ...
 
