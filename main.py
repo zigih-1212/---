@@ -805,29 +805,6 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         finally:
             conn.close()
 
-@router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
-    user_id = message.from_user.id
-    username = message.from_user.username or ""
-    args = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
-
-    # Определяем источник трафика
-    traffic_source = "organic"
-    referrer_id: Optional[int] = None
-    
-    if args.startswith("aff_"):
-        aff_sub_id = args[4:]
-        conn = get_db()
-        try:
-            ref_row = conn.execute("SELECT user_id FROM users WHERE sub_id=?", (aff_sub_id,)).fetchone()
-            if ref_row:
-                referrer_id = ref_row["user_id"]
-                traffic_source = "affiliate"
-        finally:
-            conn.close()
-
-    # Регистрируем или обновляем пользователя
-    conn = get_db()
 
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
