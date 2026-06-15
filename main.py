@@ -84,6 +84,15 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         # Если бот вообще не добавлен в канал или канал не существует
         return False
 
+  async def notify_admin_about_error(bot: Bot, error: Exception):
+    """Отправляет краткий отчет о краше админу."""
+    admin_id = os.getenv("ADMIN_ID") # Убедитесь, что он есть в ENV
+    if admin_id:
+        try:
+            error_msg = f"🚨 <b>Критическая ошибка!</b>\n\n<code>{str(error)[:400]}</code>"
+            await bot.send_message(chat_id=admin_id, text=error_msg, parse_mode="HTML")
+        except:
+            pass
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
