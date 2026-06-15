@@ -749,6 +749,31 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             await state.set_state(OnboardingStates.waiting_role)
     finally:
         conn.close()
+
+  @router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
+async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
+    # 1. Получаем роль из callback_data (например, 'blogger' или 'saas')
+    role = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+    
+    # 2. Обновляем роль в базе данных
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    
+    # 3. Завершаем состояние и переходим к следующему шагу (привязке канала)
+    await state.clear()
+    
+    await callback.message.edit_text(
+        f"✅ Выбрана роль: <b>{role.upper()}</b>\n\nТеперь привяжи канал (перешли сообщение или отправь @username):",
+        parse_mode=ParseMode.HTML
+    )
+    # Переводим пользователя в состояние ожидания канала
+    await state.set_state(OnboardingStates.waiting_channel)
+    await callback.answer()
     conn = get_db()
     try:
         existing = conn.execute(
