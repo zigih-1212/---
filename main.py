@@ -217,6 +217,15 @@ def init_db():
             affiliate_url TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS blogger_channels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            platform TEXT,
+            channel_url TEXT,
+            channel_id TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        )
     """)
     conn.commit()
     conn.close()
