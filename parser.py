@@ -6,8 +6,10 @@ import sqlite3
 import os
 from typing import Optional
 from aiogram import Bot
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("parser")
+ADMIN_VIP_CHANNEL_ID = os.getenv("ADMIN_VIP_CHANNEL_ID", "-1009876543210") # Укажите ID вашего VIP-канала
 
 # Настройки
 DB_PATH = "autopost.db"
