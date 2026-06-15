@@ -1708,8 +1708,8 @@ async def cb_menu_main(callback: CallbackQuery) -> None:
     
     await callback.answer()
     
-conn = get_db()
-try:
+    conn = get_db()
+    try:
         user = conn.execute("SELECT role, sub_id FROM users WHERE user_id=?", (user_id,)).fetchone()
         if not user:
             await callback.message.edit_text("Ошибка: пользователь не найден.")
