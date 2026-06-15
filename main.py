@@ -74,7 +74,7 @@ logger = logging.getLogger("autopost_bot")
 logger = logging.getLogger("parser")
 
 # --- Конфигурация ---
-BOT_TOKEN = os.getenv("OT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = [int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip()]
 QUARANTINE_CHAT_ID = int(os.getenv("QUARANTINE_CHAT_ID", "-1001234567890"))
 ADMIN_VIP_CHANNEL_ID = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "-1009876543210"))
