@@ -714,23 +714,27 @@ router = Router()
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
-    username = message.from_user.username or ""
-    args = message.text.split(maxsplit=1)[1] if " " in (message.text or "") else ""
-
-    traffic_source = "organic"
-    referrer_id: Optional[int] = None
-    if args.startswith("aff_"):
-        conn = get_db()
-        try:
-            ref_row = conn.execute(
-                "SELECT user_id FROM users WHERE sub_id=?", (args[4:],)
-            ).fetchone()
-            if ref_row:
-                referrer_id = ref_row["user_id"]
-                traffic_source = "affiliate"
-        finally:
-            conn.close()
-
+    
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user:
+            # Новый пользователь - предлагаем выбор роли
+            await message.answer(
+                "👋 <b>Добро пожаловать в AutoPost!</b>\n\nКто вы?",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
+                    [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
+                ])
+            )
+            await state.set_state(OnboardingStates.waiting_role)
+            return
+        
+        # Если пользователь уже есть, показываем главное меню
+        await message.answer("🏠 <b>Главное меню</b>", parse_mode=ParseMode.HTML, reply_markup=kb_main_menu(user["role"]))
+    finally:
+        conn.close()
     conn = get_db()
     try:
         existing = conn.execute(
