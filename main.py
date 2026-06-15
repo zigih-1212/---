@@ -870,6 +870,31 @@ async def cb_request_payout(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(PayoutStates.waiting_for_card)
     await callback.answer()
 
+@router.callback_query(F.data == "menu:instructions")
+async def cb_menu_instructions(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(
+        "📖 <b>Центр инструкций</b>\n\nВыбери нужный раздел:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👤 Для Блогеров", callback_data="instr:blogger")],
+            [InlineKeyboardButton(text="🔑 Для SaaS", callback_data="instr:saas")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
+        ])
+    )
+
+@router.callback_query(F.data == "menu:partner")
+async def cb_partner_program(callback: CallbackQuery) -> None:
+    # Здесь позже мы будем подставлять реальный sub_id из базы
+    await callback.message.edit_text(
+        "🤝 <b>Партнерская программа</b>\n\n"
+        "Приводи других блогеров и получай повышенный % с их продаж!\n\n"
+        "🔗 Твоя реферальная ссылка: <code>t.me/ваш_бот?start=aff_id123</code>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
+        ])
+    )
+
 @router.message(PayoutStates.waiting_for_card)
 async def handle_payout_card(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
