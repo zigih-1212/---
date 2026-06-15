@@ -706,6 +706,38 @@ class PayoutStates(StatesGroup):
 
 router = Router()
 
+# =============================================================================
+# === ОБРАБОТЧИК ВЫБОРА РОЛИ =====================
+# =============================================================================
+
+@router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
+async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
+    # 1. Извлекаем выбранную роль (blogger или saas)
+    role = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+    
+    # 2. Обновляем роль в базе данных
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    
+    # 3. Завершаем состояние выбора
+    await state.clear()
+    
+    # 4. Сообщаем пользователю и переходим к следующему шагу (привязке канала)
+    await callback.message.edit_text(
+        f"✅ Роль <b>{role.upper()}</b> сохранена!\n\n"
+        "Теперь привяжи канал: перешли сообщение из него или отправь <code>@username</code>.",
+        parse_mode=ParseMode.HTML
+    )
+    
+    # Переводим пользователя в состояние ожидания канала
+    await state.set_state(OnboardingStates.waiting_channel)
+    await callback.answer()
+
 
 # -----------------------------------------------------------------------------
 # /start
