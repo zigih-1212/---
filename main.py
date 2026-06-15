@@ -107,10 +107,10 @@ class ErrorLoggingMiddleware(BaseMiddleware):
 DB_PATH: str = "/app/data/autopost.db"
 
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_db():
+    db = sqlite3.connect('/app/data/autopost.db') 
+    db.row_factory = sqlite3.Row  # Это важно для доступа к данным по именам колонок
+    return db
 
 
 def init_db() -> None:
