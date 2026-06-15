@@ -1710,42 +1710,6 @@ async def cb_menu_main(callback: CallbackQuery) -> None:
         conn.close()
     
     await callback.answer()
-            return
-            
-        role = user["role"]
-        
-        if role == "blogger":
-            # --- СТАТИСТИКА ДЛЯ БЛОГЕРА (Деньги) ---
-            sub_id = user["sub_id"]
-            
-            # Считаем сумму заработка (только Выкупленные)
-            approved_sum = conn.execute(
-                "SELECT SUM(payout) FROM transactions WHERE sub_id=? AND status='approved'", 
-                (sub_id,)
-            ).fetchone()[0] or 0.0
-            
-            # Считаем количество заказов по статусам
-            approved_cnt = conn.execute(
-                "SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='approved'", 
-                (sub_id,)
-            ).fetchone()[0]
-            
-            pending_cnt = conn.execute(
-                "SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='pending'", 
-                (sub_id,)
-            ).fetchone()[0]
-            
-            text = (
-                f"📊 <b>Твоя статистика партнёра</b>\n\n"
-                f"🆔 Твой ID: <code>{sub_id}</code>\n\n"
-                f"📦 <b>Заказы:</b>\n"
-                f" ├ Ожидают получения: <b>{pending_cnt} шт.</b>\n"
-                f" └ Выкуплено: <b>{approved_cnt} шт.</b>\n\n"
-                f"💸 <b>Твой заработок:</b>\n"
-                f" └ <b>{approved_sum:.2f} руб.</b>\n\n"
-                f"<i>* Баланс обновляется автоматически при выкупе товара клиентом на ПВЗ.</i>"
-            )
-# В самом конце функции cb_menu_stats, перед await callback.message.edit_text:
     
 conn = get_db()
     try:
