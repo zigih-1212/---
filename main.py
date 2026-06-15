@@ -43,6 +43,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from aiogram.types import InlineKeyboardMarkup, Message, InlineKeyboardButton, LabeledPrice, SuccessfulPayment, CallbackQuery, PreCheckoutQuery
+from aiogram.exceptions import TelegramAPIError
 
 class PaymentFSM(StatesGroup):
     choosing_tariff = State()        
@@ -65,6 +66,23 @@ def get_latest_video(channel_url: str):
     except Exception as e:
         logger.error(f"Ошибка парсинга {channel_url}: {e}")
     return None
+
+async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
+    """Проверяет, есть ли у бота права администратора в канале и может ли он постить."""
+    try:
+        bot_me = await bot.get_me()
+        member = await bot.get_chat_member(chat_id=channel_id, user_id=bot_me.id)
+        
+        # Если статус administrator/creator и есть права писать сообщения
+        if member.status == "creator":
+            return True
+        if member.status == "administrator" and member.can_post_messages:
+            return True
+            
+        return False
+    except TelegramAPIError:
+        # Если бот вообще не добавлен в канал или канал не существует
+        return False
 
 # --- Логирование ---
 log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
