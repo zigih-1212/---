@@ -499,7 +499,7 @@ def build_post_caption(
 ) -> str:
     """
     Формирует финальный текст поста с обязательной маркировкой.
-    Формат маркировки: «Реклама. {advertiser}. Erid: {erid}»
+    Формат маркировки: "Реклама. {advertiser}. Erid: {erid}"
     """
     raw = (
         f"<b>{product_title}</b>\n\n"
