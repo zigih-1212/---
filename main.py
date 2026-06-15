@@ -1013,52 +1013,6 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
         parse_mode=ParseMode.HTML,
         reply_markup=kb_main_menu(role)
     )
-  
-@router.message(OnboardingStates.waiting_channel)
-async def handle_channel_input(message: Message, state: FSMContext) -> None:
-    user_id = message.from_user.id
-    channel_id: Optional[str] = None
-    channel_title: Optional[str] = None
-
-    # Принимаем: форвард из канала или @username
-    if message.forward_origin:
-        try:
-            chat = message.forward_origin.chat
-            channel_id = str(chat.id)
-            channel_title = chat.title
-        except AttributeError:
-            pass
-    elif message.text and message.text.startswith("@"):
-        channel_id = message.text.strip()
-        channel_title = channel_id
-
-    if not channel_id:
-        await message.answer(
-            "! Не распознал канал. Перешли сообщение из канала или введи <code>@username</code>.",
-            parse_mode=ParseMode.HTML,
-        )
-        return
-
-    # Сохраняем в БД
-    conn = get_db()
-    try:
-        conn.execute(
-            "UPDATE users SET channel_id=?, channel_title=? WHERE user_id=?",
-            (channel_id, channel_title, user_id)
-        )
-        conn.commit()
-        row = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
-        role = row["role"] if row else "blogger"
-    finally:
-        conn.close()
-
-    await state.clear()
-    await message.answer(
-        f"✅ <b>Канал привязан:</b> {html.escape(channel_title or channel_id)}\n\n"
-        f"Теперь настрой тариф и запускай автопостинг.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_main_menu(role),
-    )
 
 @router.message(OnboardingStates.waiting_channel)
 async def handle_channel_input(message: Message, state: FSMContext) -> None:
