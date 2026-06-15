@@ -544,26 +544,27 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
 # =============================================================================
 
 def kb_main_menu(role: str) -> InlineKeyboardMarkup:
-    # Базовые кнопки для всех
+    # Общие кнопки для всех пользователей
     buttons = [
         [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
         [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
         [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
     ]
     
-    # Логика для БЛОГЕРА
+    # Кнопки ТОЛЬКО ДЛЯ БЛОГЕРА
     if role == "blogger":
         buttons.insert(0, [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")])
-        buttons.insert(1, [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")])
+        buttons.insert(1, [InlineKeyboardButton(text="⚙️ Режим публикации", callback_data="menu:pub_mode")])
+        buttons.insert(2, [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")])
     
-    # Логика для SAAS (добавляем список каналов вместо одиночного канала)
+    # Кнопки ТОЛЬКО ДЛЯ SAAS
     elif role == "saas":
+        # У SaaS нет кнопки "Режим публикации"
         buttons.insert(0, [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")])
         buttons.insert(1, [InlineKeyboardButton(text="🛒 Фильтры маркетплейсов", callback_data="menu:filters")])
         buttons.insert(2, [InlineKeyboardButton(text="💎 Тарифы и подписка", callback_data="menu:tariffs")])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-
 def kb_tariffs(traffic_source: str) -> InlineKeyboardMarkup:
     rows = []
     for plan_id, plan in TARIFF_PLANS.items():
