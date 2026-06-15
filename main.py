@@ -1757,8 +1757,10 @@ async def cb_admin_webapp_link(callback: CallbackQuery) -> None:
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Нет доступа", show_alert=True)
         return
-    await callback.answer(
-        f"🌐 WebApp: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin", show_alert=True
+    
+    # Используем ваш реальный домен Railway
+    public_url = "https://main-production-8221.up.railway.app"
+    await callback.answer(f"🌐 WebApp: {public_url}/admin", show_alert=True)
     )
 
 
