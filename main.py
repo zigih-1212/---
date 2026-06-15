@@ -898,6 +898,33 @@ async def handle_payout_card(message: Message, state: FSMContext) -> None:
             await message.bot.send_message(chat_id=admin_id, text=admin_text, parse_mode=ParseMode.HTML, reply_markup=admin_kb)
         except Exception:
             pass
+
+  @router.callback_query(F.data.startswith("adm_payout:done:"))
+async def cb_admin_payout_done(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    sub_id = parts[2]
+    blogger_id = int(parts[3])
+    
+    conn = get_db()
+    try:
+        # Меняем статус выплаченных транзакций, чтобы они больше не плюсовались к балансу
+        conn.execute("UPDATE transactions SET status='paid' WHERE sub_id=? AND status='approved'", (sub_id,))
+        conn.commit()
+    finally:
+        conn.close()
+        
+    await callback.message.edit_text(callback.message.html_text + "\n\n<b>✅ ВЫПЛАЧЕНО</b>", parse_mode=ParseMode.HTML)
+    await callback.answer("Баланс блогера обнулен")
+    
+    # Уведомляем блогера
+    try:
+        await callback.bot.send_message(
+            chat_id=blogger_id, 
+            text="💸 <b>Ваша выплата успешно отправлена!</b> Проверьте баланс карты.", 
+            parse_mode=ParseMode.HTML
+        )
+    except Exception:
+        pass
 # -----------------------------------------------------------------------------
 # Починка: Умное меню управления каналом
 # -----------------------------------------------------------------------------
