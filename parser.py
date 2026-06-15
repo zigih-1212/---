@@ -1,55 +1,143 @@
+import yt_dlp
+import logging
+import re
+import httpx
+import sqlite3
+import os
+from typing import Optional
+from aiogram import Bot
+
+logger = logging.getLogger("parser")
+
+# Настройки
+DB_PATH = "autopost.db"
+TAKPRODAM_MASTER_TOKEN = os.getenv("TAKPRODAM_MASTER_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ") 
+
+def get_db():
+    """Независимое подключение к БД для парсера"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 def is_video_processed(video_id: str) -> bool:
     conn = get_db()
-    # Ищем в базе, был ли уже опубликован этот видео-ID
     row = conn.execute("SELECT 1 FROM posts WHERE donor_post_id=?", (video_id,)).fetchone()
     conn.close()
     return row is not None
-def get_video_full_details(video_url: str):
-    """Извлекает полную информацию, включая описание, для обработки."""
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-    }
+
+def get_latest_video(channel_url: str):
+    ydl_opts = {'quiet': True, 'extract_flat': True, 'playlist_items': '1'}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            # Получаем все данные (включая описание)
-            info = ydl.extract_info(video_url, download=False)
-            return info
+            info = ydl.extract_info(channel_url, download=False)
+            if 'entries' in info and info['entries']:
+                return info['entries'][0]
         except Exception as e:
-            logger.error(f"Ошибка при получении деталей видео: {e}")
+            logger.error(f"Ошибка YT-DL для {channel_url}: {e}")
+    return None
+
+def get_video_full_details(video_url: str):
+    ydl_opts = {'quiet': True, 'no_warnings': True}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            return ydl.extract_info(video_url, download=False)
+        except Exception as e:
+            logger.error(f"Ошибка получения деталей видео: {e}")
             return None
+
 async def get_product_data(sku: str, sub_id: str) -> dict:
-    """
-    Запрашивает данные товара и формирует партнерскую ссылку с хвостом блогера.
-    """
     url = "https://api.takprodam.ru/v1/products/info"
-    # Ваш Master Token для доступа к API
     headers = {"Authorization": f"Bearer {TAKPRODAM_MASTER_TOKEN}"}
-    
     async with httpx.AsyncClient() as client:
         try:
-            # Запрашиваем данные по артикулу
             resp = await client.get(url, params={"sku": sku}, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
-                
-                # Добавляем sub_id (хвостик блогера) к ссылке товара
-                # Предполагаем, что API возвращает base_link
                 original_link = data.get("link", "")
-                
-                # Формируем партнерскую ссылку с меткой
-                # Логика добавления хвоста зависит от структуры ваших ссылок
-                affiliate_link = f"{original_link}?sub_id={sub_id}"
-                
                 return {
                     "erid": data.get("erid"),
                     "advertiser": data.get("advertiser"),
-                    "link": affiliate_link,
+                    "link": f"{original_link}?sub_id={sub_id}",
                     "price": data.get("price"),
                     "discount": data.get("discount")
                 }
         except Exception as e:
             logger.error(f"Ошибка API ТакПродам: {e}")
-    
-    # Если товар не найден или ошибка API — возвращаем None
     return None
+
+async def process_new_video(bot: Bot, user_id: int, video_id: str, description: str, sku: Optional[str], photo_url: Optional[str]):
+    """Формирует пост и отправляет его в канал блогера"""
+    conn = get_db()
+    user = conn.execute("SELECT sub_id, channel_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+    
+    if not user or not user["channel_id"]:
+        conn.close()
+        return
+        
+    sub_id = user["sub_id"]
+    
+    # 1. Получаем данные товара
+    product_info = await get_product_data(sku, sub_id) if sku else None
+    
+    video_title = "🔥 Новое видео!"
+    
+    # 2. Формируем текст
+    if product_info:
+        caption = (
+            f"🎬 <b>{video_title}</b>\n\n"
+            f"💰 Цена: {product_info['price']} (Скидка: {product_info['discount']})\n\n"
+            f'<a href="{product_info["link"]}">👉 Купить товар из видео</a>\n\n'
+            f"<i>Реклама. {product_info['advertiser']}. Erid: {product_info['erid']}</i>"
+        )
+        erid_to_save = product_info['erid']
+    else:
+        caption = f"🎬 <b>{video_title}</b>\n\nСмотри новое видео на канале!"
+        erid_to_save = "none"
+    
+    # 3. Публикуем и сохраняем в базу
+    try:
+        if photo_url:
+            await bot.send_photo(chat_id=user["channel_id"], photo=photo_url, caption=caption, parse_mode="HTML")
+        else:
+            await bot.send_message(chat_id=user["channel_id"], text=caption, parse_mode="HTML")
+            
+        conn.execute(
+            "INSERT INTO posts (user_id, donor_post_id, target_channel_id, traffic_source, sku, erid, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, video_id, user["channel_id"], "yt", sku or "no_sku", erid_to_save, "published")
+        )
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Ошибка публикации для юзера {user_id}: {e}")
+    finally:
+        conn.close()
+
+async def check_all_bloggers(bot: Bot):
+    """Главный цикл планировщика"""
+    conn = get_db()
+    bloggers = conn.execute("SELECT user_id, channel_id FROM users WHERE role='blogger'").fetchall()
+    conn.close()
+
+    for b in bloggers:
+        if not b['channel_id'] or 'http' not in b['channel_id']:
+            continue # Пропускаем, если канал не привязан
+
+        latest = get_latest_video(b['channel_id'])
+        if not latest or is_video_processed(latest['id']):
+            continue
+
+        full_info = get_video_full_details(latest['url'])
+        if not full_info:
+            continue
+            
+        description = full_info.get('description', '')
+        video_id = full_info.get('id')
+        thumbnail = full_info.get('thumbnail')
+        
+        logger.info(f"Найдено новое видео {video_id} у блогера {b['user_id']}")
+        
+        # Ищем артикул в описании (от 6 до 12 цифр)
+        sku_match = re.search(r'\d{6,12}', description)
+        sku = sku_match.group(0) if sku_match else None
+        
+        # Запускаем публикацию
+        await process_new_video(bot, b['user_id'], video_id, description, sku, thumbnail)
