@@ -662,13 +662,14 @@ def generate_sub_id(username: str, user_id: int) -> str:
 # =============================================================================
 
 def kb_main_menu(role: str) -> InlineKeyboardMarkup:
-    """Главное меню. Кнопки только через dict callback_data (без пробелов/спецсимволов)."""
+    """Главное меню. Разные кнопки для Блогера и SaaS-подписчика."""
     buttons = []
     if role == "blogger":
         buttons = [
-            [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")],
-            [InlineKeyboardButton(text="💎 Тарифы и подписка", callback_data="menu:tariffs")],
-            [InlineKeyboardButton(text="📊 Статистика постов", callback_data="menu:stats")],
+            [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:channels")],
+            [InlineKeyboardButton(text="🤝 Партнерская программа", callback_data="menu:partner")],
+            [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
+            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
         ]
     elif role == "saas":
@@ -678,6 +679,7 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🛒 Фильтры маркетплейсов", callback_data="menu:filters")],
             [InlineKeyboardButton(text="💎 Тарифы и подписка", callback_data="menu:tariffs")],
             [InlineKeyboardButton(text="📊 Аналитика", callback_data="menu:stats")],
+            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
         ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
