@@ -579,14 +579,22 @@ def generate_sub_id(username: str, user_id: int) -> str:
 
 async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
     try:
-        bot_me = await bot.get_me()
-        member = await bot.get_chat_member(chat_id=channel_id, user_id=bot_me.id)
+        # Получаем ID бота из уже готового объекта bot
+        bot_id = bot.id 
+        member = await bot.get_chat_member(chat_id=channel_id, user_id=bot_id)
+        
+        # 1. Если создатель — сразу True
         if member.status == "creator":
             return True
-        if member.status == "administrator" and getattr(member, "can_post_messages", False):
-            return True
+            
+        # 2. Если администратор — проверяем право на пост
+        if member.status == "administrator":
+            return getattr(member, "can_post_messages", False)
+            
+        # 3. Во всех остальных случаях (member, restricted, etc.) — False
         return False
-    except TelegramAPIError:
+    except TelegramAPIError as e:
+        logger.error(f"Ошибка проверки админки в {channel_id}: {e}")
         return False
 
 
