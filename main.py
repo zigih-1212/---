@@ -2139,25 +2139,6 @@ def _record_post(
 def create_fastapi_app(bot: Bot) -> FastAPI:
     app = FastAPI(title="AutoPost Admin", docs_url=None, redoc_url=None)
 
-  def create_fastapi_app(bot: Bot):
-    app = FastAPI(title="AutoPost Admin", ...) # 1. app создается здесь
-
-    # 2. Ваши существующие декораторы (с отступом в 4 пробела)
-    @app.get("/admin", response_class=HTMLResponse)
-    async def admin_panel(request: Request):
-        ...
-
-    # 3. ВАШ ВЕБХУК (тоже с отступом в 4 пробела)
-@app.post("/webhook/takprodam")
-async def takprodam_webhook(request: Request):
-        try:
-            data = await request.json()
-            # ... ваш код ...
-        except Exception as e:
-            ...
-
-    return app # 4. 
-    
     @app.get("/admin", response_class=HTMLResponse)
     async def admin_panel(request: Request):
         conn = get_db()
@@ -2169,7 +2150,6 @@ async def takprodam_webhook(request: Request):
 
             rows_html = ""
             for u in users:
-                # Последние 5 постов для аудит-контроля
                 posts = conn.execute(
                     """SELECT donor_post_id, status, created_at FROM posts
                        WHERE user_id=? ORDER BY created_at DESC LIMIT 5""",
@@ -2197,6 +2177,54 @@ async def takprodam_webhook(request: Request):
                 </tr>"""
         finally:
             conn.close()
+
+        return HTMLResponse(content=f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>AutoPost - Admin Panel</title>
+<style>
+  :root {{ --bg: #0f1117; --surface: #1a1d27; --text: #e0e0e8; }}
+  body {{ background: var(--bg); color: var(--text); font-family: sans-serif; }}
+</style>
+</head>
+<body>
+    <h1>Управление пользователями</h1>
+    <table>{rows_html}</table>
+</body>
+</html>""")
+
+    @app.post("/webhook/takprodam")
+    async def takprodam_webhook(request: Request):
+        try:
+            data = await request.json()
+            order_id = str(data.get("order_id", ""))
+            sub_id = data.get("sub_id", "")
+            status = data.get("status", "pending")
+            
+            original_payout = float(data.get("payout", 0.0))
+            blogger_payout = (original_payout * 0.90) * 0.5
+            
+            if not order_id or not sub_id:
+                return {"status": "error", "message": "Missing order_id or sub_id"}
+                
+            conn = get_db()
+            conn.execute(
+                """INSERT INTO transactions (order_id, sub_id, status, payout, updated_at) 
+                   VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(order_id) DO UPDATE SET 
+                   status=excluded.status, 
+                   payout=excluded.payout,
+                   updated_at=CURRENT_TIMESTAMP""",
+                (order_id, sub_id, status, blogger_payout)
+            )
+            conn.commit()
+            conn.close()
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    return app
 
         total_users = len(users) if users else 0
 # Убираем 'f' перед кавычками, чтобы это была обычная строка
