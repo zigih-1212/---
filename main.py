@@ -2230,7 +2230,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
 # --- ИСПРАВЛЕННЫЙ БЛОК ВЕБХУКА ---
 @app.post("/webhook/takprodam")
-    async def takprodam_webhook(request: Request):
+async def takprodam_webhook(request: Request):
         try:
             data = await request.json()
             
