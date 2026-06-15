@@ -916,7 +916,7 @@ async def handle_payout_card(message: Message, state: FSMContext) -> None:
         except Exception:
             pass
 
-  @router.callback_query(F.data.startswith("adm_payout:done:"))
+@router.callback_query(F.data.startswith("adm_payout:done:"))
 async def cb_admin_payout_done(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
     sub_id = parts[2]
