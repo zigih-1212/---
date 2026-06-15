@@ -1139,6 +1139,33 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
         parse_mode=ParseMode.HTML,
         reply_markup=kb_main_menu(role),
     )
+    @router.callback_query(F.data == "menu:add_channel")
+async def cb_add_channel_start(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_text(
+        "➕ <b>Добавление канала</b>\n\n"
+        "Отправьте ссылку на канал (YouTube, TikTok или Instagram), который хотите добавить для мониторинга.",
+        parse_mode="HTML"
+    )
+    await state.set_state(AddChannelStates.waiting_channel_url)
+
+@router.message(AddChannelStates.waiting_channel_url)
+async def handle_channel_url(message: Message, state: FSMContext) -> None:
+    url = message.text.strip()
+    user_id = message.from_user.id
+    
+    # Сохраняем в таблицу blogger_channels (которую мы добавили ранее)
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO blogger_channels (user_id, channel_url, platform) VALUES (?, ?, ?)",
+            (user_id, url, "auto") # 'auto' - парсер сам определит платформу
+        )
+        conn.commit()
+    finally:
+        conn.close()
+        
+    await state.clear()
+    await message.answer("✅ Канал успешно добавлен и отправлен на проверку!")
 
 # -----------------------------------------------------------------------------
 # Тарифы
