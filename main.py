@@ -719,35 +719,29 @@ router = Router()
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
-    # 1. Всегда сбрасываем старое состояние, чтобы не "залипнуть"
     await state.clear()
-    
     user_id = message.from_user.id
     username = message.from_user.username
     
-    # 2. ПРОВЕРКА АДМИНА
     if user_id in ADMIN_IDS:
         await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
         return
 
     conn = get_db()
     try:
-        # Получаем данные пользователя
+        # Проверяем не просто наличие юзера, а заполненность полей
         user = conn.execute(
             "SELECT role, channel_id FROM users WHERE user_id=?", 
             (user_id,)
         ).fetchone()
         
-        # 3. Если пользователя нет — создаем его
+        # 1. Если юзера нет — создаем и идем на выбор роли
         if not user:
             sub_id = generate_sub_id(username, user_id)
-            conn.execute(
-                "INSERT INTO users (user_id, username, sub_id) VALUES (?, ?, ?)",
-                (user_id, username, sub_id)
-            )
+            conn.execute("INSERT INTO users (user_id, username, sub_id) VALUES (?, ?, ?)", 
+                         (user_id, username, sub_id))
             conn.commit()
             
-            # Отправляем на выбор роли
             await message.answer(
                 "👋 Добро пожаловать! Кто вы?",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -758,24 +752,18 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             await state.set_state(OnboardingStates.waiting_role)
             return
 
-        # 4. Если пользователь есть, проверяем, выбрана ли роль
-        if not user["role"]:
-            await message.answer("⚠️ Вы не выбрали роль. Кто вы?", reply_markup=...) # (ваша клавиатура выбора роли)
-            await state.set_state(OnboardingStates.waiting_role)
-            return
-
-        # 5. Если есть роль, проверяем, привязан ли канал
+        # 2. Если роль — дефолтная (blogger), но канала нет — идем привязывать канал
+        # (ИЛИ добавьте в БД новое поле, например 'role_selected INTEGER DEFAULT 0')
         if not user["channel_id"]:
-            await message.answer("⚠️ Вы не привязали канал. Пришлите ссылку или @username.")
+            await message.answer("⚠️ Вы еще не привязали канал. Пришлите @username или перешлите сообщение.")
             await state.set_state(OnboardingStates.waiting_channel)
             return
 
-        # 6. Если ВСЁ заполнено — только тогда показываем меню
+        # 3. Только если всё есть — показываем меню
         await message.answer("🏠 Главное меню", reply_markup=kb_main_menu(user["role"]))
         
     finally:
         conn.close()
-
 
 # =============================================================================
 # === ОБРАБОТЧИК ВЫБОРА РОЛИ ==================================================
