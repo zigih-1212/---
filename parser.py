@@ -170,13 +170,14 @@ async def check_all_bloggers(bot: Bot):
         if not full_info:
             continue
             
-        description = full_info.get('description', '')
-        video_id = full_info.get('id')
+# Ищем описание, которое может называться по-разному на разных площадках
+        description = full_info.get('description') or full_info.get('title') or ""
+        video_id = full_info.get('id') or full_info.get('display_id')
         thumbnail = full_info.get('thumbnail')
         
-        logger.info(f"Найдено новое видео {video_id} у блогера {b['user_id']}")
+        logger.info(f"Найдено новое видео/пост {video_id} у блогера {b['user_id']}")
         
-        # Ищем артикул в описании (от 6 до 12 цифр)
+        # Поиск артикула (SKU) - ищем 6-12 цифр
         sku_match = re.search(r'\d{6,12}', description)
         sku = sku_match.group(0) if sku_match else None
         
