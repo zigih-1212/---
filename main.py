@@ -1068,8 +1068,8 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
         parse_mode=ParseMode.HTML,
         reply_markup=kb_main_menu(role),
     )
-    @router.callback_query(F.data == "menu:add_channel")
-    async def cb_add_channel_start(callback: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(F.data == "menu:add_channel")
+async def cb_add_channel_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "➕ <b>Добавление канала</b>\n\n"
         "Отправьте ссылку на канал (YouTube, TikTok или Instagram), который хотите добавить для мониторинга.",
