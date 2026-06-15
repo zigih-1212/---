@@ -1039,8 +1039,7 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
     # --- НОВЫЙ БЛОК: Проверка прав администратора ---
     is_admin = await check_bot_admin(message.bot, channel_id)
     if not is_admin:
-# ПРАВИЛЬНЫЙ ВАРИАНТ
-    await message.answer(
+        await message.answer(
         "❌ <b>Ошибка доступа!</b>\n\n"
         f"Я не являюсь администратором канала {channel_id} или у меня нет прав на публикацию постов.\n\n"
         "👉 Сначала добавь меня в канал как администратора, разреши \"Публикацию сообщений\", а затем отправь ссылку снова.",
