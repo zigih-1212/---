@@ -715,11 +715,29 @@ router = Router()
 async def cmd_start(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
     
+    # 1. ПРОВЕРКА АДМИНА (всегда первая)
+    if user_id in ADMIN_IDS:
+        await message.answer(
+            "👋 <b>Панель администратора</b>\n\nУправляй платформой.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb_admin_panel(),
+        )
+        return
+
+    # 2. ПРОВЕРКА СУЩЕСТВУЮЩЕГО ПОЛЬЗОВАТЕЛЯ
     conn = get_db()
     try:
         user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
-        if not user:
-            # Новый пользователь - предлагаем выбор роли
+        
+        if user:
+            # Пользователь уже есть — сразу показываем меню
+            await message.answer(
+                "🏠 <b>Главное меню</b>", 
+                parse_mode=ParseMode.HTML, 
+                reply_markup=kb_main_menu(user["role"])
+            )
+        else:
+            # Новый пользователь — предлагаем выбор роли
             await message.answer(
                 "👋 <b>Добро пожаловать в AutoPost!</b>\n\nКто вы?",
                 parse_mode=ParseMode.HTML,
@@ -729,10 +747,6 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
                 ])
             )
             await state.set_state(OnboardingStates.waiting_role)
-            return
-        
-        # Если пользователь уже есть, показываем главное меню
-        await message.answer("🏠 <b>Главное меню</b>", parse_mode=ParseMode.HTML, reply_markup=kb_main_menu(user["role"]))
     finally:
         conn.close()
     conn = get_db()
