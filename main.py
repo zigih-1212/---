@@ -719,63 +719,60 @@ router = Router()
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
-    # Очищаем любое предыдущее состояние, чтобы начать с чистого листа
+    # 1. Всегда сбрасываем старое состояние, чтобы не "залипнуть"
     await state.clear()
     
     user_id = message.from_user.id
     username = message.from_user.username
     
-    # 1. ПРОВЕРКА АДМИНИСТРАТОРА
+    # 2. ПРОВЕРКА АДМИНА
     if user_id in ADMIN_IDS:
-        logger.info(f"Администратор {user_id} вошел в систему.")
-        await message.answer(
-            "👋 Панель администратора.\nИспользуйте кнопки для управления платформой.",
-            reply_markup=kb_admin_panel()
-        )
+        await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
         return
 
-    # 2. ПРОВЕРКА ПОЛЬЗОВАТЕЛЯ В БАЗЕ
     conn = get_db()
     try:
-        user_record = conn.execute(
+        # Получаем данные пользователя
+        user = conn.execute(
             "SELECT role, channel_id FROM users WHERE user_id=?", 
             (user_id,)
         ).fetchone()
         
-        # 3. ЕСЛИ ПОЛЬЗОВАТЕЛЬ УЖЕ ЕСТЬ
-        if user_record:
-            role = user_record["role"]
-            logger.info(f"Пользователь {user_id} вернулся. Роль: {role}")
-            await message.answer(
-                "🏠 Главное меню", 
-                reply_markup=kb_main_menu(role)
+        # 3. Если пользователя нет — создаем его
+        if not user:
+            sub_id = generate_sub_id(username, user_id)
+            conn.execute(
+                "INSERT INTO users (user_id, username, sub_id) VALUES (?, ?, ?)",
+                (user_id, username, sub_id)
             )
+            conn.commit()
+            
+            # Отправляем на выбор роли
+            await message.answer(
+                "👋 Добро пожаловать! Кто вы?",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
+                    [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
+                ])
+            )
+            await state.set_state(OnboardingStates.waiting_role)
             return
 
-        # 4. ЕСЛИ НОВЫЙ ПОЛЬЗОВАТЕЛЬ — РЕГИСТРИРУЕМ
-        logger.info(f"Регистрация нового пользователя: {user_id} (@{username})")
-        sub_id = generate_sub_id(username, user_id)
+        # 4. Если пользователь есть, проверяем, выбрана ли роль
+        if not user["role"]:
+            await message.answer("⚠️ Вы не выбрали роль. Кто вы?", reply_markup=...) # (ваша клавиатура выбора роли)
+            await state.set_state(OnboardingStates.waiting_role)
+            return
+
+        # 5. Если есть роль, проверяем, привязан ли канал
+        if not user["channel_id"]:
+            await message.answer("⚠️ Вы не привязали канал. Пришлите ссылку или @username.")
+            await state.set_state(OnboardingStates.waiting_channel)
+            return
+
+        # 6. Если ВСЁ заполнено — только тогда показываем меню
+        await message.answer("🏠 Главное меню", reply_markup=kb_main_menu(user["role"]))
         
-        conn.execute(
-            "INSERT INTO users (user_id, username, sub_id) VALUES (?, ?, ?)",
-            (user_id, username, sub_id)
-        )
-        conn.commit()
-        
-        # Запускаем онбординг (выбор роли)
-        await message.answer(
-            "👋 Добро пожаловать в AutoPost!\n\n"
-            "Для начала работы выберите вашу роль:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
-                [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
-            ])
-        )
-        await state.set_state(OnboardingStates.waiting_role)
-        
-    except Exception as e:
-        logger.error(f"Ошибка при обработке cmd_start: {e}")
-        await message.answer("Произошла ошибка при регистрации. Попробуйте позже.")
     finally:
         conn.close()
 
