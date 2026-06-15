@@ -918,69 +918,39 @@ async def cb_change_channel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@router.message(OnboardingStates.waiting_channel)
-async def handle_channel_input(message: Message, state: FSMContext) -> None:
-    user_id = message.from_user.id
-    channel_id: Optional[str] = None
-    channel_title: Optional[str] = None
-
-    # Парсинг канала
-    if message.forward_origin:
-        try:
-            chat = message.forward_origin.chat
-            channel_id = str(chat.id)
-            channel_title = chat.title
-        except AttributeError:
-            pass
-    elif message.text and message.text.startswith("@"):
-        channel_id = message.text.strip()
-        channel_title = channel_id
-
-    # Проверка на пустой результат
-    if not channel_id:
-        await message.answer(
-            "⚠️ Не распознал канал. Перешли сообщение или введи <code>@username</code>.",
-            parse_mode=ParseMode.HTML,
-        )
-        return
-
-    # Проверка админки
-    is_admin_ok = await check_bot_admin(message.bot, channel_id)
-    if not is_admin_ok:
-        await message.answer(
-            "❌ <b>Ошибка доступа!</b>\n\n"
-            f"Бот не администратор канала <code>{channel_id}</code> или нет прав постинга.\n"
-            "Добавь бота в администраторы и попробуй снова.",
-            parse_mode=ParseMode.HTML,
-        )
-        return
-
-    # Запись в БД
+@router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
+async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
+    role = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+    username = callback.from_user.username
+    
     conn = get_db()
     try:
-        logger.info(f"DEBUG: Запись канала {channel_id} для юзера {user_id}")
-        conn.execute(
-            "UPDATE users SET channel_id=?, channel_title=? WHERE user_id=?",
-            (channel_id, channel_title, user_id)
-        )
+        # 1. Проверяем, есть ли такой юзер
+        cursor = conn.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,))
+        if cursor.fetchone():
+            # Если есть — обновляем
+            conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
+        else:
+            # Если нет — создаем запись (защита от потери данных)
+            conn.execute(
+                "INSERT INTO users (user_id, username, role) VALUES (?, ?, ?)", 
+                (user_id, username, role)
+            )
         conn.commit()
-        
-        # Получаем роль для меню
-        row = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
-        role = row["role"] if row else "blogger"
     finally:
         conn.close()
-
-    # Сначала очищаем состояние, потом шлем ответ
+    
     await state.clear()
     
-    await message.answer(
-        f"✅ <b>Канал привязан:</b> {html.escape(channel_title or channel_id)}\n\n"
-        "Теперь всё готово к работе.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_main_menu(role)
+    await callback.message.edit_text(
+        f"✅ Роль <b>{role.upper()}</b> сохранена!\n\n"
+        "Теперь привяжи канал: перешли сообщение из него или отправь <code>@username</code>.",
+        parse_mode=ParseMode.HTML
     )
-
+    
+    await state.set_state(OnboardingStates.waiting_channel)
+    await callback.answer()
 
 # -----------------------------------------------------------------------------
 # Партнёрская программа
