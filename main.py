@@ -595,14 +595,24 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
 # =============================================================================
 
 def kb_main_menu(role: str) -> InlineKeyboardMarkup:
+    # Базовые кнопки для всех
+    buttons = [
+        [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
+        [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
+        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
+    ]
+    
+    # Кнопки ТОЛЬКО для блогера
     if role == "blogger":
-        buttons = [
-            [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")],
-            [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")],
-            [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
-            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
-            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-        ]
+        buttons.insert(1, [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")])
+    
+    # Кнопки ТОЛЬКО для SaaS
+    if role == "saas":
+        buttons.insert(1, [InlineKeyboardButton(text="🛒 Фильтры маркетплейсов", callback_data="menu:filters")])
+        buttons.insert(2, [InlineKeyboardButton(text="💎 Подписка", callback_data="menu:tariffs")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
     else:
         buttons = [
             [InlineKeyboardButton(text="🔑 API-ключ ТакПродам", callback_data="menu:apikey")],
