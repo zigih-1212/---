@@ -214,6 +214,20 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_transactions_sub ON transactions(sub_id);
         CREATE INDEX IF NOT EXISTS idx_night_queue_user ON night_queue(user_id);
         """)
+
+      def init_db():
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS channels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            channel_id TEXT,
+            channel_title TEXT,
+            api_key TEXT,
+            is_active INTEGER DEFAULT 1,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        )
+    """)
         conn.commit()
         logger.info("БД инициализирована (WAL-mode активен)")
     finally:
