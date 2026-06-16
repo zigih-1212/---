@@ -134,6 +134,7 @@ def init_db() -> None:
             target_mode TEXT,
             subscription_until TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_user_channel ON channels(user_id, channel_id);
         )
     """)
     
