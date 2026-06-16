@@ -2084,7 +2084,6 @@ async def process_donor_post(
             "FROM users WHERE user_id=?", (user_id,)
         ).fetchone()
         user = cursor.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
     finally:
         conn.close()
 
