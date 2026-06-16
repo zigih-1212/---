@@ -22,6 +22,7 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Optional
+from stats import get_blogger_stats
 
 import httpx
 import uvicorn
