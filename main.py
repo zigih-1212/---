@@ -185,6 +185,12 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE users ADD COLUMN subscription_until TIMESTAMP")
     except sqlite3.OperationalError:
         pass
+      
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN auto_pin INTEGER DEFAULT 1")
+        logger.info("Добавлена колонка auto_pin")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()
