@@ -1021,7 +1021,12 @@ async def show_cabinet(message: Message) -> None:
     if not user:
         await message.answer("Пожалуйста, зарегистрируйтесь через /start")
         return
-        
+      
+    if not is_admin(user_id):
+        # Если пользователь не админ, перенаправляем его в его личный кабинет
+        await show_user_cabinet(message) # Создайте отдельную функцию для клиентов
+        return
+  
     role = user["role"]
     sub_until = user["subscription_until"]
     
