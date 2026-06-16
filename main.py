@@ -2502,21 +2502,22 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 # === SCHEDULER ===============================================================
 # =============================================================================
 
-async def unpin_old_messages(bot: Bot) -> None:
+async def unpin_old_messages(bot: Bot):
+    """Авто-открепление старых постов"""
     conn = get_db()
     now = datetime.now(timezone.utc).isoformat()
     try:
         rows = conn.execute(
-            "SELECT id, chat_id, message_id FROM pinned_posts WHERE unpin_at <= ?", (now,)
+            "SELECT chat_id, message_id FROM pinned_posts WHERE unpin_at <= ?", 
+            (now,)
         ).fetchall()
-        for p in rows:
+        for row in rows:
             try:
-                await bot.unpin_chat_message(
-                    chat_id=p["chat_id"], message_id=p["message_id"]
-                )
-            except Exception as e:
-                logger.warning(f"Не удалось открепить {p['message_id']}: {e}")
-            conn.execute("DELETE FROM pinned_posts WHERE id=?", (p["id"],))
+                await bot.unpin_chat_message(chat_id=row["chat_id"], message_id=row["message_id"])
+            except Exception:
+                pass
+            conn.execute("DELETE FROM pinned_posts WHERE chat_id=? AND message_id=?", 
+                        (row["chat_id"], row["message_id"]))
         conn.commit()
     finally:
         conn.close()
@@ -2591,6 +2592,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(
         cleanup_old_posts, trigger="cron", hour=3, minute=0,
         id="cleanup_old_posts",
+    scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot})
     )
     scheduler.add_job(
         scan_donor_channels, trigger="interval", minutes=30,
