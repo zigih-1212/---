@@ -1032,10 +1032,12 @@ async def show_cabinet(message: Message) -> None:
         await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_blogger())
         
     elif role == "saas":
-        status_text = ""
+        status_text = "🚫 Статус подписки не определен."
+        
         if sub_until:
             try:
-                # Если в БД хранится строка, используем strptime
+                # Пытаемся распарсить дату. 
+                # Если в БД дата вида '2026-06-19 14:00:00', то strip не нужен.
                 end_dt = datetime.strptime(sub_until, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                 now_dt = datetime.now(timezone.utc)
                 
@@ -1045,18 +1047,18 @@ async def show_cabinet(message: Message) -> None:
                     hours = diff.seconds // 3600
                     status_text = f"⏳ Тестовый период истекает через: <b>{days} дн. {hours} ч.</b>"
                 else:
-                    status_text = "🚫 <b>Тестовый период окончен.</b> Пожалуйста, оплатите подписку."
-            except Exception:
-                status_text = f"Дата: {sub_until} (формат не распознан)"
-        else:
-            status_text = "🚫 Статус подписки не определен."
-            
+                    status_text = "🚫 <b>Тестовый период окончен.</b>"
+            except Exception as e:
+                # ВЫВОДИМ ОШИБКУ ПРЯМО В ТЕКСТ, ЧТОБЫ ПОНЯТЬ, ЧТО НЕ ТАК
+                status_text = f"❌ Ошибка даты: {e}. Данные в БД: '{sub_until}'"
+        
         text = (
             "💼 <b>Кабинет SaaS-клиента</b>\n\n"
             f"{status_text}\n\n"
             "Управление каналами и API ключами доступно в меню."
         )
-        # ДОБАВЬТЕ СЮДА ВАШУ КЛАВИАТУРУ SAAS
+        # Если kb_saas() не определена, используйте название функции, 
+        # которая возвращает вашу клавиатуру (например, kb_admin_panel() или иная)
         await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_saas())
 
   # =============================================================================
