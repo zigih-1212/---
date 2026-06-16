@@ -1879,7 +1879,7 @@ async def handle_broadcast_text(message: Message, state: FSMContext) -> None:
     sent, failed = 0, 0
     for user in users:
         if user["role"] == "blogger": continuс
-          continue
+           continue
         try:
             await message.bot.send_message(
                 user["user_id"], clean_text, parse_mode=ParseMode.HTML
