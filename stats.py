@@ -1,11 +1,21 @@
-from datetime import datetime, timedelta, timezone
+# stats.py
+"""
+Модуль статистики для блогеров
+"""
 
-def get_blogger_stats(user_id: int) -> dict:
+import sqlite3
+from datetime import datetime
+from typing import Dict
+
+from main import get_db, logger, MIN_PAYOUT  # импортируем необходимые вещи из main
+
+
+def get_blogger_stats(user_id: int) -> Dict:
     """Полная статистика для блогера"""
     conn = get_db()
     try:
-        # Основная статистика по постам
-        row = conn.execute("""
+        # Статистика постов
+        post_stats = conn.execute("""
             SELECT 
                 COUNT(*) as total_posts,
                 SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published_posts,
@@ -15,8 +25,8 @@ def get_blogger_stats(user_id: int) -> dict:
             WHERE user_id = ?
         """, (user_id,)).fetchone()
 
-        # Статистика по транзакциям (продажи)
-        sales_row = conn.execute("""
+        # Статистика продаж
+        sales_stats = conn.execute("""
             SELECT 
                 COUNT(*) as total_sales,
                 COALESCE(SUM(payout), 0.0) as total_earned,
@@ -27,13 +37,20 @@ def get_blogger_stats(user_id: int) -> dict:
         """, (user_id,)).fetchone()
 
         return {
-            "total_posts": row["total_posts"] or 0,
-            "published_posts": row["published_posts"] or 0,
-            "posts_last_30d": row["posts_last_30d"] or 0,
-            "published_last_30d": row["published_last_30d"] or 0,
-            "total_sales": sales_row["total_sales"] or 0,
-            "total_earned": round(float(sales_row["total_earned"] or 0), 2),
-            "earned_last_30d": round(float(sales_row["earned_last_30d"] or 0), 2),
+            "total_posts": int(post_stats["total_posts"] or 0),
+            "published_posts": int(post_stats["published_posts"] or 0),
+            "posts_last_30d": int(post_stats["posts_last_30d"] or 0),
+            "published_last_30d": int(post_stats["published_last_30d"] or 0),
+            "total_sales": int(sales_stats["total_sales"] or 0),
+            "total_earned": round(float(sales_stats["total_earned"] or 0), 2),
+            "earned_last_30d": round(float(sales_stats["earned_last_30d"] or 0), 2),
+        }
+    except Exception as e:
+        logger.error(f"Ошибка get_blogger_stats для {user_id}: {e}")
+        return {
+            "total_posts": 0, "published_posts": 0, "posts_last_30d": 0,
+            "published_last_30d": 0, "total_sales": 0, 
+            "total_earned": 0.0, "earned_last_30d": 0.0
         }
     finally:
         conn.close()
