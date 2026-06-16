@@ -362,15 +362,12 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
     username = message.from_user.username
 
+    # 1. Проверка админа
     if is_admin(user_id):
         await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
-    try:
-        msg = await message.answer("📌 <b>Закрепил меню для удобства:</b>", parse_mode="HTML")
-        await message.bot.pin_chat_message(chat_id=message.chat.id, message_id=msg.message_id)
-    except:
-        pass
         return
 
+    # 2. Логика работы с БД для обычных пользователей
     conn = get_db()
     try:
         user = conn.execute(
@@ -378,6 +375,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             (user_id,)
         ).fetchone()
 
+        # Регистрация нового пользователя
         if not user:
             sub_id = generate_sub_id(username, user_id)
             conn.execute(
@@ -396,14 +394,23 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             await state.set_state(OnboardingStates.waiting_role)
             return
 
-        # Пользователь уже существует
+        # Если пользователь есть, проверяем привязку канала
         if not user.get("channel_id"):
             await message.answer(
                 "⚠️ Вы ещё не привязали канал.\n"
                 "Перешлите сообщение из канала или отправьте @username."
             )
         else:
+            # Показываем кабинет
             await show_user_cabinet(message)
+            
+            # Попытка закрепить сообщение только при успешном показе кабинета
+            try:
+                msg = await message.answer("📌 Меню закреплено для вашего удобства.", parse_mode="HTML")
+                await message.bot.pin_chat_message(chat_id=message.chat.id, message_id=msg.message_id)
+            except Exception:
+                pass # Игнорируем ошибки закрепления (например, если бот не админ в чате)
+
     finally:
         conn.close()
 
