@@ -364,12 +364,12 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
     if is_admin(user_id):
         await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
-        return
       try:
         msg = await message.answer("📌 <b>Закрепил меню для удобства:</b>", parse_mode="HTML")
         await message.bot.pin_chat_message(chat_id=message.chat.id, message_id=msg.message_id)
     except:
         pass
+        return
 
     conn = get_db()
     try:
