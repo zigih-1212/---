@@ -1184,53 +1184,6 @@ class PayoutStates(StatesGroup):
 router = Router()
 
 
-# =============================================================================
-# === ОБРАБОТЧИК СТАРТА И РЕГИСТРАЦИИ =========================================
-# =============================================================================
-
-@router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    user_id = message.from_user.id
-    username = message.from_user.username
-
-    if is_admin(user_id):
-        await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
-        return
-
-    conn = get_db()
-    try:
-        user = conn.execute(
-            "SELECT role, channel_id FROM users WHERE user_id=?", 
-            (user_id,)
-        ).fetchone()
-
-        if not user:
-            sub_id = generate_sub_id(username, user_id)
-            conn.execute(
-                "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'blogger')",
-                (user_id, username, sub_id)
-            )
-            conn.commit()
-            
-            await message.answer(
-                "👋 Добро пожаловать! Кто вы?",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
-                    [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
-                ])
-            )
-            await state.set_state(OnboardingStates.waiting_role)
-            return
-
-        if not user["channel_id"]:
-            await message.answer(
-                "⚠️ Вы ещё не привязали канал.\nПерешлите сообщение из канала или отправьте @username."
-            )
-        else:
-            await show_user_cabinet(message)
-    finally:
-        conn.close()
 
 
 @router.message(Command("force_trial"))
