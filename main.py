@@ -1878,6 +1878,7 @@ async def handle_broadcast_text(message: Message, state: FSMContext) -> None:
         conn.close()
     sent, failed = 0, 0
     for user in users:
+    if user["role"] == "blogger": continue
         try:
             await message.bot.send_message(
                 user["user_id"], clean_text, parse_mode=ParseMode.HTML
@@ -2039,11 +2040,14 @@ async def process_donor_post(
     photo_url: Optional[str],
 ) -> None:
     conn = get_db()
+    cursor = conn.cursor()
     try:
         user = conn.execute(
             "SELECT channel_id, is_active, filter_wb, filter_ozon, blogger_mode, role "
             "FROM users WHERE user_id=?", (user_id,)
         ).fetchone()
+        user = cursor.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
     finally:
         conn.close()
 
@@ -2054,6 +2058,9 @@ async def process_donor_post(
     if marketplace == "wb" and not user["filter_wb"]:
         return
     if marketplace == "ozon" and not user["filter_ozon"]:
+        return
+    if user and user["role"] == "blogger":
+        logger.info(f"Пропуск рассылки для блогера {user_id}. Донорский контент только для SaaS.")
         return
 
     channel_id = user["channel_id"]
@@ -2297,14 +2304,37 @@ def get_donor_channels_list() -> list[str]:
 
 
 async def scan_donor_channels(bot: Bot) -> None:
-    """Сканирует каналы-доноры. Расширяй под свою логику парсинга."""
-    channels = get_donor_channels_list()
-    for channel in channels:
+    logger.info("Запуск сканирования каналов-доноров...")
+    donors_str = os.getenv("DONOR_CHANNELS", "")
+    
+    if not donors_str:
+        logger.warning("Список доноров пуст. Проверьте переменную DONOR_CHANNELS на Railway.")
+        return
+        
+    donors = [d.strip() for d in donors_str.split(",") if d.strip()]
+    
+    for channel in donors:
         try:
+            # Проверяем доступность донора
             chat = await bot.get_chat(channel)
-            logger.info(f"Донор: {chat.title or channel} — проверка выполнена")
+            logger.info(f"Донор {channel} доступен (ID: {chat.id}). Начинаем проверку новых постов...")
+            
+            # -----------------------------------------------------------
+            # Здесь должна находиться ваша логика получения истории сообщений
+            # Например: messages = await bot.get_chat_history(chat.id, limit=5)
+            # Если бот найдет пост, он должен вызвать process_donor_post()
+            # -----------------------------------------------------------
+            
+        except TelegramAPIError as e:
+            # Если канал удален, закрыт или бот забанен — логируем и идем к следующему
+            logger.error(f"Пропуск донора {channel}: Ошибка Telegram API - {e.message}")
+            continue
         except Exception as e:
-            logger.error(f"Ошибка при сканировании {channel}: {e}")
+            # Отлов любых других непредвиденных системных ошибок
+            logger.exception(f"Критическая ошибка при сканировании {channel}: {e}")
+            continue
+            
+    logger.info("Цикл сканирования доноров завершен.")
 
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
