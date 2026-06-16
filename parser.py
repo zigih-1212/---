@@ -114,68 +114,117 @@ async def get_product_data(sku: str, sub_id: str) -> Optional[Dict]:
     return None
 
 
-async def process_new_video(bot: Bot, user_id: int, video_info: Dict) -> None:
-    """Основная функция публикации нового видео"""
+async def process_new_video(
+    bot: Bot, 
+    user_id: int, 
+    video_id: str, 
+    description: str, 
+    sku: Optional[str], 
+    photo_url: Optional[str], 
+    marketplace: str = 'wb'
+):
+    """Формирует пост с учётом ночного режима и авто-закрепления"""
     conn = get_db()
     try:
         user = conn.execute(
-            "SELECT sub_id, channel_id, blogger_mode FROM users WHERE user_id=?", 
+            "SELECT sub_id, channel_id, blogger_mode, auto_pin "
+            "FROM users WHERE user_id=?", 
             (user_id,)
         ).fetchone()
-
+        
         if not user or not user["channel_id"]:
             return
-
+            
         sub_id = user["sub_id"]
         blogger_mode = user.get("blogger_mode", "direct")
-        target_channel = os.getenv("ADMIN_VIP_CHANNEL_ID") if blogger_mode == "vip_pin" else user["channel_id"]
+        auto_pin = bool(user.get("auto_pin", 1))
+        
+        # Определяем целевой канал
+        target_channel = str(ADMIN_VIP_CHANNEL_ID) if blogger_mode == "vip_pin" else user["channel_id"]
+        
+        if not target_channel:
+            return
 
-        description = video_info.get("description", "")
-        product_links = find_product_links(description)
+        # === НОЧНОЙ РЕЖИМ (00:00 - 08:00 по Москве = UTC+3) ===
+        now_msk = datetime.now(timezone(timedelta(hours=3)))
+        if now_msk.hour < 8:
+            logger.info(f"🌙 Ночной режим: пост {video_id} отложен до 08:01 МСК")
+            # Можно записать в night_queue (рекомендуется) или пропустить
+            # Для простоты — пропускаем, следующий скан в 08:xx его подхватит
+            return
 
-        # Берём первый найденный SKU
-        sku = None
-        if product_links:
-            for link in product_links:
-                if link["type"] == "sku":
-                    sku = link["value"]
-                    break
-
+        # 1. Получаем данные товара
         product_info = await get_product_data(sku, sub_id) if sku else None
-
-        # Формируем текст поста
-        if product_info and product_info.get("link"):
+        
+        video_title = "🔥 Новое видео!"
+        
+        # 2. Формируем текст
+        if product_info:
             caption = (
-                f"🎬 <b>{video_info.get('title', 'Новое видео')}</b>\n\n"
-                f"💰 {product_info.get('price', '')}\n\n"
-                f'<a href="{product_info["link"]}">👉 Купить товар</a>\n\n'
-                f"<i>Реклама. {product_info.get('advertiser', '')}. Erid: {product_info.get('erid', '')}</i>"
+                f"🎬 <b>{video_title}</b>\n\n"
+                f"💰 Цена: {product_info['price']} (Скидка: {product_info.get('discount', '')})\n\n"
+                f'<a href="{product_info["link"]}">👉 Купить товар из видео</a>\n\n'
+                f"<i>Реклама. {product_info['advertiser']}. Erid: {product_info['erid']}</i>"
             )
+            erid_to_save = product_info['erid']
         else:
-            caption = f"🎬 <b>{video_info.get('title', 'Новое видео')}</b>\n\n{description[:500]}..."
-
-        # Публикация
-        thumbnail = video_info.get("thumbnail")
-        if thumbnail:
-            await bot.send_photo(chat_id=target_channel, photo=thumbnail, caption=caption, parse_mode="HTML")
-        else:
-            await bot.send_message(chat_id=target_channel, text=caption, parse_mode="HTML")
-
-        # Запись в БД
-        conn.execute(
-            "INSERT INTO posts (user_id, donor_post_id, target_channel_id, sku, status) "
-            "VALUES (?, ?, ?, ?, 'published')",
-            (user_id, video_info['id'], target_channel, sku)
-        )
-        conn.commit()
-
-        logger.info(f"✅ Опубликовано новое видео для пользователя {user_id}")
-
-    except Exception as e:
-        logger.error(f"Ошибка process_new_video: {e}")
+            caption = f"🎬 <b>{video_title}</b>\n\nСмотри новое видео на канале!"
+            erid_to_save = "none"
+        
+        # 3. Публикуем
+        try:
+            if photo_url:
+                msg = await bot.send_photo(
+                    chat_id=target_channel, 
+                    photo=photo_url, 
+                    caption=caption, 
+                    parse_mode="HTML"
+                )
+            else:
+                msg = await bot.send_message(
+                    chat_id=target_channel, 
+                    text=caption, 
+                    parse_mode="HTML"
+                )
+            
+            # === АВТО-ЗАКРЕПЛЕНИЕ ===
+            if auto_pin or blogger_mode == "vip_pin":
+                try:
+                    await bot.pin_chat_message(
+                        chat_id=target_channel, 
+                        message_id=msg.message_id
+                    )
+                    
+                    # Запись для автоматического открепления через 24ч
+                    unpin_time = datetime.now(timezone.utc) + timedelta(hours=24)
+                    conn.execute(
+                        "INSERT INTO pinned_posts (chat_id, message_id, unpin_at) "
+                        "VALUES (?, ?, ?)",
+                        (target_channel, msg.message_id, unpin_time.isoformat())
+                    )
+                except Exception as pin_e:
+                    logger.warning(f"Не удалось закрепить пост: {pin_e}")
+            
+            # Запись в статистику
+            conn.execute(
+                "INSERT INTO posts (user_id, donor_post_id, target_channel_id, "
+                "traffic_source, sku, erid, status, published_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    user_id, video_id, target_channel, "yt", 
+                    sku or "no_sku", erid_to_save, "published",
+                    datetime.now(timezone.utc).isoformat()
+                )
+            )
+            conn.commit()
+            
+            logger.info(f"✅ Пост опубликован для пользователя {user_id} (закреплён: {auto_pin})")
+            
+        except Exception as e:
+            logger.error(f"Ошибка публикации для юзера {user_id}: {e}")
+            
     finally:
         conn.close()
-
 
 def is_video_processed(video_id: str) -> bool:
     """Проверка, был ли пост уже обработан"""
