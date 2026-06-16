@@ -2051,6 +2051,38 @@ async def cleanup_old_posts() -> None:
     finally:
         conn.close()
 
+async def run_billing_check(bot: Bot):
+    """Ежечасная проверка истекших подписок SaaS-пользователей."""
+    conn = get_db()
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        # Ищем пользователей, у которых подписка истекла, но они еще числятся активными
+        expired_users = conn.execute(
+            "SELECT user_id FROM users WHERE role='saas' AND subscription_until < ? AND is_active=1",
+            (now,)
+        ).fetchall()
+
+        for row in expired_users:
+            user_id = row["user_id"]
+            # Отключаем активность
+            conn.execute("UPDATE users SET is_active=0 WHERE user_id=?", (user_id,))
+            
+            # Пытаемся уведомить пользователя
+            try:
+                await bot.send_message(
+                    chat_id=user_id,
+                    text="⚠️ <b>Ваша подписка истекла!</b>\n\nБот приостановил работу с вашими каналами. Пожалуйста, продлите подписку в /cabinet.",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Не удалось отправить уведомление юзеру {user_id}: {e}")
+        
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Ошибка в run_billing_check: {e}")
+    finally:
+        conn.close()
+
 
 async def scan_donor_channels(bot: Bot):
     """Периодическая проверка каналов-доноров"""
