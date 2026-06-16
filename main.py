@@ -1008,28 +1008,6 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
     )
     await state.clear()
 
-@router.message(OnboardingStates.waiting_saas_tg_channel)
-async def handle_saas_tg_channel(message: Message, state: FSMContext) -> None:
-    channel_username = message.text
-    user_id = message.from_user.id
-    
-    # Проверка, является ли бот администратором в указанном канале
-    is_admin = await check_bot_admin(message.bot, channel_username)
-    if not is_admin:
-        await message.answer("❌ Бот не является администратором в этом канале. Добавьте бота.")
-        return
-        
-    # Сохраняем канал в базу для SaaS
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET channel_id=? WHERE user_id=?", (channel_username, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-        
-    await state.clear()
-    await message.answer("✅ Канал привязан! Теперь перейдите в настройки для добавления API и корпоративного ERID.")
-
 @router.message(F.text.in_(["💻 Личный кабинет", "/cabinet"]))
 async def show_cabinet(message: Message) -> None:
     user_id = message.from_user.id
@@ -1050,20 +1028,26 @@ async def show_cabinet(message: Message) -> None:
             "Статус подписки: <b>Бессрочно (Free)</b>\n"
             "Условия: Разделение прибыли по реферальной системе.\n"
         )
-        await message.answer(text, parse_mode=ParseMode.HTML)
+        # ДОБАВЬТЕ СЮДА ВАШУ КЛАВИАТУРУ БЛОГЕРА
+        await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_blogger())
+        
     elif role == "saas":
         status_text = ""
         if sub_until:
-            end_dt = datetime.strptime(sub_until, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-            now_dt = datetime.now(timezone.utc)
-            
-            if now_dt < end_dt:
-                diff = end_dt - now_dt
-                days = diff.days
-                hours = diff.seconds // 3600
-                status_text = f"⏳ Тестовый период истекает через: <b>{days} дн. {hours} ч.</b>"
-            else:
-                status_text = "🚫 <b>Тестовый период окончен.</b> Пожалуйста, оплатите подписку."
+            try:
+                # Если в БД хранится строка, используем strptime
+                end_dt = datetime.strptime(sub_until, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                now_dt = datetime.now(timezone.utc)
+                
+                if now_dt < end_dt:
+                    diff = end_dt - now_dt
+                    days = diff.days
+                    hours = diff.seconds // 3600
+                    status_text = f"⏳ Тестовый период истекает через: <b>{days} дн. {hours} ч.</b>"
+                else:
+                    status_text = "🚫 <b>Тестовый период окончен.</b> Пожалуйста, оплатите подписку."
+            except Exception:
+                status_text = f"Дата: {sub_until} (формат не распознан)"
         else:
             status_text = "🚫 Статус подписки не определен."
             
@@ -1072,7 +1056,8 @@ async def show_cabinet(message: Message) -> None:
             f"{status_text}\n\n"
             "Управление каналами и API ключами доступно в меню."
         )
-        await message.answer(text, parse_mode=ParseMode.HTML)
+        # ДОБАВЬТЕ СЮДА ВАШУ КЛАВИАТУРУ SAAS
+        await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_saas())
 
   # =============================================================================
 # === ОБРАБОТЧИК КНОПКИ "НАЗАД" ==============================================
