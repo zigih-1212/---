@@ -1013,6 +1013,9 @@ async def show_cabinet(message: Message) -> None:
     user_id = message.from_user.id
     conn = get_db()
     user = conn.execute("SELECT role, subscription_until FROM users WHERE user_id=?", (user_id,)).fetchone()
+  # Прямо после получения user
+    user = conn.execute("SELECT role, subscription_until FROM users WHERE user_id=?", (user_id,)).fetchone()
+    logger.info(f"DEBUG_USER_DATA: {dict(user)}") # ВЫВЕДЕТ ВСЕ ДАННЫЕ В КОНСОЛЬ RAILWAY
     conn.close()
     
     if not user:
