@@ -122,7 +122,7 @@ def init_db() -> None:
     conn = get_db()
     cursor = conn.cursor()
     
-    # 1. Основная таблица пользователей
+    # 1. Создание таблиц
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -137,8 +137,6 @@ def init_db() -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
-    # 2. Таблица подключенных каналов
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,11 +149,25 @@ def init_db() -> None:
         )
     """)
     
-    # 3. Создание индекса (ВНЕ таблиц, отдельной командой)
-    # Это предотвратит появление дубликатов каналов у одного пользователя
-    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_channel ON channels(user_id, channel_id)")
+    # 2. ОЧИСТКА ДУБЛИКАТОВ перед созданием индекса
+    # Оставляем только одну запись для каждой пары user_id + channel_id
+    cursor.execute("""
+        DELETE FROM channels 
+        WHERE id NOT IN (
+            SELECT MIN(id) 
+            FROM channels 
+            GROUP BY user_id, channel_id
+        )
+    """)
+    conn.commit()
     
-    # 4. Миграции (безопасное добавление колонок)
+    # 3. Создание уникального индекса (теперь ошибок быть не должно)
+    try:
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_channel ON channels(user_id, channel_id)")
+    except sqlite3.OperationalError:
+        pass
+    
+    # 4. Миграции
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN target_mode TEXT")
     except sqlite3.OperationalError:
@@ -163,13 +175,12 @@ def init_db() -> None:
         
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN subscription_until TIMESTAMP")
-        logger.info("Миграция: Колонка 'subscription_until' успешно добавлена.")
     except sqlite3.OperationalError:
         pass
 
     conn.commit()
     conn.close()
-    logger.info("База данных успешно инициализирована и проверена.")
+    logger.info("База данных успешно инициализирована и очищена от дублей.")
 
 
 # =============================================================================
