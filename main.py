@@ -117,10 +117,11 @@ def get_db():
 # === БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ БД =============================================
 # =============================================================================
 
-def init_db():
+def init_db() -> None:
     conn = get_db()
     cursor = conn.cursor()
-    # Таблица пользователей
+    
+    # 1. Основная таблица пользователей
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -134,7 +135,8 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # Таблица каналов
+    
+    # 2. Таблица подключенных каналов (для SaaS и вашего VIP-канала)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,14 +148,18 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     """)
-    # Безопасное добавление, если колонка вдруг отсутствует
+    
+    # 3. Безопасная миграция: добавление колонки target_mode, если её нет
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN target_mode TEXT")
+        logger.info("Миграция: Колонка 'target_mode' успешно добавлена в таблицу users.")
     except sqlite3.OperationalError:
+        # Ошибка возникает, если колонка уже существует — это нормально, просто идем дальше
         pass
+
     conn.commit()
     conn.close()
-    logger.info("База данных проверена и готова к работе.")
+    logger.info("База данных успешно инициализирована и проверена.")
 
 
 # =============================================================================
