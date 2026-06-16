@@ -45,6 +45,12 @@ from aiogram.types import (
     SuccessfulPayment,
     TelegramObject,
 )
+from parser import (
+    extract_video_info,
+    find_product_links,
+    process_new_video,
+    is_video_processed
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
@@ -897,7 +903,22 @@ async def cb_select_target(callback: CallbackQuery, state: FSMContext) -> None:
         # Показываем главное меню
         await callback.message.answer("🏠 Главное меню", reply_markup=kb_main_menu("blogger"))
 
+@router.message(F.text.startswith(("https://", "http://")))
+async def handle_user_link(message: Message):
+    """Пользователь прислал ссылку на видео — сразу парсим"""
+    url = message.text.strip()
+    info = extract_video_info(url)
+    
+    if not info:
+        await message.answer("❌ Не удалось обработать ссылку.")
+        return
 
+    await message.answer(
+        f"✅ Видео обработано!\n"
+        f"Название: {info.get('title')}\n"
+        f"Найдено ссылок на товары: {len(find_product_links(info.get('description', '')))}"
+    )
+    # Здесь можно добавить сохранение в БД как "ручной" пост
 # =============================================================================
 # === ОБРАБОТЧИК ДОБАВЛЕНИЯ КАНАЛА ДЛЯ SAAS ===================================
 # =============================================================================
@@ -2571,6 +2592,24 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     )
     return scheduler
 
+async def scan_donor_channels(bot: Bot):
+    """Периодическая проверка каналов-доноров"""
+    conn = get_db()
+    try:
+        # Пример: берём каналы пользователей-блогеров
+        rows = conn.execute(
+            "SELECT user_id, source_link as channel_url FROM users WHERE role='blogger' AND source_link IS NOT NULL"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    for row in rows:
+        video_info = extract_video_info(row["channel_url"])
+        if not video_info or is_video_processed(video_info["id"]):
+            continue
+            
+        await process_new_video(bot, row["user_id"], video_info)
+
 
 # =============================================================================
 # === MAIN ENTRYPOINT =========================================================
@@ -2607,6 +2646,13 @@ async def main() -> None:
         dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()),
         server.serve(),
     )
+  scheduler.add_job(
+    scan_donor_channels, 
+    trigger="interval", 
+    minutes=30, 
+    kwargs={"bot": bot}, 
+    id="scan_donors"
+)
 
 # ====================== ФАЗА 2: ПЛАТЕЖИ ======================
 
