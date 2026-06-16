@@ -568,25 +568,40 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
 # =============================================================================
 
 def kb_main_menu(role: str) -> InlineKeyboardMarkup:
-    # Общие кнопки для всех пользователей
     buttons = [
         [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
         [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
         [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
     ]
-    
-    # Кнопки ТОЛЬКО ДЛЯ БЛОГЕРА
+
     if role == "blogger":
         buttons.insert(0, [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")])
         buttons.insert(1, [InlineKeyboardButton(text="⚙️ Режим публикации", callback_data="menu:pub_mode")])
         buttons.insert(2, [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")])
     
-    # Кнопки ТОЛЬКО ДЛЯ SAAS
     elif role == "saas":
-        # У SaaS нет кнопки "Режим публикации"
         buttons.insert(0, [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")])
-        buttons.insert(1, [InlineKeyboardButton(text="🛒 Фильтры маркетплейсов", callback_data="menu:filters")])
-        buttons.insert(2, [InlineKeyboardButton(text="💎 Тарифы и подписка", callback_data="menu:tariffs")])
+        # Кнопка продления подписки — только для SaaS
+        buttons.insert(1, [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def kb_main_menu(role: str) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
+        [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
+        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
+    ]
+
+    if role == "blogger":
+        buttons.insert(0, [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")])
+        buttons.insert(1, [InlineKeyboardButton(text="⚙️ Режим публикации", callback_data="menu:pub_mode")])
+        buttons.insert(2, [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")])
+    
+    elif role == "saas":
+        buttons.insert(0, [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")])
+        # Кнопка продления подписки — только для SaaS
+        buttons.insert(1, [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 def kb_tariffs(traffic_source: str) -> InlineKeyboardMarkup:
@@ -741,7 +756,6 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
         conn.close()
 
 def is_admin(user_id: int) -> bool:
-    """Проверка, является ли пользователь администратором."""
     return user_id in ADMIN_IDS
     
     # ВЕТКА ДЛЯ БЛОГЕРОВ
@@ -967,38 +981,57 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
     await state.clear()
 
 async def show_user_cabinet(message: Message) -> None:
+    """Личный кабинет обычного пользователя (SaaS / Blogger)."""
     user_id = message.from_user.id
     conn = get_db()
-    user = conn.execute("SELECT role, sub_id, subscription_until FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
+    try:
+        user = conn.execute(
+            "SELECT role, subscription_until, username "
+            "FROM users WHERE user_id=?", 
+            (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
 
     if not user:
-        await message.answer("Пожалуйста, зарегистрируйтесь через /start")
+        await message.answer("Пожалуйста, начните с команды /start")
         return
 
+    role = user["role"]
     sub_until = user["subscription_until"]
-    status_text = "🚫 Статус подписки не определен."
 
+    # === Таймер подписки ===
     if sub_until:
         try:
-            # Парсим дату
-            end_dt = datetime.strptime(sub_until, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            if "T" in sub_until:
+                end_dt = datetime.fromisoformat(sub_until.replace("Z", "+00:00"))
+            else:
+                end_dt = datetime.strptime(sub_until, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                
             now_dt = datetime.now(timezone.utc)
-            
             if now_dt < end_dt:
                 diff = end_dt - now_dt
                 days = diff.days
                 hours = diff.seconds // 3600
-                status_text = f"⏳ Тестовый период истекает через: <b>{days} дн. {hours} ч.</b>"
+                status_text = f"✅ Активна • <b>{days} дн. {hours} ч.</b>"
             else:
-                status_text = "🚫 <b>Тестовый период окончен.</b>"
+                status_text = "❌ Подписка истекла"
         except Exception:
-            status_text = "Ошибка чтения даты."
+            status_text = "⚠️ Ошибка чтения даты"
+    else:
+        status_text = "♾️ Бессрочный доступ" if role == "blogger" else "❌ Подписка не активирована"
 
     text = (
-        "💼 <b>Личный кабинет</b>\n\n"
-        f"{status_text}\n\n"
-        "Управление каналами доступно в меню ниже."
+        f"💼 <b>Личный кабинет</b>\n\n"
+        f"👤 Роль: <b>{role.upper()}</b>\n"
+        f"📅 Статус подписки: {status_text}\n"
+        f"🆔 ID: <code>{user_id}</code>"
+    )
+
+    await message.answer(
+        text, 
+        parse_mode=ParseMode.HTML, 
+        reply_markup=kb_main_menu(role)
     )
     # Здесь используйте ту клавиатуру, которая должна быть у обычного пользователя (SaaS/Блогер)
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_user_menu())
@@ -2575,6 +2608,56 @@ async def main() -> None:
         server.serve(),
     )
 
+# ====================== ФАЗА 2: ПЛАТЕЖИ ======================
 
+@router.callback_query(F.data == "menu:tariffs")
+async def cb_menu_tariffs(callback: CallbackQuery) -> None:
+    """Выбор способа оплаты для SaaS"""
+    await callback.message.edit_text(
+        "💎 <b>Продление подписки</b>\n\n"
+        "Выберите удобный способ оплаты:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_payment_methods()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pay:stars")
+async def cb_pay_stars(callback: CallbackQuery) -> None:
+    """Telegram Stars — заглушка (позже подключим invoice)"""
+    await callback.message.edit_text(
+        "⭐ <b>Оплата через Telegram Stars</b>\n\n"
+        "Скоро здесь будет список тарифов и кнопки для прямой оплаты Stars.\n\n"
+        "Пока что функция в разработке.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад к тарифам", callback_data="menu:tariffs")]
+        ])
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pay:card")
+async def cb_pay_card(callback: CallbackQuery) -> None:
+    """Оплата картой — реквизиты"""
+    text = (
+        "💳 <b>Оплата банковской картой</b>\n\n"
+        f"Сбер: <code>{CARD_SBER}</code>\n"
+        f"Т-Банк: <code>{CARD_TBANK}</code>\n"
+        f"Visa KG: <code>{CARD_VISA_KG}</code>\n\n"
+        f"TON: <code>{CARD_TON}</code>\n\n"
+        "После оплаты пришлите чек администратору.\n"
+        f"<i>Обязательно укажите в комментарии ваш ID: <code>{callback.from_user.id}</code></i>"
+    )
+    
+    await callback.message.edit_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад к тарифам", callback_data="menu:tariffs")]
+        ])
+    )
+    await callback.answer()
+  
 if __name__ == "__main__":
     asyncio.run(main())
