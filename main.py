@@ -122,7 +122,7 @@ def init_db() -> None:
     conn = get_db()
     cursor = conn.cursor()
     
-    # Основная таблица пользователей
+    # 1. Основная таблица пользователей
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -135,11 +135,10 @@ def init_db() -> None:
             target_mode TEXT,
             subscription_until TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_user_channel ON channels(user_id, channel_id);
         )
     """)
     
-    # Таблица подключенных каналов
+    # 2. Таблица подключенных каналов
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,7 +151,11 @@ def init_db() -> None:
         )
     """)
     
-    # Безопасная миграция колонок
+    # 3. Создание индекса (ВНЕ таблиц, отдельной командой)
+    # Это предотвратит появление дубликатов каналов у одного пользователя
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_channel ON channels(user_id, channel_id)")
+    
+    # 4. Миграции (безопасное добавление колонок)
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN target_mode TEXT")
     except sqlite3.OperationalError:
