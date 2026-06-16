@@ -732,6 +732,17 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     finally:
         conn.close()
 
+@router.message(Command("debug_sub"))
+async def debug_subscription(message: Message):
+    conn = get_db()
+    user = conn.execute("SELECT role, subscription_until FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
+    conn.close()
+    
+    if user:
+        await message.answer(f"DEBUG:\nРоль: {user['role']}\nДата подписки: {user['subscription_until']}")
+    else:
+        await message.answer("Пользователь не найден в БД!")
+
 @router.message(Command("fix_channels"))
 async def fix_duplicate_channels(message: Message) -> None:
     conn = get_db()
