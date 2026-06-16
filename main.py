@@ -120,8 +120,7 @@ def get_db():
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
-    
-    # 1. Таблица пользователей
+    # Таблица пользователей
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -131,19 +130,11 @@ def init_db():
             channel_title TEXT,
             sub_id TEXT,
             source_link TEXT,
+            target_mode TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
-    # 2. Безопасное добавление колонки target_mode
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN target_mode TEXT")
-        logger.info("Колонка 'target_mode' успешно добавлена.")
-    except sqlite3.OperationalError:
-        # Колонка уже существует, ошибки нет
-        pass
-
-    # 3. Таблица каналов
+    # Таблица каналов
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,7 +146,11 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     """)
-    
+    # Безопасное добавление, если колонка вдруг отсутствует
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN target_mode TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
     logger.info("База данных проверена и готова к работе.")
