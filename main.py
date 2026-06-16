@@ -121,7 +121,7 @@ def init_db() -> None:
     conn = get_db()
     cursor = conn.cursor()
     
-    # 1. Основная таблица пользователей
+    # Основная таблица пользователей
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -132,11 +132,12 @@ def init_db() -> None:
             sub_id TEXT,
             source_link TEXT,
             target_mode TEXT,
+            subscription_until TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
-    # 2. Таблица подключенных каналов (для SaaS и вашего VIP-канала)
+    # Таблица подключенных каналов
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,12 +150,16 @@ def init_db() -> None:
         )
     """)
     
-    # 3. Безопасная миграция: добавление колонки target_mode, если её нет
+    # Безопасная миграция колонок
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN target_mode TEXT")
-        logger.info("Миграция: Колонка 'target_mode' успешно добавлена в таблицу users.")
     except sqlite3.OperationalError:
-        # Ошибка возникает, если колонка уже существует — это нормально, просто идем дальше
+        pass
+        
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN subscription_until TIMESTAMP")
+        logger.info("Миграция: Колонка 'subscription_until' успешно добавлена.")
+    except sqlite3.OperationalError:
         pass
 
     conn.commit()
