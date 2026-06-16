@@ -732,6 +732,15 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     finally:
         conn.close()
 
+@router.message(Command("force_trial"))
+async def force_trial(message: Message):
+    new_date = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    conn.execute("UPDATE users SET subscription_until = ? WHERE user_id = ?", (new_date, message.from_user.id))
+    conn.commit()
+    conn.close()
+    await message.answer("✅ Тестовый период принудительно установлен на 3 дня.")
+
 @router.message(Command("debug_sub"))
 async def debug_subscription(message: Message):
     conn = get_db()
