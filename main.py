@@ -716,6 +716,21 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     finally:
         conn.close()
 
+@router.message(Command("fix_channels"))
+async def fix_duplicate_channels(message: Message) -> None:
+    conn = get_db()
+    # Удаляем дубли, оставляя только запись с самым маленьким ID (самую первую)
+    conn.execute("""
+        DELETE FROM channels 
+        WHERE id NOT IN (
+            SELECT MIN(id) 
+            FROM channels 
+            GROUP BY user_id, channel_id
+        )
+    """)
+    conn.commit()
+    conn.close()
+    await message.answer("✅ Дубликаты каналов удалены.")
 
 # =============================================================================
 # === ОБРАБОТЧИК ВЫБОРА РОЛИ ==================================================
