@@ -146,6 +146,16 @@ def init_db() -> None:
         )
     """)
     cursor.execute("""
+       CREATE TABLE IF NOT EXISTS transactions (
+           id INTEGER PRIMARY KEY,
+           order_id TEXT UNIQUE,
+           sub_id TEXT,
+           payout REAL,
+           status TEXT,
+           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -669,6 +679,49 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔧 Продлить подписку", callback_data="admin:extend_sub")],
         [InlineKeyboardButton(text="🌐 Открыть WebApp", callback_data="admin:webapp_link")],
     ])
+def get_blogger_stats(user_id: int) -> dict:
+    """Статистика для блогера (Фаза 4)"""
+    conn = get_db()
+    try:
+        # Статистика постов
+        post_stats = conn.execute("""
+            SELECT 
+                COUNT(*) as total_posts,
+                SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published_posts,
+                SUM(CASE WHEN published_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END) as posts_last_30d,
+                SUM(CASE WHEN status = 'published' AND published_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END) as published_last_30d
+            FROM posts 
+            WHERE user_id = ?
+        """, (user_id,)).fetchone()
+
+        # Статистика продаж (через партнёрские ссылки)
+        sales_stats = conn.execute("""
+            SELECT 
+                COUNT(*) as total_sales,
+                COALESCE(SUM(payout), 0.0) as total_earned,
+                COALESCE(SUM(CASE WHEN created_at >= datetime('now', '-30 days') THEN payout ELSE 0 END), 0.0) as earned_last_30d
+            FROM transactions 
+            WHERE sub_id = (SELECT sub_id FROM users WHERE user_id = ?) 
+              AND status IN ('approved', 'paid')
+        """, (user_id,)).fetchone()
+
+        return {
+            "total_posts": int(post_stats["total_posts"] or 0),
+            "published_posts": int(post_stats["published_posts"] or 0),
+            "posts_last_30d": int(post_stats["posts_last_30d"] or 0),
+            "published_last_30d": int(post_stats["published_last_30d"] or 0),
+            "total_sales": int(sales_stats["total_sales"] or 0),
+            "total_earned": round(float(sales_stats["total_earned"] or 0), 2),
+            "earned_last_30d": round(float(sales_stats["earned_last_30d"] or 0), 2),
+        }
+    except Exception as e:
+        logger.error(f"Ошибка get_blogger_stats для {user_id}: {e}")
+        return {
+            "total_posts": 0, "published_posts": 0, "posts_last_30d": 0,
+            "published_last_30d": 0, "total_sales": 0, "total_earned": 0.0, "earned_last_30d": 0.0
+        }
+    finally:
+        conn.close()
 
 
 # =============================================================================
@@ -1376,88 +1429,52 @@ async def cb_instr_saas(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "menu:stats")
 async def cb_menu_stats(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
+    
     conn = get_db()
     try:
-        user = conn.execute(
-            "SELECT role, sub_id FROM users WHERE user_id=?", (user_id,)
-        ).fetchone()
-
-        if not user:
-            await callback.message.edit_text("❌ Ошибка: пользователь не найден.")
-            await callback.answer()
-            return
-
-        role = user["role"]
-        keyboard: list = []
-
-        if role == "blogger":
-            sub_id = user["sub_id"] or ""
-            approved_sum = conn.execute(
-                "SELECT COALESCE(SUM(payout), 0.0) FROM transactions "
-                "WHERE sub_id=? AND status='approved'", (sub_id,)
-            ).fetchone()[0]
-            approved_cnt = conn.execute(
-                "SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='approved'",
-                (sub_id,)
-            ).fetchone()[0]
-            pending_cnt = conn.execute(
-                "SELECT COUNT(*) FROM transactions WHERE sub_id=? AND status='pending'",
-                (sub_id,)
-            ).fetchone()[0]
-
-            text = (
-                f"📊 <b>Твоя статистика партнёра</b>\n\n"
-                f"🆔 sub_id: <code>{sub_id}</code>\n\n"
-                f"📦 <b>Заказы:</b>\n"
-                f" ├ Ожидают выкупа: <b>{pending_cnt} шт.</b>\n"
-                f" └ Выкуплено: <b>{approved_cnt} шт.</b>\n\n"
-                f"💸 <b>Твой заработок:</b>\n"
-                f" └ <b>{approved_sum:.2f} руб.</b>\n\n"
-                f"<i>* Баланс обновляется при выкупе товара клиентом.</i>"
-            )
-            if approved_sum >= MIN_PAYOUT:
-                keyboard.append([
-                    InlineKeyboardButton(
-                        text="💳 Запросить выплату", callback_data="payout:request"
-                    )
-                ])
-            elif approved_sum > 0:
-                text += f"\n\n<i>⚠️ Вывод доступен от {MIN_PAYOUT:.0f} руб.</i>"
-        else:
-            total = conn.execute(
-                "SELECT COUNT(*) FROM posts WHERE user_id=?", (user_id,)
-            ).fetchone()[0]
-            published = conn.execute(
-                "SELECT COUNT(*) FROM posts WHERE user_id=? AND status='published'", (user_id,)
-            ).fetchone()[0]
-            quarantine = conn.execute(
-                "SELECT COUNT(*) FROM posts WHERE user_id=? AND status='quarantine'", (user_id,)
-            ).fetchone()[0]
-            last_posts = conn.execute(
-                "SELECT donor_post_id, status, created_at FROM posts "
-                "WHERE user_id=? ORDER BY id DESC LIMIT 5", (user_id,)
-            ).fetchall()
-            last_str = "\n".join(
-                f"  • <code>{p['donor_post_id']}</code> — {p['status']} ({p['created_at'][:10]})"
-                for p in last_posts
-            ) or "  <i>Постов ещё не было</i>"
-            text = (
-                f"📊 <b>Статистика постов (SaaS)</b>\n\n"
-                f"Всего: {total}  |  Опубликовано: {published}  |  Карантин: {quarantine}\n\n"
-                f"<b>Последние 5 постов:</b>\n{last_str}"
-            )
-
-        keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
-        await callback.message.edit_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-        )
-    except Exception as e:
-        logger.error(f"Ошибка в menu:stats: {e}")
-        await callback.message.edit_text("⚠️ Ошибка при загрузке статистики.")
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
     finally:
         conn.close()
+
+    if not user:
+        await callback.answer("❌ Пользователь не найден", show_alert=True)
+        return
+
+    if user["role"] == "blogger":
+        stats = get_blogger_stats(user_id)
+
+        text = (
+            f"📊 <b>Ваша статистика</b>\n\n"
+            f"📍 Всего постов: <b>{stats['total_posts']}</b>\n"
+            f"✅ Опубликовано: <b>{stats['published_posts']}</b>\n"
+            f"🕒 За последние 30 дней: <b>{stats['published_last_30d']}</b>\n\n"
+            f"💰 <b>Заработок</b>\n"
+            f"├ Всего: <b>{stats['total_earned']} ₽</b>\n"
+            f"└ За 30 дней: <b>{stats['earned_last_30d']} ₽</b>\n\n"
+            f"🛍 Продаж: <b>{stats['total_sales']}</b>\n\n"
+            f"<i>Данные обновляются автоматически.</i>"
+        )
+
+        kb = []
+        if stats["total_earned"] >= MIN_PAYOUT:
+            kb.append([InlineKeyboardButton(text="💳 Запросить выплату", callback_data="payout:request")])
+        
+        kb.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
+
+        await callback.message.edit_text(
+            text, 
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+        )
+    else:
+        # Для SaaS-пользователей (можно расширить позже)
+        await callback.message.edit_text(
+            "📊 <b>Статистика SaaS</b>\n\nФункция в разработке.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
+            ])
+        )
 
     await callback.answer()
 
