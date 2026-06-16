@@ -24,6 +24,11 @@ from typing import Optional
 
 import httpx
 import uvicorn
+import secrets
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -2403,114 +2408,144 @@ def _record_post(
 # =============================================================================
 
 def create_fastapi_app(bot: Bot) -> FastAPI:
-    app = FastAPI(title="AutoPost Admin", docs_url=None, redoc_url=None)
+    app = FastAPI(title="AutoPost Admin Panel", docs_url=None, redoc_url=None)
+    
+    # Простая in-memory сессия (для одного админа)
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+    active_sessions = {}  # token -> True
 
-    @app.get("/admin", response_class=HTMLResponse)
-    async def admin_panel(request: Request):
+    # HTML-шаблоны прямо в коде
+    templates = Jinja2Templates(directory="templates")  # можно создать папку, но мы используем string
+
+    def is_authenticated(request: Request):
+        token = request.cookies.get("admin_token")
+        if not token or token not in active_sessions:
+            raise HTTPException(status_code=302, headers={"Location": "/admin/login"})
+        return True
+
+    @app.get("/admin/login", response_class=HTMLResponse)
+    async def login_page():
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"><title>Вход в админку</title>
+        <style>body{font-family:Arial;background:#0f1117;color:#fff;padding:50px;}</style>
+        </head>
+        <body>
+            <h2>🔑 Вход в AutoPost Admin</h2>
+            <form action="/admin/login" method="post">
+                <input type="password" name="password" placeholder="Пароль" style="padding:10px;font-size:16px;width:300px;"><br><br>
+                <button type="submit" style="padding:10px 20px;font-size:16px;">Войти</button>
+            </form>
+        </body>
+        </html>
+        """
+
+    @app.post("/admin/login")
+    async def login_post(response: HTMLResponse, password: str = Form(...)):
+        if password == ADMIN_PASSWORD:
+            token = secrets.token_hex(32)
+            active_sessions[token] = True
+            resp = RedirectResponse("/admin/dashboard", status_code=302)
+            resp.set_cookie(key="admin_token", value=token, httponly=True, max_age=3600*12)
+            return resp
+        return HTMLResponse("<h3>❌ Неверный пароль</h3><a href='/admin/login'>Назад</a>")
+
+    @app.get("/admin/dashboard", response_class=HTMLResponse)
+    async def dashboard(request: Request):
+        is_authenticated(request)
         conn = get_db()
         try:
-            users = conn.execute(
-                "SELECT user_id, username, channel_title, role, is_active, sub_end "
-                "FROM users ORDER BY created_at DESC"
-            ).fetchall()
-            rows_html = ""
+            users = conn.execute("""
+                SELECT user_id, username, role, subscription_until, channel_title, is_active 
+                FROM users ORDER BY created_at DESC
+            """).fetchall()
+
+            posts = conn.execute("""
+                SELECT p.*, u.username 
+                FROM posts p 
+                LEFT JOIN users u ON p.user_id = u.user_id 
+                ORDER BY p.id DESC LIMIT 50
+            """).fetchall()
+
+            html = f"""
+            <!DOCTYPE html>
+            <html lang="ru">
+            <head>
+                <meta charset="UTF-8">
+                <title>AutoPost — Админка</title>
+                <style>
+                    body {{font-family: Arial, sans-serif; background:#0f1117; color:#e0e0e8; padding:20px;}}
+                    table {{width:100%; border-collapse:collapse; margin:20px 0;}}
+                    th, td {{padding:10px; border:1px solid #333; text-align:left;}}
+                    th {{background:#1a1d27;}}
+                    .active {{color:#2ecc71;}} .inactive {{color:#e74c3c;}}
+                </style>
+            </head>
+            <body>
+                <h1>AutoPost Admin Dashboard</h1>
+                <a href="/admin/logout">Выход</a>
+                
+                <h2>Пользователи ({len(users)})</h2>
+                <table>
+                    <tr><th>ID</th><th>Username</th><th>Роль</th><th>Канал</th><th>Подписка до</th><th>Статус</th><th>Действие</th></tr>
+            """
             for u in users:
-                posts = conn.execute(
-                    "SELECT donor_post_id, status FROM posts "
-                    "WHERE user_id=? ORDER BY id DESC LIMIT 5", (u["user_id"],)
-                ).fetchall()
-                posts_str = ", ".join(
-                    f'<span class="post-{p["status"]}">'
-                    f'{html.escape(p["donor_post_id"])} ({p["status"]})</span>'
-                    for p in posts
-                ) or "<em>нет постов</em>"
-                badge = (
-                    '<span class="badge active">Active</span>'
-                    if u["is_active"] else
-                    '<span class="badge inactive">Inactive</span>'
-                )
-                rows_html += (
-                    f"<tr>"
-                    f"<td><code>{u['user_id']}</code></td>"
-                    f"<td>@{html.escape(u['username'] or '—')}</td>"
-                    f"<td>{html.escape(u['channel_title'] or '—')}</td>"
-                    f"<td>{u['role']}</td>"
-                    f"<td>{badge}</td>"
-                    f"<td>{(u['sub_end'] or '—')[:10]}</td>"
-                    f"<td>{posts_str}</td>"
-                    f"</tr>"
-                )
-            total_users = len(users)
+                html += f"""
+                    <tr>
+                        <td>{u['user_id']}</td>
+                        <td>@{u['username'] or '-'}</td>
+                        <td>{u['role']}</td>
+                        <td>{u['channel_title'] or '-'}</td>
+                        <td>{u['subscription_until'] or '—'}</td>
+                        <td class="{'active' if u['is_active'] else 'inactive'}">{"Активен" if u['is_active'] else "Неактивен"}</td>
+                        <td>
+                            <form action="/admin/extend" method="post" style="display:inline;">
+                                <input type="hidden" name="user_id" value="{u['user_id']}">
+                                <input type="text" name="days" placeholder="Дней" size="4">
+                                <button type="submit">Продлить</button>
+                            </form>
+                        </td>
+                    </tr>
+                """
+
+            html += "</table><h2>Последние посты (50)</h2><table><tr><th>ID</th><th>Пользователь</th><th>Donor ID</th><th>Статус</th><th>Дата</th></tr>"
+
+            for p in posts:
+                html += f"""
+                    <tr>
+                        <td>{p['id']}</td>
+                        <td>@{p['username'] or '-'}</td>
+                        <td>{p['donor_post_id']}</td>
+                        <td>{p['status']}</td>
+                        <td>{p.get('published_at', '-')[:19] if p.get('published_at') else '-'}</td>
+                    </tr>
+                """
+
+            html += "</table></body></html>"
+            return HTMLResponse(html)
         finally:
             conn.close()
 
-        page = (
-            "<!DOCTYPE html><html lang='ru'><head><meta charset='UTF-8'>"
-            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<title>AutoPost Admin</title><style>"
-            ":root{--bg:#0f1117;--surface:#1a1d27;--border:#2a2d3e;"
-            "--accent:#7c6aff;--green:#2ecc71;--red:#e74c3c;--text:#e0e0e8;}"
-            "*{box-sizing:border-box;margin:0;padding:0;}"
-            "body{font-family:system-ui,sans-serif;background:var(--bg);"
-            "color:var(--text);padding:2rem;}"
-            "h1{color:var(--accent);margin-bottom:1rem;font-size:1.4rem;}"
-            "p{color:#6b7280;margin-bottom:1.5rem;font-size:.85rem;}"
-            "table{width:100%;border-collapse:collapse;font-size:.82rem;}"
-            "th{background:var(--surface);padding:.75rem 1rem;text-align:left;"
-            "border-bottom:1px solid var(--border);color:#6b7280;"
-            "text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;}"
-            "td{padding:.7rem 1rem;border-bottom:1px solid var(--border);vertical-align:top;}"
-            "tr:hover td{background:var(--surface);}"
-            "code{color:var(--accent);}"
-            ".badge{display:inline-block;padding:.2rem .55rem;border-radius:9999px;"
-            "font-size:.72rem;font-weight:600;}"
-            ".badge.active{background:#1a3a2a;color:var(--green);}"
-            ".badge.inactive{background:#3a1a1a;color:var(--red);}"
-            ".post-published{color:var(--green);}"
-            ".post-quarantine{color:var(--red);}"
-            ".post-failed{color:#f39c12;}"
-            "</style></head><body>"
-            f"<h1>AutoPost Admin Panel</h1>"
-            f"<p>Пользователей: <b>{total_users}</b> | "
-            f"Обновлено: {datetime.now().strftime('%d.%m.%Y %H:%M')}</p>"
-            "<table><thead><tr>"
-            "<th>User ID</th><th>Username</th><th>Канал</th>"
-            "<th>Роль</th><th>Статус</th><th>До</th><th>Последние 5 постов</th>"
-            f"</tr></thead><tbody>{rows_html}</tbody></table>"
-            "</body></html>"
-        )
-        return HTMLResponse(content=page)
-
-    @app.post("/webhook/takprodam")
-    async def takprodam_webhook(request: Request):
+    @app.post("/admin/extend")
+    async def extend_subscription(request: Request, user_id: int = Form(...), days: int = Form(...)):
+        is_authenticated(request)
+        conn = get_db()
         try:
-            data = await request.json()
-            order_id = str(data.get("order_id", ""))
-            sub_id = data.get("sub_id", "")
-            status = data.get("status", "pending")
-            original_payout = float(data.get("payout", 0.0))
-            blogger_payout = original_payout * 0.90 * 0.5
+            now = datetime.now(timezone.utc)
+            new_date = (now + timedelta(days=days)).isoformat()
+            conn.execute("UPDATE users SET subscription_until=?, is_active=1 WHERE user_id=?", 
+                        (new_date, user_id))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/dashboard", status_code=302)
 
-            if not order_id or not sub_id:
-                return {"status": "error", "message": "Missing order_id or sub_id"}
-
-            conn = get_db()
-            try:
-                conn.execute(
-                    "INSERT INTO transactions (order_id, sub_id, status, payout, updated_at) "
-                    "VALUES (?, ?, ?, ?, datetime('now')) "
-                    "ON CONFLICT(order_id) DO UPDATE SET "
-                    "status=excluded.status, payout=excluded.payout, "
-                    "updated_at=datetime('now')",
-                    (order_id, sub_id, status, blogger_payout)
-                )
-                conn.commit()
-            finally:
-                conn.close()
-            return {"status": "success"}
-        except Exception as e:
-            logger.error(f"Webhook error: {e}")
-            return {"status": "error", "message": str(e)}
+    @app.get("/admin/logout")
+    async def logout(response: HTMLResponse):
+        resp = RedirectResponse("/admin/login")
+        resp.delete_cookie("admin_token")
+        return resp
 
     return app
 
@@ -2641,43 +2676,51 @@ async def scan_donor_channels(bot: Bot):
 # =============================================================================
 
 async def main() -> None:
-    logger.info("=== AutoPost Bot запускается ===")
+    logger.info("=== AutoPost Bot + Web Admin Panel запускается ===")
+    
+    # Инициализация базы данных
     init_db()
 
+    # Создаём объекты бота и диспетчера
     bot = Bot(
         token=BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
+    
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     dp.update.middleware(ErrorLoggingMiddleware())
     dp.include_router(router)
 
+    # Запуск планировщика
     scheduler = setup_scheduler(bot)
     scheduler.start()
-    logger.info("Планировщик запущен")
+    logger.info("Планировщик (APScheduler) запущен")
 
+    # Создаём FastAPI приложение с веб-админкой
     fastapi_app = create_fastapi_app(bot)
+
+    # Настройка Uvicorn сервера
     config = uvicorn.Config(
         fastapi_app,
-        host=WEBAPP_HOST,
-        port=WEBAPP_PORT,
+        host=WEBAPP_HOST,      # обычно "0.0.0.0"
+        port=WEBAPP_PORT,      # например 8000 или PORT из Railway
         log_level="warning",
+        reload=False
     )
     server = uvicorn.Server(config)
-    logger.info(f"WebApp: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
 
+    logger.info(f"🌐 Web Admin Panel доступен по адресу: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
+
+    # Запускаем бота и веб-сервер одновременно
     await asyncio.gather(
-        dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()),
+        dp.start_polling(
+            bot, 
+            allowed_updates=dp.resolve_used_update_types()
+        ),
         server.serve(),
+        return_exceptions=True
     )
-  scheduler.add_job(
-    scan_donor_channels, 
-    trigger="interval", 
-    minutes=30, 
-    kwargs={"bot": bot}, 
-    id="scan_donors"
-)
 
 # ====================== ФАЗА 2: ПЛАТЕЖИ ======================
 
