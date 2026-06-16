@@ -1062,7 +1062,7 @@ async def show_cabinet(message: Message) -> None:
         )
         # Если kb_saas() не определена, используйте название функции, 
         # которая возвращает вашу клавиатуру (например, kb_admin_panel() или иная)
-        await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_saas())
+        await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_admin_panel())
 
   # =============================================================================
 # === ОБРАБОТЧИК КНОПКИ "НАЗАД" ==============================================
