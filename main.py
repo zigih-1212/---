@@ -2461,6 +2461,10 @@ async def main() -> None:
         return_exceptions=True
     )
 
-
+@router.message()
+async def echo_handler(message: Message):
+    logger.info(f"DEBUG: Бот получил сообщение от {message.from_user.id}: {message.text}")
+    await message.answer(f"Бот жив! Ты прислал: {message.text}")
+    
 if __name__ == "__main__":
     asyncio.run(main())
