@@ -740,7 +740,7 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
     finally:
         conn.close()
 
-  def is_admin(user_id: int) -> bool:
+    def is_admin(user_id: int) -> bool:
     """Проверка, является ли пользователь администратором."""
     return user_id in ADMIN_IDS
     
