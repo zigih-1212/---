@@ -963,17 +963,22 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
     # Добавляем новый канал в таблицу channels
     conn = get_db()
     try:
-        conn.execute(
-        """
-        INSERT INTO channels (user_id, channel_id, channel_title) 
-        VALUES (?, ?, ?)
-        ON CONFLICT(user_id, channel_id) 
-        DO UPDATE SET channel_title = excluded.channel_title
-        """,
-        (user_id, channel_username, channel_username)
-    )
-    conn.commit()
+        cursor = conn.cursor()
+        # Используем INSERT ON CONFLICT для предотвращения ошибок дубликатов
+        cursor.execute(
+            """
+            INSERT INTO channels (user_id, channel_id, channel_title) 
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, channel_id) 
+            DO UPDATE SET channel_title = excluded.channel_title
+            """,
+            (user_id, channel_username, channel_username)
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка базы данных при добавлении канала: {e}")
     finally:
+        # Этот блок гарантированно закрывает соединение
         conn.close()
         
     await message.answer(
