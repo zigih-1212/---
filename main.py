@@ -29,7 +29,9 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, StateFilter
 from aiogram.exceptions import TelegramAPIError
+from datetime import datetime, timezone
 from aiogram.filters import CommandStart
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -684,54 +686,6 @@ router = Router()
 # === ОБРАБОТЧИК СТАРТА И РЕГИСТРАЦИИ =========================================
 # =============================================================================
 
-@router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    user_id = message.from_user.id
-    username = message.from_user.username
-    
-    if user_id in ADMIN_IDS:
-        await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
-        return
-
-    conn = get_db()
-    try:
-        # Проверяем не просто наличие юзера, а заполненность полей
-        user = conn.execute(
-            "SELECT role, channel_id FROM users WHERE user_id=?", 
-            (user_id,)
-        ).fetchone()
-        
-        # 1. Если юзера нет — создаем и идем на выбор роли
-        if not user:
-            sub_id = generate_sub_id(username, user_id)
-            conn.execute("INSERT INTO users (user_id, username, sub_id) VALUES (?, ?, ?)", 
-                         (user_id, username, sub_id))
-            conn.commit()
-            
-            await message.answer(
-                "👋 Добро пожаловать! Кто вы?",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
-                    [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
-                ])
-            )
-            await state.set_state(OnboardingStates.waiting_role)
-            return
-
-        # 2. Если роль — дефолтная (blogger), но канала нет — идем привязывать канал
-        # (ИЛИ добавьте в БД новое поле, например 'role_selected INTEGER DEFAULT 0')
-        if not user["channel_id"]:
-            await message.answer("⚠️ Вы еще не привязали канал. Пришлите @username или перешлите сообщение.")
-            await state.set_state(OnboardingStates.waiting_channel)
-            return
-
-        # 3. Только если всё есть — показываем меню
-        await message.answer("🏠 Главное меню", reply_markup=kb_main_menu(user["role"]))
-        
-    finally:
-        conn.close()
-
 @router.message(Command("force_trial"))
 async def force_trial(message: Message):
     new_date = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
@@ -785,6 +739,10 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
         conn.commit()
     finally:
         conn.close()
+
+  def is_admin(user_id: int) -> bool:
+    """Проверка, является ли пользователь администратором."""
+    return user_id in ADMIN_IDS
     
     # ВЕТКА ДЛЯ БЛОГЕРОВ
     if role == "blogger":
@@ -975,7 +933,7 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
     user_id = message.from_user.id
     
     # Проверка прав бота в канале
-    is_admin = await check_bot_admin(message.bot, channel_username)
+     = await check_bot_admin(message.bot, channel_username)
     if not is_admin:
         await message.answer("❌ Бот не является администратором в этом канале. Добавьте его и попробуйте снова.")
         return
@@ -1045,27 +1003,19 @@ async def show_user_cabinet(message: Message) -> None:
     # Здесь используйте ту клавиатуру, которая должна быть у обычного пользователя (SaaS/Блогер)
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_user_menu())
 
-  @router.message(F.text.in_(["💻 Личный кабинет", "/cabinet"]))
+@router.message(F.text.in_(["💻 Личный кабинет", "/cabinet"]))
 async def show_cabinet(message: Message) -> None:
+    """Главный вход в кабинет с разделением ролей."""
     user_id = message.from_user.id
     
-    # 1. Проверка: Админ или нет?
-    if not is_admin(user_id):
+    if is_admin(user_id):
+        await message.answer(
+            "🛠 <b>Админ-панель</b>\n\nВыберите действие:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb_admin_panel()
+        )
+    else:
         await show_user_cabinet(message)
-        return
-
-    # 2. Логика для Админа
-    conn = get_db()
-    user = conn.execute("SELECT role, subscription_until FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    
-    if not user:
-        await message.answer("Пожалуйста, зарегистрируйтесь через /start")
-        return
-
-    # Выводим админское меню
-    text = "🛠 <b>Админ-панель</b>\n\nВыберите действие:"
-    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_admin_panel())
 
   # =============================================================================
 # === ОБРАБОТЧИК КНОПКИ "НАЗАД" ==============================================
