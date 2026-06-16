@@ -2202,7 +2202,7 @@ async def process_donor_post(
         logger.info(f"Пропуск рассылки для блогера {user_id}. Донорский контент только для SaaS.")
         return
 
-for user in users:
+    for user in users:
         user_data = dict(user)
         role = user_data.get("role")
         
@@ -2236,7 +2236,7 @@ for user in users:
 
         # ... далее идет стандартная логика отправки поста (await message.bot.send_message...)
   
-    channel_id = user["channel_id"]
+        channel_id = user["channel_id"]
     if not channel_id:
         return
 
