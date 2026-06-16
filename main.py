@@ -964,10 +964,15 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
     conn = get_db()
     try:
         conn.execute(
-            "INSERT INTO channels (user_id, channel_id, channel_title) VALUES (?, ?, ?)",
-            (user_id, channel_username, channel_username)
-        )
-        conn.commit()
+        """
+        INSERT INTO channels (user_id, channel_id, channel_title) 
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id, channel_id) 
+        DO UPDATE SET channel_title = excluded.channel_title
+        """,
+        (user_id, channel_username, channel_username)
+    )
+    conn.commit()
     finally:
         conn.close()
         
