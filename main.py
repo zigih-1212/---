@@ -759,6 +759,60 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
     
     await callback.answer()
 
+@router.callback_query(F.data.in_(["role_saas", "role_blogger"]))
+async def cb_select_role(callback: CallbackQuery, state: FSMContext) -> None:
+    role = callback.data.split("_")[1] # Получаем 'saas' или 'blogger'
+    user_id = callback.from_user.id
+    username = callback.from_user.username or "unknown"
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    user = cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
+    
+    # Логика триала: SaaS получает 3 дня, блогер - бессрочно (NULL)
+    if role == "saas":
+        # 3 дня с текущего момента по UTC
+        trial_end = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        trial_end = None
+        
+    if not user:
+        # Регистрация нового пользователя
+        sub_id = f"aff_{user_id}"
+        cursor.execute(
+            "INSERT INTO users (user_id, username, role, sub_id, subscription_until) VALUES (?, ?, ?, ?, ?)",
+            (user_id, username, role, sub_id, trial_end)
+        )
+    else:
+        # Обновление существующего
+        cursor.execute(
+            "UPDATE users SET role=?, subscription_until=? WHERE user_id=?",
+            (role, trial_end, user_id)
+        )
+        
+    conn.commit()
+    conn.close()
+    
+    await callback.message.delete()
+    
+    if role == "saas":
+        await callback.message.answer(
+            "💼 <b>Режим SaaS-клиента активирован.</b>\n\n"
+            "Вам начислен бесплатный тестовый период на <b>3 дня</b>.\n"
+            "Пожалуйста, привяжите свой канал и укажите API-ключ в настройках.",
+            parse_mode=ParseMode.HTML
+            # Здесь добавьте вашу клавиатуру reply_markup=kb_saas()
+        )
+    else:
+        await callback.message.answer(
+            "🎥 <b>Режим Блогера активирован.</b>\n\n"
+            "У вас бессрочный доступ на условиях разделения прибыли 50/50.\n"
+            "Бот готов к работе с вашими соцсетями.",
+            parse_mode=ParseMode.HTML
+            # Здесь добавьте вашу клавиатуру reply_markup=kb_blogger()
+        )
+
 # =============================================================================
 # === ОБРАБОТЧИК ДЛЯ БЛОГЕРА: ПРИВЯЗКА ИСТОЧНИКА ВИДЕО ========================
 # =============================================================================
@@ -914,6 +968,50 @@ async def handle_saas_tg_channel(message: Message, state: FSMContext) -> None:
         
     await state.clear()
     await message.answer("✅ Канал привязан! Теперь перейдите в настройки для добавления API и корпоративного ERID.")
+
+@router.message(F.text.in_(["💻 Личный кабинет", "/cabinet"]))
+async def show_cabinet(message: Message) -> None:
+    user_id = message.from_user.id
+    conn = get_db()
+    user = conn.execute("SELECT role, subscription_until FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    
+    if not user:
+        await message.answer("Пожалуйста, зарегистрируйтесь через /start")
+        return
+        
+    role = user["role"]
+    sub_until = user["subscription_until"]
+    
+    if role == "blogger":
+        text = (
+            "🎥 <b>Кабинет Блогера</b>\n\n"
+            "Статус подписки: <b>Бессрочно (Free)</b>\n"
+            "Условия: Разделение прибыли по реферальной системе.\n"
+        )
+        await message.answer(text, parse_mode=ParseMode.HTML)
+    elif role == "saas":
+        status_text = ""
+        if sub_until:
+            end_dt = datetime.strptime(sub_until, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            now_dt = datetime.now(timezone.utc)
+            
+            if now_dt < end_dt:
+                diff = end_dt - now_dt
+                days = diff.days
+                hours = diff.seconds // 3600
+                status_text = f"⏳ Тестовый период истекает через: <b>{days} дн. {hours} ч.</b>"
+            else:
+                status_text = "🚫 <b>Тестовый период окончен.</b> Пожалуйста, оплатите подписку."
+        else:
+            status_text = "🚫 Статус подписки не определен."
+            
+        text = (
+            "💼 <b>Кабинет SaaS-клиента</b>\n\n"
+            f"{status_text}\n\n"
+            "Управление каналами и API ключами доступно в меню."
+        )
+        await message.answer(text, parse_mode=ParseMode.HTML)
 
   # =============================================================================
 # === ОБРАБОТЧИК КНОПКИ "НАЗАД" ==============================================
@@ -2104,6 +2202,40 @@ async def process_donor_post(
         logger.info(f"Пропуск рассылки для блогера {user_id}. Донорский контент только для SaaS.")
         return
 
+for user in users:
+        user_data = dict(user)
+        role = user_data.get("role")
+        
+        # 1. Игнорируем блогеров (им донорские посты не нужны)
+        if role == "blogger":
+            continue
+            
+        # 2. ПРОВЕРКА ПОДПИСКИ ДЛЯ SAAS
+        if role == "saas":
+            sub_until_str = user_data.get("subscription_until")
+            if sub_until_str:
+                end_dt = datetime.strptime(sub_until_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                now_dt = datetime.now(timezone.utc)
+                
+                if now_dt > end_dt:
+                    logger.info(f"Пропуск пользователя {user_data['user_id']}: подписка истекла.")
+                    try:
+                        # Опционально: уведомляем клиента раз в сутки, но здесь просто шлем сообщение
+                        await message.bot.send_message(
+                            user_data['user_id'], 
+                            "⚠️ <b>Постинг остановлен!</b> Ваш тестовый период истек. Для возобновления работы оплатите подписку.",
+                            parse_mode=ParseMode.HTML
+                        )
+                    except Exception:
+                        pass
+                    # Прерываем итерацию для этого клиента, пост не отправляется
+                    continue
+            else:
+                logger.warning(f"У SaaS клиента {user_data['user_id']} нет даты подписки. Постинг заблокирован.")
+                continue
+
+        # ... далее идет стандартная логика отправки поста (await message.bot.send_message...)
+  
     channel_id = user["channel_id"]
     if not channel_id:
         return
