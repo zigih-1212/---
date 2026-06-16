@@ -2088,7 +2088,6 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
 # =============================================================================
 # === MAIN ENTRYPOINT =========================================================
 # =============================================================================
-
 async def main() -> None:
     logger.info("=== AutoPost Bot + Web Admin Panel запускается ===")
     
@@ -2099,32 +2098,46 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     
+    # Инициализация FSM и диспетчера
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
+    
+    # Подключение мидлвара
     dp.update.middleware(ErrorLoggingMiddleware())
+    
+    # Подключение роутера (убедись, что объект router объявлен глобально выше)
     dp.include_router(router)
 
+    # Запуск планировщика
     scheduler = setup_scheduler(bot)
     scheduler.start()
     logger.info("Планировщик (APScheduler) запущен")
 
+    # Настройка FastAPI
     fastapi_app = create_fastapi_app(bot)
-
     config = uvicorn.Config(
         fastapi_app,
         host=WEBAPP_HOST,
         port=WEBAPP_PORT,
-        log_level="warning"
+        log_level="warning",
+        loop="asyncio" # Явно указываем asyncio для совместимости
     )
     server = uvicorn.Server(config)
 
     logger.info(f"🌐 Web Admin Panel доступен по адресу: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
 
-    await asyncio.gather(
-        dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()),
-        server.serve(),
-        return_exceptions=True
-    )
+    # Корректный запуск обоих сервисов в одном цикле событий
+    try:
+        await asyncio.gather(
+            dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()),
+            server.serve(),
+            return_exceptions=True
+        )
+    finally:
+        # Корректное закрытие сессии бота при остановке
+        await bot.session.close()
+        scheduler.shutdown()
+        logger.info("Бот и планировщик остановлены")
 
 
 # ====================== ФАЗА 2: ПЛАТЕЖИ ======================
