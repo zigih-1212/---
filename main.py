@@ -933,7 +933,7 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
     user_id = message.from_user.id
     
     # Проверка прав бота в канале
-     = await check_bot_admin(message.bot, channel_username)
+    result = await check_bot_admin(message.bot, channel_username) # <-- выровняй по левому краю
     if not is_admin:
         await message.answer("❌ Бот не является администратором в этом канале. Добавьте его и попробуйте снова.")
         return
