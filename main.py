@@ -1868,32 +1868,68 @@ async def cb_admin_broadcast(callback: CallbackQuery, state: FSMContext) -> None
 
 @router.message(AdminStates.broadcast_text)
 async def handle_broadcast_text(message: Message, state: FSMContext) -> None:
+    # 1. Проверка прав доступа
     if not is_admin(message.from_user.id):
         return
+
+    # 2. Очистка и подготовка текста рассылки
     clean_text = sanitize_html(message.html_text or message.text or "")
+    if not clean_text:
+        await message.answer("⚠️ Ошибка: текст для рассылки пуст.")
+        return
+    
+    # 3. Безопасное подключение к БД и извлечение ВСЕХ нужных полей
     conn = get_db()
     try:
-        users = conn.execute("SELECT user_id FROM users").fetchall()
+        # ИСПРАВЛЕНИЕ: Обязательно запрашиваем role, чтобы условие ниже сработало
+        users = conn.execute("SELECT user_id, role FROM users").fetchall()
+    except Exception as e:
+        logger.error(f"Ошибка при получении пользователей для рассылки: {e}")
+        await message.answer("⚠️ Ошибка базы данных при попытке рассылки.")
+        return
     finally:
         conn.close()
-    sent, failed = 0, 0
+
+    sent = 0
+    failed = 0
+
+    # 4. Цикл рассылки с правильными отступами
     for user in users:
-        if user["role"] == "blogger": continuс
-           continue
+        # Преобразуем sqlite3.Row в словарь для безопасного доступа
+        user_data = dict(user)
+        
+        # ИСПРАВЛЕНИЕ: Идеально ровный отступ в 4 пробела для if и 8 пробелов для continue
+        if user_data.get("role") == "blogger":
+            continue
+            
+        # Блок отправки сообщения
         try:
             await message.bot.send_message(
-                user["user_id"], clean_text, parse_mode=ParseMode.HTML
+                chat_id=user_data["user_id"], 
+                text=clean_text, 
+                parse_mode=ParseMode.HTML
             )
             sent += 1
+            # Обязательная пауза во избежание блокировки FloodWait от Telegram (20 сообщений в секунду)
             await asyncio.sleep(0.05)
-        except TelegramAPIError:
+            
+        except TelegramAPIError as e:
+            # Пользователь заблокировал бота, аккаунт удален и т.д.
+            logger.warning(f"Не удалось отправить сообщение {user_data['user_id']}: {e}")
             failed += 1
+        except Exception as e:
+            logger.error(f"Непредвиденная ошибка при отправке {user_data['user_id']}: {e}")
+            failed += 1
+
+    # 5. Завершение состояния и вывод итогов
     await state.clear()
     await message.answer(
-        f"✅ Рассылка завершена. Доставлено: {sent} | Ошибок: {failed}",
+        f"✅ <b>Рассылка успешно завершена.</b>\n\n"
+        f"Успешно доставлено: <code>{sent}</code>\n"
+        f"Ошибок доставки: <code>{failed}</code>\n"
+        f"<i>(Блогеры были исключены из списка)</i>",
         reply_markup=kb_admin_panel(),
     )
-
 
 @router.callback_query(F.data == "admin:billing_check")
 async def cb_admin_billing_check(callback: CallbackQuery) -> None:
