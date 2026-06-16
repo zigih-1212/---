@@ -1008,66 +1008,64 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
     )
     await state.clear()
 
-@router.message(F.text.in_(["💻 Личный кабинет", "/cabinet"]))
-async def show_cabinet(message: Message) -> None:
+async def show_user_cabinet(message: Message) -> None:
     user_id = message.from_user.id
     conn = get_db()
+    user = conn.execute("SELECT role, sub_id, subscription_until FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+
+    if not user:
+        await message.answer("Пожалуйста, зарегистрируйтесь через /start")
+        return
+
+    sub_until = user["subscription_until"]
+    status_text = "🚫 Статус подписки не определен."
+
+    if sub_until:
+        try:
+            # Парсим дату
+            end_dt = datetime.strptime(sub_until, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            now_dt = datetime.now(timezone.utc)
+            
+            if now_dt < end_dt:
+                diff = end_dt - now_dt
+                days = diff.days
+                hours = diff.seconds // 3600
+                status_text = f"⏳ Тестовый период истекает через: <b>{days} дн. {hours} ч.</b>"
+            else:
+                status_text = "🚫 <b>Тестовый период окончен.</b>"
+        except Exception:
+            status_text = "Ошибка чтения даты."
+
+    text = (
+        "💼 <b>Личный кабинет</b>\n\n"
+        f"{status_text}\n\n"
+        "Управление каналами доступно в меню ниже."
+    )
+    # Здесь используйте ту клавиатуру, которая должна быть у обычного пользователя (SaaS/Блогер)
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_user_menu())
+
+  @router.message(F.text.in_(["💻 Личный кабинет", "/cabinet"]))
+async def show_cabinet(message: Message) -> None:
+    user_id = message.from_user.id
+    
+    # 1. Проверка: Админ или нет?
+    if not is_admin(user_id):
+        await show_user_cabinet(message)
+        return
+
+    # 2. Логика для Админа
+    conn = get_db()
     user = conn.execute("SELECT role, subscription_until FROM users WHERE user_id=?", (user_id,)).fetchone()
-  # Прямо после получения user
-    user = conn.execute("SELECT role, subscription_until FROM users WHERE user_id=?", (user_id,)).fetchone()
-    logger.info(f"DEBUG_USER_DATA: {dict(user)}") # ВЫВЕДЕТ ВСЕ ДАННЫЕ В КОНСОЛЬ RAILWAY
     conn.close()
     
     if not user:
         await message.answer("Пожалуйста, зарегистрируйтесь через /start")
         return
-      
-    if not is_admin(user_id):
-        # Если пользователь не админ, перенаправляем его в его личный кабинет
-        await show_user_cabinet(message) # Создайте отдельную функцию для клиентов
-        return
-  
-    role = user["role"]
-    sub_until = user["subscription_until"]
-    
-    if role == "blogger":
-        text = (
-            "🎥 <b>Кабинет Блогера</b>\n\n"
-            "Статус подписки: <b>Бессрочно (Free)</b>\n"
-            "Условия: Разделение прибыли по реферальной системе.\n"
-        )
-        # ДОБАВЬТЕ СЮДА ВАШУ КЛАВИАТУРУ БЛОГЕРА
-        await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_blogger())
-        
-    elif role == "saas":
-        status_text = "🚫 Статус подписки не определен."
-        
-        if sub_until:
-            try:
-                # Пытаемся распарсить дату. 
-                # Если в БД дата вида '2026-06-19 14:00:00', то strip не нужен.
-                end_dt = datetime.strptime(sub_until, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                now_dt = datetime.now(timezone.utc)
-                
-                if now_dt < end_dt:
-                    diff = end_dt - now_dt
-                    days = diff.days
-                    hours = diff.seconds // 3600
-                    status_text = f"⏳ Тестовый период истекает через: <b>{days} дн. {hours} ч.</b>"
-                else:
-                    status_text = "🚫 <b>Тестовый период окончен.</b>"
-            except Exception as e:
-                # ВЫВОДИМ ОШИБКУ ПРЯМО В ТЕКСТ, ЧТОБЫ ПОНЯТЬ, ЧТО НЕ ТАК
-                status_text = f"❌ Ошибка даты: {e}. Данные в БД: '{sub_until}'"
-        
-        text = (
-            "💼 <b>Кабинет SaaS-клиента</b>\n\n"
-            f"{status_text}\n\n"
-            "Управление каналами и API ключами доступно в меню."
-        )
-        # Если kb_saas() не определена, используйте название функции, 
-        # которая возвращает вашу клавиатуру (например, kb_admin_panel() или иная)
-        await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_admin_panel())
+
+    # Выводим админское меню
+    text = "🛠 <b>Админ-панель</b>\n\nВыберите действие:"
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_admin_panel())
 
   # =============================================================================
 # === ОБРАБОТЧИК КНОПКИ "НАЗАД" ==============================================
