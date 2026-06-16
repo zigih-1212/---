@@ -1,13 +1,23 @@
-# stats.py
 """
-Модуль статистики для блогеров
+stats.py — Модуль статистики для блогеров
 """
 
 import sqlite3
+import logging
 from datetime import datetime
 from typing import Dict
 
-from main import get_db, logger, MIN_PAYOUT  # импортируем необходимые вещи из main
+logger = logging.getLogger("autopost_bot")
+
+DB_PATH = "/app/data/autopost.db"
+MIN_PAYOUT = 2000.0
+
+
+def get_db():
+    """Локальная копия get_db, чтобы избежать циклического импорта"""
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
+    return db
 
 
 def get_blogger_stats(user_id: int) -> Dict:
