@@ -357,6 +357,7 @@ def kb_payment_methods() -> InlineKeyboardMarkup:
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
+    logger.info(f"DEBUG: Пользователь {message.from_user.id} нажал /start")
     await state.clear()
     user_id = message.from_user.id
     username = message.from_user.username
