@@ -394,13 +394,13 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             await state.set_state(OnboardingStates.waiting_role)
             return
 
-        # Если пользователь есть, проверяем привязку канала
-         #if not user.get("channel_id"):
-            # await message.answer(
-               #  "⚠️ Вы ещё не привязали канал.\n"
-                # "Перешлите сообщение из канала или отправьте @username."
-          #   )
-       #  else:
+          #Если пользователь есть, проверяем привязку канала
+         if not user.get("channel_id"):
+             await message.answer(
+                 "⚠️ Вы ещё не привязали канал.\n"
+                 "Перешлите сообщение из канала или отправьте @username."
+             )
+         else:
             # Показываем кабинет
             await show_user_cabinet(message)
             
@@ -2461,10 +2461,6 @@ async def main() -> None:
         return_exceptions=True
     )
 
-@router.message()
-async def echo_handler(message: Message):
-    logger.info(f"DEBUG: Бот получил сообщение от {message.from_user.id}: {message.text}")
-    await message.answer(f"Бот жив! Ты прислал: {message.text}")
-    
+
 if __name__ == "__main__":
     asyncio.run(main())
