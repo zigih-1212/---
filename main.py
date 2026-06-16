@@ -395,12 +395,12 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             return
 
         # Если пользователь есть, проверяем привязку канала
-        if not user.get("channel_id"):
-            await message.answer(
-                "⚠️ Вы ещё не привязали канал.\n"
-                "Перешлите сообщение из канала или отправьте @username."
-            )
-        else:
+         #if not user.get("channel_id"):
+            # await message.answer(
+               #  "⚠️ Вы ещё не привязали канал.\n"
+                # "Перешлите сообщение из канала или отправьте @username."
+          #   )
+       #  else:
             # Показываем кабинет
             await show_user_cabinet(message)
             
