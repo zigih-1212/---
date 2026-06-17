@@ -167,6 +167,20 @@ def init_db() -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+      cursor.execute("""
+          CREATE TABLE IF NOT EXISTS payouts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              user_id INTEGER NOT NULL,
+              amount_requested REAL NOT NULL,
+              amount_to_withdraw REAL NOT NULL,
+              amount_blogger REAL NOT NULL,
+              card TEXT NOT NULL,
+              status TEXT DEFAULT 'pending',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              completed_at TIMESTAMP,
+              FOREIGN KEY(user_id) REFERENCES users(user_id)
+      )
+  """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -207,6 +221,10 @@ def init_db() -> None:
     for col in migrations:
         try:
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
+          try:
+            cursor.execute("ALTER TABLE users ADD COLUMN payout_card TEXT")
         except sqlite3.OperationalError:
             pass
 
