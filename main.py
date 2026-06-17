@@ -1708,6 +1708,107 @@ async def cb_partner_program(callback: CallbackQuery) -> None:
     )
     await callback.answer()
 
+@router.callback_query(F.data == "menu:pub_mode")
+async def cb_menu_pub_mode(callback: CallbackQuery) -> None:
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT blogger_mode FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    mode = user["blogger_mode"] if user else "direct"
+    await callback.message.edit_text(
+        "⚙️ <b>Режим публикации</b>\n\n"
+        "Выберите как публиковать посты:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_blogger_mode(mode)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("blogger_mode:"))
+async def cb_set_blogger_mode(callback: CallbackQuery) -> None:
+    mode = callback.data.split(":")[1]
+    if mode not in ("direct", "vip_pin"):
+        await callback.answer("❌ Неизвестный режим", show_alert=True)
+        return
+
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE users SET blogger_mode=? WHERE user_id=?",
+            (mode, callback.from_user.id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    labels = {"direct": "Напрямую в канал", "vip_pin": "VIP-закреп (24ч)"}
+    await callback.answer(f"✅ Режим изменён: {labels[mode]}", show_alert=False)
+    await callback.message.edit_text(
+        "⚙️ <b>Режим публикации</b>\n\n"
+        "Выберите как публиковать посты:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_blogger_mode(mode)
+    )
+
+
+@router.callback_query(F.data == "menu:settings")
+async def cb_menu_settings(callback: CallbackQuery) -> None:
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT filter_wb, filter_ozon FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    wb = user["filter_wb"] if user else 1
+    ozon = user["filter_ozon"] if user else 1
+    await callback.message.edit_text(
+        "⚙️ <b>Настройки</b>\n\n"
+        "Выберите какие магазины включить в автопостинг:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_filter_settings(wb, ozon)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("filter:toggle:"))
+async def cb_filter_toggle(callback: CallbackQuery) -> None:
+    shop = callback.data.split(":")[2]  # wb или ozon
+    user_id = callback.from_user.id
+
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT filter_wb, filter_ozon FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        wb = user["filter_wb"]
+        ozon = user["filter_ozon"]
+
+        if shop == "wb":
+            wb = 0 if wb else 1
+        elif shop == "ozon":
+            ozon = 0 if ozon else 1
+
+        conn.execute(
+            "UPDATE users SET filter_wb=?, filter_ozon=? WHERE user_id=?",
+            (wb, ozon, user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    await callback.answer()
+    await callback.message.edit_reply_markup(
+        reply_markup=kb_filter_settings(wb, ozon)
+    )
+
 
 # -----------------------------------------------------------------------------
 # Инструкции
