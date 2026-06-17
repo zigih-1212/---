@@ -2398,36 +2398,82 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
                 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                        background: #0f1117; color: #e0e0e8; padding: 24px; }}
-                h1 {{ font-size: 22px; margin-bottom: 20px; color: #fff; }}
-                h2 {{ font-size: 16px; margin-bottom: 12px; color: #ccc; }}
+                h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
+                .topbar {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }}
+                .logout {{ color:#e74c3c; text-decoration:none; }}
+                .stats-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                    gap: 12px;
+                    margin-bottom: 28px;
+                }}
+                .stat-card {{
+                    background: #1a1d27;
+                    border: 1px solid #2a2d3a;
+                    border-radius: 10px;
+                    padding: 16px;
+                    text-align: center;
+                }}
+                .stat-card .num {{ font-size: 32px; font-weight: 700; color: #fff; }}
+                .stat-card .lbl {{ font-size: 12px; color: #888; margin-top: 4px; }}
+                .stat-card.warn .num {{ color: #e74c3c; }}
+                .stat-card.ok .num {{ color: #2ecc71; }}
+                .stat-card.blue .num {{ color: #3498db; }}
+                .stat-card.yellow .num {{ color: #f39c12; }}
                 .section {{ background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 10px; padding: 20px; margin-bottom: 20px; }}
                 table {{ width:100%; border-collapse:collapse; font-size:13px; }}
                 th, td {{ padding:8px 10px; border-bottom:1px solid #2a2d3a; text-align:left; }}
-                th {{ color:#888; font-weight:500; font-size:12px; text-transform:uppercase; }}
+                th {{ color:#888; font-weight:500; }}
                 tr:hover td {{ background:#1e2130; }}
-                .badge {{ background:#3498db; color:#fff; border-radius:12px; padding:1px 8px; font-size:12px; }}
             </style>
         </head>
         <body>
             <div class="topbar">
-                <h1>⚡ AutoPost Admin</h1>
-                <nav style="display:flex;gap:16px;margin-top:8px">
-                    <a href="/admin/saas" style="color:#3498db;font-size:14px">💼 SaaS клиенты</a>
-                    <a href="/admin/logout" class="logout">Выход</a>
-                </nav>
+                <h1>⚡ AutoPost Admin Dashboard</h1>
+                <a href="/admin/logout" class="logout">Выход</a>
             </div>
 
             <div class="stats-grid">
-                <!-- Можно добавить карточки статистики сюда -->
+                <div class="stat-card ok">
+                    <div class="num">{saas_active}</div>
+                    <div class="lbl">SaaS активных</div>
+                </div>
+                <div class="stat-card blue">
+                    <div class="num">{saas_trial}</div>
+                    <div class="lbl">SaaS новых (3д)</div>
+                </div>
+                <div class="stat-card ok">
+                    <div class="num">{bloggers_active}</div>
+                    <div class="lbl">Блогеров</div>
+                </div>
+                <div class="stat-card blue">
+                    <div class="num">{posts_today}</div>
+                    <div class="lbl">Постов сегодня</div>
+                </div>
+                <div class="stat-card">
+                    <div class="num">{posts_week}</div>
+                    <div class="lbl">Постов за 7 дней</div>
+                </div>
+                <div class="{payout_class}">
+                    <div class="num">{pending_payouts}</div>
+                    <div class="lbl">Выплат ожидает</div>
+                </div>
+                <div class="stat-card yellow">
+                    <div class="num">{pending_amount:.0f}₽</div>
+                    <div class="lbl">К выплате</div>
+                </div>
+                <div class="{error_class}">
+                    <div class="num">{errors_today}</div>
+                    <div class="lbl">Ошибок сегодня</div>
+                </div>
             </div>
-
             {payouts_section}
 
             <div class="section">
                 <h2>👥 Пользователи (последние 20)</h2>
                 <table>
                     <tr><th>ID</th><th>Username</th><th>Роль</th><th>Канал</th><th>Подписка до</th><th>Статус</th><th>Продлить</th></tr>
-                    {users_rows}
+                    {users_rows if 'users_rows' in locals() else ''}
                 </table>
             </div>
 
@@ -2435,7 +2481,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 <h2>📬 Последние посты (30)</h2>
                 <table>
                     <tr><th>ID</th><th>Пользователь</th><th>Донор</th><th>Статус</th><th>Дата</th></tr>
-                    {posts_rows}
+                    {posts_rows if 'posts_rows' in locals() else ''}
                 </table>
             </div>
         </body>
