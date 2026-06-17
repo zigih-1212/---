@@ -3151,7 +3151,8 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     </form>
 </body>
 </html>"""
-        return HTMLResponse(html)
+                return HTMLResponse(html)
+                
     @app.get("/admin/channel/{channel_id}", response_class=HTMLResponse)
     async def channel_card(request: Request, channel_id: str):
         is_authenticated(request)
