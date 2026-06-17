@@ -2520,12 +2520,12 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 <div class="lbl">Выплат ожидает</div>
             </div>
             <div class="stat-card yellow">
-                <div class="num">{pending_amount:.0f}₽</div>
-                <div class="lbl">К выплате</div>
+            <div class="num">{pending_amount:.0f}₽</div>
+            <div class="lbl">К выплате</div>
             </div>
             <div class="stat-card {'warn' if errors_today else ''}">
-                <div class="num">{errors_today}</div>
-                <div class="lbl">Ошибок сегодня</div>
+            <div class="num">{errors_today}</div>
+            <div class="lbl">Ошибок сегодня</div>
             </div>
         </div>
 
