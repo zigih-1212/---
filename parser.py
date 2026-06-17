@@ -238,3 +238,109 @@ def is_video_processed(video_id: str) -> bool:
         return row is not None
     finally:
         conn.close()
+
+async def process_saas_post(bot: Bot, post_text: str, post_id: str):
+    """Публикует пост из донора во все активные каналы SaaS с рерайтом"""
+    from main import rewrite_text_with_ai  # избегаем циклического импорта
+
+    conn = get_db()
+    try:
+        saas_users = conn.execute("""
+            SELECT u.user_id, u.api_key, u.sub_id,
+                   c.channel_id, c.channel_title
+            FROM users u
+            JOIN channels c ON c.user_id = u.user_id AND c.is_active = 1
+            WHERE u.role = 'saas'
+              AND u.is_active = 1
+              AND u.subscription_until > datetime('now')
+        """).fetchall()
+    finally:
+        conn.close()
+
+    import random
+    saas_users = list(saas_users)
+    random.shuffle(saas_users)  # рандомный порядок публикации
+
+    saas_post_counter = {}  # счётчик постов на юзера для мастер-токена
+
+    for user in saas_users:
+        try:
+            user_id = user["user_id"]
+            channel_id = user["channel_id"]
+
+            # Проверяем дубль для этого канала
+            if is_video_processed(f"{post_id}_{channel_id}"):
+                continue
+
+            # Рерайт — каждому свой уникальный
+            rewritten = await rewrite_text_with_ai(post_text)
+
+            # Определяем токен: каждые N постов — мастер-токен
+            saas_post_counter[user_id] = saas_post_counter.get(user_id, 0) + 1
+            use_master = (saas_post_counter[user_id] % MASTER_TOKEN_EVERY_N == 0)
+            token = TAKPRODAM_MASTER_TOKEN if use_master else user["api_key"]
+
+            if not token:
+                logger.warning(f"SaaS user {user_id} не имеет api_key, пропускаем")
+                continue
+
+            # Получаем ERID через нужный токен
+            product_info = await get_product_data_by_token(token, user["sub_id"])
+
+            if product_info and product_info.get("erid"):
+                caption = (
+                    f"{rewritten}\n\n"
+                    f"<i>Реклама. {product_info['advertiser']}. "
+                    f"Erid: {product_info['erid']}</i>"
+                )
+            else:
+                caption = rewritten
+
+            # Публикуем
+            msg = await bot.send_message(
+                chat_id=channel_id,
+                text=caption,
+                parse_mode="HTML"
+            )
+
+            # Записываем в posts
+            conn = get_db()
+            try:
+                conn.execute("""
+                    INSERT INTO posts 
+                    (user_id, donor_post_id, channel_id, traffic_source, status, published_at)
+                    VALUES (?, ?, ?, 'saas_donor', 'published', ?)
+                """, (user_id, f"{post_id}_{channel_id}", channel_id,
+                      datetime.now(timezone.utc).isoformat()))
+                conn.commit()
+            finally:
+                conn.close()
+
+            logger.info(f"✅ SaaS пост опубликован: user={user_id} канал={channel_id}")
+
+            # КД между постами в разные каналы (3-7 секунд)
+            import asyncio
+            await asyncio.sleep(random.uniform(3, 7))
+
+        except Exception as e:
+            logger.error(f"process_saas_post ошибка user={user['user_id']}: {e}")
+
+
+async def get_product_data_by_token(token: str, sub_id: str) -> Optional[Dict]:
+    """Запрос к Такпродам с произвольным токеном"""
+    url = "https://api.takprodam.ru/v1/products/info"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                original_link = data.get("link", "")
+                return {
+                    "erid": data.get("erid"),
+                    "advertiser": data.get("advertiser"),
+                    "link": f"{original_link}?sub_id={sub_id}" if original_link else "",
+                }
+    except Exception as e:
+        logger.error(f"get_product_data_by_token error: {e}")
+    return None
