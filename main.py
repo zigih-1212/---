@@ -170,20 +170,20 @@ def init_db() -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-      cursor.execute("""
-          CREATE TABLE IF NOT EXISTS payouts (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              user_id INTEGER NOT NULL,
-              amount_requested REAL NOT NULL,
-              amount_to_withdraw REAL NOT NULL,
-              amount_blogger REAL NOT NULL,
-              card TEXT NOT NULL,
-              status TEXT DEFAULT 'pending',
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              completed_at TIMESTAMP,
-              FOREIGN KEY(user_id) REFERENCES users(user_id)
-      )
-  """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS payouts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            amount_requested REAL NOT NULL,
+            amount_to_withdraw REAL NOT NULL,
+            amount_blogger REAL NOT NULL,
+            card TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        )
+    """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
