@@ -1768,96 +1768,236 @@ async def cb_instr_saas(callback: CallbackQuery) -> None:
 # -----------------------------------------------------------------------------
 
 @router.callback_query(F.data == "payout:request")
-async def cb_request_payout(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_payout_request(callback: CallbackQuery, state: FSMContext) -> None:
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT payout_card FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        active = conn.execute(
+            "SELECT COUNT(*) as cnt FROM payouts WHERE user_id=? AND status='pending'",
+            (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if active["cnt"] >= MAX_ACTIVE_PAYOUTS:
+        await callback.answer(
+            f"❌ У вас уже {MAX_ACTIVE_PAYOUTS} активные заявки. Дождитесь выплаты.",
+            show_alert=True
+        )
+        return
+
+    card = user["payout_card"] if user else None
+
+    if card:
+        await callback.message.edit_text(
+            f"💳 <b>Запрос выплаты</b>\n\n"
+            f"Текущая карта: <code>{card}</code>\n\n"
+            f"Минимальная сумма вывода: <b>{MIN_PAYOUT:.0f} ₽</b>\n"
+            f"Введите сумму для вывода или смените карту:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Сменить карту", callback_data="payout:change_card")],
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:stats")],
+            ])
+        )
+        await state.set_state(PayoutStates.waiting_for_amount)
+    else:
+        await callback.message.edit_text(
+            "💳 <b>Запрос выплаты</b>\n\n"
+            "Введите номер карты РФ для получения выплаты\n"
+            "<i>(сохранится в профиле, в будущем менять не придётся)</i>:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:stats")],
+            ])
+        )
+        await state.set_state(PayoutStates.waiting_for_card)
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "payout:change_card")
+async def cb_payout_change_card(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
-        "💳 <b>Запрос на вывод средств</b>\n\n"
-        "Введи номер карты или реквизиты СБП (номер телефона + банк):",
+        "💳 Введите новый номер карты РФ:",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Отмена", callback_data="menu:stats")]
-        ]),
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="payout:request")],
+        ])
     )
     await state.set_state(PayoutStates.waiting_for_card)
     await callback.answer()
 
 
 @router.message(PayoutStates.waiting_for_card)
-async def handle_payout_card(message: Message, state: FSMContext) -> None:
-    user_id = message.from_user.id
-    card_details = message.text.strip() if message.text else ""
-    conn = get_db()
-    try:
-        user = conn.execute(
-            "SELECT sub_id, username FROM users WHERE user_id=?", (user_id,)
-        ).fetchone()
-        if not user:
-            await state.clear()
-            return
-        sub_id = user["sub_id"]
-        approved_sum = conn.execute(
-            "SELECT COALESCE(SUM(payout), 0.0) FROM transactions "
-            "WHERE sub_id=? AND status='approved'", (sub_id,)
-        ).fetchone()[0]
-        if approved_sum < MIN_PAYOUT:
-            await message.answer("❌ Недостаточно средств для вывода.")
-            await state.clear()
-            return
-        await state.clear()
-        await message.answer(
-            "✅ <b>Заявка отправлена!</b>\n\nАдминистратор переведёт средства в ближайшее время.",
-            parse_mode=ParseMode.HTML,
-        )
-        admin_text = (
-            f"🚨 <b>Новая заявка на выплату!</b>\n\n"
-            f"👤 @{user['username']} (ID: <code>{user_id}</code>, sub_id: {sub_id})\n"
-            f"💰 Сумма: <b>{approved_sum:.2f} руб.</b>\n\n"
-            f"💳 Реквизиты:\n<code>{card_details}</code>"
-        )
-        admin_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="✅ Выплачено",
-                callback_data=f"adm_payout:done:{sub_id}:{user_id}",
-            )]
-        ])
-        for admin_id in ADMIN_IDS:
-            try:
-                await message.bot.send_message(
-                    chat_id=admin_id, text=admin_text,
-                    parse_mode=ParseMode.HTML, reply_markup=admin_kb,
-                )
-            except Exception:
-                pass
-    finally:
-        conn.close()
+async def payout_got_card(message: Message, state: FSMContext) -> None:
+    card = message.text.strip().replace(" ", "")
 
+    if not card.isdigit() or len(card) != 16:
+        await message.answer("❌ Некорректный номер карты. Введите 16 цифр без пробелов:")
+        return
 
-@router.callback_query(F.data.startswith("adm_payout:done:"))
-async def cb_admin_payout_done(callback: CallbackQuery) -> None:
-    parts = callback.data.split(":")
-    sub_id = parts[2]
-    blogger_id = int(parts[3])
+    formatted = f"{card[:4]} {card[4:8]} {card[8:12]} {card[12:]}"
+
     conn = get_db()
     try:
         conn.execute(
-            "UPDATE transactions SET status='paid' WHERE sub_id=? AND status='approved'",
-            (sub_id,)
+            "UPDATE users SET payout_card=? WHERE user_id=?",
+            (formatted, message.from_user.id)
         )
         conn.commit()
     finally:
         conn.close()
-    await callback.message.edit_text(
-        callback.message.html_text + "\n\n<b>✅ ВЫПЛАЧЕНО</b>",
-        parse_mode=ParseMode.HTML,
+
+    await state.set_state(PayoutStates.waiting_for_amount)
+    await message.answer(
+        f"✅ Карта сохранена: <code>{formatted}</code>\n\n"
+        f"Теперь введите сумму для вывода (минимум {MIN_PAYOUT:.0f} ₽):",
+        parse_mode=ParseMode.HTML
     )
-    await callback.answer("Баланс блогера обнулён")
+
+
+@router.message(PayoutStates.waiting_for_amount)
+async def payout_got_amount(message: Message, state: FSMContext) -> None:
+    user_id = message.from_user.id
+
+    try:
+        amount = float(message.text.strip().replace(",", "."))
+    except ValueError:
+        await message.answer("❌ Введите число, например: 2000")
+        return
+
+    if amount < MIN_PAYOUT:
+        await message.answer(f"❌ Минимальная сумма вывода — {MIN_PAYOUT:.0f} ₽")
+        return
+
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT payout_card, sub_id FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+
+        # Проверяем баланс из транзакций
+        balance_row = conn.execute("""
+            SELECT COALESCE(SUM(payout), 0.0) as total
+            FROM transactions
+            WHERE sub_id=? AND status IN ('approved', 'paid')
+        """, (user["sub_id"],)).fetchone()
+
+        # Вычитаем уже выведенное
+        withdrawn_row = conn.execute("""
+            SELECT COALESCE(SUM(amount_blogger), 0.0) as total
+            FROM payouts
+            WHERE user_id=? AND status IN ('pending', 'completed')
+        """, (user_id,)).fetchone()
+
+        available = float(balance_row["total"]) - float(withdrawn_row["total"])
+    finally:
+        conn.close()
+
+    if amount > available:
+        await message.answer(
+            f"❌ Недостаточно средств.\n"
+            f"Доступно для вывода: <b>{available:.2f} ₽</b>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+
+    calc = calc_payout(amount)
+    card = user["payout_card"]
+
+    # Сохраняем заявку
+    conn = get_db()
+    try:
+        conn.execute("""
+            INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status)
+            VALUES (?, ?, ?, ?, ?, 'pending')
+        """, (user_id, calc["amount_requested"], calc["amount_to_withdraw"], calc["amount_blogger"], card))
+        payout_id = conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+        conn.commit()
+    finally:
+        conn.close()
+
+    await state.clear()
+
+    # Уведомление блогеру
+    await message.answer(
+        f"✅ <b>Заявка принята, ожидайте!</b>\n\n"
+        f"💰 Сумма к получению: <b>{calc['amount_blogger']:.2f} ₽</b>\n"
+        f"💳 На карту: <code>{card}</code>\n\n"
+        f"<i>Выплата производится в течение суток.</i>",
+        parse_mode=ParseMode.HTML
+    )
+
+    # Уведомление админу
+    for admin_id in ADMIN_IDS:
+        try:
+            await message.bot.send_message(
+                admin_id,
+                f"💸 <b>Новая заявка на выплату #{payout_id}</b>\n\n"
+                f"👤 User ID: <code>{user_id}</code>\n"
+                f"💳 Карта: <code>{card}</code>\n\n"
+                f"📤 Вывести из Такпродам: <b>{calc['amount_to_withdraw']:.2f} ₽</b>\n"
+                f"<i>(после комиссии {PAYOUT_FIXED_FEE:.0f}₽ + {PAYOUT_BANK_PCT*100:.1f}% получишь ~{calc['amount_blogger']*2:.2f} ₽)</i>\n\n"
+                f"💰 Отправить блогеру: <b>{calc['amount_blogger']:.2f} ₽</b>\n"
+                f"💰 Твоя доля: <b>{calc['amount_blogger']:.2f} ₽</b>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text="✅ Отправлено",
+                        callback_data=f"payout:done:{payout_id}:{user_id}"
+                    )],
+                ])
+            )
+        except TelegramAPIError as e:
+            logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
+
+
+@router.callback_query(F.data.startswith("payout:done:"))
+async def cb_payout_done(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Нет доступа", show_alert=True)
+        return
+
+    parts = callback.data.split(":")
+    payout_id = int(parts[2])
+    blogger_id = int(parts[3])
+
+    conn = get_db()
+    try:
+        conn.execute("""
+            UPDATE payouts SET status='completed', completed_at=CURRENT_TIMESTAMP
+            WHERE id=? AND status='pending'
+        """, (payout_id,))
+        conn.commit()
+        payout = conn.execute(
+            "SELECT amount_blogger, card FROM payouts WHERE id=?", (payout_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    # Уведомление блогеру
     try:
         await callback.bot.send_message(
-            chat_id=blogger_id,
-            text="💸 <b>Выплата отправлена!</b> Проверь баланс карты.",
-            parse_mode=ParseMode.HTML,
+            blogger_id,
+            f"✅ <b>Выплата отправлена!</b>\n\n"
+            f"💰 Сумма: <b>{payout['amount_blogger']:.2f} ₽</b>\n"
+            f"💳 На карту: <code>{payout['card']}</code>\n\n"
+            f"<i>Если деньги не пришли в течение суток — напишите в поддержку.</i>",
+            parse_mode=ParseMode.HTML
         )
-    except Exception:
-        pass
+    except TelegramAPIError as e:
+        logger.error(f"Не удалось уведомить блогера {blogger_id}: {e}")
+
+    # Обновляем сообщение у админа
+    await callback.message.edit_text(
+        callback.message.text + f"\n\n✅ <b>Выплачено</b>",
+        parse_mode=ParseMode.HTML
+    )
+    await callback.answer("✅ Выплата подтверждена")
 
 
 # =============================================================================
