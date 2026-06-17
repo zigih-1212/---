@@ -3106,7 +3106,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Карточка #{user_id}</title>
+    <title>Карточка {user_id}</title>
     <style>
         body {{font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:25px;max-width:1200px;margin:0 auto;}}
         h1,h2 {{color:#fff;}}
