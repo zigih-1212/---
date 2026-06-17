@@ -2507,85 +2507,83 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     </body>
     </html>
     """)
-
             html += "</table></body></html>"
             return HTMLResponse(html)
         finally:
             conn.close()
 
-   @app.post("/admin/extend")
+    @app.post("/admin/extend")
     async def extend_subscription(request: Request, user_id: int = Form(...), days: int = Form(...), redirect: str = Form(default="/admin/dashboard")):
         is_authenticated(request)
         conn = get_db()
         try:
             now = datetime.now(timezone.utc)
             new_date = (now + timedelta(days=days)).isoformat()
-            conn.execute("UPDATE users SET subscription_until=?, is_active=1 WHERE user_id=?", 
+            conn.execute("UPDATE users SET subscription_until=?, is_active=1 WHERE user_id=?",
                         (new_date, user_id))
             conn.commit()
         finally:
             conn.close()
         return RedirectResponse(redirect, status_code=302)
 
-        @app.post("/admin/payout_done")
-async def admin_payout_done(request: Request, payout_id: int = Form(...), blogger_id: int = Form(...)):
-    is_authenticated(request)
-    conn = get_db()
-    try:
-        conn.execute("""
-            UPDATE payouts SET status='completed', completed_at=CURRENT_TIMESTAMP
-            WHERE id=? AND status='pending'
-        """, (payout_id,))
-        conn.commit()
-        payout = conn.execute(
-            "SELECT amount_blogger, card FROM payouts WHERE id=?", (payout_id,)
-        ).fetchone()
-    finally:
-        conn.close()
-
-@app.get("/admin/saas", response_class=HTMLResponse)
-async def saas_list(request: Request):
-    is_authenticated(request)
-    conn = get_db()
-    try:
-        users = conn.execute("""
-            SELECT user_id, username, is_active,
-                   subscription_until, created_at, api_key
-            FROM users
-            WHERE role='saas'
-            ORDER BY created_at DESC
-        """).fetchall()
-    finally:
-        conn.close()
-
-    rows = ""
-    for u in users:
-        sub = str(u["subscription_until"])[:10] if u["subscription_until"] else "—"
-        now = datetime.now(timezone.utc)
+    @app.post("/admin/payout_done")
+    async def admin_payout_done(request: Request, payout_id: int = Form(...), blogger_id: int = Form(...)):
+        is_authenticated(request)
+        conn = get_db()
         try:
-            sub_dt = datetime.fromisoformat(str(u["subscription_until"]).replace("Z", "+00:00")) if u["subscription_until"] else None
-        except Exception:
-            sub_dt = None
+            conn.execute("""
+                UPDATE payouts SET status='completed', completed_at=CURRENT_TIMESTAMP
+                WHERE id=? AND status='pending'
+            """, (payout_id,))
+            conn.commit()
+            payout = conn.execute(
+                "SELECT amount_blogger, card FROM payouts WHERE id=?", (payout_id,)
+            ).fetchone()
+        finally:
+            conn.close()
 
-        if not u["is_active"]:
-            status = '<span style="color:#e74c3c">⛔ Забанен</span>'
-        elif sub_dt and sub_dt > now:
-            days_left = (sub_dt - now).days
-            status = f'<span style="color:#2ecc71">🟢 Активен ({days_left}д)</span>'
-        else:
-            status = '<span style="color:#f39c12">⚠️ Истекла</span>'
+    @app.get("/admin/saas", response_class=HTMLResponse)
+    async def saas_list(request: Request):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            users = conn.execute("""
+                SELECT user_id, username, is_active,
+                       subscription_until, created_at, api_key
+                FROM users
+                WHERE role='saas'
+                ORDER BY created_at DESC
+            """).fetchall()
+        finally:
+            conn.close()
 
-        has_key = "✅" if u["api_key"] else "❌"
-        rows += f"""
-        <tr style="cursor:pointer" onclick="location.href='/admin/saas/{u['user_id']}'">
-            <td>{u['user_id']}</td>
-            <td>@{u['username'] or '—'}</td>
-            <td>{status}</td>
-            <td>{sub}</td>
-            <td>{has_key} API-ключ</td>
-            <td>{str(u['created_at'])[:10]}</td>
-        </tr>"""
+        rows = ""
+        for u in users:
+            sub = str(u["subscription_until"])[:10] if u["subscription_until"] else "—"
+            now = datetime.now(timezone.utc)
+            try:
+                sub_dt = datetime.fromisoformat(str(u["subscription_until"]).replace("Z", "+00:00")) if u["subscription_until"] else None
+            except Exception:
+                sub_dt = None
 
+            if not u["is_active"]:
+                status = '<span style="color:#e74c3c">⛔ Забанен</span>'
+            elif sub_dt and sub_dt > now:
+                days_left = (sub_dt - now).days
+                status = f'<span style="color:#2ecc71">🟢 Активен ({days_left}д)</span>'
+            else:
+                status = '<span style="color:#f39c12">⚠️ Истекла</span>'
+
+            has_key = "✅" if u["api_key"] else "❌"
+            rows += f"""
+            <tr style="cursor:pointer" onclick="location.href='/admin/saas/{u['user_id']}'">
+                <td>{u['user_id']}</td>
+                <td>@{u['username'] or '—'}</td>
+                <td>{status}</td>
+                <td>{sub}</td>
+                <td>{has_key} API-ключ</td>
+                <td>{str(u['created_at'])[:10]}</td>
+            </tr>"""
     return HTMLResponse(f"""
     <!DOCTYPE html><html lang="ru"><head>
     <meta charset="UTF-8">
