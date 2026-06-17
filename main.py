@@ -46,7 +46,6 @@ from aiogram.types import (
     TelegramObject,
 )
 from aiogram.types import (
-    ...,
     WebAppInfo,
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
