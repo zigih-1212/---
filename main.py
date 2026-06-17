@@ -1137,7 +1137,7 @@ def kb_filter_settings(wb: int, ozon: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text=f"{'✅' if ozon else '❌'} Ozon", callback_data="filter:toggle:ozon"
         )],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:settings")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
     ])
 
 
