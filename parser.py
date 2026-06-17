@@ -18,6 +18,10 @@ logger = logging.getLogger("parser")
 DB_PATH = os.getenv("DB_PATH", "autopost.db")
 TAKPRODAM_MASTER_TOKEN = os.getenv("TAKPRODAM_MASTER_TOKEN")
 ADMIN_VIP_CHANNEL_ID = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "0"))
+SAAS_DONOR_CHANNELS: list[str] = [
+    x.strip() for x in os.getenv("SAAS_DONOR_CHANNELS", "").split(",") if x.strip()
+]
+MASTER_TOKEN_EVERY_N: int = int(os.getenv("MASTER_TOKEN_EVERY_N", "70"))
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
