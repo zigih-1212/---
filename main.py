@@ -2524,68 +2524,55 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             </div>
 
         # === Формирование HTML дашборда ===
-        html_template = """
-        <!DOCTYPE html>
-        <html lang="ru">
-        <head>
-            <meta charset="UTF-8">
-            <title>AutoPost Admin Dashboard</title>
-            <style>
-                body {font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}
-                h1,h2 {color:#fff;}
-                table {width:100%;border-collapse:collapse;margin:20px 0;}
-                th,td {padding:10px;border:1px solid #333;text-align:left;}
-                th {background:#1a1d27;}
-                .active {color:#2ecc71;} 
-                .inactive {color:#e74c3c;}
-                .section {background:#1a1d27;padding:20px;border-radius:8px;margin-bottom:25px;}
-            </style>
-        </head>
-        <body>
-            <h1>AutoPost Admin Dashboard</h1>
-            <a href="/admin/logout">Выход</a>
+        html = """
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>AutoPost Admin Dashboard</title>
+    <style>
+        body {font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}
+        h1,h2 {color:#fff;}
+        table {width:100%;border-collapse:collapse;margin:20px 0;}
+        th,td {padding:10px;border:1px solid #333;text-align:left;}
+        th {background:#1a1d27;}
+        .active {color:#2ecc71;} 
+        .inactive {color:#e74c3c;}
+        .section {background:#1a1d27;padding:20px;border-radius:8px;margin-bottom:25px;}
+    </style>
+</head>
+<body>
+    <h1>AutoPost Admin Dashboard</h1>
+    <a href="/admin/logout">Выход</a>
 
-            <div class="section">
-                <h2>📊 Общая статистика</h2>
-                <p>Активных SaaS: <b>{saas_active}</b> | Блогеров: <b>{bloggers_active}</b></p>
-                <p>Постов сегодня: <b>{posts_today}</b> | За неделю: <b>{posts_week}</b></p>
-                <p>Ошибок сегодня: <b>{errors_today}</b></p>
-                <p>Ожидают выплату: <b>{pending_payouts}</b> заявок на сумму <b>{pending_amount:.2f} ₽</b></p>
-            </div>
+    <div class="section">
+        <h2>📊 Общая статистика</h2>
+        <p>Активных SaaS: <b>""" + str(saas_active) + """</b> | Блогеров: <b>""" + str(bloggers_active) + """</b></p>
+        <p>Постов сегодня: <b>""" + str(posts_today) + """</b> | За неделю: <b>""" + str(posts_week) + """</b></p>
+        <p>Ошибок сегодня: <b>""" + str(errors_today) + """</b></p>
+        <p>Ожидают выплату: <b>""" + str(pending_payouts) + """</b> заявок на сумму <b>""" + f"{float(pending_amount):.2f}" + """ ₽</b></p>
+    </div>
 
-            {payouts_section}
+    """ + str(payouts_section or "") + """
 
-            <div class="section">
-                <h2>👥 Пользователи (последние 20)</h2>
-                <table>
-                    <tr><th>ID</th><th>Username</th><th>Роль</th><th>Канал</th><th>Подписка до</th><th>Статус</th><th>Продлить</th></tr>
-                    {users_rows}
-                </table>
-            </div>
+    <div class="section">
+        <h2>👥 Пользователи (последние 20)</h2>
+        <table>
+            <tr><th>ID</th><th>Username</th><th>Роль</th><th>Канал</th><th>Подписка до</th><th>Статус</th><th>Продлить</th></tr>
+            """ + str(users_rows or "") + """
+        </table>
+    </div>
 
-            <div class="section">
-                <h2>📬 Последние посты (30)</h2>
-                <table>
-                    <tr><th>ID</th><th>Пользователь</th><th>Донор</th><th>Статус</th><th>Дата</th></tr>
-                    {posts_rows}
-                </table>
-            </div>
-        </body>
-        </html>
-        """
-
-        html = html_template.format(
-            saas_active=saas_active,
-            bloggers_active=bloggers_active,
-            posts_today=posts_today,
-            posts_week=posts_week,
-            errors_today=errors_today,
-            pending_payouts=pending_payouts,
-            pending_amount=float(pending_amount),
-            payouts_section=payouts_section,
-            users_rows=users_rows,
-            posts_rows=posts_rows
-        )
+    <div class="section">
+        <h2>📬 Последние посты (30)</h2>
+        <table>
+            <tr><th>ID</th><th>Пользователь</th><th>Донор</th><th>Статус</th><th>Дата</th></tr>
+            """ + str(posts_rows or "") + """
+        </table>
+    </div>
+</body>
+</html>
+"""
 
         return HTMLResponse(html)
 
