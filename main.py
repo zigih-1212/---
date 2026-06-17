@@ -57,7 +57,9 @@ from parser import (
     extract_video_info,
     find_product_links,
     process_new_video,
-    is_video_processed
+    is_video_processed,
+    fetch_telegram_channel_posts,
+    process_saas_post,
 )
 
 # =============================================================================
