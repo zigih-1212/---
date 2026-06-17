@@ -1725,60 +1725,7 @@ async def cb_instr_saas(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# -----------------------------------------------------------------------------
-# Статистика
-# -----------------------------------------------------------------------------
 
-@router.callback_query(F.data == "menu:stats")
-async def cb_menu_stats(callback: CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
-    finally:
-        conn.close()
-
-    if not user:
-        await callback.answer("❌ Пользователь не найден", show_alert=True)
-        return
-
-    if user["role"] == "blogger":
-        stats = get_blogger_stats(user_id)
-
-        text = (
-            f"📊 <b>Ваша статистика</b>\n\n"
-            f"📍 Всего постов: <b>{stats['total_posts']}</b>\n"
-            f"✅ Опубликовано: <b>{stats['published_posts']}</b>\n"
-            f"🕒 За последние 30 дней: <b>{stats['published_last_30d']}</b>\n\n"
-            f"💰 <b>Заработок</b>\n"
-            f"├ Всего: <b>{stats['total_earned']} ₽</b>\n"
-            f"└ За 30 дней: <b>{stats['earned_last_30d']} ₽</b>\n\n"
-            f"🛍 Продаж: <b>{stats['total_sales']}</b>\n\n"
-            f"<i>Данные обновляются автоматически.</i>"
-        )
-
-        kb = []
-        if stats["total_earned"] >= MIN_PAYOUT:
-            kb.append([InlineKeyboardButton(text="💳 Запросить выплату", callback_data="payout:request")])
-        
-        kb.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
-
-        await callback.message.edit_text(
-            text, 
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
-        )
-    else:
-        await callback.message.edit_text(
-            "📊 <b>Статистика SaaS</b>\n\nФункция в разработке.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
-            ])
-        )
-
-    await callback.answer()
 # -----------------------------------------------------------------------------
 # Выплаты
 # -----------------------------------------------------------------------------
