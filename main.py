@@ -22,7 +22,7 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Optional
-from stats import get_blogger_stats
+from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats, STAT_PERIODS
 
 import httpx
 import uvicorn
@@ -520,7 +520,7 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "menu:stats")
 async def cb_menu_stats(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
-    
+
     conn = get_db()
     try:
         user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
@@ -533,7 +533,6 @@ async def cb_menu_stats(callback: CallbackQuery) -> None:
 
     if user["role"] == "blogger":
         stats = get_blogger_stats(user_id)
-
         text = (
             f"📊 <b>Ваша статистика</b>\n\n"
             f"📍 Всего постов: <b>{stats['total_posts']}</b>\n"
@@ -545,27 +544,84 @@ async def cb_menu_stats(callback: CallbackQuery) -> None:
             f"🛍 Продаж: <b>{stats['total_sales']}</b>\n\n"
             f"<i>Данные обновляются автоматически.</i>"
         )
-
         kb = []
         if stats["total_earned"] >= MIN_PAYOUT:
             kb.append([InlineKeyboardButton(text="💳 Запросить выплату", callback_data="payout:request")])
-        
         kb.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
-
-        await callback.message.edit_text(
-            text, 
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
-        )
+        await callback.message.edit_text(text, parse_mode=ParseMode.HTML,
+                                         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
     else:
+        await _show_saas_stats(callback, user_id, channel_idx=0, period="30d")
+
+    await callback.answer()
+
+
+async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: int, period: str) -> None:
+    channels = get_saas_channels(user_id)
+
+    if not channels:
         await callback.message.edit_text(
-            "📊 <b>Статистика SaaS</b>\n\nФункция в разработке.",
+            "📊 <b>Статистика</b>\n\nУ вас ещё нет подключённых каналов.",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
             ])
         )
+        return
 
+    channel_idx = max(0, min(channel_idx, len(channels) - 1))
+    ch = channels[channel_idx]
+    s = get_saas_channel_stats(user_id, ch["channel_id"], period)
+    total_ch = len(channels)
+    title = ch["channel_title"] or ch["channel_id"]
+
+    text = (
+        f"📊 <b>Статистика канала</b>\n"
+        f"📢 <b>{title}</b>  <i>({channel_idx + 1}/{total_ch})</i>\n"
+        f"🗓 Период: <b>{s['period_label']}</b>\n\n"
+        f"📬 Постов отправлено:  <b>{s['total']}</b>\n"
+        f"✅ Опубликовано:       <b>{s['published']}</b>\n"
+        f"⚠️ В карантине:        <b>{s['quarantine']}</b>\n"
+        f"❌ Ошибок:             <b>{s['errors']}</b>\n\n"
+        f"🕐 Последний пост: <b>{s['last_published_at']}</b>\n\n"
+        f"<i>Данные обновляются в реальном времени.</i>"
+    )
+
+    nav_row = []
+    if channel_idx > 0:
+        nav_row.append(InlineKeyboardButton(text="◀️ Канал", callback_data=f"saas_stats:{channel_idx - 1}:{period}"))
+    if channel_idx < total_ch - 1:
+        nav_row.append(InlineKeyboardButton(text="Канал ▶️", callback_data=f"saas_stats:{channel_idx + 1}:{period}"))
+
+    period_row = []
+    for p_key, p_cfg in STAT_PERIODS.items():
+        label = f"· {p_cfg['label']} ·" if p_key == period else p_cfg["label"]
+        period_row.append(InlineKeyboardButton(text=label, callback_data=f"saas_stats:{channel_idx}:{p_key}"))
+
+    kb = []
+    if nav_row:
+        kb.append(nav_row)
+    kb.append(period_row)
+    kb.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
+
+    await callback.message.edit_text(text, parse_mode=ParseMode.HTML,
+                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+
+@router.callback_query(F.data.startswith("saas_stats:"))
+async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    try:
+        channel_idx = int(parts[1])
+        period = parts[2]
+    except (IndexError, ValueError):
+        await callback.answer("❌ Ошибка навигации", show_alert=True)
+        return
+
+    if period not in STAT_PERIODS:
+        period = "30d"
+
+    await _show_saas_stats(callback, callback.from_user.id, channel_idx, period)
     await callback.answer()
 
 
