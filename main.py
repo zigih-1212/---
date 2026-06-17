@@ -1074,7 +1074,7 @@ async def add_to_night_queue(
         conn.close()
 
 async def flush_night_queue(bot: Bot) -> None:
-     """Утром в 08:00 МСК публикует посты из ночной очереди."""
+    """Утром в 08:00 МСК публикует посты из ночной очереди."""
     conn = get_db()
     try:
         rows = conn.execute(
