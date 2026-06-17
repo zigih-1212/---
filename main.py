@@ -2991,28 +2991,27 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
 
 @app.post("/admin/saas/{user_id}/ban")
-async def saas_ban(request: Request, user_id: int):
-    is_authenticated(request)
-    conn = get_db()
-    try:
-        current = conn.execute("SELECT is_active FROM users WHERE user_id=?", (user_id,)).fetchone()
-        new_status = 0 if current["is_active"] else 1
-        conn.execute("UPDATE users SET is_active=? WHERE user_id=?", (new_status, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-    return RedirectResponse(f"/admin/saas/{user_id}", status_code=302)
+    async def saas_ban(request: Request, user_id: int):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            current = conn.execute("SELECT is_active FROM users WHERE user_id=?", (user_id,)).fetchone()
+            new_status = 0 if current["is_active"] else 1
+            conn.execute("UPDATE users SET is_active=? WHERE user_id=?", (new_status, user_id))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/admin/saas/{user_id}", status_code=302)
 
-
-@app.get("/admin/check_bot")
-async def check_bot_rights(request: Request, channel_id: str):
-    is_authenticated(request)
-    try:
-        member = await bot.get_chat_member(chat_id=channel_id, user_id=bot.id)
-        is_admin = member.status in ("administrator", "creator")
-        return {"ok": is_admin, "status": member.status}
-    except Exception as e:
-        return {"ok": False, "status": str(e)}
+    @app.get("/admin/check_bot")
+    async def check_bot_rights(request: Request, channel_id: str):
+        is_authenticated(request)
+        try:
+            member = await bot.get_chat_member(chat_id=channel_id, user_id=bot.id)
+            is_admin = member.status in ("administrator", "creator")
+            return {"ok": is_admin, "status": member.status}
+        except Exception as e:
+            return {"ok": False, "status": str(e)}
 
     if payout:
         try:
