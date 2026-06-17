@@ -1261,9 +1261,6 @@ class PaymentFSM(StatesGroup):
     waiting_for_receipt = State()
 
 
-class PayoutStates(StatesGroup):
-    waiting_for_card = State()
-
 
 # =============================================================================
 # === ROUTER & HANDLERS =======================================================
