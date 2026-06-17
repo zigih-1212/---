@@ -384,7 +384,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
                     [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
                 ]))
                 await state.set_state(OnboardingStates.waiting_role)
-            elif not user.get("channel_id"):
+            elif not user["channel_id"]:
                 await message.answer("⚠️ Вы ещё не привязали канал. Перешлите сообщение или отправьте @username.")
             else:
                 await show_user_cabinet(message)
