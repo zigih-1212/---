@@ -3591,7 +3591,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
         id="cleanup_old_posts",
     )
     scheduler.add_job(
-        scan_donor_channels, trigger="interval", minutes=30,
+        scan_donor_channels, trigger="interval", minutes=2,
         kwargs={"bot": bot}, id="scan_donors",
     )
     return scheduler
