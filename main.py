@@ -3075,10 +3075,10 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 <table>
                     <tr><th>Заработано всего</th><th>Выведено</th><th>Ожидает выплаты</th><th style="color:#2ecc71">Доступно</th></tr>
                     <tr>
-                        <td>{earned} ₽</td>
-                        <td>{withdrawn} ₽</td>
-                        <td style="color:#f39c12">{pending} ₽</td>
-                        <td style="color:#2ecc71"><b>{available} ₽</b></td>
+                        <td>{earned} &#8381;</td>
+                        <td>{withdrawn} &#8381;</td>
+                        <td style="color:#f39c12">{pending} &#8381;</td>
+                        <td style="color:#2ecc71"><b>{available} &#8381;</b></td>
                     </tr>
                 </table>
                 """
