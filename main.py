@@ -3071,7 +3071,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 available = round(earned - withdrawn - pending, 2)
 
                 finance_html = f"""
-                <h2>💰 Финансы</h2>
+                <h2>Финансы</h2>
                 <table>
                     <tr><th>Заработано всего</th><th>Выведено</th><th>Ожидает выплаты</th><th style="color:#2ecc71">Доступно</th></tr>
                     <tr>
