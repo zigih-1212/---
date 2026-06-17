@@ -3515,6 +3515,7 @@ async def cleanup_old_posts() -> None:
 
 async def scan_donor_channels(bot: Bot):
     """Периодическая проверка каналов-доноров для блогеров и SaaS"""
+    logger.info("🔍 scan_donor_channels запущен")
     
     # --- Блогеры ---
     conn = get_db()
