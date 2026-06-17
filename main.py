@@ -3122,7 +3122,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     
     <p><strong>Роль:</strong> {role.upper()} | 
        <strong>Статус:</strong> <span style={{"color:status_color}}">{status_text}</span> | 
-       <strong>Подписка до:</strong> {{str(user.get('subscription_until') or '—')[:19]}</p>
+       <strong>Подписка до:</strong> {str(user.get('subscription_until') or '—')[:19]}</p>
 
     {finance_html}
 
