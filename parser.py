@@ -304,7 +304,7 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str):
             else:
                 caption = rewritten
 
-        async def fetch_telegram_channel_posts(channel: str) -> list[Dict[str, str]]:
+async def fetch_telegram_channel_posts(channel: str) -> list[Dict[str, str]]:
     """
     Читает RSS Telegram-канала через rsshub.app.
     channel — @username или username без @
@@ -314,29 +314,25 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str):
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-            if resp.status_code != 200:
-                logger.warning(f"RSS {username}: статус {resp.status_code}")
-                return []
+        if resp.status_code != 200:
+            logger.warning(f"RSS {username}: статус {resp.status_code}")
+            return []
 
         posts = []
-        # Парсим RSS вручную — без beautifulsoup4 зависимости
         items = re.findall(r"<item>(.*?)</item>", resp.text, re.DOTALL)
-        for item in items[:5]:  # берём последние 5 постов
+        for item in items[:5]:
             guid = re.search(r"<guid[^>]*>(.*?)</guid>", item)
             title = re.search(r"<title>(.*?)</title>", item)
             desc = re.search(r"<description>(.*?)</description>", item, re.DOTALL)
-
             post_id = guid.group(1).strip() if guid else None
             text = ""
             if desc:
-                # Чистим HTML-теги из описания
                 text = re.sub(r"<[^>]+>", "", desc.group(1))
                 text = re.sub(r"&amp;", "&", text)
                 text = re.sub(r"&lt;", "<", text)
                 text = re.sub(r"&gt;", ">", text)
                 text = re.sub(r"&quot;", '"', text)
                 text = text.strip()
-
             if post_id and text:
                 posts.append({
                     "id": post_id,
@@ -344,6 +340,10 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str):
                     "title": title.group(1).strip() if title else "",
                 })
         return posts
+
+    except Exception as e:
+        logger.error(f"fetch_telegram_channel_posts error [{username}]: {e}")
+        return []
 
     except Exception as e:
         logger.error(f"fetch_telegram_channel_posts error [{username}]: {e}")
