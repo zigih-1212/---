@@ -1064,6 +1064,45 @@ async def add_to_night_queue(
     finally:
         conn.close()
 
+  async def flush_night_queue(bot: Bot) -> None:
+    """Утром в 08:00 МСК публикует посты из ночной очереди."""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM night_queue ORDER BY created_at ASC"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        logger.info("Ночная очередь пуста")
+        return
+
+    logger.info(f"🌅 Ночная очередь: публикуем {len(rows)} постов")
+
+    for row in rows:
+        try:
+            await process_new_video(
+                bot=bot,
+                user_id=row["user_id"],
+                video_id=row["video_id"],
+                description=row["description"] or "",
+                sku=row["sku"],
+                photo_url=row["photo_url"],
+                marketplace=row["marketplace"] or "wb",
+            )
+            # Удаляем из очереди только после успешной публикации
+            conn = get_db()
+            try:
+                conn.execute("DELETE FROM night_queue WHERE id=?", (row["id"],))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error(f"flush_night_queue ошибка для video={row['video_id']}: {e}")
+
+        await asyncio.sleep(10)  # небольшая пауза между постами
+
 
 # =============================================================================
 # === TRANSLITERATION =========================================================
