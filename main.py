@@ -252,12 +252,6 @@ class PayoutStates(StatesGroup):
 
 router = Router()
 
-@router.message()
-async def debug_handler(message: Message):
-    # Этот обработчик "всеядный". Если он сработает на /start, значит, 
-    # команда /start не доходит до твоего cmd_start, а ловится здесь!
-    logger.info(f"DEBUG: Сообщение '{message.text}' попало в общий обработчик")
-    # Удалим этот блок сразу после теста!
 
 # =============================================================================
 # === KEYBOARD HELPERS & UTILITIES ============================================
