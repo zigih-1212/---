@@ -2222,87 +2222,85 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 secure=True, samesite="strict", max_age=3600*12)
             return resp
         return HTMLResponse("<h3>❌ Неверный пароль</h3><a href='/admin/login'>Назад</a>")
-
     @app.get("/admin/dashboard", response_class=HTMLResponse)
     async def dashboard(request: Request):
-    is_authenticated(request)
-    conn = get_db()
-    try:
-        # --- Цифры для дашборда ---
-        saas_active = conn.execute("""
-            SELECT COUNT(*) as cnt FROM users 
-            WHERE role='saas' AND is_active=1 
-            AND subscription_until > datetime('now')
-        """).fetchone()["cnt"]
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            # --- Цифры для дашборда ---
+            saas_active = conn.execute("""
+                SELECT COUNT(*) as cnt FROM users
+                WHERE role='saas' AND is_active=1
+                AND subscription_until > datetime('now')
+            """).fetchone()["cnt"]
 
-        saas_trial = conn.execute("""
-            SELECT COUNT(*) as cnt FROM users
-            WHERE role='saas' AND is_active=1
-            AND subscription_until > datetime('now')
-            AND created_at >= datetime('now', '-3 days')
-        """).fetchone()["cnt"]
+            saas_trial = conn.execute("""
+                SELECT COUNT(*) as cnt FROM users
+                WHERE role='saas' AND is_active=1
+                AND subscription_until > datetime('now')
+                AND created_at >= datetime('now', '-3 days')
+            """).fetchone()["cnt"]
 
-        bloggers_active = conn.execute("""
-            SELECT COUNT(*) as cnt FROM users 
-            WHERE role='blogger' AND is_active=1
-        """).fetchone()["cnt"]
+            bloggers_active = conn.execute("""
+                SELECT COUNT(*) as cnt FROM users
+                WHERE role='blogger' AND is_active=1
+            """).fetchone()["cnt"]
 
-        posts_today = conn.execute("""
-            SELECT COUNT(*) as cnt FROM posts 
-            WHERE status='published' 
-            AND published_at >= datetime('now', 'start of day')
-        """).fetchone()["cnt"]
+            posts_today = conn.execute("""
+                SELECT COUNT(*) as cnt FROM posts
+                WHERE status='published'
+                AND published_at >= datetime('now', 'start of day')
+            """).fetchone()["cnt"]
 
-        posts_week = conn.execute("""
-            SELECT COUNT(*) as cnt FROM posts
-            WHERE status='published'
-            AND published_at >= datetime('now', '-7 days')
-        """).fetchone()["cnt"]
+            posts_week = conn.execute("""
+                SELECT COUNT(*) as cnt FROM posts
+                WHERE status='published'
+                AND published_at >= datetime('now', '-7 days')
+            """).fetchone()["cnt"]
 
-        pending_payouts = conn.execute("""
-            SELECT COUNT(*) as cnt FROM payouts WHERE status='pending'
-        """).fetchone()["cnt"]
+            pending_payouts = conn.execute("""
+                SELECT COUNT(*) as cnt FROM payouts WHERE status='pending'
+            """).fetchone()["cnt"]
 
-        pending_amount = conn.execute("""
-            SELECT COALESCE(SUM(amount_blogger), 0) as total 
-            FROM payouts WHERE status='pending'
-        """).fetchone()["total"]
+            pending_amount = conn.execute("""
+                SELECT COALESCE(SUM(amount_blogger), 0) as total
+                FROM payouts WHERE status='pending'
+            """).fetchone()["total"]
 
-        errors_today = conn.execute("""
-            SELECT COUNT(*) as cnt FROM posts
-            WHERE status='error'
-            AND created_at >= datetime('now', 'start of day')
-        """).fetchone()["cnt"]
+            errors_today = conn.execute("""
+                SELECT COUNT(*) as cnt FROM posts
+                WHERE status='error'
+                AND created_at >= datetime('now', 'start of day')
+            """).fetchone()["cnt"]
 
-        # --- Последние пользователи ---
-        users = conn.execute("""
-            SELECT user_id, username, role, subscription_until, 
-                   channel_title, is_active, created_at
-            FROM users ORDER BY created_at DESC LIMIT 20
-        """).fetchall()
+            # --- Последние пользователи ---
+            users = conn.execute("""
+                SELECT user_id, username, role, subscription_until,
+                       channel_title, is_active, created_at
+                FROM users ORDER BY created_at DESC LIMIT 20
+            """).fetchall()
 
-        # --- Последние посты ---
-        posts = conn.execute("""
-            SELECT p.id, p.status, p.published_at, p.donor_post_id,
-                   u.username, u.role
-            FROM posts p
-            LEFT JOIN users u ON p.user_id = u.user_id
-            ORDER BY p.id DESC LIMIT 30
-        """).fetchall()
+            # --- Последние посты ---
+            posts = conn.execute("""
+                SELECT p.id, p.status, p.published_at, p.donor_post_id,
+                       u.username, u.role
+                FROM posts p
+                LEFT JOIN users u ON p.user_id = u.user_id
+                ORDER BY p.id DESC LIMIT 30
+            """).fetchall()
 
-        # --- Pending выплаты ---
-        payouts = conn.execute("""
-            SELECT py.id, py.amount_blogger, py.amount_to_withdraw,
-                   py.card, py.created_at, u.username, u.user_id
-            FROM payouts py
-            LEFT JOIN users u ON py.user_id = u.user_id
-            WHERE py.status = 'pending'
-            ORDER BY py.created_at ASC
-        """).fetchall()
+            # --- Pending выплаты ---
+            payouts = conn.execute("""
+                SELECT py.id, py.amount_blogger, py.amount_to_withdraw,
+                       py.card, py.created_at, u.username, u.user_id
+                FROM payouts py
+                LEFT JOIN users u ON py.user_id = u.user_id
+                WHERE py.status = 'pending'
+                ORDER BY py.created_at ASC
+            """).fetchall()
 
-    finally:
-        conn.close()
-
+        finally:
+            conn.close()
     def status_badge(status):
         colors = {
             "published": "#2ecc71",
