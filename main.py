@@ -226,7 +226,7 @@ def init_db() -> None:
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col}")
         except sqlite3.OperationalError:
             pass
-          try:
+        try:
             cursor.execute("ALTER TABLE users ADD COLUMN payout_card TEXT")
         except sqlite3.OperationalError:
             pass
