@@ -2447,6 +2447,10 @@ async def dashboard(request: Request):
     <body>
         <div class="topbar">
             <h1>⚡ AutoPost Admin</h1>
+<nav style="display:flex;gap:16px;margin-top:8px">
+    <a href="/admin/saas" style="color:#3498db;font-size:14px">💼 SaaS клиенты</a>
+    <a href="/admin/bloggers" style="color:#2ecc71;font-size:14px">✍️ Блогеры</a>
+</nav>
             <a href="/admin/logout" class="logout">Выход</a>
         </div>
 
@@ -2540,6 +2544,292 @@ async def admin_payout_done(request: Request, payout_id: int = Form(...), blogge
         ).fetchone()
     finally:
         conn.close()
+
+@app.get("/admin/saas", response_class=HTMLResponse)
+async def saas_list(request: Request):
+    is_authenticated(request)
+    conn = get_db()
+    try:
+        users = conn.execute("""
+            SELECT user_id, username, is_active,
+                   subscription_until, created_at, api_key
+            FROM users
+            WHERE role='saas'
+            ORDER BY created_at DESC
+        """).fetchall()
+    finally:
+        conn.close()
+
+    rows = ""
+    for u in users:
+        sub = str(u["subscription_until"])[:10] if u["subscription_until"] else "—"
+        now = datetime.now(timezone.utc)
+        try:
+            sub_dt = datetime.fromisoformat(str(u["subscription_until"]).replace("Z", "+00:00")) if u["subscription_until"] else None
+        except Exception:
+            sub_dt = None
+
+        if not u["is_active"]:
+            status = '<span style="color:#e74c3c">⛔ Забанен</span>'
+        elif sub_dt and sub_dt > now:
+            days_left = (sub_dt - now).days
+            status = f'<span style="color:#2ecc71">🟢 Активен ({days_left}д)</span>'
+        else:
+            status = '<span style="color:#f39c12">⚠️ Истекла</span>'
+
+        has_key = "✅" if u["api_key"] else "❌"
+        rows += f"""
+        <tr style="cursor:pointer" onclick="location.href='/admin/saas/{u['user_id']}'">
+            <td>{u['user_id']}</td>
+            <td>@{u['username'] or '—'}</td>
+            <td>{status}</td>
+            <td>{sub}</td>
+            <td>{has_key} API-ключ</td>
+            <td>{str(u['created_at'])[:10]}</td>
+        </tr>"""
+
+    return HTMLResponse(f"""
+    <!DOCTYPE html><html lang="ru"><head>
+    <meta charset="UTF-8">
+    <title>SaaS клиенты</title>
+    <style>
+        * {{ box-sizing:border-box; margin:0; padding:0; }}
+        body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+               background:#0f1117; color:#e0e0e8; padding:24px; }}
+        .topbar {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }}
+        a {{ color:#3498db; text-decoration:none; }}
+        h1 {{ font-size:22px; color:#fff; }}
+        .section {{ background:#1a1d27; border:1px solid #2a2d3a; border-radius:10px; padding:20px; }}
+        table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+        th, td {{ padding:10px; border-bottom:1px solid #2a2d3a; text-align:left; }}
+        th {{ color:#888; font-weight:500; font-size:12px; text-transform:uppercase; }}
+        tr:hover td {{ background:#1e2130; }}
+    </style>
+    </head><body>
+    <div class="topbar">
+        <h1>💼 SaaS клиенты ({len(users)})</h1>
+        <a href="/admin/dashboard">← Дашборд</a>
+    </div>
+    <div class="section">
+        <table>
+            <tr><th>ID</th><th>Username</th><th>Статус</th><th>Подписка до</th><th>API</th><th>Регистрация</th></tr>
+            {rows if rows else "<tr><td colspan='6' style='color:#888;text-align:center'>Нет SaaS клиентов</td></tr>"}
+        </table>
+    </div>
+    </body></html>
+    """)
+
+
+@app.get("/admin/saas/{user_id}", response_class=HTMLResponse)
+async def saas_card(request: Request, user_id: int):
+    is_authenticated(request)
+    conn = get_db()
+    try:
+        user = conn.execute("""
+            SELECT user_id, username, is_active, subscription_until,
+                   created_at, api_key, channel_id, channel_title
+            FROM users WHERE user_id=? AND role='saas'
+        """, (user_id,)).fetchone()
+
+        if not user:
+            return HTMLResponse("<h2>Пользователь не найден</h2>", status_code=404)
+
+        channels = conn.execute("""
+            SELECT channel_id, channel_title, is_active
+            FROM channels WHERE user_id=?
+        """, (user_id,)).fetchall()
+
+        posts_stats = conn.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status='published' THEN 1 ELSE 0 END) as published,
+                SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) as errors,
+                MAX(published_at) as last_pub
+            FROM posts WHERE user_id=?
+        """, (user_id,)).fetchone()
+
+    finally:
+        conn.close()
+
+    now = datetime.now(timezone.utc)
+    try:
+        sub_dt = datetime.fromisoformat(str(user["subscription_until"]).replace("Z", "+00:00")) if user["subscription_until"] else None
+    except Exception:
+        sub_dt = None
+
+    if not user["is_active"]:
+        status_html = '<span style="color:#e74c3c;font-weight:bold">⛔ Забанен</span>'
+    elif sub_dt and sub_dt > now:
+        days_left = (sub_dt - now).days
+        status_html = f'<span style="color:#2ecc71;font-weight:bold">🟢 Активен — осталось {days_left} дн.</span>'
+    else:
+        status_html = '<span style="color:#f39c12;font-weight:bold">⚠️ Подписка истекла</span>'
+
+    api_key = user["api_key"] or ""
+    api_masked = api_key[:4] + "••••••••" + api_key[-4:] if len(api_key) > 8 else ("—" if not api_key else api_key)
+
+    last_pub = str(posts_stats["last_pub"])[:16] if posts_stats["last_pub"] else "—"
+
+    # Строки каналов — права бота проверяются JS-запросом
+    channels_rows = ""
+    for ch in channels:
+        active_icon = "🟢" if ch["is_active"] else "🔴"
+        channels_rows += f"""
+        <tr>
+            <td>{active_icon}</td>
+            <td><code>{ch['channel_id']}</code></td>
+            <td>{ch['channel_title'] or '—'}</td>
+            <td>
+                <button onclick="checkBot('{ch['channel_id']}', this)"
+                    style="padding:4px 10px;background:#2a2d3a;border:1px solid #444;
+                           color:#fff;border-radius:4px;cursor:pointer;font-size:12px;">
+                    🔍 Проверить права
+                </button>
+            </td>
+        </tr>"""
+
+    ban_btn = f"""
+    <form action="/admin/saas/{user_id}/ban" method="post" style="display:inline">
+        <button type="submit" style="padding:6px 16px;background:#e74c3c;border:none;
+            color:#fff;border-radius:6px;cursor:pointer;">
+            {"🔓 Разбанить" if not user["is_active"] else "⛔ Забанить"}
+        </button>
+    </form>"""
+
+    return HTMLResponse(f"""
+    <!DOCTYPE html><html lang="ru"><head>
+    <meta charset="UTF-8">
+    <title>SaaS #{user_id}</title>
+    <style>
+        * {{ box-sizing:border-box; margin:0; padding:0; }}
+        body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+               background:#0f1117; color:#e0e0e8; padding:24px; }}
+        .topbar {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }}
+        a {{ color:#3498db; text-decoration:none; }}
+        h1 {{ font-size:20px; color:#fff; }}
+        h2 {{ font-size:15px; color:#aaa; margin-bottom:12px; }}
+        .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }}
+        .section {{ background:#1a1d27; border:1px solid #2a2d3a; border-radius:10px; padding:20px; }}
+        .row {{ display:flex; justify-content:space-between; padding:8px 0;
+                border-bottom:1px solid #2a2d3a; font-size:13px; }}
+        .row:last-child {{ border-bottom:none; }}
+        .lbl {{ color:#888; }}
+        table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+        th, td {{ padding:8px 10px; border-bottom:1px solid #2a2d3a; text-align:left; }}
+        th {{ color:#888; font-weight:500; font-size:12px; text-transform:uppercase; }}
+        .stat-row {{ display:flex; gap:12px; margin-bottom:20px; }}
+        .stat {{ background:#1a1d27; border:1px solid #2a2d3a; border-radius:8px;
+                padding:14px 20px; text-align:center; flex:1; }}
+        .stat .num {{ font-size:26px; font-weight:700; color:#fff; }}
+        .stat .lbl {{ font-size:11px; color:#888; margin-top:4px; }}
+        code {{ background:#0f1117; padding:2px 6px; border-radius:4px; font-family:monospace; }}
+        .actions {{ display:flex; gap:10px; margin-top:16px; }}
+        button {{ cursor:pointer; }}
+    </style>
+    </head><body>
+
+    <div class="topbar">
+        <h1>💼 SaaS карточка — @{user["username"] or user_id}</h1>
+        <a href="/admin/saas">← Все SaaS</a>
+    </div>
+
+    <div class="stat-row">
+        <div class="stat"><div class="num">{posts_stats['total'] or 0}</div><div class="lbl">Всего постов</div></div>
+        <div class="stat"><div class="num" style="color:#2ecc71">{posts_stats['published'] or 0}</div><div class="lbl">Опубликовано</div></div>
+        <div class="stat"><div class="num" style="color:#e74c3c">{posts_stats['errors'] or 0}</div><div class="lbl">Ошибок</div></div>
+        <div class="stat"><div class="num" style="font-size:14px">{last_pub}</div><div class="lbl">Последний пост</div></div>
+    </div>
+
+    <div class="grid">
+        <div class="section">
+            <h2>👤 Основная информация</h2>
+            <div class="row"><span class="lbl">User ID</span><span><code>{user['user_id']}</code></span></div>
+            <div class="row"><span class="lbl">Username</span><span>@{user['username'] or '—'}</span></div>
+            <div class="row"><span class="lbl">Статус</span><span>{status_html}</span></div>
+            <div class="row"><span class="lbl">Подписка до</span><span>{str(user['subscription_until'])[:10] if user['subscription_until'] else '—'}</span></div>
+            <div class="row"><span class="lbl">Регистрация</span><span>{str(user['created_at'])[:10]}</span></div>
+            <div class="row">
+                <span class="lbl">API-ключ</span>
+                <span>
+                    <span id="apikey">{api_masked}</span>
+                    {"&nbsp;<button onclick=\"toggleKey('{api_key}')\" style='padding:2px 8px;background:#2a2d3a;border:1px solid #444;color:#aaa;border-radius:4px;font-size:11px'>👁</button>" if api_key else ""}
+                </span>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>⚙️ Действия</h2>
+            <div style="display:flex;flex-direction:column;gap:10px">
+                <form action="/admin/extend" method="post" style="display:flex;gap:8px">
+                    <input type="hidden" name="user_id" value="{user_id}">
+                    <input type="number" name="days" placeholder="Дней" style="flex:1;padding:6px;background:#0f1117;border:1px solid #444;color:#fff;border-radius:6px">
+                    <button type="submit" style="padding:6px 16px;background:#3498db;border:none;color:#fff;border-radius:6px">
+                        ➕ Продлить
+                    </button>
+                </form>
+                <div class="actions">
+                    {ban_btn}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📢 Каналы ({len(channels)})</h2>
+        {"<p style='color:#888'>Нет подключённых каналов</p>" if not channels else f"""
+        <table>
+            <tr><th></th><th>ID канала</th><th>Название</th><th>Права бота</th></tr>
+            {channels_rows}
+        </table>"""}
+    </div>
+
+    <script>
+    function toggleKey(full) {{
+        var el = document.getElementById('apikey');
+        el.textContent = el.textContent.includes('•') ? full : el.textContent.substring(0,4) + '••••••••' + el.textContent.slice(-4);
+    }}
+
+    async function checkBot(channelId, btn) {{
+        btn.textContent = '⏳ Проверка...';
+        btn.disabled = true;
+        try {{
+            const r = await fetch('/admin/check_bot?channel_id=' + encodeURIComponent(channelId));
+            const d = await r.json();
+            btn.textContent = d.ok ? '✅ Администратор' : '❌ Нет прав';
+            btn.style.color = d.ok ? '#2ecc71' : '#e74c3c';
+        }} catch(e) {{
+            btn.textContent = '❌ Ошибка';
+        }}
+        btn.disabled = false;
+    }}
+    </script>
+    </body></html>
+    """)
+
+
+@app.post("/admin/saas/{user_id}/ban")
+async def saas_ban(request: Request, user_id: int):
+    is_authenticated(request)
+    conn = get_db()
+    try:
+        current = conn.execute("SELECT is_active FROM users WHERE user_id=?", (user_id,)).fetchone()
+        new_status = 0 if current["is_active"] else 1
+        conn.execute("UPDATE users SET is_active=? WHERE user_id=?", (new_status, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return RedirectResponse(f"/admin/saas/{user_id}", status_code=302)
+
+
+@app.get("/admin/check_bot")
+async def check_bot_rights(request: Request, channel_id: str):
+    is_authenticated(request)
+    try:
+        member = await bot.get_chat_member(chat_id=channel_id, user_id=bot.id)
+        is_admin = member.status in ("administrator", "creator")
+        return {"ok": is_admin, "status": member.status}
+    except Exception as e:
+        return {"ok": False, "status": str(e)}
 
     if payout:
         try:
