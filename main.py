@@ -2144,6 +2144,43 @@ async def cb_payout_done(callback: CallbackQuery) -> None:
     )
     await callback.answer("✅ Выплата подтверждена")
 
+# =============================================================================
+# === ADMIN CALLBACKS =========================================================
+# =============================================================================
+
+WEBAPP_ADMIN_URL: str = os.getenv("WEBAPP_ADMIN_URL", "")
+
+@router.callback_query(F.data.startswith("admin:"))
+async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    action = call.data.split(":")[1]
+
+    if action == "webapp_link":
+        url = WEBAPP_ADMIN_URL or f"http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin"
+        await call.answer()
+        await call.message.answer(f"🌐 Ссылка на админку:\n{url}")
+
+    elif action == "billing_check":
+        await call.answer("⏳ Запускаю биллинг-чек...")
+        await run_billing_check(call.message.bot)
+        await call.message.answer("✅ Биллинг-чек завершён")
+
+    elif action == "broadcast":
+        await call.answer()
+        await state.set_state(AdminStates.broadcast_text)
+        await call.message.answer("✏️ Введи текст рассылки:")
+
+    elif action == "extend_sub":
+        await call.answer()
+        await state.set_state(AdminStates.extend_user_id)
+        await call.message.answer("👤 Введи user_id пользователя:")
+
+    else:
+        await call.answer("Неизвестная команда", show_alert=True)
+
 
 # =============================================================================
 # === FASTAPI WEBAPP (Admin Panel) ============================================
