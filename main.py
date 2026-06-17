@@ -321,31 +321,6 @@ def kb_tariffs(traffic_source: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def kb_filter_settings(wb: int, ozon: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{'✅' if wb else '❌'} Wildberries", callback_data="filter:toggle:wb"
-        )],
-        [InlineKeyboardButton(
-            text=f"{'✅' if ozon else '❌'} Ozon", callback_data="filter:toggle:ozon"
-        )],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:settings")],
-    ])
-
-
-def kb_blogger_mode(mode: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{'✅' if mode == 'direct' else '☐'} Напрямую в мой канал",
-            callback_data="blogger_mode:direct",
-        )],
-        [InlineKeyboardButton(
-            text=f"{'✅' if mode == 'vip_pin' else '☐'} VIP-закреп в главном канале (24ч)",
-            callback_data="blogger_mode:vip_pin",
-        )],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:pub_mode")],
-    ])
-
 
 def kb_admin_panel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
