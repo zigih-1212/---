@@ -2705,6 +2705,21 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         finally:
             conn.close()
 
+        if payout:
+            try:
+                await bot.send_message(
+                    blogger_id,
+                    f"✅ <b>Выплата отправлена!</b>\n\n"
+                    f"💰 Сумма: <b>{payout['amount_blogger']:.2f} ₽</b>\n"
+                    f"💳 На карту: <code>{payout['card']}</code>\n\n"
+                    f"<i>Если деньги не пришли в течение суток — напишите в поддержку.</i>",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Не удалось уведомить блогера {blogger_id}: {e}")
+
+        return RedirectResponse("/admin/dashboard", status_code=302)
+
     @app.get("/admin/saas", response_class=HTMLResponse)
     async def saas_list(request: Request):
         is_authenticated(request)
@@ -2987,10 +3002,10 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     }}
     </script>
     </body></html>
-    return HTMLResponse(f"""...""")
+    """)
 
 
-@app.post("/admin/saas/{user_id}/ban")
+    @app.post("/admin/saas/{user_id}/ban")
     async def saas_ban(request: Request, user_id: int):
         is_authenticated(request)
         conn = get_db()
@@ -2999,34 +3014,9 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             new_status = 0 if current["is_active"] else 1
             conn.execute("UPDATE users SET is_active=? WHERE user_id=?", (new_status, user_id))
             conn.commit()
-        finally:
-            conn.close()
-        return RedirectResponse(f"/admin/saas/{user_id}", status_code=302)
+        
 
-    @app.get("/admin/check_bot")
-    async def check_bot_rights(request: Request, channel_id: str):
-        is_authenticated(request)
-        try:
-            member = await bot.get_chat_member(chat_id=channel_id, user_id=bot.id)
-            is_admin = member.status in ("administrator", "creator")
-            return {"ok": is_admin, "status": member.status}
-        except Exception as e:
-            return {"ok": False, "status": str(e)}
 
-    if payout:
-        try:
-            await bot.send_message(
-                blogger_id,
-                f"✅ <b>Выплата отправлена!</b>\n\n"
-                f"💰 Сумма: <b>{payout['amount_blogger']:.2f} ₽</b>\n"
-                f"💳 На карту: <code>{payout['card']}</code>\n\n"
-                f"<i>Если деньги не пришли в течение суток — напишите в поддержку.</i>",
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            logger.error(f"Не удалось уведомить блогера {blogger_id}: {e}")
-
-    return RedirectResponse("/admin/dashboard", status_code=302)
 
     @app.get("/admin/logout")
     async def logout():
