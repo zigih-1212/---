@@ -2316,139 +2316,131 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             return '<span style="background:#3498db;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px">SaaS</span>'
         return '<span style="background:#2ecc71;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px">Блогер</span>'
 
-    users_rows = ""
-    for u in users:
-        sub = str(u["subscription_until"])[:10] if u["subscription_until"] else "—"
-        active = "🟢" if u["is_active"] else "🔴"
-        users_rows += f"""
-        <tr>
-            <td>{u['user_id']}</td>
-            <td>@{u['username'] or '-'}</td>
-            <td>{role_badge(u['role'])}</td>
-            <td>{u['channel_title'] or '—'}</td>
-            <td>{sub}</td>
-            <td>{active}</td>
-            <td>
-                <form action="/admin/extend" method="post" style="display:flex;gap:4px;">
-                    <input type="hidden" name="user_id" value="{u['user_id']}">
-                    <input type="number" name="days" placeholder="Дней" style="width:70px;padding:4px;background:#1e2130;border:1px solid #444;color:#fff;border-radius:4px;">
-                    <button type="submit" style="padding:4px 10px;background:#3498db;border:none;color:#fff;border-radius:4px;cursor:pointer;">+</button>
-                </form>
-            </td>
-        </tr>"""
+            users_rows = ""
+        for u in users:
+            sub = str(u["subscription_until"])[:10] if u["subscription_until"] else "—"
+            active = "🟢" if u["is_active"] else "🔴"
+            users_rows += f"""
+            <tr>
+                <td><a href="/admin/user/{u['user_id']}" style="color:#3498db;">{u['user_id']}</a></td>
+                <td>@{u['username'] or '-'}</td>
+                <td>{u['role'].upper() if u['role'] else '—'}</td>
+                <td>{u['channel_title'] or '—'}</td>
+                <td>{sub}</td>
+                <td>{active}</td>
+                <td>
+                    <form action="/admin/extend" method="post" style="display:flex;gap:4px;">
+                        <input type="hidden" name="user_id" value="{u['user_id']}">
+                        <input type="number" name="days" placeholder="Дней" style="width:70px;padding:4px;background:#1e2130;border:1px solid #444;color:#fff;border-radius:4px;">
+                        <button type="submit" style="padding:4px 10px;background:#3498db;border:none;color:#fff;border-radius:4px;cursor:pointer;">+</button>
+                    </form>
+                </td>
+            </tr>"""
 
-    posts_rows = ""
-    for p in posts:
-        pub = str(p["published_at"])[:16] if p["published_at"] else "—"
-        posts_rows += f"""
-        <tr>
-            <td>{p['id']}</td>
-            <td>@{p['username'] or '-'} {role_badge(p['role'] or '')}</td>
-            <td style="font-size:11px;color:#888">{str(p['donor_post_id'])[:30]}</td>
-            <td>{status_badge(p['status'])}</td>
-            <td>{pub}</td>
-        </tr>"""
+        posts_rows = ""
+        for p in posts:
+            pub = str(p["published_at"])[:16] if p.get("published_at") else "—"
+            posts_rows += f"""
+            <tr>
+                <td>{p['id']}</td>
+                <td>@{p.get('username', '-')}</td>
+                <td style="font-size:11px;color:#888">{str(p.get('donor_post_id', ''))[:30]}</td>
+                <td>{p['status']}</td>
+                <td>{pub}</td>
+            </tr>"""
 
-    payouts_rows = ""
-    for py in payouts:
-        created = str(py["created_at"])[:16]
-        payouts_rows += f"""
-        <tr>
-            <td>#{py['id']}</td>
-            <td>@{py['username'] or py['user_id']}</td>
-            <td><code style="background:#1e2130;padding:2px 6px;border-radius:4px">{py['card']}</code></td>
-            <td><b>{py['amount_blogger']:.2f} ₽</b></td>
-            <td style="color:#f39c12">{py['amount_to_withdraw']:.2f} ₽</td>
-            <td>{created}</td>
-            <td>
-                <form action="/admin/payout_done" method="post" style="display:inline">
-                    <input type="hidden" name="payout_id" value="{py['id']}">
-                    <input type="hidden" name="blogger_id" value="{py['user_id']}">
-                    <button type="submit" style="padding:4px 12px;background:#2ecc71;border:none;color:#fff;border-radius:4px;cursor:pointer;">✅ Отправлено</button>
-                </form>
-            </td>
-        </tr>"""
+        payouts_rows = ""
+        for py in payouts:
+            created = str(py["created_at"])[:16]
+            payouts_rows += f"""
+            <tr>
+                <td>#{py['id']}</td>
+                <td>@{py.get('username') or py.get('user_id')}</td>
+                <td><code>{py['card']}</code></td>
+                <td><b>{py['amount_blogger']:.2f} ₽</b></td>
+                <td style="color:#f39c12">{py['amount_to_withdraw']:.2f} ₽</td>
+                <td>{created}</td>
+                <td>
+                    <form action="/admin/payout_done" method="post" style="display:inline">
+                        <input type="hidden" name="payout_id" value="{py['id']}">
+                        <input type="hidden" name="blogger_id" value="{py.get('user_id')}">
+                        <button type="submit" style="padding:4px 12px;background:#2ecc71;border:none;color:#fff;border-radius:4px;cursor:pointer;">✅ Отправлено</button>
+                    </form>
+                </td>
+            </tr>"""
 
-    payouts_section = f"""
-    <div class="section">
-        <h2>💸 Заявки на выплату
-            <span class="badge" style="background:#e74c3c">{pending_payouts}</span>
-            <span style="font-size:14px;color:#aaa;margin-left:10px">Итого: {pending_amount:.2f} ₽</span>
-        </h2>
-        {"<p style='color:#888'>Нет pending заявок</p>" if not payouts else f'''
-        <table>
-            <tr><th>#</th><th>Блогер</th><th>Карта</th><th>Блогеру</th><th>Вывести из ТП</th><th>Дата</th><th></th></tr>
-            {payouts_rows}
-        </table>'''}
-    </div>""" if pending_payouts else ""
+        payouts_section = f"""
+        <div class="section">
+            <h2>💸 Заявки на выплату 
+                <span class="badge" style="background:#e74c3c">{pending_payouts}</span>
+                <span style="font-size:14px;color:#aaa;margin-left:10px">Итого: {pending_amount:.2f} ₽</span>
+            </h2>
+            {"<p style='color:#888'>Нет pending заявок</p>" if not payouts else f'''
+            <table>
+                <tr><th>#</th><th>Блогер</th><th>Карта</th><th>Блогеру</th><th>Вывести</th><th>Дата</th><th>Действие</th></tr>
+                {payouts_rows}
+            </table>'''}
+        </div>""" if pending_payouts > 0 else ""
 
-    return HTMLResponse(f"""
-    <!DOCTYPE html>
-    <html lang="ru">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>AutoPost — Админка</title>
-        <style>
-            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                   background: #0f1117; color: #e0e0e8; padding: 24px; }}
-            h1 {{ font-size: 22px; margin-bottom: 20px; color: #fff; }}
-            h2 {{ font-size: 16px; margin-bottom: 12px; color: #ccc; }}
-            .topbar {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }}
-            .logout {{ color:#e74c3c; text-decoration:none; font-size:14px; }}
+        # === Финальный HTML ===
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="ru">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>AutoPost — Админка</title>
+            <style>
+                * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                       background: #0f1117; color: #e0e0e8; padding: 24px; }}
+                h1 {{ font-size: 22px; margin-bottom: 20px; color: #fff; }}
+                h2 {{ font-size: 16px; margin-bottom: 12px; color: #ccc; }}
+                .section {{ background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 10px; padding: 20px; margin-bottom: 20px; }}
+                table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+                th, td {{ padding:8px 10px; border-bottom:1px solid #2a2d3a; text-align:left; }}
+                th {{ color:#888; font-weight:500; font-size:12px; text-transform:uppercase; }}
+                tr:hover td {{ background:#1e2130; }}
+                .badge {{ background:#3498db; color:#fff; border-radius:12px; padding:1px 8px; font-size:12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="topbar">
+                <h1>⚡ AutoPost Admin</h1>
+                <nav style="display:flex;gap:16px;margin-top:8px">
+                    <a href="/admin/saas" style="color:#3498db;font-size:14px">💼 SaaS клиенты</a>
+                    <a href="/admin/logout" class="logout">Выход</a>
+                </nav>
+            </div>
 
-            .stats-grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-                gap: 12px;
-                margin-bottom: 28px;
-            }}
-            .stat-card {{
-                background: #1a1d27;
-                border: 1px solid #2a2d3a;
-                border-radius: 10px;
-                padding: 16px;
-                text-align: center;
-            }}
-            .stat-card .num {{ font-size: 32px; font-weight: 700; color: #fff; }}
-            .stat-card .lbl {{ font-size: 12px; color: #888; margin-top: 4px; }}
-            .stat-card.warn .num {{ color: #e74c3c; }}
-            .stat-card.ok .num {{ color: #2ecc71; }}
-            .stat-card.blue .num {{ color: #3498db; }}
-            .stat-card.yellow .num {{ color: #f39c12; }}
+            <div class="stats-grid">
+                <!-- Можно добавить карточки статистики сюда -->
+            </div>
 
-            .section {{
-                background: #1a1d27;
-                border: 1px solid #2a2d3a;
-                border-radius: 10px;
-                padding: 20px;
-                margin-bottom: 20px;
-            }}
-            table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-            th, td {{ padding:8px 10px; border-bottom:1px solid #2a2d3a; text-align:left; }}
-            th {{ color:#888; font-weight:500; font-size:12px; text-transform:uppercase; }}
-            tr:hover td {{ background:#1e2130; }}
-            code {{ font-family: monospace; }}
-            .badge {{
-                display:inline-block;
-                background:#3498db;
-                color:#fff;
-                border-radius:12px;
-                padding:1px 8px;
-                font-size:12px;
-                margin-left:8px;
-                vertical-align:middle;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="topbar">
-            <h1>⚡ AutoPost Admin</h1>
-<nav style="display:flex;gap:16px;margin-top:8px">
-    <a href="/admin/saas" style="color:#3498db;font-size:14px">💼 SaaS клиенты</a>
-    <a href="/admin/bloggers" style="color:#2ecc71;font-size:14px">✍️ Блогеры</a>
-</nav>
+            {payouts_section}
+
+            <div class="section">
+                <h2>👥 Пользователи (последние 20)</h2>
+                <table>
+                    <tr><th>ID</th><th>Username</th><th>Роль</th><th>Канал</th><th>Подписка до</th><th>Статус</th><th>Продлить</th></tr>
+                    {users_rows}
+                </table>
+            </div>
+
+            <div class="section">
+                <h2>📬 Последние посты (30)</h2>
+                <table>
+                    <tr><th>ID</th><th>Пользователь</th><th>Донор</th><th>Статус</th><th>Дата</th></tr>
+                    {posts_rows}
+                </table>
+            </div>
+        </body>
+        </html>
+        """
+        return HTMLResponse(html)
+
+    finally:
+        conn.close()
             <a href="/admin/logout" class="logout">Выход</a>
         </div>
 
