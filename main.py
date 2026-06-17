@@ -45,14 +45,6 @@ from aiogram.types import (
     SuccessfulPayment,
     TelegramObject,
 )
-from aiogram.types import (
-    WebAppInfo,
-)
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-
 from parser import (
     extract_video_info,
     find_product_links,
@@ -61,6 +53,13 @@ from parser import (
     fetch_telegram_channel_posts,
     process_saas_post,
 )
+from aiogram.types import (
+    WebAppInfo,
+)
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 
 # =============================================================================
 # === LOGGING =================================================================
