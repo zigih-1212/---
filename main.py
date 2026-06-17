@@ -2187,6 +2187,9 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
     active_sessions = {}
+    @app.get("/")
+    async def root():
+        return RedirectResponse("/admin/login")
 
     def is_authenticated(request: Request):
         token = request.cookies.get("admin_token")
