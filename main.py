@@ -2507,7 +2507,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     </body>
     </html>
     """)
-            html += "</table></body></html>"
+                        html += "</table></body></html>"
             return HTMLResponse(html)
         finally:
             conn.close()
@@ -2584,37 +2584,41 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 <td>{has_key} API-ключ</td>
                 <td>{str(u['created_at'])[:10]}</td>
             </tr>"""
-    return HTMLResponse(f"""
-    <!DOCTYPE html><html lang="ru"><head>
-    <meta charset="UTF-8">
-    <title>SaaS клиенты</title>
-    <style>
-        * {{ box-sizing:border-box; margin:0; padding:0; }}
-        body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-               background:#0f1117; color:#e0e0e8; padding:24px; }}
-        .topbar {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }}
-        a {{ color:#3498db; text-decoration:none; }}
-        h1 {{ font-size:22px; color:#fff; }}
-        .section {{ background:#1a1d27; border:1px solid #2a2d3a; border-radius:10px; padding:20px; }}
-        table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-        th, td {{ padding:10px; border-bottom:1px solid #2a2d3a; text-align:left; }}
-        th {{ color:#888; font-weight:500; font-size:12px; text-transform:uppercase; }}
-        tr:hover td {{ background:#1e2130; }}
-    </style>
-    </head><body>
-    <div class="topbar">
-        <h1>💼 SaaS клиенты ({len(users)})</h1>
-        <a href="/admin/dashboard">← Дашборд</a>
-    </div>
-    <div class="section">
-        <table>
-            <tr><th>ID</th><th>Username</th><th>Статус</th><th>Подписка до</th><th>API</th><th>Регистрация</th></tr>
-            {rows if rows else "<tr><td colspan='6' style='color:#888;text-align:center'>Нет SaaS клиентов</td></tr>"}
-        </table>
-    </div>
-    </body></html>
-    """)
 
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html lang="ru">
+        <head>
+            <meta charset="UTF-8">
+            <title>SaaS клиенты</title>
+            <style>
+                * {{ box-sizing:border-box; margin:0; padding:0; }}
+                body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+                       background:#0f1117; color:#e0e0e8; padding:24px; }}
+                .topbar {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }}
+                a {{ color:#3498db; text-decoration:none; }}
+                h1 {{ font-size:22px; color:#fff; }}
+                .section {{ background:#1a1d27; border:1px solid #2a2d3a; border-radius:10px; padding:20px; }}
+                table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+                th, td {{ padding:10px; border-bottom:1px solid #2a2d3a; text-align:left; }}
+                th {{ color:#888; font-weight:500; font-size:12px; text-transform:uppercase; }}
+                tr:hover td {{ background:#1e2130; }}
+            </style>
+        </head>
+        <body>
+            <div class="topbar">
+                <h1>💼 SaaS клиенты ({len(users)})</h1>
+                <a href="/admin/dashboard">← Дашборд</a>
+            </div>
+            <div class="section">
+                <table>
+                    <tr><th>ID</th><th>Username</th><th>Статус</th><th>Подписка до</th><th>API</th><th>Регистрация</th></tr>
+                    {rows if rows else "<tr><td colspan='6' style='color:#888;text-align:center'>Нет SaaS клиентов</td></tr>"}
+                </table>
+            </div>
+        </body>
+        </html>
+        """)
 
 @app.get("/admin/saas/{user_id}", response_class=HTMLResponse)
 async def saas_card(request: Request, user_id: int):
