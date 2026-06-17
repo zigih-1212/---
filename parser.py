@@ -148,13 +148,20 @@ async def process_new_video(
         
         if not target_channel:
             return
-
+ 
         # === НОЧНОЙ РЕЖИМ (00:00 - 08:00 по Москве = UTC+3) ===
         now_msk = datetime.now(timezone(timedelta(hours=3)))
         if now_msk.hour < 8:
-            logger.info(f"🌙 Ночной режим: пост {video_id} отложен до 08:01 МСК")
-            # Можно записать в night_queue (рекомендуется) или пропустить
-            # Для простоты — пропускаем, следующий скан в 08:xx его подхватит
+            logger.info(f"🌙 Ночной режим: пост {video_id} → night_queue")
+            from main import add_to_night_queue  # избегаем циклического импорта
+            await add_to_night_queue(
+                user_id=user_id,
+                video_id=video_id,
+                description=description,
+                sku=sku,
+                photo_url=photo_url,
+                marketplace=marketplace,
+            )
             return
 
         # 1. Получаем данные товара
