@@ -2222,7 +2222,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 secure=True, samesite="strict", max_age=3600*12)
             return resp
         return HTMLResponse("<h3>❌ Неверный пароль</h3><a href='/admin/login'>Назад</a>")
-     @app.get("/admin/dashboard", response_class=HTMLResponse)
+    @app.get("/admin/dashboard", response_class=HTMLResponse)
     async def dashboard(request: Request):
         is_authenticated(request)
         conn = get_db()
