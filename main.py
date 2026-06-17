@@ -2471,6 +2471,63 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
     {finance_block}
     {saas_block}
+    
+<h2>🔑 Редактирование ключей</h2>
+    <table>
+        <tr>
+            <th style="width:160px;">Поле</th>
+            <th>Текущее значение</th>
+            <th>Изменить</th>
+        </tr>
+        <tr>
+            <td>API-ключ (ТакПродам)</td>
+            <td><code>{user['api_key'] or '—'}</code></td>
+            <td>
+                <form action="/admin/user/{user_id}/update_field" method="post"
+                      style="display:flex;gap:8px;align-items:center;">
+                    <input type="hidden" name="field" value="api_key">
+                    <input type="text" name="value" placeholder="Вставь новый ключ"
+                           style="flex:1;min-width:220px;">
+                    <button type="submit" style="padding:6px 14px;background:#3498db;
+                            color:#fff;border:none;border-radius:4px;cursor:pointer;">
+                        💾 Сохранить
+                    </button>
+                </form>
+            </td>
+        </tr>
+        <tr>
+            <td>ERID override</td>
+            <td><code>{user['client_erid_override'] or '—'}</code></td>
+            <td>
+                <form action="/admin/user/{user_id}/update_field" method="post"
+                      style="display:flex;gap:8px;align-items:center;">
+                    <input type="hidden" name="field" value="client_erid_override">
+                    <input type="text" name="value" placeholder="Вставь ERID"
+                           style="flex:1;min-width:220px;">
+                    <button type="submit" style="padding:6px 14px;background:#3498db;
+                            color:#fff;border:none;border-radius:4px;cursor:pointer;">
+                        💾 Сохранить
+                    </button>
+                </form>
+            </td>
+        </tr>
+        <tr>
+            <td>Карта выплат</td>
+            <td><code>{user['payout_card'] or '—'}</code></td>
+            <td>
+                <form action="/admin/user/{user_id}/update_field" method="post"
+                      style="display:flex;gap:8px;align-items:center;">
+                    <input type="hidden" name="field" value="payout_card">
+                    <input type="text" name="value" placeholder="Номер карты"
+                           style="flex:1;min-width:220px;">
+                    <button type="submit" style="padding:6px 14px;background:#3498db;
+                            color:#fff;border:none;border-radius:4px;cursor:pointer;">
+                        💾 Сохранить
+                    </button>
+                </form>
+            </td>
+        </tr>
+    </table>
 
     <h2>📢 Каналы ({len(channels)})</h2>
     <table>
@@ -2540,6 +2597,36 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             conn.commit()
         finally:
             conn.close()
+        return RedirectResponse(f"/admin/user/{user_id}", status_code=302)
+
+# -------------------------------------------------------------------------
+    # === Редактирование полей пользователя ====================================
+    # -------------------------------------------------------------------------
+
+    @app.post("/admin/user/{user_id}/update_field")
+    async def update_user_field(
+        request: Request,
+        user_id: int,
+        field: str = Form(...),
+        value: str = Form(...),
+    ):
+        is_authenticated(request)
+
+        # Белый список — только разрешённые поля
+        allowed_fields = {"api_key", "client_erid_override", "payout_card"}
+        if field not in allowed_fields:
+            return HTMLResponse("❌ Недопустимое поле", status_code=400)
+
+        conn = get_db()
+        try:
+            conn.execute(
+                f"UPDATE users SET {field}=? WHERE user_id=?",
+                (value.strip() or None, user_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
         return RedirectResponse(f"/admin/user/{user_id}", status_code=302)
         
     return app
