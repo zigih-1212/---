@@ -2395,7 +2395,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     <style>
         body {font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}
         h1,h2 {color:#fff;}
-        table {width:100%;border-collapse:collapse;margin:20px 0;}
+       table {{width:100%;border-collapse:collapse;margin:20px 0;}}
         th,td {padding:10px;border:1px solid #333;text-align:left;}
         th {background:#1a1d27;}
         .active {color:#2ecc71;} 
@@ -2533,7 +2533,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     <style>
         body {font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}
         h1,h2 {color:#fff;}
-        table {width:100%;border-collapse:collapse;margin:20px 0;}
+        table {{width:100%;border-collapse:collapse;margin:20px 0;}}
         th,td {padding:10px;border:1px solid #333;text-align:left;}
         th {background:#1a1d27;}
         .active {color:#2ecc71;} 
