@@ -2161,7 +2161,7 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
 
     action = call.data.split(":")[1]
 
-    elif action == "billing_check":
+    if action == "billing_check":
         await call.answer("⏳ Запускаю биллинг-чек...")
         await run_billing_check(call.message.bot)
         await call.message.answer("✅ Биллинг-чек завершён")
@@ -2178,8 +2178,6 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
 
     else:
         await call.answer("Неизвестная команда", show_alert=True)
-
-
 # =============================================================================
 # === FASTAPI WEBAPP (Admin Panel) ============================================
 # =============================================================================
