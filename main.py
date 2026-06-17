@@ -197,7 +197,46 @@ def init_db() -> None:
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     """)
-    
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS posts (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           user_id INTEGER NOT NULL,
+           donor_post_id TEXT NOT NULL,
+           channel_id TEXT,
+           target_channel_id TEXT,
+           traffic_source TEXT DEFAULT 'yt',
+           sku TEXT,
+           erid TEXT,
+           status TEXT DEFAULT 'pending',
+           quarantine_reason TEXT,
+           published_at TIMESTAMP,
+           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+           FOREIGN KEY(user_id) REFERENCES users(user_id)
+       )
+   """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pinned_posts (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           chat_id TEXT NOT NULL,
+           message_id INTEGER NOT NULL,
+           unpin_at TIMESTAMP NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS night_queue (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           user_id INTEGER NOT NULL,
+           video_id TEXT NOT NULL,
+           description TEXT,
+           sku TEXT,
+           photo_url TEXT,
+           marketplace TEXT DEFAULT 'wb',
+           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     # Очистка дублей
     cursor.execute("""
         DELETE FROM channels 
