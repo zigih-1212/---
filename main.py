@@ -45,6 +45,10 @@ from aiogram.types import (
     SuccessfulPayment,
     TelegramObject,
 )
+from aiogram.types import (
+    ...,
+    WebAppInfo,
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -376,7 +380,7 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📣 Рассылка всем", callback_data="admin:broadcast")],
         [InlineKeyboardButton(text="💰 Запустить биллинг-чек", callback_data="admin:billing_check")],
         [InlineKeyboardButton(text="🔧 Продлить подписку", callback_data="admin:extend_sub")],
-        [InlineKeyboardButton(text="🌐 Открыть WebApp", callback_data="admin:webapp_link")],
+        [InlineKeyboardButton(text="🌐 Открыть WebApp", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))],
     ])
 
 
@@ -1228,7 +1232,7 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📣 Рассылка всем", callback_data="admin:broadcast")],
         [InlineKeyboardButton(text="💰 Запустить биллинг-чек", callback_data="admin:billing_check")],
         [InlineKeyboardButton(text="🔧 Продлить подписку", callback_data="admin:extend_sub")],
-        [InlineKeyboardButton(text="🌐 Открыть WebApp", callback_data="admin:webapp_link")],
+        [InlineKeyboardButton(text="🌐 Открыть WebApp", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))],
     ])
 
 
