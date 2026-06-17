@@ -249,7 +249,7 @@ def init_db() -> None:
         cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_channel ON channels(user_id, channel_id)")
     except sqlite3.OperationalError:
         pass
-      try:
+    try:
         cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_night_queue_unique "
             "ON night_queue(user_id, video_id)"
