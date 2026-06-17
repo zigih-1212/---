@@ -2560,11 +2560,11 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             margin-bottom: 28px;
         }}
         .stat-card {{
-            background: #1a1d27;
-            border: 1px solid #2a2d3a;
-            border-radius: 10px;
-            padding: 16px;
-            text-align: center;
+            background: #1a1d27; }}
+            border: 1px solid #2a2d3a; }}
+            border-radius: 10px; }}
+            padding: 16px; }}
+            text-align: center; }}
         }}
         .stat-card .num {{ font-size: 32px; font-weight: 700; color: #fff; }}
         .stat-card .lbl {{ font-size: 12px; color: #888; margin-top: 4px; }}
