@@ -249,6 +249,13 @@ def init_db() -> None:
         cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_channel ON channels(user_id, channel_id)")
     except sqlite3.OperationalError:
         pass
+      try:
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_night_queue_unique "
+            "ON night_queue(user_id, video_id)"
+        )
+    except sqlite3.OperationalError:
+        pass
     
     # Миграции
     migrations = [
@@ -271,6 +278,8 @@ def init_db() -> None:
             cursor.execute("ALTER TABLE users ADD COLUMN payout_card TEXT")
         except sqlite3.OperationalError:
             pass
+
+        
 
     conn.commit()
     conn.close()
