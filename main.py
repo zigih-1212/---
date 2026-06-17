@@ -127,6 +127,7 @@ class ErrorLoggingMiddleware(BaseMiddleware):
 
 def get_db():
     db = sqlite3.connect(DB_PATH)
+    db = sqlite3.connect(DB_PATH, timeout=30)
     db.row_factory = sqlite3.Row
     return db
 
