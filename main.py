@@ -2533,9 +2533,6 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
         return HTMLResponse(html)
 
-    finally:
-        conn.close()
-
         # ====================== ПОДГОТОВКА КЛАССОВ ======================
         payout_class = "stat-card warn" if pending_payouts > 0 else "stat-card"
         error_class = "stat-card warn" if errors_today > 0 else "stat-card"
