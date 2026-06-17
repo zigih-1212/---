@@ -2118,7 +2118,8 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             token = secrets.token_hex(32)
             active_sessions[token] = True
             resp = RedirectResponse("/admin/dashboard", status_code=302)
-            resp.set_cookie(key="admin_token", value=token, httponly=True, max_age=3600*12)
+            resp.set_cookie(key="admin_token", value=token, httponly=True, 
+                secure=True, samesite="strict", max_age=3600*12)
             return resp
         return HTMLResponse("<h3>❌ Неверный пароль</h3><a href='/admin/login'>Назад</a>")
 
@@ -2560,7 +2561,8 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             token = secrets.token_hex(32)
             active_sessions[token] = True
             resp = RedirectResponse("/admin/dashboard", status_code=302)
-            resp.set_cookie(key="admin_token", value=token, httponly=True, max_age=3600*12)
+            resp.set_cookie(key="admin_token", value=token, httponly=True, 
+                secure=True, samesite="strict", max_age=3600*12)
             return resp
         return HTMLResponse("<h3>❌ Неверный пароль</h3><a href='/admin/login'>Назад</a>")
 
