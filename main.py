@@ -3562,18 +3562,20 @@ async def scan_donor_channels(bot: Bot):
     if not SAAS_DONOR_CHANNELS:
         return
 
-    for channel_url in SAAS_DONOR_CHANNELS:
+    for channel in SAAS_DONOR_CHANNELS:
         try:
-            info = extract_video_info(channel_url)
-            if not info:
-                continue
-            post_id = info.get("id")
-            if not post_id or is_video_processed(f"saas_{post_id}"):
-                continue
-            text = info.get("description") or info.get("title") or ""
-            await process_saas_post(bot=bot, post_text=text, post_id=f"saas_{post_id}")
+            posts = await fetch_telegram_channel_posts(channel)
+            for post in posts:
+                post_id = post["id"]
+                if is_video_processed(f"saas_{post_id}"):
+                    continue
+                await process_saas_post(
+                    bot=bot,
+                    post_text=post["text"],
+                    post_id=f"saas_{post_id}"
+                )
         except Exception as e:
-            logger.error(f"scan_donor_channels SaaS донор {channel_url}: {e}")
+            logger.error(f"scan_donor_channels SaaS [{channel}]: {e}")
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
