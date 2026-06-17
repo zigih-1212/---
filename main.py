@@ -2507,10 +2507,12 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     </body>
     </html>
     """)
-                        html += "</table></body></html>"
+            html += "</table></body></html>"
             return HTMLResponse(html)
         finally:
             conn.close()
+
+    # ====================== РАСШИРЕНИЕ АДМИНКИ ======================
 
     @app.post("/admin/extend")
     async def extend_subscription(request: Request, user_id: int = Form(...), days: int = Form(...), redirect: str = Form(default="/admin/dashboard")):
@@ -2619,76 +2621,95 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         </body>
         </html>
         """)
+    @app.get("/admin/saas/{user_id}", response_class=HTMLResponse)
+    async def saas_card(request: Request, user_id: int):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            user = conn.execute("""
+                SELECT user_id, username, is_active, subscription_until,
+                       created_at, api_key, channel_id, channel_title
+                FROM users WHERE user_id=? AND role='saas'
+            """, (user_id,)).fetchone()
+            if not user:
+                return HTMLResponse("<h2>Пользователь не найден</h2>", status_code=404)
 
-@app.get("/admin/saas/{user_id}", response_class=HTMLResponse)
-async def saas_card(request: Request, user_id: int):
-    is_authenticated(request)
-    conn = get_db()
-    try:
-        user = conn.execute("""
-            SELECT user_id, username, is_active, subscription_until,
-                   created_at, api_key, channel_id, channel_title
-            FROM users WHERE user_id=? AND role='saas'
-        """, (user_id,)).fetchone()
+            channels = conn.execute("""
+                SELECT channel_id, channel_title, is_active
+                FROM channels WHERE user_id=?
+            """, (user_id,)).fetchall()
 
-        if not user:
-            return HTMLResponse("<h2>Пользователь не найден</h2>", status_code=404)
+            posts_stats = conn.execute("""
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status='published' THEN 1 ELSE 0 END) as published,
+                    SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) as errors,
+                    MAX(published_at) as last_pub
+                FROM posts WHERE user_id=?
+            """, (user_id,)).fetchone()
+        finally:
+            conn.close()
 
-        channels = conn.execute("""
-            SELECT channel_id, channel_title, is_active
-            FROM channels WHERE user_id=?
-        """, (user_id,)).fetchall()
+        now = datetime.now(timezone.utc)
+        try:
+            sub_dt = datetime.fromisoformat(str(user["subscription_until"]).replace("Z", "+00:00")) if user["subscription_until"] else None
+        except Exception:
+            sub_dt = None
 
-        posts_stats = conn.execute("""
-            SELECT
-                COUNT(*) as total,
-                SUM(CASE WHEN status='published' THEN 1 ELSE 0 END) as published,
-                SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) as errors,
-                MAX(published_at) as last_pub
-            FROM posts WHERE user_id=?
-        """, (user_id,)).fetchone()
+        if not user["is_active"]:
+            status_html = '<span style="color:#e74c3c;font-weight:bold">⛔ Забанен</span>'
+        elif sub_dt and sub_dt > now:
+            days_left = (sub_dt - now).days
+            status_html = f'<span style="color:#2ecc71;font-weight:bold">🟢 Активен — осталось {days_left} дн.</span>'
+        else:
+            status_html = '<span style="color:#f39c12;font-weight:bold">⚠️ Подписка истекла</span>'
 
-    finally:
-        conn.close()
+        api_key = user["api_key"] or ""
+        api_masked = api_key[:4] + "••••••••" + api_key[-4:] if len(api_key) > 8 else ("—" if not api_key else api_key)
+        last_pub = str(posts_stats["last_pub"])[:16] if posts_stats and posts_stats["last_pub"] else "—"
 
-    now = datetime.now(timezone.utc)
-    try:
-        sub_dt = datetime.fromisoformat(str(user["subscription_until"]).replace("Z", "+00:00")) if user["subscription_until"] else None
-    except Exception:
-        sub_dt = None
+        # Таблица каналов
+        channels_rows = "".join(f"""
+            <tr>
+                <td>{ch['channel_title'] or '-'}</td>
+                <td><a href="/admin/channel/{ch['channel_id']}" style="color:#3498db;"><code>{ch['channel_id']}</code></a></td>
+                <td>{'✅' if ch['is_active'] else '❌'}</td>
+                <td>
+                    <button onclick="checkBot('{ch['channel_id']}', this)" 
+                            style="padding:4px 10px;background:#2a2d3a;border:1px solid #444;color:#fff;border-radius:4px;cursor:pointer;font-size:12px;">
+                        🔍 Проверить права
+                    </button>
+                </td>
+            </tr>
+        """ for ch in channels)
 
-    if not user["is_active"]:
-        status_html = '<span style="color:#e74c3c;font-weight:bold">⛔ Забанен</span>'
-    elif sub_dt and sub_dt > now:
-        days_left = (sub_dt - now).days
-        status_html = f'<span style="color:#2ecc71;font-weight:bold">🟢 Активен — осталось {days_left} дн.</span>'
-    else:
-        status_html = '<span style="color:#f39c12;font-weight:bold">⚠️ Подписка истекла</span>'
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="ru">
+        <head>
+            <meta charset="UTF-8">
+            <title>SaaS — #{user_id}</title>
+            <style>
+                body {{font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:25px;max-width:1100px;margin:0 auto;}}
+                table {{width:100%;border-collapse:collapse;margin:15px 0;}}
+                th,td {{padding:10px;border:1px solid #333;}}
+                th {{background:#1a1d27;}}
+            </style>
+        </head>
+        <body>
+            <a href="/admin/saas">← Все SaaS клиенты</a>
+            <h1>💎 SaaS клиент #{user_id} @{user['username'] or '—'}</h1>
+            <p>{status_html} | API: <code>{api_masked}</code> | Последний пост: {last_pub}</p>
 
-    api_key = user["api_key"] or ""
-    api_masked = api_key[:4] + "••••••••" + api_key[-4:] if len(api_key) > 8 else ("—" if not api_key else api_key)
-
-    last_pub = str(posts_stats["last_pub"])[:16] if posts_stats["last_pub"] else "—"
-
-    # Строки каналов — права бота проверяются JS-запросом
-    channels_rows = ""
-    for ch in channels:
-        active_icon = "🟢" if ch["is_active"] else "🔴"
-     channels_rows = "".join(f"""
-        <tr>
-            <td>{ch['channel_title'] or '-'}</td>
-            <td><a href="/admin/channel/{ch['channel_id']}" style="color:#3498db;"><code>{ch['channel_id']}</code></a></td>
-            <td>{'✅' if ch['is_active'] else '❌'}</td>
-        </tr>
-    """ for ch in channels)
-                <button onclick="checkBot('{ch['channel_id']}', this)"
-                    style="padding:4px 10px;background:#2a2d3a;border:1px solid #444;
-                           color:#fff;border-radius:4px;cursor:pointer;font-size:12px;">
-                    🔍 Проверить права
-                </button>
-            </td>
-        </tr>"""
-
+            <h2>📢 Каналы ({len(channels)})</h2>
+            <table>
+                <tr><th>Название</th><th>Channel ID</th><th>Активен</th><th>Действие</th></tr>
+                {channels_rows if channels_rows else "<tr><td colspan='4'>Каналов нет</td></tr>"}
+            </table>
+        </body>
+        </html>
+        """
+        return HTMLResponse(html)
     ban_btn = f"""
     <form action="/admin/saas/{user_id}/ban" method="post" style="display:inline">
         <button type="submit" style="padding:6px 16px;background:#e74c3c;border:none;
