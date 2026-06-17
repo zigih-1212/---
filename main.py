@@ -2574,7 +2574,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 </div>
             </div>
 
-                # === Формирование HTML дашборда ===
+        # === Формирование HTML дашборда ===
         html = f"""
         <!DOCTYPE html>
         <html lang="ru">
@@ -2600,7 +2600,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 <p>Активных SaaS: <b>{saas_active}</b> | Блогеров: <b>{bloggers_active}</b></p>
                 <p>Постов сегодня: <b>{posts_today}</b> | За неделю: <b>{posts_week}</b></p>
                 <p>Ошибок сегодня: <b>{errors_today}</b></p>
-                <p>Ожидают выплату: <b>{pending_payouts}</b> заявок на сумму <b>{pending_amount} ₽</b></p>
+                <p>Ожидают выплату: <b>{pending_payouts}</b> заявок на сумму <b>{float(pending_amount):.2f} ₽</b></p>
             </div>
 
             {payouts_section}
