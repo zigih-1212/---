@@ -88,6 +88,9 @@ DEEPINFRA_API_KEY: str = os.getenv("DEEPINFRA_API_KEY", "")
 STARS_PROVIDER_TOKEN: str = os.getenv("STARS_PROVIDER_TOKEN", "")
 WEBAPP_HOST: str = os.getenv("WEBAPP_HOST", "0.0.0.0")
 WEBAPP_PORT: int = int(os.getenv("PORT", os.getenv("WEBAPP_PORT", "8000")))
+SAAS_DONOR_CHANNELS: list[str] = [
+    x.strip() for x in os.getenv("SAAS_DONOR_CHANNELS", "").split(",") if x.strip()
+]
 
 # ---------- Реквизиты оплаты -------------------------------------------------
 CARD_SBER: str = os.getenv("PAY_SBER", "2202 2081 0829 0025")
