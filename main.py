@@ -3095,7 +3095,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         status_color = "#2ecc71" if user["is_active"] else "#e74c3c"
         status_text = "✅ Активен" if user["is_active"] else "⛔ Заблокирован"
 
-    css = """
+        css = """
         <style>
             body {{font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:25px;max-width:1200px;margin:0 auto;}}
             h1,h2 {{color:#fff;}}
@@ -3107,7 +3107,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         </style>
         """
 
-        html = f"""<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
