@@ -2299,9 +2299,8 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 ORDER BY py.created_at ASC
             """).fetchall()
 
-        finally:
-            conn.close()
-    def status_badge(status):
+# ====================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ======================
+    def status_badge(status: str) -> str:
         colors = {
             "published": "#2ecc71",
             "error": "#e74c3c",
@@ -2310,6 +2309,11 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         }
         color = colors.get(status, "#888")
         return f'<span style="color:{color};font-weight:bold">{status}</span>'
+
+    def role_badge(role: str) -> str:
+        if role == "saas":
+            return '<span style="background:#3498db;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px">SaaS</span>'
+        return '<span style="background:#2ecc71;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px">Блогер</span>'
 
     def role_badge(role):
         if role == "saas":
