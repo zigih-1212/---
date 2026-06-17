@@ -2494,40 +2494,85 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             <a href="/admin/logout" class="logout">Выход</a>
         </div>
 
-        <div class="stats-grid">
-            <div class="stat-card ok">
-                <div class="num">{saas_active}</div>
-                <div class="lbl">SaaS активных</div>
+        # Подготовка классов (перед формированием HTML)
+        payout_class = "stat-card warn" if pending_payouts > 0 else "stat-card"
+        error_class = "stat-card warn" if errors_today > 0 else "stat-card"
+
+        # === HTML ===
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="ru">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>AutoPost — Админка</title>
+            <style>
+                * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                       background: #0f1117; color: #e0e0e8; padding: 24px; }}
+                h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
+                .topbar {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }}
+                .stats-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                    gap: 12px;
+                    margin-bottom: 28px;
+                }}
+                .stat-card {{
+                    background: #1a1d27;
+                    border: 1px solid #2a2d3a;
+                    border-radius: 10px;
+                    padding: 16px;
+                    text-align: center;
+                }}
+                .stat-card .num {{ font-size: 32px; font-weight: 700; color: #fff; }}
+                .stat-card .lbl {{ font-size: 12px; color: #888; margin-top: 4px; }}
+                .stat-card.warn .num {{ color: #e74c3c; }}
+                .stat-card.ok .num {{ color: #2ecc71; }}
+                .stat-card.blue .num {{ color: #3498db; }}
+                .stat-card.yellow .num {{ color: #f39c12; }}
+            </style>
+        </head>
+        <body>
+            <div class="topbar">
+                <h1>⚡ AutoPost Admin Dashboard</h1>
+                <a href="/admin/logout" style="color:#e74c3c;">Выход</a>
             </div>
-            <div class="stat-card blue">
-                <div class="num">{saas_trial}</div>
-                <div class="lbl">SaaS новых (3д)</div>
+
+            <div class="stats-grid">
+                <div class="stat-card ok">
+                    <div class="num">{saas_active}</div>
+                    <div class="lbl">SaaS активных</div>
+                </div>
+                <div class="stat-card blue">
+                    <div class="num">{saas_trial}</div>
+                    <div class="lbl">SaaS новых (3д)</div>
+                </div>
+                <div class="stat-card ok">
+                    <div class="num">{bloggers_active}</div>
+                    <div class="lbl">Блогеров</div>
+                </div>
+                <div class="stat-card blue">
+                    <div class="num">{posts_today}</div>
+                    <div class="lbl">Постов сегодня</div>
+                </div>
+                <div class="stat-card">
+                    <div class="num">{posts_week}</div>
+                    <div class="lbl">Постов за 7 дней</div>
+                </div>
+                <div class="{payout_class}">
+                    <div class="num">{pending_payouts}</div>
+                    <div class="lbl">Выплат ожидает</div>
+                </div>
+                <div class="stat-card yellow">
+                    <div class="num">{pending_amount:.0f}</div>
+                    <div class="lbl">₽ к выплате</div>
+                </div>
+                <div class="{error_class}">
+                    <div class="num">{errors_today}</div>
+                    <div class="lbl">Ошибок сегодня</div>
+                </div>
             </div>
-            <div class="stat-card ok">
-                <div class="num">{bloggers_active}</div>
-                <div class="lbl">Блогеров</div>
-            </div>
-            <div class="stat-card blue">
-                <div class="num">{posts_today}</div>
-                <div class="lbl">Постов сегодня</div>
-            </div>
-            <div class="stat-card">
-                <div class="num">{posts_week}</div>
-                <div class="lbl">Постов за 7 дней</div>
-            </div>
-            <div class="stat-card {'warn' if pending_payouts else ''}">
-                <div class="num">{pending_payouts}</div>
-                <div class="lbl">Выплат ожидает</div>
-            </div>
-            <div class="stat-card yellow">
-            <div class="num">{pending_amount:.0f}₽</div>
-            <div class="lbl">К выплате</div>
-            </div>
-            <div class="stat-card {'warn' if errors_today else ''}">
-            <div class="num">{errors_today}</div>
-            <div class="lbl">Ошибок сегодня</div>
-            </div>
-        </div>
 
                 # === Формирование HTML дашборда ===
         html = f"""
