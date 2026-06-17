@@ -36,10 +36,11 @@ def extract_video_info(url: str) -> Optional[Dict[str, Any]]:
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
-        'extract_flat': True,
+        'extract_flat': False,
+        'skip_download': True,
+        'playlistend': 1,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     }
-
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
