@@ -2584,12 +2584,12 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             <style>
                 body {{font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}}
                 h1,h2 {{color:#fff;}}
-                table {{width:100%;border-collapse:collapse;margin:20px 0;}}
-                th,td {{padding:10px;border:1px solid #333;text-align:left;}}
+                table {{width:100%; border-collapse:collapse; margin:20px 0;}}
+                th,td {{padding:10px; border:1px solid #333; text-align:left;}}
                 th {{background:#1a1d27;}}
                 .active {{color:#2ecc71;}} 
                 .inactive {{color:#e74c3c;}}
-                .section {{background:#1a1d27;padding:20px;border-radius:8px;margin-bottom:25px;}}
+                .section {{background:#1a1d27; padding:20px; border-radius:8px; margin-bottom:25px;}}
             </style>
         </head>
         <body>
