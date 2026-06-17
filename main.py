@@ -2549,22 +2549,52 @@ async def cleanup_old_posts() -> None:
 
 
 async def scan_donor_channels(bot: Bot):
-    """Периодическая проверка каналов-доноров"""
+    """Периодическая проверка каналов-доноров для блогеров"""
     conn = get_db()
     try:
-        rows = conn.execute(
-            "SELECT user_id, source_link as channel_url FROM users WHERE role='blogger' AND source_link IS NOT NULL"
-        ).fetchall()
+        rows = conn.execute("""
+            SELECT user_id, source_link as channel_url 
+            FROM users 
+            WHERE role='blogger' 
+            AND source_link IS NOT NULL 
+            AND is_active=1
+        """).fetchall()
     finally:
         conn.close()
 
     for row in rows:
-        if not row["channel_url"]:
-            continue
-        video_info = extract_video_info(row["channel_url"])
-        if not video_info or is_video_processed(video_info.get("id")):
-            continue
-        await process_new_video(bot, row["user_id"], video_info)
+        try:
+            video_info = extract_video_info(row["channel_url"])
+            if not video_info:
+                continue
+
+            video_id = video_info.get("id")
+            if not video_id or is_video_processed(video_id):
+                continue
+
+            description = video_info.get("description", "")
+            photo_url = video_info.get("thumbnail")
+
+            # Ищем артикул товара
+            products = find_product_links(description)
+            sku = None
+            marketplace = "wb"
+            if products:
+                first = products[0]
+                sku = first.get("value")
+                marketplace = first.get("marketplace", "wb")
+
+            await process_new_video(
+                bot=bot,
+                user_id=row["user_id"],
+                video_id=video_id,
+                description=description,
+                sku=sku,
+                photo_url=photo_url,
+                marketplace=marketplace,
+            )
+        except Exception as e:
+            logger.error(f"scan_donor_channels ошибка для user {row['user_id']}: {e}")
 
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
