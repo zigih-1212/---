@@ -2265,7 +2265,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             for u in users:
                 html += f"""
                     <tr>
-                        <td>{u['user_id']}</td>
+                        <td><a href="/admin/user/{u['user_id']}" style="color:#3498db;">{u['user_id']}</a></td>
                         <td>@{u['username'] or '-'}</td>
                         <td>{u['role']}</td>
                         <td>{u['channel_title'] or '-'}</td>
@@ -2299,8 +2299,8 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         finally:
             conn.close()
 
-    @app.post("/admin/extend")
-    async def extend_subscription(request: Request, user_id: int = Form(...), days: int = Form(...)):
+   @app.post("/admin/extend")
+    async def extend_subscription(request: Request, user_id: int = Form(...), days: int = Form(...), redirect: str = Form(default="/admin/dashboard")):
         is_authenticated(request)
         conn = get_db()
         try:
@@ -2311,7 +2311,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             conn.commit()
         finally:
             conn.close()
-        return RedirectResponse("/admin/dashboard", status_code=302)
+        return RedirectResponse(redirect, status_code=302)
 
     @app.get("/admin/logout")
     async def logout():
@@ -2319,6 +2319,229 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         resp.delete_cookie("admin_token")
         return resp
 
+# -------------------------------------------------------------------------
+    # === КАРТОЧКА ПОЛЬЗОВАТЕЛЯ ===============================================
+    # -------------------------------------------------------------------------
+
+    @app.get("/admin/user/{user_id}", response_class=HTMLResponse)
+    async def user_card(request: Request, user_id: int):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            user = conn.execute(
+                "SELECT * FROM users WHERE user_id=?", (user_id,)
+            ).fetchone()
+            if not user:
+                return HTMLResponse("<h3>Пользователь не найден</h3>", status_code=404)
+
+            role = user["role"]
+
+            # Каналы
+            channels = conn.execute(
+                "SELECT * FROM channels WHERE user_id=?", (user_id,)
+            ).fetchall()
+
+            # Последние 20 постов
+            posts = conn.execute("""
+                SELECT * FROM posts WHERE user_id=? ORDER BY id DESC LIMIT 20
+            """, (user_id,)).fetchall()
+
+            # Баланс блогера (из transactions по sub_id)
+            balance_row = conn.execute("""
+                SELECT COALESCE(SUM(payout), 0.0) as total_earned
+                FROM transactions WHERE sub_id=?
+            """, (user["sub_id"],)).fetchone()
+            withdrawn_row = conn.execute("""
+                SELECT COALESCE(SUM(amount_blogger), 0.0) as total_withdrawn
+                FROM payouts WHERE user_id=? AND status='completed'
+            """, (user_id,)).fetchone()
+            pending_row = conn.execute("""
+                SELECT COALESCE(SUM(amount_blogger), 0.0) as total_pending
+                FROM payouts WHERE user_id=? AND status='pending'
+            """, (user_id,)).fetchone()
+
+            total_earned = round(float(balance_row["total_earned"] or 0), 2)
+            total_withdrawn = round(float(withdrawn_row["total_withdrawn"] or 0), 2)
+            total_pending = round(float(pending_row["total_pending"] or 0), 2)
+            available = round(total_earned - total_withdrawn - total_pending, 2)
+
+        finally:
+            conn.close()
+
+        role_badge = "💎 SaaS" if role == "saas" else "📢 Блогер"
+        status_color = "#2ecc71" if user["is_active"] else "#e74c3c"
+        status_text = "Активен" if user["is_active"] else "Неактивен"
+        sub_until = str(user["subscription_until"] or "—")[:19]
+
+        # Таблица каналов
+        channels_rows = ""
+        for ch in channels:
+            ch_id = ch["channel_id"] or "-"
+            ch_title = ch["channel_title"] or "-"
+            ch_active = "✅" if ch["is_active"] else "❌"
+            check_btn = f'<button onclick="checkBot(\'{ch_id}\')" style="padding:4px 10px;cursor:pointer;">🔍 Проверить бота</button>'
+            channels_rows += f"""
+                <tr>
+                    <td>{ch_title}</td>
+                    <td><code>{ch_id}</code></td>
+                    <td>{ch_active}</td>
+                    <td id="status_{ch_id.replace('-','_')}">{check_btn}</td>
+                </tr>
+            """
+
+        # Таблица постов
+        posts_rows = ""
+        for p in posts:
+            pub_at = str(p["published_at"] or p["created_at"] or "-")[:19]
+            posts_rows += f"""
+                <tr>
+                    <td>{p['id']}</td>
+                    <td>{p['donor_post_id']}</td>
+                    <td>{p['status']}</td>
+                    <td>{pub_at}</td>
+                </tr>
+            """
+
+        # Блок финансов — только для блогеров
+        finance_block = ""
+        if role == "blogger":
+            finance_block = f"""
+                <h2>💰 Финансы</h2>
+                <table>
+                    <tr><th>Всего заработано</th><th>Выплачено</th><th>На вывод ожидает</th><th>Доступно</th></tr>
+                    <tr>
+                        <td>{total_earned} ₽</td>
+                        <td>{total_withdrawn} ₽</td>
+                        <td style="color:#f39c12">{total_pending} ₽</td>
+                        <td style="color:#2ecc71"><b>{available} ₽</b></td>
+                    </tr>
+                </table>
+            """
+
+        # Блок управления подпиской — только для SaaS
+        saas_block = ""
+        if role == "saas":
+            saas_block = f"""
+                <h2>💳 Управление подпиской</h2>
+                <form action="/admin/extend" method="post" style="display:inline-flex;gap:10px;align-items:center;">
+                    <input type="hidden" name="user_id" value="{user_id}">
+                    <input type="hidden" name="redirect" value="/admin/user/{user_id}">
+                    <input type="number" name="days" placeholder="Дней" min="1" max="365"
+                        style="padding:8px;width:80px;background:#1a1d27;color:#fff;border:1px solid #444;border-radius:4px;">
+                    <button type="submit" style="padding:8px 16px;background:#2ecc71;color:#000;border:none;border-radius:4px;cursor:pointer;">
+                        ➕ Продлить
+                    </button>
+                </form>
+                &nbsp;
+                <form action="/admin/user/{user_id}/block" method="post" style="display:inline;">
+                    <button type="submit" style="padding:8px 16px;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">
+                        🚫 Заблокировать
+                    </button>
+                </form>
+            """
+
+        html = f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Карточка: @{user['username'] or user_id}</title>
+    <style>
+        body {{font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:24px;max-width:960px;margin:0 auto;}}
+        h1,h2 {{color:#fff;}} h2 {{margin-top:32px;border-bottom:1px solid #333;padding-bottom:8px;}}
+        table {{width:100%;border-collapse:collapse;margin:12px 0;}}
+        th,td {{padding:10px;border:1px solid #2a2d3a;text-align:left;font-size:14px;}}
+        th {{background:#1a1d27;color:#aaa;}}
+        code {{background:#1a1d27;padding:2px 6px;border-radius:4px;font-size:13px;}}
+        .badge {{display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:bold;}}
+        .back {{color:#7f8fa6;text-decoration:none;font-size:14px;}}
+        .back:hover {{color:#fff;}}
+        .check-ok {{color:#2ecc71;font-weight:bold;}}
+        .check-fail {{color:#e74c3c;font-weight:bold;}}
+        input[type=text],input[type=number] {{background:#1a1d27;color:#fff;border:1px solid #444;border-radius:4px;padding:6px;}}
+    </style>
+</head>
+<body>
+    <a href="/admin/dashboard" class="back">◀ Назад к списку</a>
+    <h1>{role_badge} @{user['username'] or '—'} <small style="color:#7f8fa6;font-size:16px;">#{user_id}</small></h1>
+    <p>
+        Статус: <span style="color:{status_color};font-weight:bold;">{status_text}</span> &nbsp;|&nbsp;
+        Подписка до: <b>{sub_until}</b> &nbsp;|&nbsp;
+        sub_id: <code>{user['sub_id'] or '—'}</code>
+    </p>
+
+    {finance_block}
+    {saas_block}
+
+    <h2>📢 Каналы ({len(channels)})</h2>
+    <table>
+        <tr><th>Название</th><th>ID канала</th><th>Активен</th><th>Права бота</th></tr>
+        {channels_rows if channels_rows else '<tr><td colspan="4" style="color:#7f8fa6;">Каналов нет</td></tr>'}
+    </table>
+
+    <h2>📝 Последние посты (20)</h2>
+    <table>
+        <tr><th>ID</th><th>Donor Post ID</th><th>Статус</th><th>Дата</th></tr>
+        {posts_rows if posts_rows else '<tr><td colspan="4" style="color:#7f8fa6;">Постов нет</td></tr>'}
+    </table>
+
+    <script>
+    async function checkBot(channelId) {{
+        const safeId = channelId.replace(/-/g, '_');
+        const el = document.getElementById('status_' + safeId);
+        el.innerHTML = '⏳ Проверяю...';
+        try {{
+            const resp = await fetch('/admin/check_bot?channel_id=' + encodeURIComponent(channelId));
+            const data = await resp.json();
+            if (data.ok) {{
+                el.innerHTML = '<span class="check-ok">✅ Бот — администратор</span>';
+            }} else {{
+                el.innerHTML = '<span class="check-fail">❌ ' + (data.reason || 'Нет прав') + '</span>';
+            }}
+        }} catch(e) {{
+            el.innerHTML = '<span class="check-fail">❌ Ошибка запроса</span>';
+        }}
+    }}
+    </script>
+</body>
+</html>"""
+        return HTMLResponse(html)
+
+    # -------------------------------------------------------------------------
+    # === API: Проверка прав бота ==============================================
+    # -------------------------------------------------------------------------
+
+    @app.get("/admin/check_bot")
+    async def check_bot_rights(request: Request, channel_id: str):
+        is_authenticated(request)
+        try:
+            me = await bot.get_me()
+            member = await bot.get_chat_member(chat_id=channel_id, user_id=me.id)
+            if member.status == "creator":
+                return {"ok": True}
+            if member.status == "administrator":
+                can_post = getattr(member, "can_post_messages", False)
+                if can_post:
+                    return {"ok": True}
+                return {"ok": False, "reason": "Админ, но нет права публиковать"}
+            return {"ok": False, "reason": f"Статус: {member.status}"}
+        except Exception as e:
+            return {"ok": False, "reason": str(e)}
+
+    # -------------------------------------------------------------------------
+    # === Блокировка пользователя =============================================
+    # -------------------------------------------------------------------------
+
+    @app.post("/admin/user/{user_id}/block")
+    async def block_user(request: Request, user_id: int):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            conn.execute("UPDATE users SET is_active=0 WHERE user_id=?", (user_id,))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/admin/user/{user_id}", status_code=302)
+        
     return app
 
 
