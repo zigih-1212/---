@@ -3307,25 +3307,6 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 # === SCHEDULER ===============================================================
 # =============================================================================
 
-async def unpin_old_messages(bot: Bot):
-    conn = get_db()
-    now = datetime.now(timezone.utc).isoformat()
-    try:
-        rows = conn.execute(
-            "SELECT chat_id, message_id FROM pinned_posts WHERE unpin_at <= ?", 
-            (now,)
-        ).fetchall()
-        for row in rows:
-            try:
-                await bot.unpin_chat_message(chat_id=row["chat_id"], message_id=row["message_id"])
-            except Exception:
-                pass
-            conn.execute("DELETE FROM pinned_posts WHERE chat_id=? AND message_id=?", 
-                        (row["chat_id"], row["message_id"]))
-        conn.commit()
-    finally:
-        conn.close()
-
 
 async def cleanup_old_posts() -> None:
     conn = get_db()
