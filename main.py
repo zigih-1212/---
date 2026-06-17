@@ -2386,107 +2386,56 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             </table>'''}
         </div>""" if pending_payouts > 0 else ""
 
-        # === Финальный HTML ===
-        html = f"""
-        <!DOCTYPE html>
-        <html lang="ru">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>AutoPost — Админка</title>
-            <style>
-                * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                       background: #0f1117; color: #e0e0e8; padding: 24px; }}
-                h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
-                .topbar {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }}
-                .logout {{ color:#e74c3c; text-decoration:none; }}
-                .stats-grid {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-                    gap: 12px;
-                    margin-bottom: 28px;
-                }}
-                .stat-card {{
-                    background: #1a1d27;
-                    border: 1px solid #2a2d3a;
-                    border-radius: 10px;
-                    padding: 16px;
-                    text-align: center;
-                }}
-                .stat-card .num {{ font-size: 32px; font-weight: 700; color: #fff; }}
-                .stat-card .lbl {{ font-size: 12px; color: #888; margin-top: 4px; }}
-                .stat-card.warn .num {{ color: #e74c3c; }}
-                .stat-card.ok .num {{ color: #2ecc71; }}
-                .stat-card.blue .num {{ color: #3498db; }}
-                .stat-card.yellow .num {{ color: #f39c12; }}
-                .section {{ background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 10px; padding: 20px; margin-bottom: 20px; }}
-                table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-                th, td {{ padding:8px 10px; border-bottom:1px solid #2a2d3a; text-align:left; }}
-                th {{ color:#888; font-weight:500; }}
-                tr:hover td {{ background:#1e2130; }}
-            </style>
-        </head>
-        <body>
-            <div class="topbar">
-                <h1>⚡ AutoPost Admin Dashboard</h1>
-                <a href="/admin/logout" class="logout">Выход</a>
-            </div>
+        # === Формирование HTML дашборда ===
+        html = """<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>AutoPost Admin Dashboard</title>
+    <style>
+        body {font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}
+        h1,h2 {color:#fff;}
+        table {width:100%;border-collapse:collapse;margin:20px 0;}
+        th,td {padding:10px;border:1px solid #333;text-align:left;}
+        th {background:#1a1d27;}
+        .active {color:#2ecc71;} 
+        .inactive {color:#e74c3c;}
+        .section {background:#1a1d27;padding:20px;border-radius:8px;margin-bottom:25px;}
+    </style>
+</head>
+<body>
+    <h1>AutoPost Admin Dashboard</h1>
+    <a href="/admin/logout">Выход</a>
 
-            <div class="stats-grid">
-                <div class="stat-card ok">
-                    <div class="num">{saas_active}</div>
-                    <div class="lbl">SaaS активных</div>
-                </div>
-                <div class="stat-card blue">
-                    <div class="num">{saas_trial}</div>
-                    <div class="lbl">SaaS новых (3д)</div>
-                </div>
-                <div class="stat-card ok">
-                    <div class="num">{bloggers_active}</div>
-                    <div class="lbl">Блогеров</div>
-                </div>
-                <div class="stat-card blue">
-                    <div class="num">{posts_today}</div>
-                    <div class="lbl">Постов сегодня</div>
-                </div>
-                <div class="stat-card">
-                    <div class="num">{posts_week}</div>
-                    <div class="lbl">Постов за 7 дней</div>
-                </div>
-                <div class="{payout_class}">
-                    <div class="num">{pending_payouts}</div>
-                    <div class="lbl">Выплат ожидает</div>
-                </div>
-                <div class="stat-card yellow">
-                    <div class="num">{pending_amount:.0f}₽</div>
-                    <div class="lbl">К выплате</div>
-                </div>
-                <div class="{error_class}">
-                    <div class="num">{errors_today}</div>
-                    <div class="lbl">Ошибок сегодня</div>
-                </div>
-            </div>
-            {payouts_section}
+    <div class="section">
+        <h2>📊 Общая статистика</h2>
+        <p>Активных SaaS: <b>""" + str(saas_active) + """</b> | Блогеров: <b>""" + str(bloggers_active) + """</b></p>
+        <p>Постов сегодня: <b>""" + str(posts_today) + """</b> | За неделю: <b>""" + str(posts_week) + """</b></p>
+        <p>Ошибок сегодня: <b>""" + str(errors_today) + """</b></p>
+        <p>Ожидают выплату: <b>""" + str(pending_payouts) + """</b> заявок на сумму <b>""" + f"{float(pending_amount):.2f}" + """ ₽</b></p>
+    </div>
 
-            <div class="section">
-                <h2>👥 Пользователи (последние 20)</h2>
-                <table>
-                    <tr><th>ID</th><th>Username</th><th>Роль</th><th>Канал</th><th>Подписка до</th><th>Статус</th><th>Продлить</th></tr>
-                    {users_rows if 'users_rows' in locals() else ''}
-                </table>
-            </div>
+    """ + (payouts_section or "") + """
 
-            <div class="section">
-                <h2>📬 Последние посты (30)</h2>
-                <table>
-                    <tr><th>ID</th><th>Пользователь</th><th>Донор</th><th>Статус</th><th>Дата</th></tr>
-                    {posts_rows if 'posts_rows' in locals() else ''}
-                </table>
-            </div>
-        </body>
-        </html>
-        """
+    <div class="section">
+        <h2>👥 Пользователи (последние 20)</h2>
+        <table>
+            <tr><th>ID</th><th>Username</th><th>Роль</th><th>Канал</th><th>Подписка до</th><th>Статус</th><th>Продлить</th></tr>
+            """ + (users_rows or "") + """
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>📬 Последние посты (30)</h2>
+        <table>
+            <tr><th>ID</th><th>Пользователь</th><th>Донор</th><th>Статус</th><th>Дата</th></tr>
+            """ + (posts_rows or "") + """
+        </table>
+    </div>
+</body>
+</html>
+"""
+
         return HTMLResponse(html)
 
     finally:
