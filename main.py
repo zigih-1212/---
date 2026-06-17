@@ -2222,16 +2222,16 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 secure=True, samesite="strict", max_age=3600*12)
             return resp
         return HTMLResponse("<h3>❌ Неверный пароль</h3><a href='/admin/login'>Назад</a>")
-    @app.get("/admin/dashboard", response_class=HTMLResponse)
+     @app.get("/admin/dashboard", response_class=HTMLResponse)
     async def dashboard(request: Request):
         is_authenticated(request)
         conn = get_db()
         try:
-            # --- Цифры для дашборда ---
+            # --- Статистика ---
             saas_active = conn.execute("""
                 SELECT COUNT(*) as cnt FROM users
                 WHERE role='saas' AND is_active=1
-                AND subscription_until > datetime('now')
+                AND (subscription_until IS NULL OR subscription_until > datetime('now'))
             """).fetchone()["cnt"]
 
             saas_trial = conn.execute("""
@@ -2265,7 +2265,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             pending_amount = conn.execute("""
                 SELECT COALESCE(SUM(amount_blogger), 0) as total
                 FROM payouts WHERE status='pending'
-            """).fetchone()["total"]
+            """).fetchone()["total"] or 0
 
             errors_today = conn.execute("""
                 SELECT COUNT(*) as cnt FROM posts
@@ -2273,23 +2273,19 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 AND created_at >= datetime('now', 'start of day')
             """).fetchone()["cnt"]
 
-            # --- Последние пользователи ---
+            # --- Данные для таблиц ---
             users = conn.execute("""
-                SELECT user_id, username, role, subscription_until,
-                       channel_title, is_active, created_at
+                SELECT user_id, username, role, subscription_until, channel_title, is_active 
                 FROM users ORDER BY created_at DESC LIMIT 20
             """).fetchall()
 
-            # --- Последние посты ---
             posts = conn.execute("""
-                SELECT p.id, p.status, p.published_at, p.donor_post_id,
-                       u.username, u.role
+                SELECT p.id, p.status, p.published_at, p.donor_post_id, u.username
                 FROM posts p
-                LEFT JOIN users u ON p.user_id = u.user_id
+                LEFT JOIN users u ON p.user_id = u.user_id 
                 ORDER BY p.id DESC LIMIT 30
             """).fetchall()
 
-            # --- Pending выплаты ---
             payouts = conn.execute("""
                 SELECT py.id, py.amount_blogger, py.amount_to_withdraw,
                        py.card, py.created_at, u.username, u.user_id
@@ -2298,6 +2294,107 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 WHERE py.status = 'pending'
                 ORDER BY py.created_at ASC
             """).fetchall()
+
+        finally:
+            conn.close()
+
+        # === Безопасное формирование HTML (без f-строк с CSS) ===
+        html = """<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>AutoPost Admin Dashboard</title>
+    <style>
+        body {font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}
+        h1,h2 {color:#fff;}
+        table {width:100%; border-collapse:collapse; margin:20px 0;}
+        th,td {padding:10px; border:1px solid #333; text-align:left;}
+        th {background:#1a1d27;}
+        .active {color:#2ecc71;} 
+        .inactive {color:#e74c3c;}
+        .section {background:#1a1d27;padding:20px;border-radius:8px;margin-bottom:25px;}
+        .num {font-size:28px; font-weight:bold;}
+    </style>
+</head>
+<body>
+    <h1>AutoPost Admin Dashboard</h1>
+    <a href="/admin/logout">Выход</a>
+
+    <div class="section">
+        <h2>📊 Общая статистика</h2>
+        <p>Активных SaaS: <b>{saas_active}</b> | Блогеров: <b>{bloggers_active}</b></p>
+        <p>Постов сегодня: <b>{posts_today}</b> | За неделю: <b>{posts_week}</b></p>
+        <p>Ошибок сегодня: <b>{errors_today}</b></p>
+        <p>Ожидают выплату: <b>{pending_payouts}</b> заявок на сумму <b>{pending_amount:.2f} ₽</b></p>
+    </div>
+""".format(
+            saas_active=saas_active,
+            bloggers_active=bloggers_active,
+            posts_today=posts_today,
+            posts_week=posts_week,
+            errors_today=errors_today,
+            pending_payouts=pending_payouts,
+            pending_amount=float(pending_amount)
+        )
+
+        # Пользователи
+        users_html = ""
+        for u in users:
+            sub = str(u["subscription_until"])[:10] if u.get("subscription_until") else "—"
+            active = "🟢" if u["is_active"] else "🔴"
+            users_html += f"""
+            <tr>
+                <td>{u['user_id']}</td>
+                <td>@{u['username'] or '-'}</td>
+                <td>{u['role'] or '—'}</td>
+                <td>{u['channel_title'] or '—'}</td>
+                <td>{sub}</td>
+                <td class="{'active' if u['is_active'] else 'inactive'}">{active}</td>
+                <td>
+                    <form action="/admin/extend" method="post" style="display:inline;">
+                        <input type="hidden" name="user_id" value="{u['user_id']}">
+                        <input type="number" name="days" placeholder="Дней" size="4" style="width:70px;">
+                        <button type="submit">Продлить</button>
+                    </form>
+                </td>
+            </tr>"""
+
+        html += f"""
+    <div class="section">
+        <h2>👥 Пользователи (последние 20)</h2>
+        <table>
+            <tr><th>ID</th><th>Username</th><th>Роль</th><th>Канал</th><th>Подписка до</th><th>Статус</th><th>Действие</th></tr>
+            {users_html}
+        </table>
+    </div>
+"""
+
+        # Посты
+        posts_html = ""
+        for p in posts:
+            pub = str(p.get("published_at"))[:16] if p.get("published_at") else "—"
+            posts_html += f"""
+            <tr>
+                <td>{p['id']}</td>
+                <td>@{p.get('username', '-')}</td>
+                <td>{str(p.get('donor_post_id', ''))[:30]}</td>
+                <td>{p['status']}</td>
+                <td>{pub}</td>
+            </tr>"""
+
+        html += f"""
+    <div class="section">
+        <h2>📬 Последние посты (30)</h2>
+        <table>
+            <tr><th>ID</th><th>Пользователь</th><th>Донор</th><th>Статус</th><th>Дата</th></tr>
+            {posts_html}
+        </table>
+    </div>
+</body>
+</html>
+"""
+
+        return HTMLResponse(html)
 
 # ====================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ======================
     def status_badge(status: str) -> str:
