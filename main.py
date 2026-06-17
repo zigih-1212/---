@@ -2331,7 +2331,9 @@ async def run_billing_check(bot: Bot):
 
 
 async def scan_donor_channels(bot: Bot):
-    """Периодическая проверка каналов-доноров для блогеров"""
+    """Периодическая проверка каналов-доноров для блогеров и SaaS"""
+    
+    # --- Блогеры ---
     conn = get_db()
     try:
         rows = conn.execute("""
@@ -2349,15 +2351,11 @@ async def scan_donor_channels(bot: Bot):
             video_info = extract_video_info(row["channel_url"])
             if not video_info:
                 continue
-
             video_id = video_info.get("id")
             if not video_id or is_video_processed(video_id):
                 continue
-
             description = video_info.get("description", "")
             photo_url = video_info.get("thumbnail")
-
-            # Ищем артикул товара
             products = find_product_links(description)
             sku = None
             marketplace = "wb"
@@ -2365,19 +2363,30 @@ async def scan_donor_channels(bot: Bot):
                 first = products[0]
                 sku = first.get("value")
                 marketplace = first.get("marketplace", "wb")
-
             await process_new_video(
-                bot=bot,
-                user_id=row["user_id"],
-                video_id=video_id,
-                description=description,
-                sku=sku,
-                photo_url=photo_url,
-                marketplace=marketplace,
+                bot=bot, user_id=row["user_id"], video_id=video_id,
+                description=description, sku=sku,
+                photo_url=photo_url, marketplace=marketplace,
             )
         except Exception as e:
-            logger.error(f"scan_donor_channels ошибка для user {row['user_id']}: {e}")
+            logger.error(f"scan_donor_channels блогер {row['user_id']}: {e}")
 
+    # --- SaaS доноры ---
+    if not SAAS_DONOR_CHANNELS:
+        return
+
+    for channel_url in SAAS_DONOR_CHANNELS:
+        try:
+            info = extract_video_info(channel_url)
+            if not info:
+                continue
+            post_id = info.get("id")
+            if not post_id or is_video_processed(f"saas_{post_id}"):
+                continue
+            text = info.get("description") or info.get("title") or ""
+            await process_saas_post(bot=bot, post_text=text, post_id=f"saas_{post_id}")
+        except Exception as e:
+            logger.error(f"scan_donor_channels SaaS донор {channel_url}: {e}")
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
@@ -2549,7 +2558,9 @@ async def cleanup_old_posts() -> None:
 
 
 async def scan_donor_channels(bot: Bot):
-    """Периодическая проверка каналов-доноров для блогеров"""
+    """Периодическая проверка каналов-доноров для блогеров и SaaS"""
+    
+    # --- Блогеры ---
     conn = get_db()
     try:
         rows = conn.execute("""
@@ -2567,15 +2578,11 @@ async def scan_donor_channels(bot: Bot):
             video_info = extract_video_info(row["channel_url"])
             if not video_info:
                 continue
-
             video_id = video_info.get("id")
             if not video_id or is_video_processed(video_id):
                 continue
-
             description = video_info.get("description", "")
             photo_url = video_info.get("thumbnail")
-
-            # Ищем артикул товара
             products = find_product_links(description)
             sku = None
             marketplace = "wb"
@@ -2583,19 +2590,30 @@ async def scan_donor_channels(bot: Bot):
                 first = products[0]
                 sku = first.get("value")
                 marketplace = first.get("marketplace", "wb")
-
             await process_new_video(
-                bot=bot,
-                user_id=row["user_id"],
-                video_id=video_id,
-                description=description,
-                sku=sku,
-                photo_url=photo_url,
-                marketplace=marketplace,
+                bot=bot, user_id=row["user_id"], video_id=video_id,
+                description=description, sku=sku,
+                photo_url=photo_url, marketplace=marketplace,
             )
         except Exception as e:
-            logger.error(f"scan_donor_channels ошибка для user {row['user_id']}: {e}")
+            logger.error(f"scan_donor_channels блогер {row['user_id']}: {e}")
 
+    # --- SaaS доноры ---
+    if not SAAS_DONOR_CHANNELS:
+        return
+
+    for channel_url in SAAS_DONOR_CHANNELS:
+        try:
+            info = extract_video_info(channel_url)
+            if not info:
+                continue
+            post_id = info.get("id")
+            if not post_id or is_video_processed(f"saas_{post_id}"):
+                continue
+            text = info.get("description") or info.get("title") or ""
+            await process_saas_post(bot=bot, post_text=text, post_id=f"saas_{post_id}")
+        except Exception as e:
+            logger.error(f"scan_donor_channels SaaS донор {channel_url}: {e}")
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
