@@ -1721,12 +1721,14 @@ async def cb_menu_pub_mode(callback: CallbackQuery) -> None:
         conn.close()
 
     mode = user["blogger_mode"] if user else "direct"
-    await callback.message.edit_text(
-        "⚙️ <b>Режим публикации</b>\n\n"
-        "Выберите как публиковать посты:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_blogger_mode(mode)
-    )
+    try:
+        await callback.message.edit_text(
+            "⚙️ <b>Режим публикации</b>\n\nВыберите как публиковать посты:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb_blogger_mode(mode)
+        )
+    except TelegramBadRequest:
+        pass
     await callback.answer()
 
 
@@ -1770,14 +1772,15 @@ async def cb_menu_settings(callback: CallbackQuery) -> None:
 
     wb = user["filter_wb"] if user else 1
     ozon = user["filter_ozon"] if user else 1
-    await callback.message.edit_text(
-        "⚙️ <b>Настройки</b>\n\n"
-        "Выберите какие магазины включить в автопостинг:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_filter_settings(wb, ozon)
-    )
+    try:
+        await callback.message.edit_text(
+            "⚙️ <b>Настройки</b>\n\nВыберите какие магазины включить в автопостинг:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb_filter_settings(wb, ozon)
+        )
+    except TelegramBadRequest:
+        pass
     await callback.answer()
-
 
 @router.callback_query(F.data.startswith("filter:toggle:"))
 async def cb_filter_toggle(callback: CallbackQuery) -> None:
