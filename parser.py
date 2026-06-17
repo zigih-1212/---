@@ -304,6 +304,37 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str):
             else:
                 caption = rewritten
 
+# Публикуем
+            msg = await bot.send_message(
+                chat_id=channel_id,
+                text=caption,
+                parse_mode="HTML"
+            )
+
+            # Записываем в posts
+            conn = get_db()
+            try:
+                conn.execute("""
+                    INSERT INTO posts
+                    (user_id, donor_post_id, channel_id, traffic_source, status, published_at)
+                    VALUES (?, ?, ?, 'saas_donor', 'published', ?)
+                """, (user_id, f"{post_id}_{channel_id}", channel_id,
+                      datetime.now(timezone.utc).isoformat()))
+                conn.commit()
+            finally:
+                conn.close()
+
+            logger.info(f"✅ SaaS пост опубликован: user={user_id} канал={channel_id}")
+
+            import asyncio
+            await asyncio.sleep(random.uniform(3, 7))
+
+        except Exception as e:
+            logger.error(f"process_saas_post ошибка user={user['user_id']}: {e}")
+
+
+async def fetch_telegram_channel_posts(channel: str) -> list[Dict[str, str]]:
+        
 async def fetch_telegram_channel_posts(channel: str) -> list[Dict[str, str]]:
     """
     Читает RSS Telegram-канала через rsshub.app.
