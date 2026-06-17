@@ -3014,6 +3014,9 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             new_status = 0 if current["is_active"] else 1
             conn.execute("UPDATE users SET is_active=? WHERE user_id=?", (new_status, user_id))
             conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/admin/saas/{user_id}", status_code=302)
         
 
 
