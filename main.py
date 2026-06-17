@@ -2101,7 +2101,9 @@ async def main() -> None:
     # Подключение мидлвара
     dp.update.middleware(ErrorLoggingMiddleware())
     
-    # Подключение роутера (убедись, что объект router объявлен глобально выше)
+    # ВАЖНО: Убедись, что 'router' — это тот же самый объект, 
+    # который ты импортировал в файле с обработчиками (cmd_start и др.).
+    # Если ты создаешь router здесь, то в файле с функциями напиши: from main import router
     dp.include_router(router)
 
     # Запуск планировщика
@@ -2116,13 +2118,13 @@ async def main() -> None:
         host=WEBAPP_HOST,
         port=WEBAPP_PORT,
         log_level="warning",
-        loop="asyncio" # Явно указываем asyncio для совместимости
+        loop="asyncio"
     )
     server = uvicorn.Server(config)
 
     logger.info(f"🌐 Web Admin Panel доступен по адресу: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
 
-    # Корректный запуск обоих сервисов в одном цикле событий
+    # Корректный запуск
     try:
         await asyncio.gather(
             dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()),
@@ -2130,10 +2132,11 @@ async def main() -> None:
             return_exceptions=True
         )
     finally:
-        # Корректное закрытие сессии бота при остановке
+        # Корректное закрытие
         await bot.session.close()
         scheduler.shutdown()
         logger.info("Бот и планировщик остановлены")
+
 
 
 # ====================== ФАЗА 2: ПЛАТЕЖИ ======================
