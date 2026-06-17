@@ -2162,11 +2162,6 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
 
     action = call.data.split(":")[1]
 
-    if action == "webapp_link":
-        url = WEBAPP_ADMIN_URL or f"http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin"
-        await call.answer()
-        await call.message.answer(f"🌐 Ссылка на админку:\n{url}")
-
     elif action == "billing_check":
         await call.answer("⏳ Запускаю биллинг-чек...")
         await run_billing_check(call.message.bot)
