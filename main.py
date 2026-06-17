@@ -1044,43 +1044,23 @@ def is_night_time() -> bool:
 
 
 async def add_to_night_queue(
-    user_id: int, channel_id: str, text: str,
-    photo_url: Optional[str], erid: str, advertiser: str, affiliate_url: str,
+    user_id: int,
+    video_id: str,
+    description: str,
+    sku: Optional[str],
+    photo_url: Optional[str],
+    marketplace: str = "wb",
 ) -> None:
     conn = get_db()
     try:
         conn.execute(
-            "INSERT INTO night_queue "
-            "(user_id, channel_id, text, photo_url, erid, advertiser, affiliate_url) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, channel_id, text, photo_url, erid, advertiser, affiliate_url)
+            "INSERT OR IGNORE INTO night_queue "
+            "(user_id, video_id, description, sku, photo_url, marketplace) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, video_id, description, sku, photo_url, marketplace)
         )
         conn.commit()
-    finally:
-        conn.close()
-
-
-async def flush_night_queue(bot: Bot) -> None:
-    """Публикует посты из ночной очереди с паузой 90 сек между постами."""
-    conn = get_db()
-    try:
-        rows = conn.execute(
-            "SELECT * FROM night_queue ORDER BY created_at ASC"
-        ).fetchall()
-        if not rows:
-            return
-        logger.info(f"Ночная очередь: {len(rows)} постов")
-        for row in rows:
-            success = await publish_post_with_fallback(
-                bot=bot,
-                channel_id=row["channel_id"],
-                caption=row["text"],
-                photo_url=row["photo_url"],
-            )
-            if success:
-                conn.execute("DELETE FROM night_queue WHERE id=?", (row["id"],))
-                conn.commit()
-            await asyncio.sleep(90)
+        logger.info(f"🌙 Отложено в ночную очередь: user={user_id} video={video_id}")
     finally:
         conn.close()
 
