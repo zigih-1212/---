@@ -304,7 +304,7 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str):
             else:
                 caption = rewritten
 
-            async def fetch_telegram_channel_posts(channel: str) -> list[Dict[str, str]]:
+        async def fetch_telegram_channel_posts(channel: str) -> list[Dict[str, str]]:
     """
     Читает RSS Telegram-канала через rsshub.app.
     channel — @username или username без @
