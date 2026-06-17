@@ -3039,7 +3039,7 @@ async def check_bot_rights(request: Request, channel_id: str):
     # === КАРТОЧКА ПОЛЬЗОВАТЕЛЯ ===============================================
     # -------------------------------------------------------------------------
 
-        @app.get("/admin/user/{user_id}", response_class=HTMLResponse)
+    @app.get("/admin/user/{user_id}", response_class=HTMLResponse)
     async def user_card(request: Request, user_id: int):
         is_authenticated(request)
         conn = get_db()
