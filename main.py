@@ -2987,7 +2987,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     }}
     </script>
     </body></html>
-    """)
+    return HTMLResponse(f"""...""")
 
 
 @app.post("/admin/saas/{user_id}/ban")
