@@ -3102,20 +3102,34 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         status_color = "#2ecc71" if user["is_active"] else "#e74c3c"
         status_text = "✅ Активен" if user["is_active"] else "⛔ Заблокирован"
 
+          html = f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Карточка {user_id}</title>
+    {css}
+</head>
+<body>
+        css = """
+        <style>
+            body {font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:25px;max-width:1200px;margin:0 auto;}
+            h1,h2 {color:#fff;}
+            table {width:100%;border-collapse:collapse;margin:15px 0;}
+            th,td {padding:10px;border:1px solid #333;text-align:left;font-size:14px;}
+            th {background:#1a1d27;}
+            .green {color:#2ecc71;} .red {color:#e74c3c;} .orange {color:#f39c12;}
+            button {padding:10px 18px;border:none;border-radius:6px;cursor:pointer;}
+        </style>
+        """
+
         html = f"""<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <title>Карточка {user_id}</title>
-    <style>
-        body {{font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:25px;max-width:1200px;margin:0 auto;}}
-        h1,h2 {{color:#fff;}}
-        table {{width:100%;border-collapse:collapse;margin:15px 0;}}
-        th,td {{padding:10px;border:1px solid #333;text-align:left;font-size:14px;}}
-        th {{background:#1a1d27;}}
-        .green {{color:#2ecc71;}} .red {{color:#e74c3c;}} .orange {{color:#f39c12;}}
-        button {{padding:10px 18px;border:none;border-radius:6px;cursor:pointer;}}
-    </style>
+    {css}
+</head>
+<body>
 </head>
 <body>
     <a href="/admin/dashboard" style="color:#7f8fa6;">← Назад в дашборд</a>
