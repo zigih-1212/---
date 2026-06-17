@@ -342,7 +342,7 @@ def kb_blogger_mode(mode: str) -> InlineKeyboardMarkup:
             text=f"{'✅' if mode == 'vip_pin' else '☐'} VIP-закреп в главном канале (24ч)",
             callback_data="blogger_mode:vip_pin",
         )],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:settings")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:pub_mode")],
     ])
 
 
@@ -1175,7 +1175,7 @@ def kb_blogger_mode(mode: str) -> InlineKeyboardMarkup:
             text=f"{'✅' if mode == 'vip_pin' else '☐'} VIP-закреп в главном канале (24ч)",
             callback_data="blogger_mode:vip_pin",
         )],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:settings")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:pub_mode")],
     ])
 
 
