@@ -2227,7 +2227,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         is_authenticated(request)
         conn = get_db()
         try:
-            # --- Статистика ---
+            # === Статистика ===
             saas_active = conn.execute("""
                 SELECT COUNT(*) as cnt FROM users
                 WHERE role='saas' AND is_active=1
@@ -2265,7 +2265,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             pending_amount = conn.execute("""
                 SELECT COALESCE(SUM(amount_blogger), 0) as total
                 FROM payouts WHERE status='pending'
-            """).fetchone()["total"] or 0
+            """).fetchone()["total"] or 0.0
 
             errors_today = conn.execute("""
                 SELECT COUNT(*) as cnt FROM posts
@@ -2273,7 +2273,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 AND created_at >= datetime('now', 'start of day')
             """).fetchone()["cnt"]
 
-            # --- Данные для таблиц ---
+            # === Данные таблиц ===
             users = conn.execute("""
                 SELECT user_id, username, role, subscription_until, channel_title, is_active 
                 FROM users ORDER BY created_at DESC LIMIT 20
@@ -2298,7 +2298,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         finally:
             conn.close()
 
-        # === Безопасное формирование HTML (без f-строк с CSS) ===
+        # === Формирование HTML ===
         html = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -2313,7 +2313,6 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         .active {color:#2ecc71;} 
         .inactive {color:#e74c3c;}
         .section {background:#1a1d27;padding:20px;border-radius:8px;margin-bottom:25px;}
-        .num {font-size:28px; font-weight:bold;}
     </style>
 </head>
 <body>
@@ -2346,14 +2345,14 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             <tr>
                 <td>{u['user_id']}</td>
                 <td>@{u['username'] or '-'}</td>
-                <td>{u['role'] or '—'}</td>
-                <td>{u['channel_title'] or '—'}</td>
+                <td>{u.get('role', '—')}</td>
+                <td>{u.get('channel_title', '—')}</td>
                 <td>{sub}</td>
                 <td class="{'active' if u['is_active'] else 'inactive'}">{active}</td>
                 <td>
                     <form action="/admin/extend" method="post" style="display:inline;">
                         <input type="hidden" name="user_id" value="{u['user_id']}">
-                        <input type="number" name="days" placeholder="Дней" size="4" style="width:70px;">
+                        <input type="number" name="days" placeholder="Дней" size="4">
                         <button type="submit">Продлить</button>
                     </form>
                 </td>
@@ -2396,37 +2395,33 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
         return HTMLResponse(html)
 
-# ====================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ======================
-    def status_badge(status: str) -> str:
-        colors = {
-            "published": "#2ecc71",
-            "error": "#e74c3c",
-            "quarantine": "#f39c12",
-            "pending": "#3498db",
-        }
-        color = colors.get(status, "#888")
-        return f'<span style="color:{color};font-weight:bold">{status}</span>'
+        # ====================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ======================
+        def status_badge(status: str) -> str:
+            colors = {
+                "published": "#2ecc71",
+                "error": "#e74c3c",
+                "quarantine": "#f39c12",
+                "pending": "#3498db",
+            }
+            color = colors.get(status, "#888")
+            return f'<span style="color:{color};font-weight:bold">{status}</span>'
 
-    def role_badge(role: str) -> str:
-        if role == "saas":
-            return '<span style="background:#3498db;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px">SaaS</span>'
-        return '<span style="background:#2ecc71;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px">Блогер</span>'
+        def role_badge(role: str) -> str:
+            if role == "saas":
+                return '<span style="background:#3498db;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px">SaaS</span>'
+            return '<span style="background:#2ecc71;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px">Блогер</span>'
 
-    def role_badge(role):
-        if role == "saas":
-            return '<span style="background:#3498db;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px">SaaS</span>'
-        return '<span style="background:#2ecc71;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px">Блогер</span>'
-
-            users_rows = ""
+        # ====================== ФОРМИРОВАНИЕ ТАБЛИЦ ======================
+        users_rows = ""
         for u in users:
-            sub = str(u["subscription_until"])[:10] if u["subscription_until"] else "—"
+            sub = str(u["subscription_until"])[:10] if u.get("subscription_until") else "—"
             active = "🟢" if u["is_active"] else "🔴"
             users_rows += f"""
             <tr>
                 <td><a href="/admin/user/{u['user_id']}" style="color:#3498db;">{u['user_id']}</a></td>
                 <td>@{u['username'] or '-'}</td>
-                <td>{u['role'].upper() if u['role'] else '—'}</td>
-                <td>{u['channel_title'] or '—'}</td>
+                <td>{role_badge(u.get('role', ''))}</td>
+                <td>{u.get('channel_title', '—')}</td>
                 <td>{sub}</td>
                 <td>{active}</td>
                 <td>
@@ -2440,7 +2435,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
         posts_rows = ""
         for p in posts:
-            pub = str(p["published_at"])[:16] if p.get("published_at") else "—"
+            pub = str(p.get("published_at"))[:16] if p.get("published_at") else "—"
             posts_rows += f"""
             <tr>
                 <td>{p['id']}</td>
@@ -2470,34 +2465,37 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 </td>
             </tr>"""
 
-        payouts_section = f"""
+        # Платежи секция
+        if pending_payouts > 0:
+            payouts_section = f"""
         <div class="section">
             <h2>💸 Заявки на выплату 
                 <span class="badge" style="background:#e74c3c">{pending_payouts}</span>
-                <span style="font-size:14px;color:#aaa;margin-left:10px">Итого: {pending_amount:.2f} ₽</span>
+                <span style="font-size:14px;color:#aaa;margin-left:10px">Итого: {float(pending_amount):.2f} ₽</span>
             </h2>
-            {"<p style='color:#888'>Нет pending заявок</p>" if not payouts else f'''
             <table>
                 <tr><th>#</th><th>Блогер</th><th>Карта</th><th>Блогеру</th><th>Вывести</th><th>Дата</th><th>Действие</th></tr>
                 {payouts_rows}
-            </table>'''}
-        </div>""" if pending_payouts > 0 else ""
+            </table>
+        </div>"""
+        else:
+            payouts_section = ""
 
-        # === Формирование HTML дашборда ===
-        html = """<!DOCTYPE html>
+        # === Финальный HTML ===
+        html = f"""<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <title>AutoPost Admin Dashboard</title>
     <style>
-        body {font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}
-        h1,h2 {color:#fff;}
-       table {{width:100%;border-collapse:collapse;margin:20px 0;}}
-        th,td {padding:10px;border:1px solid #333;text-align:left;}
-        th {background:#1a1d27;}
-        .active {color:#2ecc71;} 
-        .inactive {color:#e74c3c;}
-        .section {background:#1a1d27;padding:20px;border-radius:8px;margin-bottom:25px;}
+        body {{font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}}
+        h1,h2 {{color:#fff;}}
+        table {{width:100%;border-collapse:collapse;margin:20px 0;}}
+        th,td {{padding:10px;border:1px solid #333;text-align:left;}}
+        th {{background:#1a1d27;}}
+        .active {{color:#2ecc71;}} 
+        .inactive {{color:#e74c3c;}}
+        .section {{background:#1a1d27;padding:20px;border-radius:8px;margin-bottom:25px;}}
     </style>
 </head>
 <body>
@@ -2506,19 +2504,19 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
     <div class="section">
         <h2>📊 Общая статистика</h2>
-        <p>Активных SaaS: <b>""" + str(saas_active) + """</b> | Блогеров: <b>""" + str(bloggers_active) + """</b></p>
-        <p>Постов сегодня: <b>""" + str(posts_today) + """</b> | За неделю: <b>""" + str(posts_week) + """</b></p>
-        <p>Ошибок сегодня: <b>""" + str(errors_today) + """</b></p>
-        <p>Ожидают выплату: <b>""" + str(pending_payouts) + """</b> заявок на сумму <b>""" + f"{float(pending_amount):.2f}" + """ ₽</b></p>
+        <p>Активных SaaS: <b>{saas_active}</b> | Блогеров: <b>{bloggers_active}</b></p>
+        <p>Постов сегодня: <b>{posts_today}</b> | За неделю: <b>{posts_week}</b></p>
+        <p>Ошибок сегодня: <b>{errors_today}</b></p>
+        <p>Ожидают выплату: <b>{pending_payouts}</b> заявок на сумму <b>{float(pending_amount):.2f} ₽</b></p>
     </div>
 
-    """ + (payouts_section or "") + """
+    {payouts_section}
 
     <div class="section">
         <h2>👥 Пользователи (последние 20)</h2>
         <table>
             <tr><th>ID</th><th>Username</th><th>Роль</th><th>Канал</th><th>Подписка до</th><th>Статус</th><th>Продлить</th></tr>
-            """ + (users_rows or "") + """
+            {users_rows}
         </table>
     </div>
 
@@ -2526,7 +2524,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         <h2>📬 Последние посты (30)</h2>
         <table>
             <tr><th>ID</th><th>Пользователь</th><th>Донор</th><th>Статус</th><th>Дата</th></tr>
-            """ + (posts_rows or "") + """
+            {posts_rows}
         </table>
     </div>
 </body>
@@ -2535,107 +2533,113 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
         return HTMLResponse(html)
 
-    finally:
-        conn.close()
-            <a href="/admin/logout" class="logout">Выход</a>
-        </div>
+            finally:
+            conn.close()
 
-        # Подготовка классов (перед формированием HTML)
+        # ====================== ПОДГОТОВКА КЛАССОВ ======================
         payout_class = "stat-card warn" if pending_payouts > 0 else "stat-card"
         error_class = "stat-card warn" if errors_today > 0 else "stat-card"
 
-        # === HTML ===
-        html = f"""
-        <!DOCTYPE html>
-        <html lang="ru">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>AutoPost — Админка</title>
-            <style>
-                * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                       background: #0f1117; color: #e0e0e8; padding: 24px; }}
-                h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
-                .topbar {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }}
-                .stats-grid {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-                    gap: 12px;
-                    margin-bottom: 28px;
-                }}
-                .stat-card {{
-                    background: #1a1d27;
-                    border: 1px solid #2a2d3a;
-                    border-radius: 10px;
-                    padding: 16px;
-                    text-align: center;
-                }}
-                .stat-card .num {{ font-size: 32px; font-weight: 700; color: #fff; }}
-                .stat-card .lbl {{ font-size: 12px; color: #888; margin-top: 4px; }}
-                .stat-card.warn .num {{ color: #e74c3c; }}
-                .stat-card.ok .num {{ color: #2ecc71; }}
-                .stat-card.blue .num {{ color: #3498db; }}
-                .stat-card.yellow .num {{ color: #f39c12; }}
-            </style>
-        </head>
-        <body>
-            <div class="topbar">
-                <h1>⚡ AutoPost Admin Dashboard</h1>
-                <a href="/admin/logout" style="color:#e74c3c;">Выход</a>
-            </div>
+        # ====================== ФОРМИРОВАНИЕ HTML ======================
+        html = f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AutoPost — Админка</title>
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+               background: #0f1117; color: #e0e0e8; padding: 24px; }}
+        h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
+        .topbar {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }}
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 28px;
+        }}
+        .stat-card {{
+            background: #1a1d27;
+            border: 1px solid #2a2d3a;
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+        }}
+        .stat-card .num {{ font-size: 32px; font-weight: 700; color: #fff; }}
+        .stat-card .lbl {{ font-size: 12px; color: #888; margin-top: 4px; }}
+        .stat-card.warn .num {{ color: #e74c3c; }}
+        .stat-card.ok .num {{ color: #2ecc71; }}
+        .stat-card.blue .num {{ color: #3498db; }}
+        .stat-card.yellow .num {{ color: #f39c12; }}
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <h1>⚡ AutoPost Admin Dashboard</h1>
+        <a href="/admin/logout" style="color:#e74c3c;">Выход</a>
+    </div>
 
-            <div class="stats-grid">
-                <div class="stat-card ok">
-                    <div class="num">{saas_active}</div>
-                    <div class="lbl">SaaS активных</div>
-                </div>
-                <div class="stat-card blue">
-                    <div class="num">{saas_trial}</div>
-                    <div class="lbl">SaaS новых (3д)</div>
-                </div>
-                <div class="stat-card ok">
-                    <div class="num">{bloggers_active}</div>
-                    <div class="lbl">Блогеров</div>
-                </div>
-                <div class="stat-card blue">
-                    <div class="num">{posts_today}</div>
-                    <div class="lbl">Постов сегодня</div>
-                </div>
-                <div class="stat-card">
-                    <div class="num">{posts_week}</div>
-                    <div class="lbl">Постов за 7 дней</div>
-                </div>
-                <div class="{payout_class}">
-                    <div class="num">{pending_payouts}</div>
-                    <div class="lbl">Выплат ожидает</div>
-                </div>
-                <div class="stat-card yellow">
-                    <div class="num">{pending_amount:.0f}</div>
-                    <div class="lbl">₽ к выплате</div>
-                </div>
-                <div class="{error_class}">
-                    <div class="num">{errors_today}</div>
-                    <div class="lbl">Ошибок сегодня</div>
-                </div>
-            </div>
+    <div class="stats-grid">
+        <div class="stat-card ok">
+            <div class="num">{saas_active}</div>
+            <div class="lbl">SaaS активных</div>
+        </div>
+        <div class="stat-card blue">
+            <div class="num">{saas_trial}</div>
+            <div class="lbl">SaaS новых (3д)</div>
+        </div>
+        <div class="stat-card ok">
+            <div class="num">{bloggers_active}</div>
+            <div class="lbl">Блогеров</div>
+        </div>
+        <div class="stat-card blue">
+            <div class="num">{posts_today}</div>
+            <div class="lbl">Постов сегодня</div>
+        </div>
+        <div class="stat-card">
+            <div class="num">{posts_week}</div>
+            <div class="lbl">Постов за 7 дней</div>
+        </div>
+        <div class="{payout_class}">
+            <div class="num">{pending_payouts}</div>
+            <div class="lbl">Выплат ожидает</div>
+        </div>
+        <div class="stat-card yellow">
+            <div class="num">{pending_amount:.0f}</div>
+            <div class="lbl">₽ к выплате</div>
+        </div>
+        <div class="{error_class}">
+            <div class="num">{errors_today}</div>
+            <div class="lbl">Ошибок сегодня</div>
+        </div>
+    </div>
+""".format(
+            saas_active=saas_active,
+            saas_trial=saas_trial,
+            bloggers_active=bloggers_active,
+            posts_today=posts_today,
+            posts_week=posts_week,
+            pending_payouts=pending_payouts,
+            pending_amount=float(pending_amount),
+            errors_today=errors_today
+        )
 
         # === Формирование HTML дашборда ===
-        html = """
-<!DOCTYPE html>
+        html = f"""<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <title>AutoPost Admin Dashboard</title>
     <style>
-        body {font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}
-        h1,h2 {color:#fff;}
+        body {{font-family:Arial,sans-serif;background:#0f1117;color:#e0e0e8;padding:20px;}}
+        h1,h2 {{color:#fff;}}
         table {{width:100%;border-collapse:collapse;margin:20px 0;}}
-        th,td {padding:10px;border:1px solid #333;text-align:left;}
-        th {background:#1a1d27;}
-        .active {color:#2ecc71;} 
-        .inactive {color:#e74c3c;}
-        .section {background:#1a1d27;padding:20px;border-radius:8px;margin-bottom:25px;}
+        th,td {{padding:10px;border:1px solid #333;text-align:left;}}
+        th {{background:#1a1d27;}}
+        .active {{color:#2ecc71;}}
+        .inactive {{color:#e74c3c;}}
+        .section {{background:#1a1d27;padding:20px;border-radius:8px;margin-bottom:25px;}}
     </style>
 </head>
 <body>
@@ -2644,19 +2648,19 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
     <div class="section">
         <h2>📊 Общая статистика</h2>
-        <p>Активных SaaS: <b>""" + str(saas_active) + """</b> | Блогеров: <b>""" + str(bloggers_active) + """</b></p>
-        <p>Постов сегодня: <b>""" + str(posts_today) + """</b> | За неделю: <b>""" + str(posts_week) + """</b></p>
-        <p>Ошибок сегодня: <b>""" + str(errors_today) + """</b></p>
-        <p>Ожидают выплату: <b>""" + str(pending_payouts) + """</b> заявок на сумму <b>""" + f"{float(pending_amount):.2f}" + """ ₽</b></p>
+        <p>Активных SaaS: <b>{saas_active}</b> | Блогеров: <b>{bloggers_active}</b></p>
+        <p>Постов сегодня: <b>{posts_today}</b> | За неделю: <b>{posts_week}</b></p>
+        <p>Ошибок сегодня: <b>{errors_today}</b></p>
+        <p>Ожидают выплату: <b>{pending_payouts}</b> заявок на сумму <b>{float(pending_amount):.2f} ₽</b></p>
     </div>
 
-    """ + str(payouts_section or "") + """
+    {payouts_section or ""}
 
     <div class="section">
         <h2>👥 Пользователи (последние 20)</h2>
         <table>
             <tr><th>ID</th><th>Username</th><th>Роль</th><th>Канал</th><th>Подписка до</th><th>Статус</th><th>Продлить</th></tr>
-            """ + str(users_rows or "") + """
+            {users_rows or ""}
         </table>
     </div>
 
@@ -2664,7 +2668,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         <h2>📬 Последние посты (30)</h2>
         <table>
             <tr><th>ID</th><th>Пользователь</th><th>Донор</th><th>Статус</th><th>Дата</th></tr>
-            """ + str(posts_rows or "") + """
+            {posts_rows or ""}
         </table>
     </div>
 </body>
@@ -2672,10 +2676,6 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 """
 
         return HTMLResponse(html)
-
-    finally:
-        conn.close()
-
     # ====================== РАСШИРЕНИЕ АДМИНКИ ======================
 
     @app.post("/admin/extend")
