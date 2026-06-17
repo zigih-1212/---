@@ -101,6 +101,9 @@ TARIFF_PLANS: dict[str, dict] = {
 }
 
 MIN_PAYOUT: float = 2000.0
+PAYOUT_FIXED_FEE: float = 35.0    # фиксированная комиссия Такпродам
+PAYOUT_BANK_PCT: float = 0.043    # комиссия банка 4.3%
+MAX_ACTIVE_PAYOUTS: int = 2       # макс. активных заявок
 DB_PATH: str = "/app/data/autopost.db"
 
 
@@ -262,7 +265,7 @@ class PaymentFSM(StatesGroup):
 
 class PayoutStates(StatesGroup):
     waiting_for_card = State()
-
+    waiting_for_amount = State()
 
 # =============================================================================
 # === ROUTER ==================================================================
@@ -365,6 +368,22 @@ def kb_payment_methods() -> InlineKeyboardMarkup:
         )],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
     ])
+
+def calc_payout(amount_blogger: float) -> dict:
+    """
+    amount_blogger — сумма которую получит блогер на руки.
+    Считаем сколько нужно вывести из Такпродам чтобы покрыть комиссию.
+    Формула: нужно вывести X, где X - (X * 0.043 + 35) = amount_blogger * 2
+    То есть: X * (1 - 0.043) - 35 = amount_blogger * 2
+             X = (amount_blogger * 2 + 35) / 0.957
+    """
+    amount_to_withdraw = (amount_blogger * 2 + PAYOUT_FIXED_FEE) / (1 - PAYOUT_BANK_PCT)
+    amount_to_blogger = amount_blogger  # получает ровно столько сколько запросил
+    return {
+        "amount_requested": amount_blogger,
+        "amount_to_withdraw": round(amount_to_withdraw, 2),
+        "amount_blogger": round(amount_to_blogger, 2),
+    }
 
 
 
