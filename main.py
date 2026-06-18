@@ -2582,7 +2582,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
         api_key = user["api_key"] or ""
         api_masked = api_key[:4] + "••••••••" + api_key[-4:] if len(api_key) > 8 else ("—" if not api_key else api_key)
-        last_pub = str(posts_stats["last_pub"])[:16] if posts_stats and posts_stats["last_pub"] else "—"
+        last_pub = str(posts_stats["last_pub"])[:16] if posts_stats and posts_stats["last_pub"] else "-"
 
         channels_rows = ""
         for ch in channels:
