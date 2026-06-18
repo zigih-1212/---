@@ -299,7 +299,7 @@ def init_db() -> None:
             pass
 
              # === УМНЫЙ ЛИМИТ ПОСТОВ ===
-       try:
+        try:
              cursor.execute("ALTER TABLE channels ADD COLUMN max_posts_per_day INTEGER DEFAULT 25")
         except sqlite3.OperationalError:
             pass  # колонка уже существует       
