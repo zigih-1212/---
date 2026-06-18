@@ -279,7 +279,7 @@ async def process_new_video(
 # =============================================================================
 
 async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: Optional[str] = None):
-    """Публикация для SaaS с умным лимитом постов в сутки"""
+    """Умный растянутый лимит: 25 постов с 8:00 до 23:00"""
     conn = get_db()
     try:
         saas_users = conn.execute("""
@@ -297,45 +297,70 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
     if not saas_users:
         return
 
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_start_msk = today_start + timedelta(hours=3)  # 00:00 МСК
 
     for user in saas_users:
         try:
             user_id = user["user_id"]
             channel_id = user["channel_id"]
-            max_posts = user.get("max_posts_per_day") or 5
+            max_posts = user.get("max_posts_per_day") or 25
             db_post_id = f"saas_{post_id}_{channel_id}"
 
-            # === Защита от дублей ===
             if is_video_processed(db_post_id):
                 continue
 
-            # === Проверка лимита постов за сегодня ===
             conn = get_db()
             try:
+                # Сколько уже опубликовано сегодня
                 posted_today = conn.execute("""
                     SELECT COUNT(*) as cnt 
                     FROM posts 
                     WHERE channel_id = ? 
                     AND published_at >= ?
                     AND status = 'published'
-                """, (channel_id, today_start)).fetchone()["cnt"]
+                """, (channel_id, day_start_msk.isoformat())).fetchone()["cnt"]
 
                 if posted_today >= max_posts:
-                    logger.info(f"⛔ Лимит публикаций исчерпан для канала {channel_id} ({posted_today}/{max_posts})")
                     continue
+
+                # Проверка времени публикации (только 8:00 - 23:00 МСК)
+                msk_time = datetime.now(timezone(timedelta(hours=3)))
+                if msk_time.hour < 8 or msk_time.hour >= 23:
+                    # Ночной режим — откладываем в очередь
+                    from main import add_to_night_queue
+                    await add_to_night_queue(
+                        user_id=user_id, video_id=post_id, description=post_text,
+                        sku=None, photo_url=image_url, marketplace="saas"
+                    )
+                    continue
+
+                # === Растягивание: проверяем, когда был последний пост ===
+                last_post = conn.execute("""
+                    SELECT published_at FROM posts 
+                    WHERE channel_id = ? AND status = 'published'
+                    ORDER BY published_at DESC LIMIT 1
+                """, (channel_id,)).fetchone()
+
+                if last_post and last_post["published_at"]:
+                    last_time = datetime.fromisoformat(last_post["published_at"].replace("Z", "+00:00"))
+                    minutes_since_last = (now - last_time).total_seconds() / 60
+
+                    # Примерно 1 пост каждые 36 минут (25 постов за 15 часов)
+                    if minutes_since_last < 34:
+                        continue  # слишком рано для следующего поста
+
             finally:
                 conn.close()
 
-            # === AI Рерайт ===
+            # === AI Рерайт + ТакПродам ===
             rewritten = await rewrite_text_with_ai(post_text or "Новое поступление!")
 
-            # === Данные из ТакПродам ===
             product_info = None
             if user.get("api_key"):
                 product_info = await get_product_data_by_token(user["api_key"], user["sub_id"])
 
-            # === Формирование caption ===
             if product_info and product_info.get("erid"):
                 caption = (
                     f"{rewritten}\n\n"
@@ -345,26 +370,25 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
             else:
                 caption = f"{rewritten}\n\n<i>Реклама</i>"
 
-            # === Публикация ===
+            # Публикация
             if image_url:
                 await bot.send_photo(chat_id=channel_id, photo=image_url, caption=caption, parse_mode="HTML")
             else:
                 await bot.send_message(chat_id=channel_id, text=caption, parse_mode="HTML")
 
-            # Сохранение в БД
+            # Сохранение
             conn = get_db()
             conn.execute("""
                 INSERT INTO posts 
                 (user_id, donor_post_id, channel_id, target_channel_id, 
                  traffic_source, status, published_at)
                 VALUES (?, ?, ?, ?, 'saas_donor', 'published', ?)
-            """, (user_id, db_post_id, channel_id, channel_id, datetime.now(timezone.utc).isoformat()))
+            """, (user_id, db_post_id, channel_id, channel_id, now.isoformat()))
             conn.commit()
             conn.close()
 
-            logger.info(f"✅ Опубликован SaaS пост в канал {channel_id} ({posted_today+1}/{max_posts})")
-
-            await asyncio.sleep(4)
+            logger.info(f"✅ SaaS пост опубликован в {channel_id} ({posted_today+1}/{max_posts})")
+            await asyncio.sleep(3)
 
         except Exception as e:
             logger.error(f"Ошибка process_saas_post для {user_id}: {e}")
