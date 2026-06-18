@@ -1238,25 +1238,22 @@ async def fix_duplicate_channels(message: Message) -> None:
 
 @router.message(OnboardingStates.waiting_source_channel)
 async def handle_blogger_source(message: Message, state: FSMContext) -> None:
-    source_link = message.text
+    source_link = message.text.strip()
     user_id = message.from_user.id
-    
+
     conn = get_db()
     try:
         conn.execute("UPDATE users SET source_link=? WHERE user_id=?", (source_link, user_id))
         conn.commit()
     finally:
         conn.close()
-        
+
+    await state.set_state(OnboardingStates.waiting_channel)
     await message.answer(
-        "✅ Источник успешно привязан!\n\n"
-        "Теперь выберите, куда публиковать:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="В мой канал", callback_data="target:own")],
-            [InlineKeyboardButton(text="В VIP-канал", callback_data="target:ours")]
-        ])
-    )
-    await state.set_state(OnboardingStates.waiting_target_choice)  # Нужно добавить состояние если отсутствует
+        "✅ Источник привязан!\n\n"
+        "Теперь пришлите @username вашего Telegram-канала куда будем публиковать посты:",
+        parse_mode=ParseMode.HTML
+    )it state.set_state(OnboardingStates.waiting_target_choice)  # Нужно добавить состояние если отсутствует
 
 
 @router.callback_query(F.data.startswith("target:"))
