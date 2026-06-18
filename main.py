@@ -1124,21 +1124,17 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
 def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
     """Внутреннее меню Личного кабинета"""
     if role == "saas":
-        # Кнопки внутри кабинета для SaaS
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")],
             [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
-            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")]
+            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")]
         ])
     else:
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💸 Вывод средств", callback_data="payout:request")],
-            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")]
+            [InlineKeyboardButton(text="💸 Вывод средств", callback_data="payout:request")]
         ])
-
 # =============================================================================
 # === KEYBOARD HELPERS ========================================================
 # =============================================================================
