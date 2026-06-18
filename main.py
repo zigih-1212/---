@@ -3105,7 +3105,7 @@ async def cleanup_old_posts() -> None:
 
 async def scan_donor_channels(bot: Bot):
     """Периодическая проверка каналов-доноров для блогеров и SaaS"""
-    logger.info("🔍 scan_donor_channels запущен")
+    logger.info("🔍 Запуск сканирования доноров...")
     
     # --- Блогеры ---
     conn = get_db()
@@ -3183,8 +3183,10 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
         id="cleanup_old_posts",
     )
     scheduler.add_job(
-        scan_donor_channels, trigger="interval", minutes=2,
+        scan_donor_channels, trigger="interval", minutes=10,
         kwargs={"bot": bot}, id="scan_donors",
+        kwargs={"bot": bot},
+        id="scan_donors",
     )
     return scheduler
 
