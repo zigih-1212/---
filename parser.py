@@ -142,12 +142,15 @@ async def get_product_data_by_token(token: str, sub_id: str) -> Optional[Dict]:
 # =============================================================================
 
 # --- ИСПРАВЛЕНИЕ: ХЕЛПЕРЫ ДЛЯ РАБОТЫ ---
-def is_video_processed(post_id: str) -> bool:
-    """Проверка, публиковали ли мы уже этот пост"""
+def is_video_processed(video_id: str) -> bool:
+    """Проверяет, был ли пост уже опубликован"""
     conn = get_db()
     try:
-        exists = conn.execute("SELECT 1 FROM posts WHERE donor_post_id = ?", (post_id,)).fetchone()
-        return exists is not None
+        row = conn.execute(
+            "SELECT 1 FROM posts WHERE donor_post_id = ? LIMIT 1", 
+            (video_id,)
+        ).fetchone()
+        return row is not None
     finally:
         conn.close()
 
@@ -276,7 +279,7 @@ async def process_new_video(
 # =============================================================================
 
 async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: Optional[str] = None):
-    """Полноценная обработка поста для SaaS с рерайтом, ERID и партнёрскими ссылками"""
+    """Улучшенная версия с надёжной защитой от дублей"""
     conn = get_db()
     try:
         saas_users = conn.execute("""
@@ -295,21 +298,23 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
         try:
             user_id = user["user_id"]
             channel_id = user["channel_id"]
+            
+            # УНИКАЛЬНЫЙ ID для каждого SaaS-канала
             db_post_id = f"saas_{post_id}_{channel_id}"
 
-            # Защита от дублей
+            # === УСИЛЕННАЯ ЗАЩИТА ОТ ДУБЛЕЙ ===
             if is_video_processed(db_post_id):
                 continue
 
-            # === AI Рерайт ===
+            # AI Рерайт
             rewritten = await rewrite_text_with_ai(post_text or "Новое поступление!")
 
-            # === Получаем данные товара через API ТакПродам ===
+            # Данные из ТакПродам
             product_info = None
             if user.get("api_key"):
                 product_info = await get_product_data_by_token(user["api_key"], user["sub_id"])
 
-            # === Формирование финального текста ===
+            # Формирование текста
             if product_info and product_info.get("erid"):
                 caption = (
                     f"{rewritten}\n\n"
@@ -317,50 +322,30 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
                     f"<i>Реклама. {product_info.get('advertiser', 'Партнёр')}. Erid: {product_info['erid']}</i>"
                 )
             else:
-                caption = (
-                    f"{rewritten}\n\n"
-                    f"<i>Реклама</i>"
-                )
+                caption = f"{rewritten}\n\n<i>Реклама</i>"
 
-            # === Публикация ===
-            try:
-                if image_url:
-                    await bot.send_photo(
-                        chat_id=channel_id,
-                        photo=image_url,
-                        caption=caption,
-                        parse_mode="HTML"
-                    )
-                else:
-                    await bot.send_message(
-                        chat_id=channel_id,
-                        text=caption,
-                        parse_mode="HTML"
-                    )
+            # Публикация
+            if image_url:
+                await bot.send_photo(chat_id=channel_id, photo=image_url, caption=caption, parse_mode="HTML")
+            else:
+                await bot.send_message(chat_id=channel_id, text=caption, parse_mode="HTML")
 
-                # Сохранение в БД
-                conn = get_db()
-                conn.execute("""
-                    INSERT INTO posts 
-                    (user_id, donor_post_id, channel_id, target_channel_id, 
-                     traffic_source, status, published_at)
-                    VALUES (?, ?, ?, ?, 'saas_donor', 'published', ?)
-                """, (
-                    user_id, db_post_id, channel_id, channel_id, 
-                    datetime.now(timezone.utc).isoformat()
-                ))
-                conn.commit()
-                conn.close()
+            # Сохранение в БД (чтобы больше не повторять)
+            conn = get_db()
+            conn.execute("""
+                INSERT INTO posts 
+                (user_id, donor_post_id, channel_id, target_channel_id, 
+                 traffic_source, status, published_at)
+                VALUES (?, ?, ?, ?, 'saas_donor', 'published', ?)
+            """, (user_id, db_post_id, channel_id, channel_id, datetime.now(timezone.utc).isoformat()))
+            conn.commit()
+            conn.close()
 
-                logger.info(f"✅ SaaS пост успешно опубликован в {channel_id}")
-
-            except Exception as e:
-                logger.error(f"Ошибка отправки в канал {channel_id}: {e}")
-
-            await asyncio.sleep(5)  # Увеличенная пауза между публикациями
+            logger.info(f"✅ Опубликован SaaS пост {db_post_id}")
+            await asyncio.sleep(4)
 
         except Exception as e:
-            logger.error(f"Ошибка process_saas_post для пользователя {user_id}: {e}")
+            logger.error(f"Ошибка SaaS {user_id}: {e}")
             
 # =============================================================================
 # === RSS TELEGRAM =============================================================
