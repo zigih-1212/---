@@ -791,10 +791,8 @@ async def resolve_erid(
     donor_post_id: str,
     channel_id: str,
 ) -> Optional[dict]:
-    """
-    Иерархия: API ТакПродам → client_erid_override → карантин.
-    Фейковые ERID ЗАПРЕЩЕНЫ. Только реальные данные или блокировка.
-    """
+    """Иерархия: API ТакПродам → client_erid_override → карантин (С ЛОГОВАНИЕМ)."""
+    
     conn = get_db()
     try:
         row = conn.execute(
@@ -804,31 +802,35 @@ async def resolve_erid(
         conn.close()
 
     if not row:
-        await _send_to_quarantine(bot, user_id, donor_post_id, channel_id,
-                                  reason="Пользователь не найден в БД")
+        logger.warning(f"DEBUG: Пользователь {user_id} не найден в БД")
+        await _send_to_quarantine(bot, user_id, donor_post_id, channel_id, reason="Пользователь не найден")
         return None
 
-    api_key: str = row["api_key"] or ""
-    override_erid: str = (row["client_erid_override"] or "").strip()
+    api_key = row["api_key"] or ""
+    override_erid = (row["client_erid_override"] or "").strip()
 
-    api_data: Optional[dict] = None
+    api_data = None
     if api_key:
         api_data = await get_takprodam_data(sku, api_key)
+        # --- ВОТ ЭТОТ ЛОГ ПОКАЖЕТ, ЧТО ПРИХОДИТ ИЗ API ---
+        logger.info(f"DEBUG: API ТакПродам для SKU {sku} вернул: {api_data}")
+    else:
+        logger.info(f"DEBUG: API_KEY отсутствует для пользователя {user_id}")
 
-    if api_data and api_data.get("erid"):
+    # Если данные есть и в них есть ERID — возвращаем
+    if api_data and isinstance(api_data, dict) and api_data.get("erid"):
         return api_data
 
+    # Если ERID нет, но есть переопределение — используем его
     if override_erid:
-        link = api_data["link"] if api_data else ""
-        advertiser = api_data["advertiser"] if api_data else "Не определён"
+        logger.info(f"DEBUG: Используем override_erid для {sku}")
+        link = api_data.get("link") if isinstance(api_data, dict) else ""
+        advertiser = api_data.get("advertiser") if isinstance(api_data, dict) else "Не определён"
         return {"link": link, "erid": override_erid, "advertiser": advertiser}
 
-    reason = "API не вернул ERID, client_erid_override не задан"
-    if not api_key:
-        reason = "api_key не настроен, client_erid_override не задан"
-    elif circuit_breaker.is_open():
-        reason = "Circuit Breaker активен, client_erid_override не задан"
-
+    # Если ничего нет — карантин
+    reason = "API не вернул ERID (данные пусты или нет ключа)"
+    logger.warning(f"⚠️ [SaaS] Отправляю в карантин. Причина: {reason}")
     await _send_to_quarantine(bot, user_id, donor_post_id, channel_id, reason=reason)
     return None
 
