@@ -431,7 +431,15 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         # ВОТ ЭТОТ БЛОК ПОКАЖЕТ ТЕБЕ ОШИБКУ ПРЯМО В ЧАТЕ
         await message.answer(f"❌ Произошла ошибка в коде:\n{str(e)}")
         logger.error(f"Ошибка в cmd_start: {e}")
-
+      
+@router.message(Command("debug_scan"))
+async def debug_scan(message: Message):
+    await message.answer("🔄 Запускаю принудительное сканирование доноров...")
+    try:
+        await scan_donor_channels(message.bot)
+        await message.answer("✅ Сканирование доноров завершено. Проверь логи.")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
 
 @router.message(F.text.in_(["💻 Личный кабинет", "/cabinet"]))
 async def show_cabinet(message: Message) -> None:
