@@ -3113,7 +3113,8 @@ async def process_saas_core(
     donor_post_id: str, 
     text: str, 
     photo_url: Optional[str] = None, 
-    video_url: Optional[str] = None
+    video_url: Optional[str] = None,
+    force_post: bool = False  # <--- ДОБАВЛЯЕМ АРГУМЕНТ
 ) -> None:
     """Универсальное ядро SaaS: парсит -> уникализирует AI -> ERID -> рассылает и закрепляет."""
     
@@ -3251,7 +3252,7 @@ async def cleanup_old_posts() -> None:
         conn.close()
 
 
-async def scan_donor_channels(bot: Bot):
+async def scan_donor_channels(bot: Bot, force_post: bool = False):
     """Периодическая проверка каналов-доноров для блогеров и SaaS"""
     logger.info("🔍 Запуск сканирования доноров...")
     
@@ -3318,12 +3319,13 @@ async def scan_donor_channels(bot: Bot):
                 
                 # Запускаем конвейер SaaS
                 await process_saas_core(
-                    bot=bot,
-                    donor_post_id=full_donor_id,
-                    text=post.get("text", ""),
-                    photo_url=photo_url,
-                    video_url=video_url
-                )
+                bot=bot,
+                donor_post_id=full_donor_id,
+                text=post.get("text", ""),
+                photo_url=photo_url,
+                video_url=video_url,
+                force_post=force_post  # <--- ПЕРЕДАЕМ ФЛАГ СЮДА
+            )
                 
                 # Помечаем пост как "взят в работу" глобально
                 conn = get_db()
@@ -3601,7 +3603,11 @@ async def cb_saas_toggles(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
-    await callback.answer("⏳ Запускаю принудительную публикацию...", show_alert=True)
+    await callback.answer("🚀 Запускаю принудительную публикацию...", show_alert=True)
+    # Передаем force_post=True
+    await scan_donor_channels(bot, force_post=True)
+    await callback.message.answer("✅ Сканирование выполнено!")
+    await cb_settings(callback)
     
     try:
         # Запускаем основной сканер
