@@ -2636,13 +2636,6 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         </html>
         """
         return HTMLResponse(html)
-    ban_btn = f"""
-    <form action="/admin/saas/{{user_id}}/ban" method="post" style="display:inline">
-        <button type="submit" style="padding:6px 16px;background:#e74c3c;border:none;
-            color:#fff;border-radius:6px;cursor:pointer;">
-            {"🔓 Разбанить" if not user["is_active"] else "⛔ Забанить"}
-        </button>
-    </form>"""
 
     return HTMLResponse(f"""
     <!DOCTYPE html><html lang="ru"><head>
