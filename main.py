@@ -2626,6 +2626,11 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             <a href="/admin/saas">← Все SaaS клиенты</a>
             <h1>💎 SaaS клиент #{user_id} @{user['username'] or '—'}</h1>
             <p>{status_html} | API: <code>{api_masked}</code> | Последний пост: {last_pub}</p>
+<form action="/admin/saas/{user_id}/ban" method="post" style="display:inline;margin-top:10px">
+    <button type="submit" style="padding:6px 16px;background:#e74c3c;border:none;color:#fff;border-radius:6px;cursor:pointer;">
+        {"🔓 Разбанить" if not user["is_active"] else "⛔ Забанить"}
+    </button>
+</form>
 
             <h2>📢 Каналы ({len(channels)})</h2>
             <table>
