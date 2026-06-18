@@ -2081,7 +2081,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         # Пользователи
         users_html = ""
         for u in users:
-            sub = str(u["subscription_until])[:10] if u.get("subscription_until") else "-"
+            sub = str(u["subscription_until"])[:10] if u["subscription_until"] else "-"
             active = "🟢" if u["is_active"] else "🔴"
             users_html += f"""
             <tr>
