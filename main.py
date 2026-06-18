@@ -3513,7 +3513,7 @@ async def cb_settings(callback: CallbackQuery) -> None:
         "Управляйте настройками автопостинга с помощью кнопок ниже:"
     )
 
-    # Динамическая клавиатура с галочками
+    # Динамическая клавиатура с галочками и кнопкой "Принудительный пост"
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔑 Изменить API-ключ", callback_data="saas_set:apikey")],
         [
@@ -3521,6 +3521,8 @@ async def cb_settings(callback: CallbackQuery) -> None:
             InlineKeyboardButton(text=f"🛒 Ozon: {'✅' if ozon else '❌'}", callback_data="saas_toggle:ozon")
         ],
         [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
+        # --- НОВАЯ КНОПКА ---
+        [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
     ])
 
@@ -3559,6 +3561,28 @@ async def cb_saas_toggles(callback: CallbackQuery) -> None:
     # Сразу перерисовываем меню, чтобы пользователь видел изменение галочки
     await cb_settings(callback)
 
+# =============================================================================
+# === ОБРАБОТЧИК ПРИНУДИТЕЛЬНОЙ ПУБЛИКАЦИИ (FORCE POST) =======================
+# =============================================================================
+
+@router.callback_query(F.data == "saas_force_post")
+async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
+    """Принудительный запуск сканирования и публикации"""
+    
+    await callback.answer("⏳ Запускаю сканирование...", show_alert=False)
+    
+    try:
+        # Запускаем основной сканер
+        # Он сам пройдет по всем донорам и опубликует всё, что готово
+        await scan_donor_channels(bot)
+        
+        await callback.message.answer("✅ Сканирование и публикация успешно запущены!")
+    except Exception as e:
+        logger.error(f"Ошибка при Force Post: {e}")
+        await callback.message.answer("❌ Произошла ошибка при запуске публикации.")
+    
+    # Возвращаем пользователя в настройки
+    await cb_settings(callback)
 
 @router.callback_query(F.data == "saas_set:apikey")
 async def cb_saas_set_apikey(callback: CallbackQuery, state: FSMContext) -> None:
