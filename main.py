@@ -3203,46 +3203,47 @@ async def cleanup_old_posts() -> None:
 
 
 async def scan_donor_channels(bot: Bot, force_post: bool = False):
-    """Периодическая проверка каналов-доноров для блогеров и SaaS"""
-    logger.info("🔍 Запуск сканирования доноров...")
+    logger.info("🔍 [DEBUG] Запуск сканирования SaaS доноров...")
     
-    # --- Блогеры ---
-    conn = get_db()
-    try:
-        rows = conn.execute("""
-            SELECT user_id, source_link as channel_url 
-            FROM users 
-            WHERE role='blogger' 
-            AND source_link IS NOT NULL 
-            AND is_active=1
-        """).fetchall()
-    finally:
-        conn.close()
+    if not SAAS_DONOR_CHANNELS:
+        logger.info("🚫 [DEBUG] Список SAAS_DONOR_CHANNELS пуст!")
+        return
 
-    for row in rows:
+    for channel in SAAS_DONOR_CHANNELS:
         try:
-            video_info = extract_video_info(row["channel_url"])
-            if not video_info:
-                continue
-            video_id = video_info.get("id")
-            if not video_id or is_video_processed(video_id):
-                continue
-            description = video_info.get("description", "")
-            photo_url = video_info.get("thumbnail")
-            products = find_product_links(description)
-            sku = None
-            marketplace = "wb"
-            if products:
-                first = products[0]
-                sku = first.get("value")
-                marketplace = first.get("marketplace", "wb")
-            await process_new_video(
-                bot=bot, user_id=row["user_id"], video_id=video_id,
-                description=description, sku=sku,
-                photo_url=photo_url, marketplace=marketplace,
-            )
+            logger.info(f"🔍 [DEBUG] Сканирую канал: {channel}")
+            posts = await fetch_telegram_channel_posts(channel)
+            logger.info(f"🔍 [DEBUG] Найдено {len(posts)} постов в {channel}")
+            
+            for post in posts:
+                post_id = post.get("id")
+                full_donor_id = f"saas_{channel}_{post_id}"
+                
+                # Проверка дубликатов
+                conn = get_db()
+                is_processed = conn.execute("SELECT 1 FROM posts WHERE donor_post_id=?", (full_donor_id,)).fetchone()
+                conn.close()
+                
+                if is_processed and not force_post:
+                    # logger.info(f"🚫 [DEBUG] Пост {post_id} уже обработан, пропускаем")
+                    continue
+                
+                logger.info(f"✅ [DEBUG] Нашел НОВЫЙ пост {post_id}, запускаю process_saas_core")
+                
+                photo_url = post.get("photo_url") or post.get("thumbnail")
+                video_url = post.get("video_url")
+                
+                await process_saas_core(
+                    bot=bot,
+                    donor_post_id=full_donor_id,
+                    text=post.get("text", ""),
+                    photo_url=photo_url,
+                    video_url=video_url,
+                    force_post=force_post
+                )
+                    
         except Exception as e:
-            logger.error(f"scan_donor_channels блогер {row['user_id']}: {e}")
+            logger.error(f"❌ [DEBUG] Ошибка в scan_donor_channels для {channel}: {e}")
 
     # --- SaaS доноры ---
     if not SAAS_DONOR_CHANNELS:
