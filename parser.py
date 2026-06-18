@@ -278,7 +278,7 @@ async def process_new_video(
 # === ПУБЛИКАЦИЯ SAAS =========================================================
 # =============================================================================
 
-async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: Optional[str] = None):
+async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: Optional[str] = None, force_post: bool = False):
     """Умный растянутый лимит: 25 постов с 8:00 до 23:00"""
     conn = get_db()
     try:
@@ -330,8 +330,7 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
 
                 # Проверка времени публикации (только 8:00 - 23:00 МСК)
                 msk_time = datetime.now(timezone(timedelta(hours=3)))
-                if msk_time.hour < 8 or msk_time.hour >= 23:
-                    # Ночной режим — откладываем в очередь
+                if not force_post and (msk_time.hour < 8 or msk_time.hour >= 23):
                     from main import add_to_night_queue
                     await add_to_night_queue(
                         user_id=user_id, video_id=post_id, description=post_text,
