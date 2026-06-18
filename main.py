@@ -3114,31 +3114,32 @@ async def process_saas_core(
     text: str, 
     photo_url: Optional[str] = None, 
     video_url: Optional[str] = None,
-    force_post: bool = False  # <--- ДОБАВЛЯЕМ АРГУМЕНТ
+    force_post: bool = False
 ) -> None:
     """Универсальное ядро SaaS: парсит -> уникализирует AI -> ERID -> рассылает и закрепляет."""
     
-    # 1. Извлекаем товары (используем импортированный парсер)
+    # 1. Извлекаем товары
     products = find_product_links(text)
     if not products:
-        return # Нет товаров - пропускаем
+        logger.info(f"🚫 [SaaS] Пропуск {donor_post_id}: в посте нет товаров")
+        return
 
     first_product = products[0]
-    sku = first_product.get("value")
-    marketplace = first_product.get("marketplace", "wb")
+    sku = first_product['value'] # Используем ['ключ']
+    marketplace = first_product['marketplace'] if 'marketplace' in first_product else 'wb'
 
     if not sku:
         return
 
-    # 2. AI Рерайт (один раз на всех пользователей для экономии бюджета DeepInfra)
-    clean_text = re.sub(r'http\S+', '', text).strip() # убираем чужие ссылки из донора
+    # 2. AI Рерайт
+    clean_text = re.sub(r'http\S+', '', text).strip()
     rewritten_text = await rewrite_text_with_ai(clean_text)
 
     # 3. Достаем всех активных SaaS клиентов
     conn = get_db()
     try:
         saas_users = conn.execute("""
-            SELECT user_id, api_key, client_erid_override, filter_wb, filter_ozon, auto_pin 
+            SELECT user_id, api_key, sub_id, filter_wb, filter_ozon, auto_pin 
             FROM users 
             WHERE role='saas' AND is_active=1 
             AND (subscription_until IS NULL OR subscription_until > datetime('now'))
@@ -3146,13 +3147,17 @@ async def process_saas_core(
     finally:
         conn.close()
 
-    for user in saas_users:
-        user_id = user["user_id"]
+    if not saas_users:
+        logger.info(f"🚫 [SaaS] Нет активных пользователей для публикации {donor_post_id}")
+        return
 
-        # 4. Проверяем настройки: включен ли этот маркетплейс у юзера?
-        if marketplace == "wb" and not user["filter_wb"]:
+    for user in saas_users:
+        user_id = user['user_id']
+
+        # 4. Проверяем настройки маркетплейсов
+        if marketplace == 'wb' and not user['filter_wb']:
             continue
-        if marketplace == "ozon" and not user["filter_ozon"]:
+        if marketplace == 'ozon' and not user['filter_ozon']:
             continue
 
         # 5. Достаём каналы юзера
@@ -3161,18 +3166,31 @@ async def process_saas_core(
         conn.close()
 
         for ch in channels:
-            channel_id = ch["channel_id"]
-            
-            # 6. Получаем ERID через API
+            channel_id = ch['channel_id']
+
+            # --- ЛОГИКА НОЧНОГО РЕЖИМА ---
+            if not force_post:
+                msk_time = datetime.now(timezone(timedelta(hours=3)))
+                if msk_time.hour < 8 or msk_time.hour >= 23:
+                    from main import add_to_night_queue
+                    await add_to_night_queue(
+                        user_id=user_id, video_id=donor_post_id, description=text,
+                        sku=sku, photo_url=photo_url, marketplace=marketplace
+                    )
+                    logger.info(f"🌙 [SaaS] Ночная очередь для {user_id} в канал {channel_id}")
+                    continue
+
+            # 6. Получаем ERID
             erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
             if not erid_data:
-                continue # resolve_erid уже сам кинул пост в Карантин и уведомил админа
+                logger.warning(f"⚠️ [SaaS] Ошибка ERID для {sku}, пропускаем канал {channel_id}")
+                continue
 
             affiliate_url = erid_data.get("link", f"https://www.wildberries.ru/catalog/{sku}/detail.aspx" if marketplace=="wb" else f"https://ozon.ru/context/detail/id/{sku}")
             erid = erid_data.get("erid", "")
             advertiser = erid_data.get("advertiser", "Рекламодатель")
 
-            # 7. Формируем финальный вид рекламного поста
+            # 7. Формируем пост
             final_caption = (
                 f"{rewritten_text}\n\n"
                 f"🛒 <b>Артикул ({marketplace.upper()}):</b> <code>{sku}</code>\n\n"
@@ -3190,7 +3208,7 @@ async def process_saas_core(
             )
 
             if msg:
-                # Отмечаем успех в базе
+                # Отмечаем в базе
                 conn = get_db()
                 try:
                     conn.execute("""
@@ -3201,12 +3219,15 @@ async def process_saas_core(
                 finally:
                     conn.close()
 
-                # 9. Авто-закреп, если он включен в настройках кабинета
-                if user["auto_pin"]:
+                # 9. Авто-закреп
+                if user['auto_pin']:
                     try:
+                        # Исправлено: msg.message_id (вместо msg.message.id)
                         await bot.pin_chat_message(chat_id=channel_id, message_id=msg.message_id, disable_notification=True)
                     except Exception as e:
                         logger.error(f"Не удалось закрепить в {channel_id}: {e}")
+                
+                logger.info(f"✅ [SaaS] Пост опубликован для {user_id} в {channel_id}")
 
 
 
