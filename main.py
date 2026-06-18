@@ -392,56 +392,50 @@ def calc_payout(amount_blogger: float) -> dict:
 # === MESSAGE HANDLERS ========================================================
 # =============================================================================
 
+# =============================================================================
+# === ОБРАБОТЧИК /start =======================================================
+# =============================================================================
+
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
+    # 1. Сбрасываем любые зависшие состояния пользователя
     await state.clear()
     
     try:
-        logger.info(f"DEBUG: Пользователь {message.from_user.id} нажал /start")
-        
+        # 2. Пропускаем админа в админ-панель
         if is_admin(message.from_user.id):
-            await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
+            await message.answer("👋 Добро пожаловать в Панель администратора.", reply_markup=kb_admin_panel())
             return
 
+        # 3. Логика обычного пользователя
         conn = get_db()
         try:
-            user = conn.execute(
-                "SELECT role, channel_id FROM users WHERE user_id=?", 
-                (message.from_user.id,)
-            ).fetchone()
+            user = conn.execute("SELECT role, channel_id FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
             
             if not user:
-                # Новый пользователь — сначала выбор роли
+                # Регистрация нового юзера
                 sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
                 conn.execute(
-                    "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'pending')",
+                    "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'blogger')", 
                     (message.from_user.id, message.from_user.username, sub_id)
                 )
                 conn.commit()
-
-                await message.answer(
-                    "👋 <b>Добро пожаловать в AutoPost!</b>\n\n"
-                    "Автоматический постинг контента с партнёрскими ссылками и ERID.\n\n"
-                    "Выберите как вы будете использовать платформу:",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="✍️ Я блогер", callback_data="set_role:blogger")],
-                        [InlineKeyboardButton(text="💼 Я SaaS-клиент", callback_data="set_role:saas")],
-                    ])
-                )
-                return
-
-            # Пользователь уже существует
-            # Правильная проверка для sqlite3.Row
-            channel_id = user["channel_id"] if user else None
-            
-            if not channel_id:
-                await message.answer(
-                    "⚠️ Вы ещё не привязали канал.\n\n"
-                    "Перешлите любое сообщение из вашего канала или отправьте <code>@username</code>.",
-                    parse_mode=ParseMode.HTML
-                )
+                
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
+                    [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
+                ])
+                await message.answer("👋 Добро пожаловать в бота! Выберите вашу роль:", reply_markup=kb)
+                await state.set_state(OnboardingStates.waiting_role)
+                
+            # ИСПРАВЛЕНИЕ: Проверяем привязку канала ТОЛЬКО для блогеров.
+            # Если это SaaS, эта проверка игнорируется.
+            elif user["role"] == "blogger" and not user["channel_id"]:
+                await message.answer("⚠️ Вы ещё не привязали свой канал.\nПерешлите любое сообщение из вашего канала или отправьте его @username.")
+                await state.set_state(OnboardingStates.waiting_source_channel)
+                
             else:
+                # Если это SaaS-клиент или настроенный блогер — показываем Личный Кабинет
                 await show_user_cabinet(message)
                 
         finally:
@@ -449,8 +443,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
     except Exception as e:
         logger.error(f"Ошибка в cmd_start: {e}")
-        await message.answer(
-            f"❌ Произошла ошибка:\n{str(e)}\n\nПопробуйте ещё раз или напишите администратору."
+        await message.answer("❌ Произошла ошибка при запуске. Пожалуйста, попробуйте позже.")
         )
       
 @router.message(Command("debug_scan"))
