@@ -943,47 +943,63 @@ def build_post_caption(
 _VALID_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 _WRONG_CONTENT_RE = re.compile(r"wrong type of web page content", re.IGNORECASE)
 
-
 def is_valid_image_url(url: str) -> bool:
     if not url:
         return False
     return any(url.split("?")[0].lower().endswith(ext) for ext in _VALID_IMAGE_EXTENSIONS)
-
 
 async def publish_post_with_fallback(
     bot: Bot,
     channel_id: str,
     caption: str,
     photo_url: Optional[str] = None,
+    video_url: Optional[str] = None,
     reply_markup: Optional[InlineKeyboardMarkup] = None,
-) -> bool:
+) -> Optional[Message]:
+    """Отправляет пост с видео, фото или текстом. Возвращает Message для закрепа."""
+    
+    # 1. Сначала пробуем отправить видео
+    if video_url:
+        try:
+            return await bot.send_video(
+                chat_id=channel_id,
+                video=video_url,
+                caption=caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=reply_markup,
+            )
+        except TelegramAPIError as e:
+            logger.warning(f"Видео отклонено Telegram: {e}. Пробуем фото/текст...")
+
+    # 2. Пробуем отправить фото
     if photo_url and is_valid_image_url(photo_url):
         try:
-            await bot.send_photo(
+            return await bot.send_photo(
                 chat_id=channel_id,
                 photo=photo_url,
                 caption=caption,
                 parse_mode=ParseMode.HTML,
                 reply_markup=reply_markup,
             )
-            return True
         except TelegramAPIError as e:
             err = str(e).lower()
             if not (_WRONG_CONTENT_RE.search(err) or "wrong file identifier" in err):
                 logger.error(f"Ошибка публикации с фото: {e}")
-                return False
-            logger.warning(f"Фото отклонено Telegram, fallback → текст: {e}")
+                return None
+            logger.warning(f"Фото отклонено Telegram: {e}. Пробуем только текст...")
+
+    # 3. Фоллбек — отправляем просто текст с превью ссылки
     try:
-        await bot.send_message(
+        return await bot.send_message(
             chat_id=channel_id,
             text=caption,
             parse_mode=ParseMode.HTML,
             reply_markup=reply_markup,
+            link_preview_options={"is_disabled": False}
         )
-        return True
     except TelegramAPIError as e:
         logger.error(f"Ошибка публикации текста: {e}")
-        return False
+        return None
 
 
 # =============================================================================
@@ -3088,37 +3104,108 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 # =============================================================================
 
 
-async def run_billing_check(bot: Bot):
-    """Ежечасная проверка истекших подписок SaaS-пользователей."""
+# =============================================================================
+# === ЯДРО SAAS: ПАРСИНГ, РЕРАЙТ, ERID И ПУБЛИКАЦИЯ ===========================
+# =============================================================================
+
+async def process_saas_core(
+    bot: Bot, 
+    donor_post_id: str, 
+    text: str, 
+    photo_url: Optional[str] = None, 
+    video_url: Optional[str] = None
+) -> None:
+    """Универсальное ядро SaaS: парсит -> уникализирует AI -> ERID -> рассылает и закрепляет."""
+    
+    # 1. Извлекаем товары (используем импортированный парсер)
+    products = find_product_links(text)
+    if not products:
+        return # Нет товаров - пропускаем
+
+    first_product = products[0]
+    sku = first_product.get("value")
+    marketplace = first_product.get("marketplace", "wb")
+
+    if not sku:
+        return
+
+    # 2. AI Рерайт (один раз на всех пользователей для экономии бюджета DeepInfra)
+    clean_text = re.sub(r'http\S+', '', text).strip() # убираем чужие ссылки из донора
+    rewritten_text = await rewrite_text_with_ai(clean_text)
+
+    # 3. Достаем всех активных SaaS клиентов
     conn = get_db()
     try:
-        now = datetime.now(timezone.utc).isoformat()
-        # Ищем пользователей, у которых подписка истекла, но они еще числятся активными
-        expired_users = conn.execute(
-            "SELECT user_id FROM users WHERE role='saas' AND subscription_until < ? AND is_active=1",
-            (now,)
-        ).fetchall()
-
-        for row in expired_users:
-            user_id = row["user_id"]
-            # Отключаем активность
-            conn.execute("UPDATE users SET is_active=0 WHERE user_id=?", (user_id,))
-            
-            # Пытаемся уведомить пользователя
-            try:
-                await bot.send_message(
-                    chat_id=user_id,
-                    text="⚠️ <b>Ваша подписка истекла!</b>\n\nБот приостановил работу с вашими каналами. Пожалуйста, продлите подписку в /cabinet.",
-                    parse_mode="HTML"
-                )
-            except Exception as e:
-                logger.error(f"Не удалось отправить уведомление юзеру {user_id}: {e}")
-        
-        conn.commit()
-    except Exception as e:
-        logger.error(f"Ошибка в run_billing_check: {e}")
+        saas_users = conn.execute("""
+            SELECT user_id, api_key, client_erid_override, filter_wb, filter_ozon, auto_pin 
+            FROM users 
+            WHERE role='saas' AND is_active=1 
+            AND (subscription_until IS NULL OR subscription_until > datetime('now'))
+        """).fetchall()
     finally:
         conn.close()
+
+    for user in saas_users:
+        user_id = user["user_id"]
+
+        # 4. Проверяем настройки: включен ли этот маркетплейс у юзера?
+        if marketplace == "wb" and not user["filter_wb"]:
+            continue
+        if marketplace == "ozon" and not user["filter_ozon"]:
+            continue
+
+        # 5. Достаём каналы юзера
+        conn = get_db()
+        channels = conn.execute("SELECT channel_id FROM channels WHERE user_id=? AND is_active=1", (user_id,)).fetchall()
+        conn.close()
+
+        for ch in channels:
+            channel_id = ch["channel_id"]
+            
+            # 6. Получаем ERID через API
+            erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
+            if not erid_data:
+                continue # resolve_erid уже сам кинул пост в Карантин и уведомил админа
+
+            affiliate_url = erid_data.get("link", f"https://www.wildberries.ru/catalog/{sku}/detail.aspx" if marketplace=="wb" else f"https://ozon.ru/context/detail/id/{sku}")
+            erid = erid_data.get("erid", "")
+            advertiser = erid_data.get("advertiser", "Рекламодатель")
+
+            # 7. Формируем финальный вид рекламного поста
+            final_caption = (
+                f"{rewritten_text}\n\n"
+                f"🛒 <b>Артикул ({marketplace.upper()}):</b> <code>{sku}</code>\n\n"
+                f"<a href='{affiliate_url}'>👉 Посмотреть и заказать</a>\n\n"
+                f"<i>Реклама. {advertiser}. Erid: {erid}</i>"
+            )
+
+            # 8. Публикация
+            msg = await publish_post_with_fallback(
+                bot=bot,
+                channel_id=channel_id,
+                caption=final_caption,
+                photo_url=photo_url,
+                video_url=video_url
+            )
+
+            if msg:
+                # Отмечаем успех в базе
+                conn = get_db()
+                try:
+                    conn.execute("""
+                        INSERT INTO posts (user_id, donor_post_id, channel_id, sku, erid, status, published_at)
+                        VALUES (?, ?, ?, ?, ?, 'published', CURRENT_TIMESTAMP)
+                    """, (user_id, donor_post_id, channel_id, sku, erid))
+                    conn.commit()
+                finally:
+                    conn.close()
+
+                # 9. Авто-закреп, если он включен в настройках кабинета
+                if user["auto_pin"]:
+                    try:
+                        await bot.pin_chat_message(chat_id=channel_id, message_id=msg.message_id, disable_notification=True)
+                    except Exception as e:
+                        logger.error(f"Не удалось закрепить в {channel_id}: {e}")
 
 
 
@@ -3205,6 +3292,51 @@ async def scan_donor_channels(bot: Bot):
             )
         except Exception as e:
             logger.error(f"scan_donor_channels блогер {row['user_id']}: {e}")
+
+    # --- SaaS доноры ---
+    if not SAAS_DONOR_CHANNELS:
+        return
+
+    for channel in SAAS_DONOR_CHANNELS:
+        try:
+            posts = await fetch_telegram_channel_posts(channel)
+            for post in posts:
+                post_id = post["id"]
+                full_donor_id = f"saas_{channel}_{post_id}"
+                
+                # Глобальная проверка: обрабатывали ли мы этот пост ранее?
+                conn = get_db()
+                is_processed = conn.execute("SELECT 1 FROM posts WHERE donor_post_id=? AND user_id=0", (full_donor_id,)).fetchone()
+                conn.close()
+                
+                if is_processed:
+                    continue
+                
+                # Вытаскиваем медиа
+                photo_url = post.get("photo_url") or post.get("thumbnail")
+                video_url = post.get("video_url")
+                
+                # Запускаем конвейер SaaS
+                await process_saas_core(
+                    bot=bot,
+                    donor_post_id=full_donor_id,
+                    text=post.get("text", ""),
+                    photo_url=photo_url,
+                    video_url=video_url
+                )
+                
+                # Помечаем пост как "взят в работу" глобально
+                conn = get_db()
+                try:
+                    conn.execute("INSERT INTO posts (user_id, donor_post_id, status) VALUES (0, ?, 'system_processed')", (full_donor_id,))
+                    conn.commit()
+                except Exception:
+                    pass
+                finally:
+                    conn.close()
+                    
+        except Exception as e:
+            logger.error(f"scan_donor_channels SaaS [{channel}]: {e}")
 
     # --- SaaS доноры ---
     if not SAAS_DONOR_CHANNELS:
