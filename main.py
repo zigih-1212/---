@@ -1203,7 +1203,13 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
 
 @router.callback_query(F.data == "cabinet:open")
 async def cb_open_cabinet(callback: CallbackQuery) -> None:
-    await show_user_cabinet(callback.message)
+    # Удаляем старое сообщение Главного меню, чтобы чат не засорялся
+    try:
+        await callback.message.delete()
+    except:
+        pass
+    # Вызываем кабинет и жестко передаем твой ID
+    await show_user_cabinet(callback.message, user_id=callback.from_user.id)
     await callback.answer()
 
 @router.message(Command("force_trial"))
