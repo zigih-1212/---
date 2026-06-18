@@ -3207,48 +3207,31 @@ async def cleanup_old_posts() -> None:
 # =============================================================================
 
 async def scan_donor_channels(bot: Bot, force_post: bool = False):
-    logger.info(f"🔍 [DEBUG] Старт сканирования. Force_post={force_post}")
+    # ПРЯМОЙ ВЫВОД В ЛОГ, БЕЗ УСЛОВИЙ
+    print("!!! ВНИМАНИЕ: ЗАПУЩЕНА ФУНКЦИЯ SCAN_DONOR_CHANNELS !!!")
+    logger.info("!!! ВНИМАНИЕ: ЗАПУЩЕНА ФУНКЦИЯ SCAN_DONOR_CHANNELS !!!")
+    
+    # Чтобы увидеть, вызывается ли она вообще кнопкой
+    if force_post:
+        logger.info("!!! FORCE_POST = TRUE !!!")
     
     if not SAAS_DONOR_CHANNELS:
-        logger.info("🚫 [DEBUG] Список доноров пуст!")
+        logger.info("🚫 Список доноров пуст!")
         return
 
     for channel in SAAS_DONOR_CHANNELS:
         try:
-            logger.info(f"🔍 [DEBUG] Проверяю канал: {channel}")
+            logger.info(f"🔍 Сканирую: {channel}")
             posts = await fetch_telegram_channel_posts(channel)
-            logger.info(f"🔍 [DEBUG] Найдено {len(posts)} постов в {channel}")
+            logger.info(f"🔍 Найдено {len(posts)} постов в {channel}")
             
             for post in posts:
                 post_id = post.get("id")
-                if not post_id: continue
-                full_donor_id = f"saas_{channel}_{post_id}"
-                
-                # ЛОГИКА ДУБЛИКАТОВ
-                conn = get_db()
-                is_processed = conn.execute("SELECT 1 FROM posts WHERE donor_post_id=?", (full_donor_id,)).fetchone()
-                conn.close()
-                
-                # Если force_post=True, мы игнорируем is_processed
-                if is_processed and not force_post:
-                    continue
-                
-                logger.info(f"✅ [DEBUG] Отправляю пост {post_id} в процесс (force={force_post})")
-                
-                photo_url = post.get("photo_url") or post.get("thumbnail")
-                video_url = post.get("video_url")
-                
-                await process_saas_core(
-                    bot=bot,
-                    donor_post_id=full_donor_id,
-                    text=post.get("text", ""),
-                    photo_url=photo_url,
-                    video_url=video_url,
-                    force_post=force_post
-                )
-                    
+                # ... дальше код ...
+                await process_saas_core(bot=bot, donor_post_id=f"saas_{channel}_{post_id}", 
+                                        text=post.get("text", ""), force_post=force_post)
         except Exception as e:
-            logger.error(f"❌ [DEBUG] Ошибка в scan_donor_channels: {e}")
+            logger.error(f"❌ Ошибка: {e}")
 
     # --- SaaS доноры ---
     if not SAAS_DONOR_CHANNELS:
