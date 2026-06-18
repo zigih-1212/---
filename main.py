@@ -627,7 +627,7 @@ async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data == "menu:tariffs")
+
 async def cb_menu_tariffs(callback: CallbackQuery) -> None:
     """Выбор способа оплаты для SaaS"""
     await callback.message.edit_text(
@@ -1301,7 +1301,6 @@ async def cb_select_target(callback: CallbackQuery, state: FSMContext) -> None:
 # === ОБРАБОТЧИК ДОБАВЛЕНИЯ КАНАЛА ДЛЯ SAAS ===================================
 # =============================================================================
 
-@router.callback_query(F.data == "menu:my_channels")
 async def cb_list_channels(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     conn = get_db()
@@ -1628,7 +1627,7 @@ async def cb_set_blogger_mode(callback: CallbackQuery) -> None:
     )
 
 
-@router.callback_query(F.data == "menu:settings")
+
 async def cb_menu_settings(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     conn = get_db()
@@ -1687,7 +1686,7 @@ async def cb_filter_toggle(callback: CallbackQuery) -> None:
 # Инструкции
 # -----------------------------------------------------------------------------
 
-@router.callback_query(F.data == "menu:instructions")
+
 async def cb_menu_instructions(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         "📖 <b>Центр инструкций</b>\n\nВыбери нужный раздел:",
@@ -3277,7 +3276,90 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     
     return scheduler
 
+# =============================================================================
+# === ОБРАБОТЧИКИ МЕНЮ ЛИЧНОГО КАБИНЕТА (SaaS) ================================
+# =============================================================================
 
+@router.callback_query(F.data == "menu:my_channels")
+async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
+    # Отрисовка меню "Мои каналы"
+    conn = get_db()
+    try:
+        channels = conn.execute("SELECT channel_title, channel_id FROM channels WHERE user_id=? AND is_active=1", (callback.from_user.id,)).fetchall()
+    finally:
+        conn.close()
+
+    if channels:
+        text = "📢 <b>Ваши подключенные каналы:</b>\n\n"
+        for i, ch in enumerate(channels, 1):
+            text += f"{i}. {ch['channel_title']} (<code>{ch['channel_id']}</code>)\n"
+        text += "\n<i>Для добавления нового канала отправьте его @username прямо сейчас.</i>"
+    else:
+        text = "📢 <b>У вас пока нет подключенных каналов.</b>\n\nДля добавления канала отправьте его @username (например, @my_channel_name)."
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
+    ])
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    except:
+        pass
+    
+    await state.set_state(OnboardingStates.waiting_source_channel)
+    await callback.answer()
+
+@router.callback_query(F.data == "menu:tariffs")
+async def cb_tariffs(callback: CallbackQuery) -> None:
+    # Отрисовка меню "Продлить подписку"
+    text = "💎 <b>Продление подписки (Тарифы)</b>\n\nВыберите подходящий тариф:"
+    kb_buttons = []
+    
+    # TARIFF_PLANS берется из начала твоего файла
+    for t_key, t_info in TARIFF_PLANS.items():
+        kb_buttons.append([InlineKeyboardButton(text=t_info["label"], callback_data=f"buy:{t_key}")])
+    
+    # Кнопка возврата ТОЛЬКО в кабинет
+    kb_buttons.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    except:
+        pass
+    await callback.answer()
+
+@router.callback_query(F.data == "menu:instructions")
+async def cb_instructions(callback: CallbackQuery) -> None:
+    # Отрисовка меню "Инструкции"
+    text = (
+        "📖 <b>Инструкция по настройке SaaS:</b>\n\n"
+        "1. Перейдите в раздел «Мои каналы».\n"
+        "2. Добавьте бота в администраторы вашего канала.\n"
+        "3. Отправьте боту ссылку на канал.\n"
+        "4. Бот начнёт автоматически публиковать посты с рекламной маркировкой."
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    except:
+        pass
+    await callback.answer()
+
+@router.callback_query(F.data == "menu:settings")
+async def cb_settings(callback: CallbackQuery) -> None:
+    # Отрисовка меню "Настройки"
+    text = "⚙️ <b>Настройки</b>\n\nРаздел находится в разработке. Скоро здесь появятся настройки фильтрации по маркетплейсам и выбор режима публикации."
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    except:
+        pass
+    await callback.answer()
 
 # =============================================================================
 # === MAIN ENTRYPOINT =========================================================
