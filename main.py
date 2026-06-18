@@ -394,40 +394,44 @@ def calc_payout(amount_blogger: float) -> dict:
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
-    # 1. Очистка состояния
     await state.clear()
     
+    if is_admin(message.from_user.id):
+        await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
+        return
+
+    conn = get_db()
     try:
-        logger.info(f"DEBUG: Пользователь {message.from_user.id} нажал /start")
-        
-        # 2. Проверка админа
-        if is_admin(message.from_user.id):
-            await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
+        user = conn.execute(
+            "SELECT role, subscription_until FROM users WHERE user_id=?", 
+            (message.from_user.id,)
+        ).fetchone()
+
+        if not user:
+            # Новый пользователь
+            sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
+            conn.execute(
+                "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'blogger')", 
+                (message.from_user.id, message.from_user.username, sub_id)
+            )
+            conn.commit()
+
+            await message.answer(
+                "👋 <b>Добро пожаловать в AutoPost!</b>\n\n"
+                "Автоматический постинг контента из YouTube, TikTok, Instagram с партнёрскими ссылками и ERID.\n\n"
+                "Нажми кнопку ниже, чтобы открыть личный кабинет.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="💼 Открыть личный кабинет", callback_data="menu:main")]
+                ])
+            )
             return
 
-        # 3. База данных
-        conn = get_db()
-        try:
-            user = conn.execute("SELECT role, channel_id FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
-            
-            if not user:
-                # Регистрация
-                sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
-                conn.execute("INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'blogger')", 
-                             (message.from_user.id, message.from_user.username, sub_id))
-                conn.commit()
-                await message.answer("👋 Добро пожаловать! Кто вы?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
-                    [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
-                ]))
-                await state.set_state(OnboardingStates.waiting_role)
-            elif not user["channel_id"]:
-                await message.answer("⚠️ Вы ещё не привязали канал. Перешлите сообщение или отправьте @username.")
-            else:
-                await show_user_cabinet(message)
-                
-        finally:
-            conn.close()
+        # Уже зарегистрирован — сразу в кабинет
+        await show_user_cabinet(message)
+
+    finally:
+        conn.close()
 
     except Exception as e:
         # ВОТ ЭТОТ БЛОК ПОКАЖЕТ ТЕБЕ ОШИБКУ ПРЯМО В ЧАТЕ
@@ -1090,18 +1094,18 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
 
 def kb_main_menu(role: str) -> InlineKeyboardMarkup:
     buttons = [
+        [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="menu:main")],  # Главная кнопка
         [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
         [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
         [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
     ]
 
     if role == "blogger":
-        buttons.insert(0, [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")])
-        buttons.insert(1, [InlineKeyboardButton(text="⚙️ Режим публикации", callback_data="menu:pub_mode")])
-        buttons.insert(2, [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")])
+        buttons.insert(1, [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")])
+        buttons.insert(2, [InlineKeyboardButton(text="⚙️ Режим публикации", callback_data="menu:pub_mode")])
     elif role == "saas":
-        buttons.insert(0, [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")])
-        buttons.insert(1, [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")])
+        buttons.insert(1, [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")])
+        buttons.insert(2, [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
