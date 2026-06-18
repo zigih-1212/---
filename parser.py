@@ -348,7 +348,6 @@ async def fetch_telegram_channel_posts(channel: str):
     username = channel.lstrip("@").strip()
     url = f"https://t.me/s/{username}"
     
-    # Маскируем запрос под обычный браузер
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -364,21 +363,17 @@ async def fetch_telegram_channel_posts(channel: str):
         soup = BeautifulSoup(resp.text, 'html.parser')
         posts = []
         
-        # Ищем все блоки сообщений на странице
         messages = soup.find_all('div', class_='tgme_widget_message')
         
         for msg in messages:
-            # 1. Достаем ID (номер) поста
             msg_id_attr = msg.get('data-post')
             if not msg_id_attr:
                 continue
             post_id = msg_id_attr.split('/')[-1]
             
-            # 2. Достаем текст поста
             text_div = msg.find('div', class_='tgme_widget_message_text')
             text = text_div.get_text(separator='\n') if text_div else ""
             
-            # 3. Достаем картинку (если есть)
             image_url = None
             img_style = msg.find('a', class_='tgme_widget_message_photo_wrap')
             if img_style and 'background-image:url(' in img_style.get('style', ''):
