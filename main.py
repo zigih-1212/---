@@ -1094,28 +1094,50 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         logger.error(f"Ошибка проверки админки в {channel_id}: {e}")
         return False
 
+# =============================================================================
+# === КЛАВИАТУРЫ ДЛЯ МЕНЮ И КАБИНЕТА ==========================================
+# =============================================================================
+
+def kb_main_menu(role: str) -> InlineKeyboardMarkup:
+    """Главное меню (максимально чистое)"""
+    if role == "saas":
+        # Для SaaS в главном меню только Личный кабинет
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")]
+        ])
+    else:
+        # Для блогеров пока оставляем полный список
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")],
+            [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")],
+            [InlineKeyboardButton(text="⚙️ Режим публикации", callback_data="menu:pub_mode")],
+            [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")],
+            [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
+            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
+            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
+        ])
+
+def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
+    """Внутреннее меню Личного кабинета"""
+    if role == "saas":
+        # Кнопки внутри кабинета для SaaS
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")],
+            [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")],
+            [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
+            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
+            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")]
+        ])
+    else:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💸 Вывод средств", callback_data="payout:request")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")]
+        ])
 
 # =============================================================================
 # === KEYBOARD HELPERS ========================================================
 # =============================================================================
-
-def kb_main_menu(role: str) -> InlineKeyboardMarkup:
-    buttons = [
-        [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
-        [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
-        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-    ]
-
-    if role == "blogger":
-        buttons.insert(1, [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")])
-        buttons.insert(2, [InlineKeyboardButton(text="⚙️ Режим публикации", callback_data="menu:pub_mode")])
-        buttons.insert(3, [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")])
-    elif role == "saas":
-        buttons.insert(1, [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")])
-        buttons.insert(2, [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")])
-
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def kb_tariffs(traffic_source: str) -> InlineKeyboardMarkup:
