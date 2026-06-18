@@ -141,13 +141,25 @@ async def get_product_data_by_token(token: str, sub_id: str) -> Optional[Dict]:
 # === ПУБЛИКАЦИЯ БЛОГЕР =======================================================
 # =============================================================================
 
-def is_video_processed(video_id: str) -> bool:
+# --- ИСПРАВЛЕНИЕ: ХЕЛПЕРЫ ДЛЯ РАБОТЫ ---
+def is_video_processed(post_id: str) -> bool:
+    """Проверка, публиковали ли мы уже этот пост"""
     conn = get_db()
     try:
-        row = conn.execute("SELECT 1 FROM posts WHERE donor_post_id=?", (video_id,)).fetchone()
-        return row is not None
+        exists = conn.execute("SELECT 1 FROM posts WHERE donor_post_id = ?", (post_id,)).fetchone()
+        return exists is not None
     finally:
         conn.close()
+
+async def rewrite_text_with_ai(text: str) -> str:
+    """Заглушка рерайта, если нет API нейронки"""
+    # Если используешь Gemini/GPT, вставь код вызова сюда
+    return text
+
+async def get_product_data_by_token(api_key: str, sub_id: str):
+    """Логика получения данных о товаре через API"""
+    # Это заглушка. Если есть API TakProdam, вставь код запроса сюда
+    return {"erid": None, "advertiser": "Реклама"}
 
 
 async def process_new_video(
@@ -264,7 +276,6 @@ async def process_new_video(
 # =============================================================================
 
 async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: Optional[str] = None):
-    from main import rewrite_text_with_ai, get_product_data_by_token, is_video_processed
 
     conn = get_db()
     try:
