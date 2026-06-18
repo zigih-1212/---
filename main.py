@@ -396,42 +396,56 @@ def calc_payout(amount_blogger: float) -> dict:
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     
-    if is_admin(message.from_user.id):
-        await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
-        return
-
-    conn = get_db()
     try:
-        user = conn.execute(
-            "SELECT role, subscription_until FROM users WHERE user_id=?", 
-            (message.from_user.id,)
-        ).fetchone()
-
-        if not user:
-            # Новый пользователь
-            sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
-            conn.execute(
-                "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'blogger')", 
-                (message.from_user.id, message.from_user.username, sub_id)
-            )
-            conn.commit()
-
-            await message.answer(
-                "👋 <b>Добро пожаловать в AutoPost!</b>\n\n"
-                "Автоматический постинг контента из YouTube, TikTok, Instagram с партнёрскими ссылками и ERID.\n\n"
-                "Нажми кнопку ниже, чтобы открыть личный кабинет.",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="💼 Открыть личный кабинет", callback_data="menu:main")]
-                ])
-            )
+        logger.info(f"DEBUG: Пользователь {message.from_user.id} нажал /start")
+        
+        # Проверка админа
+        if is_admin(message.from_user.id):
+            await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
             return
 
-        # Уже зарегистрирован — сразу в кабинет
-        await show_user_cabinet(message)
+        # Работа с базой
+        conn = get_db()
+        try:
+            user = conn.execute(
+                "SELECT role, channel_id FROM users WHERE user_id=?", 
+                (message.from_user.id,)
+            ).fetchone()
+            
+            if not user:
+                # Новый пользователь
+                sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
+                conn.execute(
+                    "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'blogger')", 
+                    (message.from_user.id, message.from_user.username, sub_id)
+                )
+                conn.commit()
+                
+                await message.answer(
+                    "👋 <b>Добро пожаловать в AutoPost!</b>\n\n"
+                    "Автоматический постинг с партнёрскими ссылками и ERID.\n\n"
+                    "Нажмите кнопку ниже для входа в кабинет:",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="💼 Открыть личный кабинет", callback_data="menu:main")]
+                    ])
+                )
+                return
 
-    finally:
-        conn.close()
+            # Уже есть в базе
+            if not user.get("channel_id"):
+                await message.answer("⚠️ Вы ещё не привязали канал. Перешлите сообщение или отправьте @username.")
+            else:
+                await show_user_cabinet(message)
+                
+        finally:
+            conn.close()
+
+    except Exception as e:
+        logger.error(f"Ошибка в cmd_start: {e}")
+        await message.answer(
+            f"❌ Произошла ошибка:\n{str(e)}\n\nПопробуйте ещё раз или напишите администратору."
+        )
       
 @router.message(Command("debug_scan"))
 async def debug_scan(message: Message):
@@ -456,10 +470,6 @@ async def show_cabinet(message: Message) -> None:
     else:
         await show_user_cabinet(message)
 
-    except Exception as e:
-        # ВОТ ЭТОТ БЛОК ПОКАЖЕТ ТЕБЕ ОШИБКУ ПРЯМО В ЧАТЕ
-        await message.answer(f"❌ Произошла ошибка в коде:\n{str(e)}")
-        logger.error(f"Ошибка в cmd_start: {e}")
 
 @router.message(F.text.startswith(("https://", "http://")))
 async def handle_user_link(message: Message):
