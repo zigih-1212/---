@@ -432,11 +432,6 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
     finally:
         conn.close()
-
-    except Exception as e:
-        # ВОТ ЭТОТ БЛОК ПОКАЖЕТ ТЕБЕ ОШИБКУ ПРЯМО В ЧАТЕ
-        await message.answer(f"❌ Произошла ошибка в коде:\n{str(e)}")
-        logger.error(f"Ошибка в cmd_start: {e}")
       
 @router.message(Command("debug_scan"))
 async def debug_scan(message: Message):
@@ -461,6 +456,10 @@ async def show_cabinet(message: Message) -> None:
     else:
         await show_user_cabinet(message)
 
+    except Exception as e:
+        # ВОТ ЭТОТ БЛОК ПОКАЖЕТ ТЕБЕ ОШИБКУ ПРЯМО В ЧАТЕ
+        await message.answer(f"❌ Произошла ошибка в коде:\n{str(e)}")
+        logger.error(f"Ошибка в cmd_start: {e}")
 
 @router.message(F.text.startswith(("https://", "http://")))
 async def handle_user_link(message: Message):
