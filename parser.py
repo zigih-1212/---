@@ -303,9 +303,10 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
 
     for user in saas_users:
         try:
-            user_id = user["user_id"]
-            channel_id = user["channel_id"]
-            max_posts = user.get("max_posts_per_day") or 25
+            user_id = user['user_id']
+            channel_id = user['channel_id']
+            # Исправлено: замена .get() на прямое обращение
+            max_posts = user['max_posts_per_day'] if user['max_posts_per_day'] is not None else 25
             db_post_id = f"saas_{post_id}_{channel_id}"
 
             if is_video_processed(db_post_id):
@@ -314,13 +315,15 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
             conn = get_db()
             try:
                 # Сколько уже опубликовано сегодня
-                posted_today = conn.execute("""
+                posted_today_row = conn.execute("""
                     SELECT COUNT(*) as cnt 
                     FROM posts 
                     WHERE channel_id = ? 
                     AND published_at >= ?
                     AND status = 'published'
-                """, (channel_id, day_start_msk.isoformat())).fetchone()["cnt"]
+                """, (channel_id, day_start_msk.isoformat())).fetchone()
+                
+                posted_today = posted_today_row['cnt'] if posted_today_row else 0
 
                 if posted_today >= max_posts:
                     continue
@@ -343,8 +346,8 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
                     ORDER BY published_at DESC LIMIT 1
                 """, (channel_id,)).fetchone()
 
-                if last_post and last_post["published_at"]:
-                    last_time = datetime.fromisoformat(last_post["published_at"].replace("Z", "+00:00"))
+                if last_post and last_post['published_at']:
+                    last_time = datetime.fromisoformat(last_post['published_at'].replace("Z", "+00:00"))
                     minutes_since_last = (now - last_time).total_seconds() / 60
 
                     # Примерно 1 пост каждые 36 минут (25 постов за 15 часов)
@@ -358,14 +361,15 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
             rewritten = await rewrite_text_with_ai(post_text or "Новое поступление!")
 
             product_info = None
-            if user.get("api_key"):
-                product_info = await get_product_data_by_token(user["api_key"], user["sub_id"])
+            # Исправлено: замена .get() на обращение к ключу ['api_key']
+            if user['api_key']:
+                product_info = await get_product_data_by_token(user['api_key'], user['sub_id'])
 
-            if product_info and product_info.get("erid"):
+            if product_info and isinstance(product_info, dict) and product_info.get("erid"):
                 caption = (
                     f"{rewritten}\n\n"
                     f'<a href="{product_info.get("link", "#")}">👉 Купить по партнёрской ссылке</a>\n\n'
-                    f"<i>Реклама. {product_info.get('advertiser', 'Партнёр')}. Erid: {product_info['erid']}</i>"
+                    f"<i>Реклама. {product_info.get('advertiser', 'Партнёр')}. Erid: {product_info.get('erid')}</i>"
                 )
             else:
                 caption = f"{rewritten}\n\n<i>Реклама</i>"
