@@ -1368,8 +1368,12 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
     await state.clear()
 
 
-async def show_user_cabinet(message: Message) -> None:
-    user_id = message.from_user.id
+async def show_user_cabinet(message: Message, user_id: int = None) -> None:
+    """Отрисовка личного кабинета"""
+    # Если нажимаем кнопку, берем правильный user_id, чтобы бот не искал сам себя
+    if user_id is None:
+        user_id = message.from_user.id
+        
     conn = get_db()
     try:
         user = conn.execute(
@@ -1414,12 +1418,12 @@ async def show_user_cabinet(message: Message) -> None:
         f"🆔 ID: <code>{user_id}</code>"
     )
 
+    # Вызываем новую клавиатуру кабинета, а не главного меню
     await message.answer(
         text, 
         parse_mode=ParseMode.HTML, 
-        reply_markup=kb_main_menu(role)
+        reply_markup=kb_cabinet_menu(role)
     )
-
 
 # =============================================================================
 # === ОБРАБОТЧИК КНОПКИ "НАЗАД" ==============================================
