@@ -411,21 +411,22 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             ).fetchone()
             
             if not user:
-                # Новый пользователь
+                # Новый пользователь — сначала выбор роли
                 sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
                 conn.execute(
-                    "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'blogger')", 
+                    "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'pending')",
                     (message.from_user.id, message.from_user.username, sub_id)
                 )
                 conn.commit()
-                
+
                 await message.answer(
                     "👋 <b>Добро пожаловать в AutoPost!</b>\n\n"
                     "Автоматический постинг контента с партнёрскими ссылками и ERID.\n\n"
-                    "Нажмите кнопку ниже для входа в кабинет:",
+                    "Выберите как вы будете использовать платформу:",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="💼 Открыть личный кабинет", callback_data="menu:main")]
+                        [InlineKeyboardButton(text="✍️ Я блогер", callback_data="set_role:blogger")],
+                        [InlineKeyboardButton(text="💼 Я SaaS-клиент", callback_data="set_role:saas")],
                     ])
                 )
                 return
