@@ -1475,7 +1475,8 @@ async def cb_menu_channel(callback: CallbackQuery, state: FSMContext) -> None:
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT channel_title, channel_id FROM users WHERE user_id=?", (user_id,)
+            "SELECT channel_title, channel_id FROM users WHERE user_id=?", 
+            (user_id,)
         ).fetchone()
     finally:
         conn.close()
@@ -1489,7 +1490,7 @@ async def cb_menu_channel(callback: CallbackQuery, state: FSMContext) -> None:
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔄 Изменить канал", callback_data="channel:change")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
-            ]),
+            ])
         )
     else:
         await callback.message.edit_text(
@@ -1497,20 +1498,27 @@ async def cb_menu_channel(callback: CallbackQuery, state: FSMContext) -> None:
             "Перешли сюда любое сообщение из твоего канала или отправь <code>@username</code>.\n\n"
             "<i>Убедись, что бот добавлен в канал как администратор с правом публикации.</i>",
             parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
+            ])
         )
         await state.set_state(OnboardingStates.waiting_channel)
+    
     await callback.answer()
 
 
 @router.callback_query(F.data == "channel:change")
 async def cb_change_channel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
-        "📢 Введи <code>@username</code> нового канала или перешли сообщение из него:",
+        "📢 <b>Смена канала</b>\n\n"
+        "Перешли сообщение из нового канала или отправь <code>@username</code>.",
         parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Отмена", callback_data="menu:main")]
+        ])
     )
     await state.set_state(OnboardingStates.waiting_channel)
     await callback.answer()
-
 
 # -----------------------------------------------------------------------------
 # Партнёрская программа
