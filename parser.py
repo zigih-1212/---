@@ -9,6 +9,7 @@ import os
 import re
 import random
 import sqlite3
+from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
@@ -342,40 +343,57 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str):
 # === RSS TELEGRAM =============================================================
 # =============================================================================
 
-async def fetch_telegram_channel_posts(channel: str) -> list[Dict[str, str]]:
-    """Читает RSS Telegram-канала через rsshub.app."""
+async def fetch_telegram_channel_posts(channel: str):
+    """Парсинг публичной веб-версии Telegram-канала (Web Scraping)."""
     username = channel.lstrip("@").strip()
-    url = f"https://rsshub.app/telegram/channel/{username}"
+    url = f"https://t.me/s/{username}"
+    
+    # Маскируем запрос под обычный браузер
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            resp = await client.get(url, headers=headers)
+            
         if resp.status_code != 200:
-            logger.warning(f"RSS {username}: статус {resp.status_code}")
+            logger.warning(f"Web Scraping {username}: статус {resp.status_code}")
             return []
-
+            
+        soup = BeautifulSoup(resp.text, 'html.parser')
         posts = []
-        items = re.findall(r"<item>(.*?)</item>", resp.text, re.DOTALL)
-        for item in items[:5]:
-            guid = re.search(r"<guid[^>]*>(.*?)</guid>", item)
-            title = re.search(r"<title>(.*?)</title>", item)
-            desc = re.search(r"<description>(.*?)</description>", item, re.DOTALL)
-            post_id = guid.group(1).strip() if guid else None
-            text = ""
-            if desc:
-                text = re.sub(r"<[^>]+>", "", desc.group(1))
-                text = re.sub(r"&amp;", "&", text)
-                text = re.sub(r"&lt;", "<", text)
-                text = re.sub(r"&gt;", ">", text)
-                text = re.sub(r"&quot;", '"', text)
-                text = text.strip()
+        
+        # Ищем все блоки сообщений на странице
+        messages = soup.find_all('div', class_='tgme_widget_message')
+        
+        for msg in messages:
+            # 1. Достаем ID (номер) поста
+            msg_id_attr = msg.get('data-post')
+            if not msg_id_attr:
+                continue
+            post_id = msg_id_attr.split('/')[-1]
+            
+            # 2. Достаем текст поста
+            text_div = msg.find('div', class_='tgme_widget_message_text')
+            text = text_div.get_text(separator='\n') if text_div else ""
+            
+            # 3. Достаем картинку (если есть)
+            image_url = None
+            img_style = msg.find('a', class_='tgme_widget_message_photo_wrap')
+            if img_style and 'background-image:url(' in img_style.get('style', ''):
+                image_url = img_style['style'].split("background-image:url('")[1].split("')")[0]
+                
             if post_id and text:
                 posts.append({
                     "id": post_id,
-                    "text": text,
-                    "title": title.group(1).strip() if title else "",
+                    "text": text.strip(),
+                    "image_url": image_url,
+                    "channel": channel
                 })
+                
         return posts
-
+        
     except Exception as e:
-        logger.error(f"fetch_telegram_channel_posts error [{username}]: {e}")
+        logger.error(f"Ошибка при парсинге {username}: {e}")
         return []
