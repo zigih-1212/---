@@ -3166,28 +3166,53 @@ async def scan_donor_channels(bot: Bot):
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
+    
     scheduler.add_job(
-        run_billing_check, trigger="interval", hours=1,
-        kwargs={"bot": bot}, id="billing_check",
+        run_billing_check, 
+        trigger="interval", 
+        hours=1,
+        kwargs={"bot": bot}, 
+        id="billing_check",
+        replace_existing=True
     )
+    
     scheduler.add_job(
-        flush_night_queue, trigger="cron", hour=8, minute=0,
-        kwargs={"bot": bot}, id="flush_night_queue",
+        flush_night_queue, 
+        trigger="cron", 
+        hour=8, 
+        minute=0,
+        kwargs={"bot": bot}, 
+        id="flush_night_queue",
+        replace_existing=True
     )
+    
     scheduler.add_job(
-        unpin_old_messages, trigger="interval", minutes=30,
-        kwargs={"bot": bot}, id="unpin_vip_posts",
+        unpin_old_messages, 
+        trigger="interval", 
+        minutes=30,
+        kwargs={"bot": bot}, 
+        id="unpin_vip_posts",
+        replace_existing=True
     )
+    
     scheduler.add_job(
-        cleanup_old_posts, trigger="cron", hour=3, minute=0,
+        cleanup_old_posts, 
+        trigger="cron", 
+        hour=3, 
+        minute=0,
         id="cleanup_old_posts",
+        replace_existing=True
     )
+    
     scheduler.add_job(
-        scan_donor_channels, trigger="interval", minutes=10,
-        kwargs={"bot": bot}, id="scan_donors",
-        kwargs={"bot": bot},
+        scan_donor_channels, 
+        trigger="interval", 
+        minutes=10,           # ← Важно: не чаще 10 минут
+        kwargs={"bot": bot}, 
         id="scan_donors",
+        replace_existing=True
     )
+    
     return scheduler
 
 
