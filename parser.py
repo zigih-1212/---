@@ -276,11 +276,11 @@ async def process_new_video(
 # =============================================================================
 
 async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: Optional[str] = None):
-    """Полноценная обработка поста для SaaS-клиентов"""
+    """Полноценная обработка поста для SaaS с рерайтом, ERID и партнёрскими ссылками"""
     conn = get_db()
     try:
         saas_users = conn.execute("""
-            SELECT u.user_id, u.api_key, u.sub_id, c.channel_id, c.channel_title
+            SELECT u.user_id, u.api_key, u.sub_id, c.channel_id
             FROM users u
             JOIN channels c ON c.user_id = u.user_id 
             WHERE u.role = 'saas' AND u.is_active = 1 AND c.is_active = 1
@@ -297,45 +297,48 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
             channel_id = user["channel_id"]
             db_post_id = f"saas_{post_id}_{channel_id}"
 
-            # === Защита от дублей ===
+            # Защита от дублей
             if is_video_processed(db_post_id):
                 continue
 
             # === AI Рерайт ===
-            rewritten = await rewrite_text_with_ai(post_text)
+            rewritten = await rewrite_text_with_ai(post_text or "Новое поступление!")
 
-            # === Получаем ERID + партнёрскую ссылку ===
+            # === Получаем данные товара через API ТакПродам ===
             product_info = None
-            if user["api_key"]:
+            if user.get("api_key"):
                 product_info = await get_product_data_by_token(user["api_key"], user["sub_id"])
 
-            # === Формирование caption ===
+            # === Формирование финального текста ===
             if product_info and product_info.get("erid"):
                 caption = (
                     f"{rewritten}\n\n"
-                    f'<a href="{product_info.get("link", "#")}">👉 Перейти к товару</a>\n\n'
+                    f'<a href="{product_info.get("link", "#")}">👉 Купить по партнёрской ссылке</a>\n\n'
                     f"<i>Реклама. {product_info.get('advertiser', 'Партнёр')}. Erid: {product_info['erid']}</i>"
                 )
             else:
-                caption = rewritten + "\n\n<i>Реклама</i>"
+                caption = (
+                    f"{rewritten}\n\n"
+                    f"<i>Реклама</i>"
+                )
 
             # === Публикация ===
             try:
                 if image_url:
-                    msg = await bot.send_photo(
+                    await bot.send_photo(
                         chat_id=channel_id,
                         photo=image_url,
                         caption=caption,
                         parse_mode="HTML"
                     )
                 else:
-                    msg = await bot.send_message(
+                    await bot.send_message(
                         chat_id=channel_id,
                         text=caption,
                         parse_mode="HTML"
                     )
 
-                # Запись в БД
+                # Сохранение в БД
                 conn = get_db()
                 conn.execute("""
                     INSERT INTO posts 
@@ -343,24 +346,22 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
                      traffic_source, status, published_at)
                     VALUES (?, ?, ?, ?, 'saas_donor', 'published', ?)
                 """, (
-                    user_id, 
-                    db_post_id, 
-                    channel_id, 
-                    channel_id, 
+                    user_id, db_post_id, channel_id, channel_id, 
                     datetime.now(timezone.utc).isoformat()
                 ))
                 conn.commit()
                 conn.close()
 
-                logger.info(f"✅ SaaS пост опубликован в канал {channel_id} (user {user_id})")
+                logger.info(f"✅ SaaS пост успешно опубликован в {channel_id}")
 
-            except Exception as pub_e:
-                logger.error(f"Ошибка публикации в канал {channel_id}: {pub_e}")
+            except Exception as e:
+                logger.error(f"Ошибка отправки в канал {channel_id}: {e}")
 
-            await asyncio.sleep(3)  # Пауза между публикациями
+            await asyncio.sleep(5)  # Увеличенная пауза между публикациями
 
         except Exception as e:
-            logger.error(f"Ошибка обработки SaaS для пользователя {user_id}: {e}")
+            logger.error(f"Ошибка process_saas_post для пользователя {user_id}: {e}")
+            
 # =============================================================================
 # === RSS TELEGRAM =============================================================
 # =============================================================================
