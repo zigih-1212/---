@@ -2081,14 +2081,14 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         # Пользователи
         users_html = ""
         for u in users:
-            sub = str(u["subscription_until])[:10] if u.get("subscription_until") else "—"
+            sub = str(u["subscription_until])[:10] if u.get("subscription_until") else "-"
             active = "🟢" if u["is_active"] else "🔴"
             users_html += f"""
             <tr>
                 <td>{u['user_id']}</td>
                 <td>@{u['username'] or '-'}</td>
-                <td>{u["role"] if u["role"] else "—"}</td>
-                <td>{u["channel_title"] if u["channel_title"] else "—"}</td>
+                <td>{u["role"] if u["role"] else "-"}</td>
+                <td>{u["channel_title"] if u["channel_title"] else "-"}</td>
                 <td>{sub}</td>
                 <td class="{'active' if u['is_active'] else 'inactive'}">{active}</td>
                 <td>
