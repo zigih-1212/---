@@ -329,14 +329,14 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
                     continue
 
                 # Проверка времени публикации (только 8:00 - 23:00 МСК)
-                msk_time = datetime.now(timezone(timedelta(hours=3)))
-                if not force_post and (msk_time.hour < 8 or msk_time.hour >= 23):
-                    from main import add_to_night_queue
-                    await add_to_night_queue(
-                        user_id=user_id, video_id=post_id, description=post_text,
-                        sku=None, photo_url=image_url, marketplace="saas"
-                    )
-                    continue
+                # msk_time = datetime.now(timezone(timedelta(hours=3)))
+                 #if not force_post and (msk_time.hour < 8 or msk_time.hour >= 23):
+                   #  from main import add_to_night_queue
+                     # await add_to_night_queue(
+                        # user_id=user_id, video_id=post_id, description=post_text,
+                      #  sku=None, photo_url=image_url, marketplace="saas"
+                    # )
+                    # continue
 
                 # === Растягивание: проверяем, когда был последний пост ===
                 last_post = conn.execute("""
