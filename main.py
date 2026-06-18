@@ -3116,6 +3116,7 @@ async def process_saas_core(
     video_url: Optional[str] = None,
     force_post: bool = False
 ) -> None:
+        logger.info(f"DEBUG: Начало process_saas_core для {donor_post_id} (force_post={force_post})")
     """Универсальное ядро SaaS: парсит -> уникализирует AI -> ERID -> рассылает и закрепляет."""
     
     # 1. Извлекаем товары
@@ -3123,7 +3124,7 @@ async def process_saas_core(
     if not products:
         logger.info(f"🚫 [SaaS] Пропуск {donor_post_id}: в посте нет товаров")
         return
-
+        
     first_product = products[0]
     sku = first_product['value'] # Используем ['ключ']
     marketplace = first_product['marketplace'] if 'marketplace' in first_product else 'wb'
@@ -3629,24 +3630,25 @@ async def cb_saas_toggles(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
-    await callback.answer("🚀 Запускаю принудительную публикацию...", show_alert=True)
+    # 1. Отвечаем мгновенно
+    await callback.answer("🚀 Запускаю сканирование...", show_alert=True)
     # Передаем force_post=True
     await scan_donor_channels(bot, force_post=True)
     await callback.message.answer("✅ Сканирование выполнено!")
     await cb_settings(callback)
     
-    try:
-        # Запускаем основной сканер
-        # Он сам пройдет по всем донорам и опубликует всё, что готово
-        await scan_donor_channels(bot)
-        
-        await callback.message.answer("✅ Команда принята. Проверяю доноров...")
+    ry:
+        # 2. Выполняем логику
+        await scan_donor_channels(bot, force_post=True)
+        await callback.message.answer("✅ Сканирование выполнено. Посты в обработке.")
     except Exception as e:
-        logger.error(f"Ошибка при Force Post: {e}")
-        await callback.message.answer("❌ Произошла ошибка при запуске публикации.")
+        logger.error(f"Критическая ошибка в Force Post: {e}")
+        await callback.message.answer("❌ Ошибка при запуске: " + str(e))
     
-    # Возвращаем пользователя в настройки
-    await cb_settings(callback)
+    try:
+        await cb_settings(callback)
+    except Exception:
+        pass # Игнорируем ошибку обновления интерфейса
 
 @router.callback_query(F.data == "saas_set:apikey")
 async def cb_saas_set_apikey(callback: CallbackQuery, state: FSMContext) -> None:
