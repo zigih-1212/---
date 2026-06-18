@@ -3348,18 +3348,128 @@ async def cb_instructions(callback: CallbackQuery) -> None:
         pass
     await callback.answer()
 
+# =============================================================================
+# === НАСТРОЙКИ SAAS-КАБИНЕТА =================================================
+# =============================================================================
+
 @router.callback_query(F.data == "menu:settings")
 async def cb_settings(callback: CallbackQuery) -> None:
-    # Отрисовка меню "Настройки"
-    text = "⚙️ <b>Настройки</b>\n\nРаздел находится в разработке. Скоро здесь появятся настройки фильтрации по маркетплейсам и выбор режима публикации."
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT api_key, auto_pin, filter_wb, filter_ozon FROM users WHERE user_id=?", 
+            (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not user:
+        await callback.answer("❌ Ошибка загрузки настроек", show_alert=True)
+        return
+
+    # Считываем текущие настройки
+    api_key_status = "✅ Установлен" if user["api_key"] else "❌ Не задан"
+    auto_pin = bool(user["auto_pin"] if user["auto_pin"] is not None else 1)
+    wb = bool(user["filter_wb"] if user["filter_wb"] is not None else 1)
+    ozon = bool(user["filter_ozon"] if user["filter_ozon"] is not None else 1)
+
+    text = (
+        "⚙️ <b>Настройки SaaS-аккаунта</b>\n\n"
+        f"🔑 <b>API-ключ (ТакПродам):</b> {api_key_status}\n"
+        "<i>(Необходим для получения партнёрских ссылок и ERID)</i>\n\n"
+        "Управляйте настройками автопостинга с помощью кнопок ниже:"
+    )
+
+    # Динамическая клавиатура с галочками
     kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔑 Изменить API-ключ", callback_data="saas_set:apikey")],
+        [
+            InlineKeyboardButton(text=f"🛒 WB: {'✅' if wb else '❌'}", callback_data="saas_toggle:wb"),
+            InlineKeyboardButton(text=f"🛒 Ozon: {'✅' if ozon else '❌'}", callback_data="saas_toggle:ozon")
+        ],
+        [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
     ])
+
     try:
         await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except:
         pass
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("saas_toggle:"))
+async def cb_saas_toggles(callback: CallbackQuery) -> None:
+    """Обработчик переключателей (галочек) в настройках"""
+    action = callback.data.split(":")[1]
+    user_id = callback.fromuser.id if hasattr(callback, "fromuser") else callback.from_user.id
+    
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT auto_pin, filter_wb, filter_ozon FROM users WHERE user_id=?", (user_id,)).fetchone()
+        
+        # Меняем значение на противоположное
+        if action == "autopin":
+            new_val = 0 if user["auto_pin"] else 1
+            conn.execute("UPDATE users SET auto_pin=? WHERE user_id=?", (new_val, user_id))
+        elif action == "wb":
+            new_val = 0 if user["filter_wb"] else 1
+            conn.execute("UPDATE users SET filter_wb=? WHERE user_id=?", (new_val, user_id))
+        elif action == "ozon":
+            new_val = 0 if user["filter_ozon"] else 1
+            conn.execute("UPDATE users SET filter_ozon=? WHERE user_id=?", (new_val, user_id))
+            
+        conn.commit()
+    finally:
+        conn.close()
+        
+    # Сразу перерисовываем меню, чтобы пользователь видел изменение галочки
+    await cb_settings(callback)
+
+
+@router.callback_query(F.data == "saas_set:apikey")
+async def cb_saas_set_apikey(callback: CallbackQuery, state: FSMContext) -> None:
+    """Обработчик нажатия на ввод API-ключа"""
+    text = (
+        "🔑 <b>Настройка API-ключа</b>\n\n"
+        "Отправьте сообщением ваш API-ключ от ТакПродам.\n"
+        "<i>Если вы хотите удалить ключ, отправьте цифру 0</i>"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:settings")]
+    ])
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await state.set_state(SaasStates.waiting_apikey)
+    await callback.answer()
+
+
+@router.message(SaasStates.waiting_apikey)
+async def msg_saas_apikey_input(message: Message, state: FSMContext) -> None:
+    """Сохранение API-ключа из чата в БД"""
+    api_key = message.text.strip()
+    user_id = message.from_user.id
+    
+    # Логика удаления ключа, если прислали 0
+    if api_key == "0":
+        api_key = None
+        ans_text = "🗑 API-ключ удалён."
+    else:
+        ans_text = "✅ API-ключ успешно сохранён!"
+
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET api_key=? WHERE user_id=?", (api_key, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+        
+    await state.clear()
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Вернуться в настройки", callback_data="menu:settings")]
+    ])
+    await message.answer(ans_text, reply_markup=kb)
 
 # =============================================================================
 # === MAIN ENTRYPOINT =========================================================
