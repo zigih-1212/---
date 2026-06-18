@@ -322,11 +322,12 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str):
 
             conn = get_db()
             try:
+                # Вставляем данные с учетом target_channel_id
                 conn.execute("""
                     INSERT INTO posts
-                    (user_id, donor_post_id, channel_id, traffic_source, status, published_at)
-                    VALUES (?, ?, ?, 'saas_donor', 'published', ?)
-                """, (user_id, f"{post_id}_{channel_id}", channel_id,
+                    (user_id, donor_post_id, channel_id, target_channel_id, traffic_source, status, published_at)
+                    VALUES (?, ?, ?, ?, 'saas_donor', 'published', ?)
+                """, (user_id, f"{post_id}_{channel_id}", channel_id, channel_id,
                       datetime.now(timezone.utc).isoformat()))
                 conn.commit()
             finally:
