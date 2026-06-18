@@ -297,11 +297,13 @@ def init_db() -> None:
              cursor.execute("ALTER TABLE posts ADD COLUMN channel_id TEXT")
         except sqlite3.OperationalError:
             pass
-    
- 
 
-        
-
+             # === УМНЫЙ ЛИМИТ ПОСТОВ ===
+       try:
+             cursor.execute("ALTER TABLE channels ADD COLUMN max_posts_per_day INTEGER DEFAULT 25")
+        except sqlite3.OperationalError:
+            pass  # колонка уже существует       
+  
     conn.commit()
     conn.close()
     logger.info("База данных успешно инициализирована")
