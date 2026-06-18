@@ -3215,7 +3215,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(
         scan_donor_channels, 
         trigger="interval", 
-        minutes=10,           # ← Важно: не чаще 10 минут
+        minutes=15,           # ← Важно: не чаще 10 минут
         kwargs={"bot": bot}, 
         id="scan_donors",
         replace_existing=True
