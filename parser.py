@@ -279,14 +279,17 @@ async def process_new_video(
 # =============================================================================
 
 async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: Optional[str] = None):
-    """Улучшенная версия с надёжной защитой от дублей"""
+    """Публикация для SaaS с умным лимитом постов в сутки"""
     conn = get_db()
     try:
         saas_users = conn.execute("""
-            SELECT u.user_id, u.api_key, u.sub_id, c.channel_id
+            SELECT u.user_id, u.api_key, u.sub_id, 
+                   c.channel_id, c.max_posts_per_day
             FROM users u
             JOIN channels c ON c.user_id = u.user_id 
-            WHERE u.role = 'saas' AND u.is_active = 1 AND c.is_active = 1
+            WHERE u.role = 'saas' 
+              AND u.is_active = 1 
+              AND c.is_active = 1
         """).fetchall()
     finally:
         conn.close()
@@ -294,27 +297,45 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
     if not saas_users:
         return
 
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
     for user in saas_users:
         try:
             user_id = user["user_id"]
             channel_id = user["channel_id"]
-            
-            # УНИКАЛЬНЫЙ ID для каждого SaaS-канала
+            max_posts = user.get("max_posts_per_day") or 5
             db_post_id = f"saas_{post_id}_{channel_id}"
 
-            # === УСИЛЕННАЯ ЗАЩИТА ОТ ДУБЛЕЙ ===
+            # === Защита от дублей ===
             if is_video_processed(db_post_id):
                 continue
 
-            # AI Рерайт
+            # === Проверка лимита постов за сегодня ===
+            conn = get_db()
+            try:
+                posted_today = conn.execute("""
+                    SELECT COUNT(*) as cnt 
+                    FROM posts 
+                    WHERE channel_id = ? 
+                    AND published_at >= ?
+                    AND status = 'published'
+                """, (channel_id, today_start)).fetchone()["cnt"]
+
+                if posted_today >= max_posts:
+                    logger.info(f"⛔ Лимит публикаций исчерпан для канала {channel_id} ({posted_today}/{max_posts})")
+                    continue
+            finally:
+                conn.close()
+
+            # === AI Рерайт ===
             rewritten = await rewrite_text_with_ai(post_text or "Новое поступление!")
 
-            # Данные из ТакПродам
+            # === Данные из ТакПродам ===
             product_info = None
             if user.get("api_key"):
                 product_info = await get_product_data_by_token(user["api_key"], user["sub_id"])
 
-            # Формирование текста
+            # === Формирование caption ===
             if product_info and product_info.get("erid"):
                 caption = (
                     f"{rewritten}\n\n"
@@ -324,13 +345,13 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
             else:
                 caption = f"{rewritten}\n\n<i>Реклама</i>"
 
-            # Публикация
+            # === Публикация ===
             if image_url:
                 await bot.send_photo(chat_id=channel_id, photo=image_url, caption=caption, parse_mode="HTML")
             else:
                 await bot.send_message(chat_id=channel_id, text=caption, parse_mode="HTML")
 
-            # Сохранение в БД (чтобы больше не повторять)
+            # Сохранение в БД
             conn = get_db()
             conn.execute("""
                 INSERT INTO posts 
@@ -341,11 +362,12 @@ async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: O
             conn.commit()
             conn.close()
 
-            logger.info(f"✅ Опубликован SaaS пост {db_post_id}")
+            logger.info(f"✅ Опубликован SaaS пост в канал {channel_id} ({posted_today+1}/{max_posts})")
+
             await asyncio.sleep(4)
 
         except Exception as e:
-            logger.error(f"Ошибка SaaS {user_id}: {e}")
+            logger.error(f"Ошибка process_saas_post для {user_id}: {e}")
             
 # =============================================================================
 # === RSS TELEGRAM =============================================================
