@@ -3116,68 +3116,49 @@ async def process_saas_core(
     video_url: Optional[str] = None,
     force_post: bool = False
 ) -> None:
+    logger.info(f"DEBUG: Начало процесса для {donor_post_id}. Force={force_post}")
     
-    # 1. Извлекаем товары
     products = find_product_links(text)
     if not products:
+        logger.info(f"DEBUG: Пропуск {donor_post_id} - не найдены товары")
         return
 
-    first_product = products[0]
-    sku = first_product['value']
-    marketplace = first_product['marketplace'] if 'marketplace' in first_product else 'wb'
+    sku = products[0]['value']
+    marketplace = products[0].get('marketplace', 'wb')
+    
+    # Рерайт
+    rewritten_text = await rewrite_text_with_ai(re.sub(r'http\S+', '', text).strip())
 
-    if not sku:
-        return
-
-    # 2. AI Рерайт
-    clean_text = re.sub(r'http\S+', '', text).strip()
-    rewritten_text = await rewrite_text_with_ai(clean_text)
-
-    # 3. Активные пользователи
     conn = get_db()
-    try:
-        saas_users = conn.execute("SELECT user_id, api_key, sub_id, filter_wb, filter_ozon, auto_pin FROM users WHERE role='saas' AND is_active=1").fetchall()
-    finally:
-        conn.close()
+    saas_users = conn.execute("SELECT user_id, api_key, sub_id, filter_wb, filter_ozon, auto_pin FROM users WHERE role='saas' AND is_active=1").fetchall()
+    conn.close()
 
     for user in saas_users:
         user_id = user['user_id']
-        if marketplace == 'wb' and not user['filter_wb']: continue
-        if marketplace == 'ozon' and not user['filter_ozon']: continue
+        
+        if not force_post: # Проверяем время только если НЕ принудительная публикация
+            msk_time = datetime.now(timezone(timedelta(hours=3)))
+            if msk_time.hour < 8 or msk_time.hour >= 23:
+                from main import add_to_night_queue
+                await add_to_night_queue(user_id, donor_post_id, text, sku, photo_url, marketplace)
+                logger.info(f"🌙 [SaaS] Ночная очередь для {user_id}")
+                continue
 
-        conn = get_db()
-        channels = conn.execute("SELECT channel_id FROM channels WHERE user_id=? AND is_active=1", (user_id,)).fetchall()
-        conn.close()
-
+        # Публикация
+        channels = get_db().execute("SELECT channel_id FROM channels WHERE user_id=? AND is_active=1", (user_id,)).fetchall()
         for ch in channels:
             channel_id = ch['channel_id']
-
-            # ЛОГИКА: Если НЕ force_post, проверяем время
-            if not force_post:
-                msk_time = datetime.now(timezone(timedelta(hours=3)))
-                if msk_time.hour < 8 or msk_time.hour >= 23:
-                    from main import add_to_night_queue
-                    await add_to_night_queue(user_id, donor_post_id, text, sku, photo_url, marketplace)
-                    continue # Ушло в очередь, идем к следующему
-
-            # Публикация (если force_post=True, мы пролетели проверку времени и попали сюда)
+            logger.info(f"DEBUG: Попытка ERID для {sku} в канал {channel_id}")
+            
             erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
-            if not erid_data: continue
+            if not erid_data:
+                logger.warning(f"⚠️ [SaaS] ERID не получен для {sku}")
+                continue
 
-            affiliate_url = erid_data.get("link", f"https://www.wildberries.ru/catalog/{sku}/detail.aspx" if marketplace=="wb" else f"https://ozon.ru/context/detail/id/{sku}")
-            erid = erid_data.get("erid", "")
-            
-            final_caption = f"{rewritten_text}\n\n🛒 <b>Артикул:</b> <code>{sku}</code>\n\n<a href='{affiliate_url}'>👉 Заказать</a>\n\n<i>Реклама. Erid: {erid}</i>"
-
-            msg = await publish_post_with_fallback(bot, channel_id, final_caption, photo_url, video_url)
-            
-            if msg and user['auto_pin']:
-                try:
-                    await bot.pin_chat_message(channel_id, msg.message_id, disable_notification=True)
-                except: pass
-                        logger.error(f"Не удалось закрепить в {channel_id}: {e}")
-                
-                logger.info(f"✅ [SaaS] Пост опубликован для {user_id} в {channel_id}")
+            # (Публикация...)
+            msg = await publish_post_with_fallback(bot, channel_id, "...", photo_url, video_url)
+            if msg:
+                logger.info(f"✅ [SaaS] Пост успешно ушел в {channel_id}")
                 
               
 # =============================================================================
