@@ -285,14 +285,20 @@ def init_db() -> None:
             cursor.execute("ALTER TABLE users ADD COLUMN payout_card TEXT")
         except sqlite3.OperationalError:
             pass
+        # === ИСПРАВЛЕНИЕ СТРУКТУРЫ БД ===
         try:
+        # Добавляем колонку, если её нет
              cursor.execute("ALTER TABLE posts ADD COLUMN target_channel_id TEXT")
         except sqlite3.OperationalError:
-            pass 
+            pass # Колонка уже существует, всё хорошо
+
         try:
-             conn.execute("ALTER TABLE posts ADD COLUMN target_channel_id TEXT")
-        except Exception:
+        # Добавляем колонку для канала, если её нет (важно для SaaS)
+             cursor.execute("ALTER TABLE posts ADD COLUMN channel_id TEXT")
+        except sqlite3.OperationalError:
             pass
+    
+ 
 
         
 
