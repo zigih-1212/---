@@ -2828,16 +2828,16 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         </style>
         """
 
-    html = f"""<!DOCTYPE html>
-<html lang="ru">
-<head>
+        html = f"""<!DOCTYPE html>
+    <html lang="ru">
+    <head>
     <meta charset="UTF-8">
     <title>Карточка {user_id}</title>
     {css}
-</head>
-<body>
-</head>
-<body>
+    </head>
+    <body>
+    </head>
+    <body>
     <a href="/admin/dashboard" style="color:#7f8fa6;">← Назад в дашборд</a>
     <h1>👤 Карточка пользователя #{{user_id}} @{{user['username'] or '—'}}</h1>
     
@@ -2870,9 +2870,9 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             {"🚫 Заблокировать" if user["is_active"] else "✅ Разблокировать"}
         </button>
     </form>
-</body>
-</html>"""
-    return HTMLResponse(html)
+    </body>
+    </html>"""
+        return HTMLResponse(html)
                 
     @app.get("/admin/channel/{channel_id}", response_class=HTMLResponse)
     async def channel_card(request: Request, channel_id: str):
