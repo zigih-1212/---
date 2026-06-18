@@ -263,82 +263,56 @@ async def process_new_video(
 # === ПУБЛИКАЦИЯ SAAS =========================================================
 # =============================================================================
 
-async def process_saas_post(bot: Bot, post_text: str, post_id: str):
-    """Публикует пост из донора во все активные каналы SaaS с рерайтом"""
-    from main import rewrite_text_with_ai
+async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: Optional[str] = None):
+    from main import rewrite_text_with_ai, get_product_data_by_token, is_video_processed
 
     conn = get_db()
     try:
         saas_users = conn.execute("""
-            SELECT u.user_id, u.api_key, u.sub_id,
-                   c.channel_id, c.channel_title
+            SELECT u.user_id, u.api_key, u.sub_id, c.channel_id
             FROM users u
             JOIN channels c ON c.user_id = u.user_id AND c.is_active = 1
-            WHERE u.role = 'saas'
-              AND u.is_active = 1
-              AND u.subscription_until > datetime('now')
+            WHERE u.role = 'saas' AND u.is_active = 1
         """).fetchall()
-        saas_users = list(saas_users)
     finally:
         conn.close()
-
-    random.shuffle(saas_users)
-    saas_post_counter = {}
 
     for user in saas_users:
         try:
             user_id = user["user_id"]
             channel_id = user["channel_id"]
+            db_post_id = f"{post_id}_{channel_id}"
 
-            if is_video_processed(f"{post_id}_{channel_id}"):
+            if is_video_processed(db_post_id):
                 continue
 
+            # Рерайт и API
             rewritten = await rewrite_text_with_ai(post_text)
+            product_info = await get_product_data_by_token(user["api_key"], user["sub_id"])
 
-            saas_post_counter[user_id] = saas_post_counter.get(user_id, 0) + 1
-            use_master = (saas_post_counter[user_id] % MASTER_TOKEN_EVERY_N == 0)
-            token = TAKPRODAM_MASTER_TOKEN if use_master else user["api_key"]
-
-            if not token:
-                logger.warning(f"SaaS user {user_id} не имеет api_key, пропускаем")
-                continue
-
-            product_info = await get_product_data_by_token(token, user["sub_id"])
-
+            caption = rewritten
             if product_info and product_info.get("erid"):
-                caption = (
-                    f"{rewritten}\n\n"
-                    f"<i>Реклама. {product_info['advertiser']}. "
-                    f"Erid: {product_info['erid']}</i>"
-                )
+                caption = f"{rewritten}\n\n<i>Реклама. {product_info['advertiser']}. Erid: {product_info['erid']}</i>"
+
+            # Публикация
+            if image_url:
+                await bot.send_photo(chat_id=channel_id, photo=image_url, caption=caption, parse_mode="HTML")
             else:
-                caption = rewritten
+                await bot.send_message(chat_id=channel_id, text=caption, parse_mode="HTML")
 
-            msg = await bot.send_message(
-                chat_id=channel_id,
-                text=caption,
-                parse_mode="HTML"
-            )
-
+            # Запись в БД с правильными колонками
             conn = get_db()
-            try:
-                # Вставляем данные с учетом target_channel_id
-                conn.execute("""
-                    INSERT INTO posts
-                    (user_id, donor_post_id, channel_id, target_channel_id, traffic_source, status, published_at)
-                    VALUES (?, ?, ?, ?, 'saas_donor', 'published', ?)
-                """, (user_id, f"{post_id}_{channel_id}", channel_id, channel_id,
-                      datetime.now(timezone.utc).isoformat()))
-                conn.commit()
-            finally:
-                conn.close()
+            conn.execute("""
+                INSERT INTO posts 
+                (user_id, donor_post_id, channel_id, target_channel_id, traffic_source, status, published_at)
+                VALUES (?, ?, ?, ?, 'saas_donor', 'published', ?)
+            """, (user_id, db_post_id, channel_id, channel_id, datetime.now(timezone.utc).isoformat()))
+            conn.commit()
+            conn.close()
 
-            logger.info(f"✅ SaaS пост опубликован: user={user_id} канал={channel_id}")
-            await asyncio.sleep(random.uniform(3, 7))
-
+            await asyncio.sleep(2)
         except Exception as e:
-            logger.error(f"process_saas_post ошибка user={user['user_id']}: {e}")
-
+            logger.error(f"Ошибка SaaS: {e}")
 
 # =============================================================================
 # === RSS TELEGRAM =============================================================
