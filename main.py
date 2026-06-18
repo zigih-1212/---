@@ -3568,6 +3568,11 @@ async def cb_settings(callback: CallbackQuery) -> None:
         pass
     await callback.answer()
 
+    try:
+        await callback.message.edit_text(...)
+    except TelegramBadRequest:
+        pass # Игнорируем, если текст не изменился
+
 
 @router.callback_query(F.data.startswith("saas_toggle:"))
 async def cb_saas_toggles(callback: CallbackQuery) -> None:
