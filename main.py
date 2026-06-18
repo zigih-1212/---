@@ -3202,33 +3202,38 @@ async def cleanup_old_posts() -> None:
         conn.close()
 
 
+a# =============================================================================
+# === СКАНИРОВАНИЕ ДОНОРОВ (С ДИАГНОСТИКОЙ) ===================================
+# =============================================================================
+
 async def scan_donor_channels(bot: Bot, force_post: bool = False):
-    logger.info("🔍 [DEBUG] Запуск сканирования SaaS доноров...")
+    logger.info(f"🔍 [DEBUG] Старт сканирования. Force_post={force_post}")
     
     if not SAAS_DONOR_CHANNELS:
-        logger.info("🚫 [DEBUG] Список SAAS_DONOR_CHANNELS пуст!")
+        logger.info("🚫 [DEBUG] Список доноров пуст!")
         return
 
     for channel in SAAS_DONOR_CHANNELS:
         try:
-            logger.info(f"🔍 [DEBUG] Сканирую канал: {channel}")
+            logger.info(f"🔍 [DEBUG] Проверяю канал: {channel}")
             posts = await fetch_telegram_channel_posts(channel)
             logger.info(f"🔍 [DEBUG] Найдено {len(posts)} постов в {channel}")
             
             for post in posts:
                 post_id = post.get("id")
+                if not post_id: continue
                 full_donor_id = f"saas_{channel}_{post_id}"
                 
-                # Проверка дубликатов
+                # ЛОГИКА ДУБЛИКАТОВ
                 conn = get_db()
                 is_processed = conn.execute("SELECT 1 FROM posts WHERE donor_post_id=?", (full_donor_id,)).fetchone()
                 conn.close()
                 
+                # Если force_post=True, мы игнорируем is_processed
                 if is_processed and not force_post:
-                    # logger.info(f"🚫 [DEBUG] Пост {post_id} уже обработан, пропускаем")
                     continue
                 
-                logger.info(f"✅ [DEBUG] Нашел НОВЫЙ пост {post_id}, запускаю process_saas_core")
+                logger.info(f"✅ [DEBUG] Отправляю пост {post_id} в процесс (force={force_post})")
                 
                 photo_url = post.get("photo_url") or post.get("thumbnail")
                 video_url = post.get("video_url")
@@ -3243,7 +3248,7 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False):
                 )
                     
         except Exception as e:
-            logger.error(f"❌ [DEBUG] Ошибка в scan_donor_channels для {channel}: {e}")
+            logger.error(f"❌ [DEBUG] Ошибка в scan_donor_channels: {e}")
 
     # --- SaaS доноры ---
     if not SAAS_DONOR_CHANNELS:
