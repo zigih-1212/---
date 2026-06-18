@@ -1253,7 +1253,7 @@ async def handle_blogger_source(message: Message, state: FSMContext) -> None:
         "✅ Источник привязан!\n\n"
         "Теперь пришлите @username вашего Telegram-канала куда будем публиковать посты:",
         parse_mode=ParseMode.HTML
-    )it state.set_state(OnboardingStates.waiting_target_choice)  # Нужно добавить состояние если отсутствует
+    await state.set_state(OnboardingStates.waiting_target_choice) # Нужно добавить состояние если отсутствует
 
 
 @router.callback_query(F.data.startswith("target:"))
