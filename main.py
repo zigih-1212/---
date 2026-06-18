@@ -696,20 +696,24 @@ async def cb_back_to_main_menu(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:main")
 async def cb_menu_main(callback: CallbackQuery) -> None:
+    try:
+        await callback.message.delete()
+    except:
+        pass
+        
     conn = get_db()
     try:
-        row = conn.execute(
-            "SELECT role FROM users WHERE user_id=?", (callback.from_user.id,)
-        ).fetchone()
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (callback.from_user.id,)).fetchone()
+        role = user["role"] if user else "blogger"
     finally:
         conn.close()
-    role = row["role"] if row else "blogger"
-    await callback.message.edit_text(
-        "🏠 <b>Главное меню</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_main_menu(role),
-    )
-    await callback.answer()
+
+    if role == "saas":
+        # Для SaaS все кнопки "Назад" ведут сразу в кабинет!
+        await show_user_cabinet(callback.message, user_id=callback.from_user.id)
+    else:
+        # Для блогера оставляем старое поведение
+        await callback.message.answer("Главное меню:", reply_markup=kb_main_menu(role))
 # =============================================================================
 # === CIRCUIT BREAKER =========================================================
 # =============================================================================
