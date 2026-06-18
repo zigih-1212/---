@@ -497,9 +497,9 @@ async def handle_user_link(message: Message):
 # === CALLBACK HANDLERS =======================================================
 # =============================================================================
 
-@router.callback_query(OnboardingStates.waiting_role, F.data.startswith("role:"))
+@router.callback_query(F.data.startswith("set_role:"))
 async def cb_set_role(callback: CallbackQuery, state: FSMContext) -> None:
-    role = callback.data.split(":")[1]
+    role = callback.data.split(":")[1]  # blogger или saas
     user_id = callback.from_user.id
     
     conn = get_db()
