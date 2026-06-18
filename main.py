@@ -2081,14 +2081,14 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         # Пользователи
         users_html = ""
         for u in users:
-            sub = str(u["subscription_until"])[:10] if u.get("subscription_until") else "—"
+            sub = str(u["subscription_until])[:10] if u.get("subscription_until") else "—"
             active = "🟢" if u["is_active"] else "🔴"
             users_html += f"""
             <tr>
                 <td>{u['user_id']}</td>
                 <td>@{u['username'] or '-'}</td>
-                <td>{u.get('role', '—')}</td>
-                <td>{u.get('channel_title', '—')}</td>
+                <td>{u["role"] if u["role"] else "—"}</td>
+                <td>{u["channel_title"] if u["channel_title"] else "—"}</td>
                 <td>{sub}</td>
                 <td class="{'active' if u['is_active'] else 'inactive'}">{active}</td>
                 <td>
@@ -2117,10 +2117,10 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             posts_html += f"""
             <tr>
                 <td>{p['id']}</td>
-                <td>@{p.get('username', '-')}</td>
-                <td>{str(p.get('donor_post_id', ''))[:30]}</td>
+                <td>@{p["username"] if p["username"] else "-"}</td>
+                <td>{str(p["donor_post_id"] if p["donor_post_id"] else "")[:30]}</td>
                 <td>{p['status']}</td>
-                <td>{pub}</td>
+                <td>{p["published_at"]}</td>
             </tr>"""
 
         html += f"""
