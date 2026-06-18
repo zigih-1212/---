@@ -399,12 +399,10 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     try:
         logger.info(f"DEBUG: Пользователь {message.from_user.id} нажал /start")
         
-        # Проверка админа
         if is_admin(message.from_user.id):
             await message.answer("👋 Панель администратора.", reply_markup=kb_admin_panel())
             return
 
-        # Работа с базой
         conn = get_db()
         try:
             user = conn.execute(
@@ -423,7 +421,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
                 
                 await message.answer(
                     "👋 <b>Добро пожаловать в AutoPost!</b>\n\n"
-                    "Автоматический постинг с партнёрскими ссылками и ERID.\n\n"
+                    "Автоматический постинг контента с партнёрскими ссылками и ERID.\n\n"
                     "Нажмите кнопку ниже для входа в кабинет:",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -432,9 +430,16 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
                 )
                 return
 
-            # Уже есть в базе
-            if not user.get("channel_id"):
-                await message.answer("⚠️ Вы ещё не привязали канал. Перешлите сообщение или отправьте @username.")
+            # Пользователь уже существует
+            # Правильная проверка для sqlite3.Row
+            channel_id = user["channel_id"] if user else None
+            
+            if not channel_id:
+                await message.answer(
+                    "⚠️ Вы ещё не привязали канал.\n\n"
+                    "Перешлите любое сообщение из вашего канала или отправьте <code>@username</code>.",
+                    parse_mode=ParseMode.HTML
+                )
             else:
                 await show_user_cabinet(message)
                 
@@ -1347,7 +1352,6 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
 
 
 async def show_user_cabinet(message: Message) -> None:
-    """Личный кабинет обычного пользователя (SaaS / Blogger)."""
     user_id = message.from_user.id
     conn = get_db()
     try:
