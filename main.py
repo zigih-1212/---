@@ -3116,7 +3116,6 @@ async def process_saas_core(
     video_url: Optional[str] = None,
     force_post: bool = False
 ) -> None:
-        logger.info(f"DEBUG: Начало process_saas_core для {donor_post_id} (force_post={force_post})")
     """Универсальное ядро SaaS: парсит -> уникализирует AI -> ERID -> рассылает и закрепляет."""
     
     # 1. Извлекаем товары
@@ -3124,9 +3123,9 @@ async def process_saas_core(
     if not products:
         logger.info(f"🚫 [SaaS] Пропуск {donor_post_id}: в посте нет товаров")
         return
-        
+
     first_product = products[0]
-    sku = first_product['value'] # Используем ['ключ']
+    sku = first_product['value']
     marketplace = first_product['marketplace'] if 'marketplace' in first_product else 'wb'
 
     if not sku:
@@ -3223,16 +3222,13 @@ async def process_saas_core(
                 # 9. Авто-закреп
                 if user['auto_pin']:
                     try:
-                        # Исправлено: msg.message_id (вместо msg.message.id)
                         await bot.pin_chat_message(chat_id=channel_id, message_id=msg.message_id, disable_notification=True)
                     except Exception as e:
                         logger.error(f"Не удалось закрепить в {channel_id}: {e}")
                 
                 logger.info(f"✅ [SaaS] Пост опубликован для {user_id} в {channel_id}")
-
-
-
-
+                
+              
 # =============================================================================
 # === MAIN ENTRYPOINT =========================================================
 # =============================================================================
