@@ -1252,7 +1252,7 @@ async def handle_blogger_source(message: Message, state: FSMContext) -> None:
     await message.answer(
         "✅ Источник привязан!\n\n"
         "Теперь пришлите @username вашего Telegram-канала куда будем публиковать посты:",
-        parse_mode=ParseMode.HTML
+        )parse_mode=ParseMode.HTML
     await state.set_state(OnboardingStates.waiting_target_choice) # Нужно добавить состояние если отсутствует
 
 
