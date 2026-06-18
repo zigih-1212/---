@@ -3116,12 +3116,10 @@ async def process_saas_core(
     video_url: Optional[str] = None,
     force_post: bool = False
 ) -> None:
-    """Универсальное ядро SaaS: парсит -> уникализирует AI -> ERID -> рассылает и закрепляет."""
     
     # 1. Извлекаем товары
     products = find_product_links(text)
     if not products:
-        logger.info(f"🚫 [SaaS] Пропуск {donor_post_id}: в посте нет товаров")
         return
 
     first_product = products[0]
@@ -3135,32 +3133,18 @@ async def process_saas_core(
     clean_text = re.sub(r'http\S+', '', text).strip()
     rewritten_text = await rewrite_text_with_ai(clean_text)
 
-    # 3. Достаем всех активных SaaS клиентов
+    # 3. Активные пользователи
     conn = get_db()
     try:
-        saas_users = conn.execute("""
-            SELECT user_id, api_key, sub_id, filter_wb, filter_ozon, auto_pin 
-            FROM users 
-            WHERE role='saas' AND is_active=1 
-            AND (subscription_until IS NULL OR subscription_until > datetime('now'))
-        """).fetchall()
+        saas_users = conn.execute("SELECT user_id, api_key, sub_id, filter_wb, filter_ozon, auto_pin FROM users WHERE role='saas' AND is_active=1").fetchall()
     finally:
         conn.close()
 
-    if not saas_users:
-        logger.info(f"🚫 [SaaS] Нет активных пользователей для публикации {donor_post_id}")
-        return
-
     for user in saas_users:
         user_id = user['user_id']
+        if marketplace == 'wb' and not user['filter_wb']: continue
+        if marketplace == 'ozon' and not user['filter_ozon']: continue
 
-        # 4. Проверяем настройки маркетплейсов
-        if marketplace == 'wb' and not user['filter_wb']:
-            continue
-        if marketplace == 'ozon' and not user['filter_ozon']:
-            continue
-
-        # 5. Достаём каналы юзера
         conn = get_db()
         channels = conn.execute("SELECT channel_id FROM channels WHERE user_id=? AND is_active=1", (user_id,)).fetchall()
         conn.close()
@@ -3168,62 +3152,29 @@ async def process_saas_core(
         for ch in channels:
             channel_id = ch['channel_id']
 
-            # --- ЛОГИКА НОЧНОГО РЕЖИМА ---
+            # ЛОГИКА: Если НЕ force_post, проверяем время
             if not force_post:
                 msk_time = datetime.now(timezone(timedelta(hours=3)))
                 if msk_time.hour < 8 or msk_time.hour >= 23:
                     from main import add_to_night_queue
-                    await add_to_night_queue(
-                        user_id=user_id, video_id=donor_post_id, description=text,
-                        sku=sku, photo_url=photo_url, marketplace=marketplace
-                    )
-                    logger.info(f"🌙 [SaaS] Ночная очередь для {user_id} в канал {channel_id}")
-                    continue
+                    await add_to_night_queue(user_id, donor_post_id, text, sku, photo_url, marketplace)
+                    continue # Ушло в очередь, идем к следующему
 
-            # 6. Получаем ERID
+            # Публикация (если force_post=True, мы пролетели проверку времени и попали сюда)
             erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
-            if not erid_data:
-                logger.warning(f"⚠️ [SaaS] Ошибка ERID для {sku}, пропускаем канал {channel_id}")
-                continue
+            if not erid_data: continue
 
             affiliate_url = erid_data.get("link", f"https://www.wildberries.ru/catalog/{sku}/detail.aspx" if marketplace=="wb" else f"https://ozon.ru/context/detail/id/{sku}")
             erid = erid_data.get("erid", "")
-            advertiser = erid_data.get("advertiser", "Рекламодатель")
+            
+            final_caption = f"{rewritten_text}\n\n🛒 <b>Артикул:</b> <code>{sku}</code>\n\n<a href='{affiliate_url}'>👉 Заказать</a>\n\n<i>Реклама. Erid: {erid}</i>"
 
-            # 7. Формируем пост
-            final_caption = (
-                f"{rewritten_text}\n\n"
-                f"🛒 <b>Артикул ({marketplace.upper()}):</b> <code>{sku}</code>\n\n"
-                f"<a href='{affiliate_url}'>👉 Посмотреть и заказать</a>\n\n"
-                f"<i>Реклама. {advertiser}. Erid: {erid}</i>"
-            )
-
-            # 8. Публикация
-            msg = await publish_post_with_fallback(
-                bot=bot,
-                channel_id=channel_id,
-                caption=final_caption,
-                photo_url=photo_url,
-                video_url=video_url
-            )
-
-            if msg:
-                # Отмечаем в базе
-                conn = get_db()
+            msg = await publish_post_with_fallback(bot, channel_id, final_caption, photo_url, video_url)
+            
+            if msg and user['auto_pin']:
                 try:
-                    conn.execute("""
-                        INSERT INTO posts (user_id, donor_post_id, channel_id, sku, erid, status, published_at)
-                        VALUES (?, ?, ?, ?, ?, 'published', CURRENT_TIMESTAMP)
-                    """, (user_id, donor_post_id, channel_id, sku, erid))
-                    conn.commit()
-                finally:
-                    conn.close()
-
-                # 9. Авто-закреп
-                if user['auto_pin']:
-                    try:
-                        await bot.pin_chat_message(chat_id=channel_id, message_id=msg.message_id, disable_notification=True)
-                    except Exception as e:
+                    await bot.pin_chat_message(channel_id, msg.message_id, disable_notification=True)
+                except: pass
                         logger.error(f"Не удалось закрепить в {channel_id}: {e}")
                 
                 logger.info(f"✅ [SaaS] Пост опубликован для {user_id} в {channel_id}")
@@ -3626,20 +3577,13 @@ async def cb_saas_toggles(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
-    # 1. Отвечаем мгновенно
-    await callback.answer("🚀 Запускаю сканирование...", show_alert=True)
-    # Передаем force_post=True
+    await callback.answer("🚀 Запускаю...", show_alert=True)
     await scan_donor_channels(bot, force_post=True)
-    await callback.message.answer("✅ Сканирование выполнено!")
-    await cb_settings(callback)
     
     try:
-        # 2. Выполняем логику
-        await scan_donor_channels(bot, force_post=True)
-        await callback.message.answer("✅ Сканирование выполнено. Посты в обработке.")
-    except Exception as e:
-        logger.error(f"Критическая ошибка в Force Post: {e}")
-        await callback.message.answer("❌ Ошибка при запуске: " + str(e))
+        await callback.message.answer("✅ Принудительная публикация запущена.")
+    except Exception:
+        pass
     
     try:
         await cb_settings(callback)
