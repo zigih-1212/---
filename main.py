@@ -2113,7 +2113,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         # Посты
         posts_html = ""
         for p in posts:
-            pub = str(p.get("published_at"))[:16] if p.get("published_at") else "—"
+            pub = str(p.get("published_at"))[:16] if p.get("published_at") else "-"
             posts_html += f"""
             <tr>
                 <td>{p['id']}</td>
@@ -2156,14 +2156,14 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         # ====================== ФОРМИРОВАНИЕ ТАБЛИЦ ======================
         users_rows = ""
         for u in users:
-            sub = str(u["subscription_until"])[:10] if u.get("subscription_until") else "—"
+            sub = str(u["subscription_until"])[:10] if u.get("subscription_until") else "-"
             active = "🟢" if u["is_active"] else "🔴"
             users_rows += f"""
             <tr>
                 <td><a href="/admin/user/{u['user_id']}" style="color:#3498db;">{u['user_id']}</a></td>
                 <td>@{u['username'] or '-'}</td>
                 <td>{role_badge(u.get('role', ''))}</td>
-                <td>{u.get('channel_title', '—')}</td>
+                <td>{u.get('channel_title', '-')}</td>
                 <td>{sub}</td>
                 <td>{active}</td>
                 <td>
@@ -2177,7 +2177,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
         posts_rows = ""
         for p in posts:
-            pub = str(p.get("published_at"))[:16] if p.get("published_at") else "—"
+            pub = str(p.get("published_at"))[:16] if p.get("published_at") else "-"
             posts_rows += f"""
             <tr>
                 <td>{p['id']}</td>
@@ -2479,7 +2479,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
         rows = ""
         for u in users:
-            sub = str(u["subscription_until"])[:10] if u["subscription_until"] else "—"
+            sub = str(u["subscription_until"])[:10] if u["subscription_until"] else "-"
             now = datetime.now(timezone.utc)
             try:
                 sub_dt = datetime.fromisoformat(str(u["subscription_until"]).replace("Z", "+00:00")) if u["subscription_until"] else None
