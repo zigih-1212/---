@@ -366,7 +366,7 @@ def kb_payment_methods() -> InlineKeyboardMarkup:
             text="⭐ Telegram Stars", 
             callback_data="pay:stars"
         )],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
+        InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")
     ])
 
 def calc_payout(amount_blogger: float) -> dict:
@@ -566,7 +566,7 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
             "📊 <b>Статистика</b>\n\nУ вас ещё нет подключённых каналов.",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
+                InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")
             ])
         )
         return
@@ -1156,7 +1156,7 @@ def kb_tariffs(traffic_source: str) -> InlineKeyboardMarkup:
         rows.append([
             InlineKeyboardButton(text="💎 TON-крипта", callback_data="buy:card:ton"),
         ])
-    rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
+    InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -1168,7 +1168,7 @@ def kb_filter_settings(wb: int, ozon: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text=f"{'✅' if ozon else '❌'} Ozon", callback_data="filter:toggle:ozon"
         )],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
+        InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open"),
     ])
 
 
@@ -1695,7 +1695,7 @@ async def cb_menu_instructions(callback: CallbackQuery) -> None:
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="👤 Для блогеров", callback_data="instr:blogger")],
             [InlineKeyboardButton(text="🔑 Для SaaS", callback_data="instr:saas")],
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
+            InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")
         ]),
     )
     await callback.answer()
