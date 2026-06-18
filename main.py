@@ -393,21 +393,23 @@ def calc_payout(amount_blogger: float) -> dict:
 # =============================================================================
 
 # =============================================================================
-# === ОБРАБОТЧИК /start =======================================================
+# === ОБРАБОТЧИКИ КОМАНД /start И /cabinet ====================================
 # =============================================================================
+
+@router.message(Command("cabinet"))
+async def cmd_cabinet(message: Message) -> None:
+    # Новая команда, которая просто вызывает Личный кабинет напрямую
+    await show_user_cabinet(message, user_id=message.from_user.id)
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
-    # 1. Сбрасываем любые зависшие состояния пользователя
     await state.clear()
     
     try:
-        # 2. Пропускаем админа в админ-панель
         if is_admin(message.from_user.id):
             await message.answer("👋 Добро пожаловать в Панель администратора.", reply_markup=kb_admin_panel())
             return
 
-        # 3. Логика обычного пользователя
         conn = get_db()
         try:
             user = conn.execute("SELECT role, channel_id FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
@@ -428,15 +430,13 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
                 await message.answer("👋 Добро пожаловать в бота! Выберите вашу роль:", reply_markup=kb)
                 await state.set_state(OnboardingStates.waiting_role)
                 
-            # ИСПРАВЛЕНИЕ: Проверяем привязку канала ТОЛЬКО для блогеров.
-            # Если это SaaS, эта проверка игнорируется.
             elif user["role"] == "blogger" and not user["channel_id"]:
-                await message.answer("⚠️ Вы ещё не привязали свой канал.\nПерешлите любое сообщение из вашего канала или отправьте его @username.")
+                await message.answer("⚠️ Вы ещё не привязали свой канал.\nПерешлите сообщение из канала.")
                 await state.set_state(OnboardingStates.waiting_source_channel)
                 
             else:
-                # Если это SaaS-клиент или настроенный блогер — показываем Личный Кабинет
-                await show_user_cabinet(message)
+                # Если пользователь уже зарегистрирован — старт НИЧЕГО не делает
+                pass 
                 
         finally:
             conn.close()
