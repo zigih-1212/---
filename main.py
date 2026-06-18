@@ -3601,16 +3601,14 @@ async def cb_saas_toggles(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
-    """Принудительный запуск сканирования и публикации"""
-    
-    await callback.answer("⏳ Запускаю сканирование...", show_alert=False)
+    await callback.answer("⏳ Запускаю принудительную публикацию...", show_alert=True)
     
     try:
         # Запускаем основной сканер
         # Он сам пройдет по всем донорам и опубликует всё, что готово
         await scan_donor_channels(bot)
         
-        await callback.message.answer("✅ Сканирование и публикация успешно запущены!")
+        await callback.message.answer("✅ Команда принята. Проверяю доноров...")
     except Exception as e:
         logger.error(f"Ошибка при Force Post: {e}")
         await callback.message.answer("❌ Произошла ошибка при запуске публикации.")
