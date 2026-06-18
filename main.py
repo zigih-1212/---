@@ -3633,7 +3633,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.message.answer("✅ Сканирование выполнено!")
     await cb_settings(callback)
     
-    ry:
+    try:
         # 2. Выполняем логику
         await scan_donor_channels(bot, force_post=True)
         await callback.message.answer("✅ Сканирование выполнено. Посты в обработке.")
