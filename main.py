@@ -444,7 +444,6 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     except Exception as e:
         logger.error(f"Ошибка в cmd_start: {e}")
         await message.answer("❌ Произошла ошибка при запуске. Пожалуйста, попробуйте позже.")
-        )
       
 @router.message(Command("debug_scan"))
 async def debug_scan(message: Message):
