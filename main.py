@@ -1108,7 +1108,7 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
 
 def kb_main_menu(role: str) -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="menu:main")],  # Главная кнопка
+        [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")],
         [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
         [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
         [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
@@ -1117,6 +1117,7 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
     if role == "blogger":
         buttons.insert(1, [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")])
         buttons.insert(2, [InlineKeyboardButton(text="⚙️ Режим публикации", callback_data="menu:pub_mode")])
+        buttons.insert(3, [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")])
     elif role == "saas":
         buttons.insert(1, [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")])
         buttons.insert(2, [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")])
@@ -1185,7 +1186,10 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
 
 
 
-
+@router.callback_query(F.data == "cabinet:open")
+async def cb_open_cabinet(callback: CallbackQuery) -> None:
+    await show_user_cabinet(callback.message)
+    await callback.answer()
 
 @router.message(Command("force_trial"))
 async def force_trial(message: Message):
