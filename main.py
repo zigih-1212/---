@@ -58,6 +58,14 @@ from parser import (
 from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats, STAT_PERIODS
 print("DEBUG: all imports done", flush=True, file=sys.stderr)
 
+DB_PATH: str = "/app/data/autopost.db"
+
+def get_db():
+    db = sqlite3.connect(DB_PATH, timeout=30)
+    db.row_factory = sqlite3.Row
+    db.execute("PRAGMA journal_mode=WAL;")
+    return db
+
 def load_settings():
     """Загружает настройки из БД. Если настройки нет – берёт из переменной окружения."""
     defaults = {
@@ -166,16 +174,7 @@ class ErrorLoggingMiddleware(BaseMiddleware):
             logger.exception(f"Ошибка при обработке события: {e}")
             raise
 
-# =============================================================================
-# === БАЗА ДАННЫХ (синхронная для FastAPI/хендлеров) ==========================
-# =============================================================================
-def get_db():
-    db = sqlite3.connect(DB_PATH, timeout=30)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode=WAL;")
-    return db
-
-
+init_db()
 # =============================================================================
 # === ИНИЦИАЛИЗАЦИЯ БД ========================================================
 # =============================================================================
