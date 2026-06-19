@@ -41,6 +41,9 @@ from aiogram.types import (
     SuccessfulPayment,
     TelegramObject,
     WebAppInfo,
+    BotCommand,
+    BotCommandScopeDefault,
+    BotCommandScopeChat,
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request, HTTPException
@@ -2458,6 +2461,29 @@ async def main() -> None:
     server = uvicorn.Server(config)
 
     logger.info(f"🌐 Web Admin Panel доступен по адресу: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
+
+      # Установка команд для обычных пользователей
+    await bot.set_my_commands(
+        commands=[
+            BotCommand(command="start", description="Главное меню"),
+            BotCommand(command="cabinet", description="Личный кабинет"),
+        ],
+        scope=BotCommandScopeDefault(),
+    )
+
+    # Установка команд для администраторов
+    for admin_id in ADMIN_IDS:
+        await bot.set_my_commands(
+            commands=[
+                BotCommand(command="start", description="Панель администратора"),
+                BotCommand(command="cabinet", description="Панель администратора"),
+                BotCommand(command="debug_scan", description="Принудительное сканирование доноров"),
+                BotCommand(command="debug_sub", description="Проверить подписку пользователя"),
+                BotCommand(command="force_trial", description="Выдать тестовые 3 дня"),
+                BotCommand(command="fix_channels", description="Удалить дубликаты каналов"),
+            ],
+            scope=BotCommandScopeChat(chat_id=admin_id),
+        )
 
     try:
         await asyncio.gather(
