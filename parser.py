@@ -1,44 +1,43 @@
 """
 ПАРСЕР КОНТЕНТА
 Отдельный модуль для всей логики парсинга (yt-dlp + обработка описаний)
+Версия, согласованная с новым main.py (SaaS через process_saas_core, resolve_erid, scan_donor_channels)
 """
 
 import asyncio
 import logging
 import os
 import re
-import random
 import sqlite3
-from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 import httpx
 import yt_dlp
-from aiogram import Bot
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger("parser")
 
 DB_PATH = os.getenv("DB_PATH", "/app/data/autopost.db")
 TAKPRODAM_MASTER_TOKEN = os.getenv("TAKPRODAM_MASTER_TOKEN")
 ADMIN_VIP_CHANNEL_ID = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "0"))
-SAAS_DONOR_CHANNELS: list[str] = [
-    x.strip() for x in os.getenv("SAAS_DONOR_CHANNELS", "").split(",") if x.strip()
-]
-MASTER_TOKEN_EVERY_N: int = int(os.getenv("MASTER_TOKEN_EVERY_N", "70"))
 
 
+# =============================================================================
+# === БАЗА ДАННЫХ (СИНХРОННАЯ) ================================================
+# =============================================================================
 def get_db():
+    """Синхронное подключение к SQLite. Используется для быстрых операций."""
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 # =============================================================================
-# === ИЗВЛЕЧЕНИЕ ВИДЕО ========================================================
+# === ИЗВЛЕЧЕНИЕ ВИДЕО (yt-dlp) ==============================================
 # =============================================================================
-
 def extract_video_info(url: str) -> Optional[Dict[str, Any]]:
+    """Извлекает метаданные видео/поста из YouTube, TikTok и др."""
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -69,16 +68,26 @@ def extract_video_info(url: str) -> Optional[Dict[str, Any]]:
 
 
 # =============================================================================
-# === ПОИСК ТОВАРОВ ===========================================================
+# === ПОИСК ТОВАРОВ (SKU / URL) ==============================================
 # =============================================================================
-
-def find_product_links(description: str) -> list[Dict[str, str]]:
+def find_product_links(description: str) -> List[Dict[str, str]]:
+    """
+    Ищет в тексте артикулы (SKU) и прямые ссылки на Wildberries / Ozon.
+    Возвращает список словарей с ключами:
+      - type: 'sku' или 'url'
+      - value: сам артикул или URL
+      - marketplace: 'wb' или 'ozon' (если определён)
+    """
     if not description:
         return []
     links = []
+
+    # Прямые URL
     url_pattern = re.compile(r'https?://(?:www\.)?(wildberries\.ru|ozon\.ru)[^\s<>"]+')
     for match in url_pattern.finditer(description):
         links.append({"type": "url", "value": match.group(0)})
+
+    # SKU: упоминания с префиксами или просто 8-10 цифр
     sku_patterns = [
         r'(?:арт|артикул|wb|ozon|id)[:\s]*([A-Za-z0-9-]{6,12})',
         r'\b(\d{8,10})\b',
@@ -86,16 +95,21 @@ def find_product_links(description: str) -> list[Dict[str, str]]:
     for pattern in sku_patterns:
         for match in re.finditer(pattern, description, re.IGNORECASE):
             sku = match.group(1)
+            # Определяем маркетплейс по контексту (грубо)
             marketplace = 'wb' if any(x in description.lower() for x in ['wb', 'wildberries']) else 'ozon'
             links.append({"type": "sku", "value": sku, "marketplace": marketplace})
+
     return links
 
 
 # =============================================================================
-# === API ТАКПРОДАМ ===========================================================
+# === API ТАКПРОДАМ (МАСТЕР-ТОКЕН) ===========================================
 # =============================================================================
-
 async def get_product_data(sku: str, sub_id: str) -> Optional[Dict]:
+    """
+    Получение партнёрской ссылки, ERID и рекламодателя через мастер-токен.
+    Используется для БЛОГЕРОВ (твой мастер-аккаунт).
+    """
     if not TAKPRODAM_MASTER_TOKEN:
         return None
     url = "https://api.takprodam.ru/v1/products/info"
@@ -119,6 +133,10 @@ async def get_product_data(sku: str, sub_id: str) -> Optional[Dict]:
 
 
 async def get_product_data_by_token(token: str, sub_id: str) -> Optional[Dict]:
+    """
+    Получение данных через КЛИЕНТСКИЙ токен (SaaS-клиент).
+    Возвращает {erid, advertiser, link} или None.
+    """
     url = "https://api.takprodam.ru/v1/products/info"
     headers = {"Authorization": f"Bearer {token}"}
     try:
@@ -138,43 +156,69 @@ async def get_product_data_by_token(token: str, sub_id: str) -> Optional[Dict]:
 
 
 # =============================================================================
-# === ПУБЛИКАЦИЯ БЛОГЕР =======================================================
+# === AI REWRITE (DeepInfra / запасной) ======================================
 # =============================================================================
+async def rewrite_text_with_ai(text: str) -> str:
+    """
+    Рерайт текста через AI. Если ключ не задан, возвращает исходный текст.
+    Использует DeepInfra (из переменной DEEPINFRA_API_KEY в main).
+    Чтобы избежать циклического импорта, читаем переменную окружения здесь.
+    """
+    api_key = os.getenv("DEEPINFRA_API_KEY", "")
+    if not api_key:
+        return text
 
-# --- ИСПРАВЛЕНИЕ: ХЕЛПЕРЫ ДЛЯ РАБОТЫ ---
+    url = "https://api.deepinfra.com/v1/openai/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    payload = {
+        "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+        "messages": [{"role": "user", "content": (
+            f"Перепиши текст для рекламного поста в Telegram, сохранив суть: {text}"
+        )}],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+        if resp.status_code == 200:
+            return resp.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        logger.error(f"Ошибка AI-рерайта: {e}")
+    return text
+
+
+# =============================================================================
+# === ПРОВЕРКА ДУБЛИКАТОВ (БЛОГЕР) ===========================================
+# =============================================================================
 def is_video_processed(video_id: str) -> bool:
-    """Проверяет, был ли пост уже опубликован"""
+    """Проверяет, был ли пост уже опубликован (по donor_post_id)."""
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT 1 FROM posts WHERE donor_post_id = ? LIMIT 1", 
+            "SELECT 1 FROM posts WHERE donor_post_id = ? LIMIT 1",
             (video_id,)
         ).fetchone()
         return row is not None
     finally:
         conn.close()
 
-async def rewrite_text_with_ai(text: str) -> str:
-    """Заглушка рерайта, если нет API нейронки"""
-    # Если используешь Gemini/GPT, вставь код вызова сюда
-    return text
 
-async def get_product_data_by_token(api_key: str, sub_id: str):
-    """Логика получения данных о товаре через API"""
-    # Это заглушка. Если есть API TakProdam, вставь код запроса сюда
-    return {"erid": None, "advertiser": "Реклама"}
-
-
+# =============================================================================
+# === ПУБЛИКАЦИЯ ДЛЯ БЛОГЕРА =================================================
+# =============================================================================
 async def process_new_video(
-    bot: Bot,
+    bot,        # aiogram.Bot
     user_id: int,
     video_id: str,
     description: str,
-    sku: Optional[str],
-    photo_url: Optional[str],
-    marketplace: str = 'wb'
+    sku: Optional[str] = None,
+    photo_url: Optional[str] = None,
+    marketplace: str = 'wb',
 ):
-    """Формирует пост с учётом ночного режима и авто-закрепления"""
+    """
+    Публикует пост для блогера: проверяет ночной режим,
+    получает партнёрские данные через мастер-токен, собирает подпись
+    и отправляет в канал блогера (или VIP-канал).
+    """
     conn = get_db()
     try:
         user = conn.execute(
@@ -191,14 +235,14 @@ async def process_new_video(
         auto_pin = bool(user["auto_pin"] if user["auto_pin"] is not None else 1)
 
         target_channel = str(ADMIN_VIP_CHANNEL_ID) if blogger_mode == "vip_pin" else user["channel_id"]
-
         if not target_channel:
             return
 
-        # === НОЧНОЙ РЕЖИМ (00:00 - 08:00 МСК) ===
+        # Ночной режим (00:00 – 08:00 МСК)
         now_msk = datetime.now(timezone(timedelta(hours=3)))
         if now_msk.hour < 8:
             logger.info(f"🌙 Ночной режим: пост {video_id} → night_queue")
+            # Импортируем здесь, чтобы избежать цикла
             from main import add_to_night_queue
             await add_to_night_queue(
                 user_id=user_id,
@@ -217,7 +261,7 @@ async def process_new_video(
             caption = (
                 f"🎬 <b>{video_title}</b>\n\n"
                 f"💰 Цена: {product_info['price']}\n\n"
-                f'<a href="{product_info["link"]}">👉 Купить товар из видео</a>\n\n'
+                f"<a href=\"{product_info['link']}\">👉 Купить товар из видео</a>\n\n"
                 f"<i>Реклама. {product_info['advertiser']}. Erid: {product_info['erid']}</i>"
             )
             erid_to_save = product_info['erid']
@@ -251,6 +295,7 @@ async def process_new_video(
                         "INSERT INTO pinned_posts (chat_id, message_id, unpin_at) VALUES (?, ?, ?)",
                         (target_channel, msg.message_id, unpin_time.isoformat())
                     )
+                    conn.commit()
                 except Exception as pin_e:
                     logger.warning(f"Не удалось закрепить пост: {pin_e}")
 
@@ -275,167 +320,48 @@ async def process_new_video(
 
 
 # =============================================================================
-# === ПУБЛИКАЦИЯ SAAS =========================================================
+# === ВЕБ-СКРАПИНГ TELEGRAM-КАНАЛОВ (SAAS) ===================================
 # =============================================================================
-
-async def process_saas_post(bot: Bot, post_text: str, post_id: str, image_url: Optional[str] = None, force_post: bool = False):
-    """Умный растянутый лимит: 25 постов с 8:00 до 23:00"""
-    conn = get_db()
-    try:
-        saas_users = conn.execute("""
-            SELECT u.user_id, u.api_key, u.sub_id, 
-                   c.channel_id, c.max_posts_per_day
-            FROM users u
-            JOIN channels c ON c.user_id = u.user_id 
-            WHERE u.role = 'saas' 
-              AND u.is_active = 1 
-              AND c.is_active = 1
-        """).fetchall()
-    finally:
-        conn.close()
-
-    if not saas_users:
-        return
-
-    now = datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    day_start_msk = today_start + timedelta(hours=3)  # 00:00 МСК
-
-    for user in saas_users:
-        try:
-            user_id = user['user_id']
-            channel_id = user['channel_id']
-            # Исправлено: замена .get() на прямое обращение
-            max_posts = user['max_posts_per_day'] if user['max_posts_per_day'] is not None else 25
-            db_post_id = f"saas_{post_id}_{channel_id}"
-
-            if is_video_processed(db_post_id):
-                continue
-
-            conn = get_db()
-            try:
-                # Сколько уже опубликовано сегодня
-                posted_today_row = conn.execute("""
-                    SELECT COUNT(*) as cnt 
-                    FROM posts 
-                    WHERE channel_id = ? 
-                    AND published_at >= ?
-                    AND status = 'published'
-                """, (channel_id, day_start_msk.isoformat())).fetchone()
-                
-                posted_today = posted_today_row['cnt'] if posted_today_row else 0
-
-                if posted_today >= max_posts:
-                    continue
-
-                # Проверка времени публикации (только 8:00 - 23:00 МСК)
-                # msk_time = datetime.now(timezone(timedelta(hours=3)))
-                 #if not force_post and (msk_time.hour < 8 or msk_time.hour >= 23):
-                   #  from main import add_to_night_queue
-                     # await add_to_night_queue(
-                        # user_id=user_id, video_id=post_id, description=post_text,
-                      #  sku=None, photo_url=image_url, marketplace="saas"
-                    # )
-                    # continue
-
-                # === Растягивание: проверяем, когда был последний пост ===
-                last_post = conn.execute("""
-                    SELECT published_at FROM posts 
-                    WHERE channel_id = ? AND status = 'published'
-                    ORDER BY published_at DESC LIMIT 1
-                """, (channel_id,)).fetchone()
-
-                if last_post and last_post['published_at']:
-                    last_time = datetime.fromisoformat(last_post['published_at'].replace("Z", "+00:00"))
-                    minutes_since_last = (now - last_time).total_seconds() / 60
-
-                    # Примерно 1 пост каждые 36 минут (25 постов за 15 часов)
-                    if minutes_since_last < 34:
-                        continue  # слишком рано для следующего поста
-
-            finally:
-                conn.close()
-
-            # === AI Рерайт + ТакПродам ===
-            rewritten = await rewrite_text_with_ai(post_text or "Новое поступление!")
-
-            product_info = None
-            # Исправлено: замена .get() на обращение к ключу ['api_key']
-            if user['api_key']:
-                product_info = await get_product_data_by_token(user['api_key'], user['sub_id'])
-
-            if product_info and isinstance(product_info, dict) and product_info.get("erid"):
-                caption = (
-                    f"{rewritten}\n\n"
-                    f'<a href="{product_info.get("link", "#")}">👉 Купить по партнёрской ссылке</a>\n\n'
-                    f"<i>Реклама. {product_info.get('advertiser', 'Партнёр')}. Erid: {product_info.get('erid')}</i>"
-                )
-            else:
-                caption = f"{rewritten}\n\n<i>Реклама</i>"
-
-            # Публикация
-            if image_url:
-                await bot.send_photo(chat_id=channel_id, photo=image_url, caption=caption, parse_mode="HTML")
-            else:
-                await bot.send_message(chat_id=channel_id, text=caption, parse_mode="HTML")
-
-            # Сохранение
-            conn = get_db()
-            conn.execute("""
-                INSERT INTO posts 
-                (user_id, donor_post_id, channel_id, target_channel_id, 
-                 traffic_source, status, published_at)
-                VALUES (?, ?, ?, ?, 'saas_donor', 'published', ?)
-            """, (user_id, db_post_id, channel_id, channel_id, now.isoformat()))
-            conn.commit()
-            conn.close()
-
-            logger.info(f"✅ SaaS пост опубликован в {channel_id} ({posted_today+1}/{max_posts})")
-            await asyncio.sleep(3)
-
-        except Exception as e:
-            logger.error(f"Ошибка process_saas_post для {user_id}: {e}")
-            
-# =============================================================================
-# === RSS TELEGRAM =============================================================
-# =============================================================================
-
-async def fetch_telegram_channel_posts(channel: str):
-    """Парсинг публичной веб-версии Telegram-канала (Web Scraping)."""
+async def fetch_telegram_channel_posts(channel: str) -> List[Dict[str, str]]:
+    """
+    Парсинг публичной веб-версии Telegram-канала (Web Scraping).
+    Используется для получения постов из каналов-доноров.
+    Возвращает список постов с полями id, text, image_url, channel.
+    """
     username = channel.lstrip("@").strip()
     url = f"https://t.me/s/{username}"
-    
+
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    
+
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(url, headers=headers)
-            
+
         if resp.status_code != 200:
             logger.warning(f"Web Scraping {username}: статус {resp.status_code}")
             return []
-            
+
         soup = BeautifulSoup(resp.text, 'html.parser')
         posts = []
-        
         messages = soup.find_all('div', class_='tgme_widget_message')
-        
+
         for msg in messages:
             msg_id_attr = msg.get('data-post')
             if not msg_id_attr:
                 continue
             post_id = msg_id_attr.split('/')[-1]
-            
+
             text_div = msg.find('div', class_='tgme_widget_message_text')
             text = text_div.get_text(separator='\n') if text_div else ""
-            
+
             image_url = None
             img_style = msg.find('a', class_='tgme_widget_message_photo_wrap')
             if img_style and 'background-image:url(' in img_style.get('style', ''):
                 image_url = img_style['style'].split("background-image:url('")[1].split("')")[0]
-                
+
             if post_id and text:
                 posts.append({
                     "id": post_id,
@@ -443,9 +369,9 @@ async def fetch_telegram_channel_posts(channel: str):
                     "image_url": image_url,
                     "channel": channel
                 })
-                
+
         return posts
-        
+
     except Exception as e:
         logger.error(f"Ошибка при парсинге {username}: {e}")
         return []
