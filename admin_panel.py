@@ -970,6 +970,7 @@ button{{padding:6px 12px;background:#3498db;border:none;color:#fff;border-radius
             if tariff:
                 new_date = (datetime.now(timezone.utc) + timedelta(days=tariff["days"])).isoformat()
                 conn.execute("UPDATE users SET subscription_until=?, is_active=1 WHERE user_id=?", (new_date, user_id))
+                conn.execute("UPDATE users SET tariff_id = ? WHERE user_id = ?", (tariff_id, user_id))
                 conn.commit()
         finally:
             conn.close()
