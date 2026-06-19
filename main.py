@@ -56,7 +56,7 @@ from parser import (
     is_video_processed,
 )
 from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats, STAT_PERIODS
-
+print("DEBUG: all imports done", flush=True, file=sys.stderr)
 # =============================================================================
 # === LOGGING =================================================================
 # =============================================================================
@@ -112,6 +112,7 @@ DB_PATH: str = "/app/data/autopost.db"
 # =============================================================================
 # === MIDDLEWARE ==============================================================
 # =============================================================================
+print("DEBUG: starting class definitions", flush=True, file=sys.stderr)
 class ErrorLoggingMiddleware(BaseMiddleware):
     async def __call__(self, handler, event: TelegramObject, data: dict):
         try:
@@ -936,10 +937,11 @@ async def publish_post_with_fallback(
     except TelegramAPIError as e:
         logger.error(f"Ошибка текста: {e}")
         return None
-
-      # =============================================================================
+      
+# =============================================================================
 # === ROUTER & HANDLERS =======================================================
 # =============================================================================
+print("DEBUG: creating router", flush=True, file=sys.stderr)
 router = Router()
 
 # ---------------------------------------------------------------------------
