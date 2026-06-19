@@ -2450,6 +2450,34 @@ async def main() -> None:
     scheduler.start()
     logger.info("Планировщик (APScheduler) запущен")
 
+    # ---------- Установка команд ----------
+    # Обычные пользователи
+    await bot.set_my_commands(
+        commands=[
+            BotCommand(command="start", description="Главное меню"),
+            BotCommand(command="cabinet", description="Личный кабинет"),
+        ],
+        scope=BotCommandScopeDefault(),
+    )
+
+    # Администраторы (каждого отдельно, с защитой)
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.set_my_commands(
+                commands=[
+                    BotCommand(command="start", description="Панель администратора"),
+                    BotCommand(command="cabinet", description="Панель администратора"),
+                    BotCommand(command="debug_scan", description="Принудительное сканирование доноров"),
+                    BotCommand(command="debug_sub", description="Проверить подписку пользователя"),
+                    BotCommand(command="force_trial", description="Выдать тестовые 3 дня"),
+                    BotCommand(command="fix_channels", description="Удалить дубликаты каналов"),
+                ],
+                scope=BotCommandScopeChat(chat_id=admin_id),
+            )
+        except TelegramBadRequest as e:
+            logger.warning(f"Не удалось установить команды для админа {admin_id}: {e}")
+    # ---------- Конец команд ----------
+
     fastapi_app = create_fastapi_app(bot)
 
     config = uvicorn.Config(
@@ -2461,33 +2489,6 @@ async def main() -> None:
     server = uvicorn.Server(config)
 
     logger.info(f"🌐 Web Admin Panel доступен по адресу: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
-
-      # Установка команд для обычных пользователей
-    await bot.set_my_commands(
-        commands=[
-            BotCommand(command="start", description="Главное меню"),
-            BotCommand(command="cabinet", description="Личный кабинет"),
-        ],
-        scope=BotCommandScopeDefault(),
-    )
-
-    # Установка команд для администраторов
-    # Установка команд для администраторов (с защитой от несуществующих чатов)
-for admin_id in ADMIN_IDS:
-    try:
-        await bot.set_my_commands(
-            commands=[
-                BotCommand(command="start", description="Панель администратора"),
-                BotCommand(command="cabinet", description="Панель администратора"),
-                BotCommand(command="debug_scan", description="Принудительное сканирование доноров"),
-                BotCommand(command="debug_sub", description="Проверить подписку пользователя"),
-                BotCommand(command="force_trial", description="Выдать тестовые 3 дня"),
-                BotCommand(command="fix_channels", description="Удалить дубликаты каналов"),
-            ],
-            scope=BotCommandScopeChat(chat_id=admin_id),
-        )
-    except TelegramBadRequest as e:
-        logger.warning(f"Не удалось установить команды для админа {admin_id}: {e}")
 
     try:
         await asyncio.gather(
