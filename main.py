@@ -1831,7 +1831,7 @@ async def payout_got_amount(message: Message, state: FSMContext) -> None:
             FROM payouts
             WHERE user_id=? AND status IN ('pending', 'completed')
         """, (user_id,)).fetchone()
-        available = float(balance_row["total"]) - float(withdrawn_row["total"])
+        available = (float(balance_row["total"]) - float(withdrawn_row["total"])) / 2
     finally:
         conn.close()
 
