@@ -98,8 +98,15 @@ def load_tariffs():
     try:
         rows = conn.execute("SELECT * FROM tariffs WHERE is_active = 1 ORDER BY days").fetchall()
         return [
-            {"id": r["id"], "name": r["name"], "days": r["days"],
-             "price_rub": r["price_rub"], "price_stars": r["price_stars"]}
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "days": r["days"],
+                "price_rub": r["price_rub"],
+                "price_stars": r["price_stars"],
+                "max_channels": r["max_channels"] if "max_channels" in r.keys() else 5,
+                "max_posts_per_day": r["max_posts_per_day"] if "max_posts_per_day" in r.keys() else 25,
+            }
             for r in rows
         ]
     finally:
@@ -356,6 +363,20 @@ def init_db() -> None:
         pass
     try:
         cursor.execute("ALTER TABLE channels ADD COLUMN max_posts_per_day INTEGER DEFAULT 25")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tariffs ADD COLUMN max_channels INTEGER DEFAULT 5")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE tariffs ADD COLUMN max_posts_per_day INTEGER DEFAULT 25")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN tariff_id INTEGER")
     except sqlite3.OperationalError:
         pass
 
