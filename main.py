@@ -145,12 +145,14 @@ def kb_tariffs(traffic_source: str) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(text=text, callback_data=f"buy:{t['id']}:{t['days']}")])
     rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
-}
-MIN_PAYOUT: float = 2000.0
-PAYOUT_FIXED_FEE: float = 35.0
-PAYOUT_BANK_PCT: float = 0.043
+
+# Ниже идут уже правильные константы, загруженные из настроек
+MIN_PAYOUT = float(settings["MIN_PAYOUT"])
+PAYOUT_FIXED_FEE = float(settings["PAYOUT_FIXED_FEE"])
+PAYOUT_BANK_PCT = float(settings["PAYOUT_BANK_PCT"])
 MAX_ACTIVE_PAYOUTS: int = 2
 DB_PATH: str = "/app/data/autopost.db"
+
 
 # =============================================================================
 # === MIDDLEWARE ==============================================================
@@ -475,8 +477,8 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            [InlineKeyboardButton(text="🎥 Отправить видео", callback_data="blogger:send_video")]
-           [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
+            [InlineKeyboardButton(text="🎥 Отправить видео", callback_data="blogger:send_video")],
+            [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ])
 
 def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
@@ -486,9 +488,9 @@ def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
-            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")]
-            [InlineKeyboardButton(text="🎁 Активировать промокод", callback_data="promo:activate")]
-           [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
+            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
+            [InlineKeyboardButton(text="🎁 Активировать промокод", callback_data="promo:activate")],
+            [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ])
     else:
         return InlineKeyboardMarkup(inline_keyboard=[
