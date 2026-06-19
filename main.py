@@ -616,6 +616,29 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
 # === SAAS-ФУНКЦИИ (НОВЫЕ) ====================================================
 # =============================================================================
 
+async def fetch_takprodam_by_sku(token: str, sku: str) -> Optional[Dict[str, str]]:
+    if not token:
+        return None
+    url = "https://api.takprodam.ru/v1/products/info"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers, params={"sku": sku})
+        if resp.status_code != 200:
+            logger.warning(f"ТакПродам API: статус {resp.status_code} для SKU {sku}")
+            return None
+        data = resp.json()
+        link = data.get("link", "")
+        erid = data.get("erid", "").strip()
+        advertiser = data.get("advertiser", "").strip()
+        if not erid or not advertiser:
+            logger.warning(f"ТакПродам: неполные данные для SKU {sku}: {data}")
+            return None
+        return {"link": link, "erid": erid, "advertiser": advertiser}
+    except Exception as e:
+        logger.error(f"Ошибка при запросе к ТакПродам для SKU {sku}: {e}")
+        return None
+
 async def resolve_erid(
     bot: Bot, user_id: int, sku: str,
     donor_post_id: str = "unknown", channel_id: str = "unknown"
