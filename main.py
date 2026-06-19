@@ -3104,7 +3104,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 # =============================================================================
 
 async def resolve_erid(bot: Bot, user_id: int, sku: str, donor_post_id: str, channel_id: str) -> Optional[dict]:
-    """Получает ERID из API ТакПродам или из настроек юзера. Иначе - карантин."""
+    """Получает ERID и партнерскую ссылку из API ТакПродам."""
     conn = get_db()
     try:
         row = conn.execute("SELECT api_key, client_erid_override FROM users WHERE user_id=?", (user_id,)).fetchone()
@@ -3119,8 +3119,9 @@ async def resolve_erid(bot: Bot, user_id: int, sku: str, donor_post_id: str, cha
 
     api_data = None
     if api_key:
+        from parser import get_product_data_by_token
         api_data = await get_product_data_by_token(sku, api_key)
-        logger.info(f"DEBUG: API для SKU {sku} вернул: {api_data}")
+        logger.info(f"DEBUG: API ТакПродам для SKU {sku} вернул: {api_data}")
 
     if api_data and isinstance(api_data, dict) and api_data.get("erid"):
         return api_data
@@ -3130,6 +3131,7 @@ async def resolve_erid(bot: Bot, user_id: int, sku: str, donor_post_id: str, cha
         advertiser = api_data.get("advertiser") if isinstance(api_data, dict) else "Не определён"
         return {"link": link, "erid": override_erid, "advertiser": advertiser}
 
+    # Если ERID не найден - блокируем пост и отправляем в карантин
     await bot.send_message(
         QUARANTINE_CHAT_ID, 
         f"🚨 <b>КАРАНТИН</b>\nПост: <code>{donor_post_id}</code>\nНет ERID для SKU: {sku}", 
@@ -3145,8 +3147,11 @@ async def process_saas_core(
     video_url: Optional[str] = None,
     force_post: bool = False
 ) -> None:
+    """Полный цикл обработки: артикул -> рерайт -> ссылка -> публикация."""
     logger.info(f"🚀 [DEBUG] Начат процесс для поста {donor_post_id}. Принудительно: {force_post}")
     
+    # 1. Поиск артикула
+    from parser import find_product_links, rewrite_text_with_ai
     products = find_product_links(text)
     if not products:
         logger.info(f"🚫 [DEBUG] В посте {donor_post_id} не найдены артикулы. Пропускаем.")
@@ -3155,9 +3160,11 @@ async def process_saas_core(
     sku = products[0]['value']
     marketplace = products[0].get('marketplace', 'wb')
 
+    # 2. AI Рерайт текста
     clean_text = re.sub(r'http\S+', '', text).strip()
     rewritten_text = await rewrite_text_with_ai(clean_text)
 
+    # 3. Публикация по пользователям SaaS
     conn = get_db()
     try:
         saas_users = conn.execute("SELECT user_id, api_key, sub_id, filter_wb, filter_ozon, auto_pin FROM users WHERE role='saas' AND is_active=1").fetchall()
@@ -3182,6 +3189,7 @@ async def process_saas_core(
         for ch in channels:
             channel_id = ch['channel_id']
             
+            # 4. Получение ERID и ссылки
             erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
             if not erid_data:
                 continue 
@@ -3190,6 +3198,7 @@ async def process_saas_core(
             erid = erid_data.get("erid", "")
             advertiser = erid_data.get("advertiser", "Рекламодатель")
 
+            # 5. КРАСИВОЕ ОФОРМЛЕНИЕ ПОСТА
             final_caption = (
                 f"{rewritten_text}\n\n"
                 f"🛒 <b>Артикул ({marketplace.upper()}):</b> <code>{sku}</code>\n\n"
@@ -3197,6 +3206,7 @@ async def process_saas_core(
                 f"<i>Реклама. {advertiser}. Erid: {erid}</i>"
             )
 
+            # 6. Отправка поста
             msg = await publish_post_with_fallback(bot, channel_id, final_caption, photo_url, video_url)
             
             if msg:
@@ -3259,9 +3269,11 @@ async def cleanup_old_posts() -> None:
 # =============================================================================
 
 async def scan_donor_channels(bot: Bot, force_post: bool = False):
+    """Сканер каналов-доноров."""
     if not SAAS_DONOR_CHANNELS: 
         return
 
+    from parser import fetch_telegram_channel_posts
     for channel in SAAS_DONOR_CHANNELS:
         try:
             posts = await fetch_telegram_channel_posts(channel)
@@ -3560,9 +3572,7 @@ async def cb_saas_toggles(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("🚀 Запускаю принудительный постинг...", show_alert=True)
-    
     await scan_donor_channels(bot, force_post=True)
-    
     try:
         await callback.message.answer("✅ Сканирование завершено. Смотри канал!")
     except: 
