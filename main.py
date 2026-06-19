@@ -75,6 +75,7 @@ BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 ADMIN_IDS: list[int] = [
     int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()
 ]
+WEBAPP_ADMIN_URL: str = os.getenv("WEBAPP_ADMIN_URL", "")
 QUARANTINE_CHAT_ID: int = int(os.getenv("QUARANTINE_CHAT_ID", "0"))
 ADMIN_VIP_CHANNEL_ID: int = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "0"))
 DEEPINFRA_API_KEY: str = os.getenv("DEEPINFRA_API_KEY", "")
@@ -379,6 +380,7 @@ def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
 
 def kb_admin_panel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌐 Открыть Web-админку", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))],
         [InlineKeyboardButton(text="📣 Рассылка всем", callback_data="admin:broadcast")],
         [InlineKeyboardButton(text="💰 Запустить биллинг-чек", callback_data="admin:billing_check")],
         [InlineKeyboardButton(text="🔧 Продлить подписку", callback_data="admin:extend_sub")],
@@ -951,7 +953,10 @@ async def cmd_start(message: Message, state: FSMContext):
 # ---------------------------------------------------------------------------
 @router.message(Command("cabinet"))
 async def cmd_cabinet(message: Message):
-    await show_user_cabinet(message, user_id=message.from_user.id)
+    if is_admin(message.from_user.id):
+        await message.answer("🛠 Панель администратора:", reply_markup=kb_admin_panel())
+    else:
+        await show_user_cabinet(message, user_id=message.from_user.id)
 
 @router.message(F.text.in_(["💻 Личный кабинет", "/cabinet"]))
 async def show_cabinet(message: Message):
