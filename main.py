@@ -687,6 +687,24 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
         marketplace = row["marketplace"] or "wb"
         channel_id = row["channel_id"]
 
+      # Проверка дневного лимита по тарифу
+conn_limit = get_db()
+try:
+    tariff_row = conn_limit.execute(
+        "SELECT t.max_posts_per_day FROM users u JOIN tariffs t ON u.tariff_id = t.id WHERE u.user_id = ?",
+        (user_id,)
+    ).fetchone()
+    max_posts = tariff_row["max_posts_per_day"] if tariff_row else 25
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    posts_today = conn_limit.execute(
+        "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND channel_id = ? AND status = 'published' AND published_at >= ?",
+        (user_id, target_channel, today_start)
+    ).fetchone()["cnt"]
+    if posts_today >= max_posts:
+        continue  # пропускаем, лимит исчерпан
+finally:
+    conn_limit.close()
+
         post_html = await process_saas_core(
             bot=bot,
             user_id=row["user_id"],
@@ -2049,6 +2067,15 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
     if not is_admin_ok:
         await message.answer("❌ Бот не является администратором в этом канале. Добавьте его и попробуйте снова.")
         return
+     # Загружаем тариф пользователя
+user = conn.execute("SELECT tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+if user and user["tariff_id"]:
+    tariff = conn.execute("SELECT max_channels FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
+    max_channels = tariff["max_channels"] if tariff else 5
+    current_count = conn.execute("SELECT COUNT(*) as cnt FROM channels WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
+    if current_count >= max_channels:
+        await message.answer(f"❌ Ваш тариф позволяет подключить не более {max_channels} каналов.")
+        return 
 
     conn = get_db()
     try:
