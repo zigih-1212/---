@@ -936,23 +936,23 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
             try:
                 saas_rows = db.execute("""
                     SELECT u.user_id, c.channel_id
-                   FROM users u
-                   JOIN channels c ON c.user_id = u.user_id AND c.is_active = 1
-                   WHERE u.role = 'saas'
-                   AND u.is_active = 1
-                   AND u.subscription_until IS NOT NULL
-                   AND u.subscription_until > datetime('now')
-              """).fetchall()
+                    FROM users u
+                    JOIN channels c ON c.user_id = u.user_id AND c.is_active = 1
+                    WHERE u.role = 'saas'
+                    AND u.is_active = 1
+                    AND u.subscription_until IS NOT NULL
+                    AND u.subscription_until > datetime('now')
+                """).fetchall()
             finally:
                 db.close()
 
-                       for row in saas_rows:
+            for row in saas_rows:
                 user_id = row["user_id"]
                 target_channel = row["channel_id"]
 
                 # Проверяем, не совпадает ли целевой канал с каналом-донором
                 if target_channel.lstrip("@").lower() == channel.lstrip("@").lower():
-                    continue  # пропускаем этого SaaS-клиента
+                    continue
 
                 # Читаем настройку auto_pin
                 conn_pin = get_db()
