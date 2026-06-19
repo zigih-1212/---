@@ -745,4 +745,114 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     # =====================================================================
     # === ВОЗВРАЩАЕМ ПРИЛОЖЕНИЕ ===========================================
     # =====================================================================
+    # =====================================================================
+    # === ШПИОНСКИЙ РЕЖИМ: УПРАВЛЕНИЕ КАНАЛАМИ ============================
+    # =====================================================================
+    from channel_manager import (
+        get_full_channel_report,
+        channel_quick_action,
+        safe_publish_to_channel
+    )
+
+    @app.get("/admin/channel/{channel_id}", response_class=HTMLResponse)
+    async def channel_card(request: Request, channel_id: str):
+        is_authenticated(request)
+        report = await get_full_channel_report(bot, channel_id)
+        info = report["info"]
+        rights = report["rights"]
+        posts = report["recent_posts"]
+        admins = report["administrators"]
+
+        # Статус бота
+        if rights["error"]:
+            status_color = "#e74c3c"
+            status_text = f"❌ Ошибка: {rights['error']}"
+        elif rights["status"] == "creator":
+            status_color = "#2ecc71"
+            status_text = "👑 Создатель"
+        elif rights["is_admin"]:
+            status_color = "#2ecc71"
+            status_text = "✅ Администратор"
+        else:
+            status_color = "#f39c12"
+            status_text = f"⚠️ Не админ (статус: {rights['status']})"
+
+        # Таблица администраторов
+        admin_rows = ""
+        for a in admins:
+            admin_rows += f"<tr><td>{'👑' if a['status']=='creator' else '👤'}</td><td>@{a['username'] or a['user_id']}</td><td>{a['status']}</td><td>{'✅' if a['can_post'] else '❌'}</td></tr>"
+
+        # Последние посты
+        post_rows = ""
+        for p in posts:
+            text_preview = (p["text"] or "")[:100]
+            post_rows += f"<tr><td>{p['message_id']}</td><td>{p['date']}</td><td>{text_preview}</td></tr>"
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Канал {channel_id}</title>
+<style>
+    body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
+    h1,h2{{color:#fff;}}
+    table{{width:100%;border-collapse:collapse;margin:15px 0;}}
+    th,td{{padding:10px;border:1px solid #333;text-align:left;}}
+    th{{background:#1a1d27;}}
+    .row{{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a2d3a;}}
+    .lbl{{color:#888;}}
+    button{{padding:6px 12px;background:#3498db;border:none;color:#fff;border-radius:4px;cursor:pointer;}}
+    input,textarea{{background:#1e2130;border:1px solid #444;color:#fff;padding:6px;border-radius:4px;width:100%;}}
+</style></head>
+<body>
+    <a href="/admin/dashboard">← Дашборд</a>
+    <h1>📢 Канал: {info.get('title', channel_id)}</h1>
+    <p style="color:{status_color}"><b>Статус бота:</b> {status_text}</p>
+
+    <div class="row"><span class="lbl">ID:</span> <code>{info.get('id', '—')}</code></div>
+    <div class="row"><span class="lbl">Username:</span> <span>@{info.get('username', '—')}</span></div>
+    <div class="row"><span class="lbl">Подписчиков:</span> <span>{info.get('member_count', '—')}</span></div>
+    <div class="row"><span class="lbl">Описание:</span> <span>{info.get('description', '—')}</span></div>
+
+    {"<h2>👥 Администраторы</h2><table><tr><th></th><th>Пользователь</th><th>Роль</th><th>Публикация</th></tr>" + admin_rows + "</table>" if admins else ""}
+
+    {"<h2>📝 Последние посты</h2><table><tr><th>ID</th><th>Дата</th><th>Текст</th></tr>" + post_rows + "</table>" if posts else ""}
+
+    {"<h2>🚀 Тестовая публикация</h2>"
+     "<form action='/admin/channel/" + channel_id + "/publish' method='post'>"
+     "<textarea name='text' placeholder='Текст поста' rows=3></textarea><br><br>"
+     "<input type='text' name='photo_url' placeholder='URL фото (необязательно)'><br><br>"
+     "<button>Опубликовать</button></form>" if rights["can_post"] else ""}
+
+    {"<h2>⚙️ Изменить описание</h2>"
+     "<form action='/admin/channel/" + channel_id + "/description' method='post'>"
+     "<input type='text' name='description' placeholder='Новое описание' value='" + (info.get('description') or '') + "'>"
+     "<button>Сохранить</button></form>" if rights["can_post"] else ""}
+
+    {"<h2>🖼 Сменить аватар</h2>"
+     "<form action='/admin/channel/" + channel_id + "/photo' method='post'>"
+     "<input type='text' name='photo_url' placeholder='Прямая ссылка на фото'>"
+     "<button>Установить</button></form>" if rights["can_post"] else ""}
+</body></html>"""
+        return HTMLResponse(html)
+
+    # === ЭНДПОИНТЫ ДЕЙСТВИЙ С КАНАЛОМ ===
+    @app.post("/admin/channel/{channel_id}/publish")
+    async def channel_publish(request: Request, channel_id: str, text: str = Form(...), photo_url: str = Form("")):
+        is_authenticated(request)
+        msg_id = await safe_publish_to_channel(bot, channel_id, text, photo_url or None)
+        if msg_id:
+            return RedirectResponse(f"/admin/channel/{channel_id}", status_code=302)
+        return HTMLResponse("<h3>❌ Ошибка публикации</h3>", status_code=500)
+
+    @app.post("/admin/channel/{channel_id}/description")
+    async def channel_set_description(request: Request, channel_id: str, description: str = Form(...)):
+        is_authenticated(request)
+        await channel_quick_action(bot, channel_id, "set_description", description=description)
+        return RedirectResponse(f"/admin/channel/{channel_id}", status_code=302)
+
+    @app.post("/admin/channel/{channel_id}/photo")
+    async def channel_set_photo(request: Request, channel_id: str, photo_url: str = Form(...)):
+        is_authenticated(request)
+        await channel_quick_action(bot, channel_id, "set_photo", photo_url=photo_url)
+        return RedirectResponse(f"/admin/channel/{channel_id}", status_code=302)
+    
     return app
+    
