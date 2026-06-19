@@ -2472,7 +2472,9 @@ async def main() -> None:
     )
 
     # Установка команд для администраторов
-    for admin_id in ADMIN_IDS:
+    # Установка команд для администраторов (с защитой от несуществующих чатов)
+for admin_id in ADMIN_IDS:
+    try:
         await bot.set_my_commands(
             commands=[
                 BotCommand(command="start", description="Панель администратора"),
@@ -2484,6 +2486,8 @@ async def main() -> None:
             ],
             scope=BotCommandScopeChat(chat_id=admin_id),
         )
+    except TelegramBadRequest as e:
+        logger.warning(f"Не удалось установить команды для админа {admin_id}: {e}")
 
     try:
         await asyncio.gather(
