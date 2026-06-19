@@ -57,6 +57,47 @@ from parser import (
 )
 from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats, STAT_PERIODS
 print("DEBUG: all imports done", flush=True, file=sys.stderr)
+
+def load_settings():
+    """Загружает настройки из БД. Если настройки нет – берёт из переменной окружения."""
+    defaults = {
+        "NIGHT_START": os.getenv("NIGHT_START", "23:00"),
+        "NIGHT_END": os.getenv("NIGHT_END", "08:00"),
+        "RUN_INTERVAL_SECONDS": os.getenv("RUN_INTERVAL_SECONDS", "900"),
+        "MIN_PAYOUT": os.getenv("MIN_PAYOUT", "2000"),
+        "PAYOUT_FIXED_FEE": os.getenv("PAYOUT_FIXED_FEE", "35"),
+        "PAYOUT_BANK_PCT": os.getenv("PAYOUT_BANK_PCT", "0.043"),
+    }
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT key, value FROM settings").fetchall()
+        for row in rows:
+            if row["key"] in defaults:
+                defaults[row["key"]] = row["value"]
+    except:
+        pass  # таблицы может ещё не быть при первом запуске
+    finally:
+        conn.close()
+    return defaults
+
+settings = load_settings()
+
+def load_tariffs():
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT * FROM tariffs WHERE is_active = 1 ORDER BY days").fetchall()
+        return [
+            {"id": r["id"], "name": r["name"], "days": r["days"],
+             "price_rub": r["price_rub"], "price_stars": r["price_stars"]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+# Обновляем глобальные переменные из настроек
+MIN_PAYOUT = float(settings["MIN_PAYOUT"])
+PAYOUT_FIXED_FEE = float(settings["PAYOUT_FIXED_FEE"])
+PAYOUT_BANK_PCT = float(settings["PAYOUT_BANK_PCT"])
 # =============================================================================
 # === LOGGING =================================================================
 # =============================================================================
@@ -96,12 +137,14 @@ CARD_TON: str = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBrDpay_FJRJoWZa1
 CARD_VISA_KG: str = os.getenv("PAY_VISA_KG", "4196720087839790")
 
 # Тарифы
-TARIFF_PLANS: dict[str, dict] = {
-    "15d":  {"days": 15,  "stars": 900,   "rub": 600,  "label": "15 дней — 600 руб. / 900 ⭐"},
-    "30d":  {"days": 30,  "stars": 1500,  "rub": 1000, "label": "30 дней — 1000 руб. / 1500 ⭐ (−17%)"},
-    "90d":  {"days": 90,  "stars": 3800,  "rub": 2550, "label": "90 дней — 2550 руб. / 3800 ⭐ (−25%)"},
-    "180d": {"days": 180, "stars": 6800,  "rub": 4500, "label": "180 дней — 4500 руб. / 6800 ⭐ (−33%)"},
-    "360d": {"days": 360, "stars": 10500, "rub": 7000, "label": "360 дней — 7000 руб. / 10500 ⭐ (−42%)"},
+def kb_tariffs(traffic_source: str) -> InlineKeyboardMarkup:
+    tariffs = load_tariffs()
+    rows = []
+    for t in tariffs:
+        text = f"⭐ {t['name']} — {t['price_rub']:.0f} руб. / {t['price_stars']} ⭐"
+        rows.append([InlineKeyboardButton(text=text, callback_data=f"buy:{t['id']}:{t['days']}")])
+    rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 }
 MIN_PAYOUT: float = 2000.0
 PAYOUT_FIXED_FEE: float = 35.0
@@ -251,6 +294,23 @@ def init_db() -> None:
         )
     """)
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tariffs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            days INTEGER NOT NULL,
+            price_rub REAL NOT NULL,
+            price_stars INTEGER NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    cursor.execute("""
             CREATE TABLE IF NOT EXISTS promocodes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             code TEXT UNIQUE NOT NULL,
@@ -266,6 +326,15 @@ def init_db() -> None:
             channel_id TEXT NOT NULL,
             activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(user_id)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admin_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     # Миграции
@@ -326,6 +395,18 @@ class PayoutStates(StatesGroup):
   # =============================================================================
 # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =================================================
 # =============================================================================
+def log_admin_action(admin_id: int, action: str, details: str = ""):
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO admin_audit (admin_id, action, details) VALUES (?, ?, ?)",
+            (admin_id, action, details)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
@@ -367,9 +448,15 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         return False
 
 def is_night_time() -> bool:
-    """True с 23:00 до 08:00 по МСК (UTC+3)."""
     now = datetime.now(tz=timezone(timedelta(hours=3)))
-    return now.hour >= 23 or now.hour < 8
+    start_h, start_m = map(int, settings["NIGHT_START"].split(":"))
+    end_h, end_m = map(int, settings["NIGHT_END"].split(":"))
+    start = time(start_h, start_m)
+    end = time(end_h, end_m)
+    if start <= end:
+        return start <= now.time() <= end
+    else:
+        return now.time() >= start or now.time() <= end
 
 # =============================================================================
 # === КЛАВИАТУРЫ ==============================================================
@@ -2431,6 +2518,13 @@ async def main() -> None:
 </style></head>
 <body>
     <a href="/admin/dashboard">← Дашборд</a>
+    <a href="/admin/audit">📜 Аудит</a>
+    <a href="/admin/analytics">📈 Аналитика</a>
+    <a href="/admin/top-channels">🏆 Топы</a>
+    <a href="/admin/bulk-actions" style="color:#f39c12;">👥 Массовые действия</a>
+    <p>🌙 <a href="/admin/night-queue">Ночная очередь</a>: <b>{night_q}</b> | 
+🅰️ <a href="/admin/saas-queue">SaaS-очередь</a>: <b>{saas_q}</b> | 
+🚨 <a href="/admin/quarantine">Карантин</a>: <b>{quarantine}</b></p>
     <h1>🎁 Промокоды</h1>
     <div style="margin-bottom:15px">
         <form action="/admin/promocodes/generate" method="post" style="display:inline">
@@ -2491,6 +2585,649 @@ async def main() -> None:
         finally:
             conn.close()
         return RedirectResponse("/admin/promocodes", status_code=302)
+
+            # =====================================================================
+    # === НОЧНАЯ ОЧЕРЕДЬ (БЛОГЕРЫ) ========================================
+    # =====================================================================
+    @app.get("/admin/night-queue", response_class=HTMLResponse)
+    async def night_queue_page(request: Request):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            rows = conn.execute(
+                "SELECT nq.*, u.username FROM night_queue nq "
+                "LEFT JOIN users u ON nq.user_id = u.user_id "
+                "ORDER BY nq.created_at DESC LIMIT 200"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        items = ""
+        for r in rows:
+            items += f"""
+            <tr>
+                <td>{r['id']}</td>
+                <td>@{r['username'] or r['user_id']}</td>
+                <td>{r['video_id'][:30]}</td>
+                <td>{r['sku'] or '—'}</td>
+                <td>{str(r['created_at'])[:16]}</td>
+                <td>
+                    <form action="/admin/night-queue/publish/{r['id']}" method="post" style="display:inline">
+                        <button style="background:#2ecc71;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">▶</button>
+                    </form>
+                    <form action="/admin/night-queue/delete/{r['id']}" method="post" style="display:inline" onsubmit="return confirm('Удалить?')">
+                        <button style="background:#e74c3c;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">🗑</button>
+                    </form>
+                </td>
+            </tr>"""
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Ночная очередь</title>
+<style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}h1{{color:#fff;}}
+table{{width:100%;border-collapse:collapse;margin-top:15px;}}
+th,td{{padding:8px;border:1px solid #333;text-align:left;}}th{{background:#1a1d27;}}</style></head>
+<body><a href="/admin/dashboard">← Дашборд</a><h1>🌙 Ночная очередь</h1>
+<table><tr><th>ID</th><th>Пользователь</th><th>Видео</th><th>SKU</th><th>Дата</th><th>Действия</th></tr>
+{items if items else "<tr><td colspan='6'>Очередь пуста</td></tr>"}
+</table></body></html>"""
+        return HTMLResponse(html)
+
+    @app.post("/admin/night-queue/publish/{item_id}")
+    async def night_queue_publish(request: Request, item_id: int):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT * FROM night_queue WHERE id = ?", (item_id,)).fetchone()
+            if row:
+                from parser import process_new_video
+                await process_new_video(
+                    bot=bot,
+                    user_id=row["user_id"],
+                    video_id=row["video_id"],
+                    description=row["description"] or "",
+                    sku=row["sku"],
+                    photo_url=row["photo_url"],
+                    marketplace=row["marketplace"] or "wb"
+                )
+                conn.execute("DELETE FROM night_queue WHERE id = ?", (item_id,))
+                conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/night-queue", status_code=302)
+
+    @app.post("/admin/night-queue/delete/{item_id}")
+    async def night_queue_delete(request: Request, item_id: int):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            conn.execute("DELETE FROM night_queue WHERE id = ?", (item_id,))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/night-queue", status_code=302)
+
+    # =====================================================================
+    # === SAAS-ОЧЕРЕДЬ ====================================================
+    # =====================================================================
+    @app.get("/admin/saas-queue", response_class=HTMLResponse)
+    async def saas_queue_page(request: Request):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            rows = conn.execute(
+                "SELECT sq.*, u.username FROM saas_queue sq "
+                "LEFT JOIN users u ON sq.user_id = u.user_id "
+                "ORDER BY sq.created_at DESC LIMIT 200"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        items = ""
+        for r in rows:
+            items += f"""
+            <tr>
+                <td>{r['id']}</td>
+                <td>@{r['username'] or r['user_id']}</td>
+                <td>{r['channel_id']}</td>
+                <td>{r['donor_post_id'][:30]}</td>
+                <td>{r['sku'] or '—'}</td>
+                <td>{str(r['created_at'])[:16]}</td>
+                <td>
+                    <form action="/admin/saas-queue/flush/{r['user_id']}" method="post" style="display:inline">
+                        <button style="background:#3498db;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">Опубликовать все</button>
+                    </form>
+                </td>
+            </tr>"""
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>SaaS-очередь</title>
+<style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}h1{{color:#fff;}}
+table{{width:100%;border-collapse:collapse;margin-top:15px;}}
+th,td{{padding:8px;border:1px solid #333;text-align:left;}}th{{background:#1a1d27;}}</style></head>
+<body><a href="/admin/dashboard">← Дашборд</a><h1>🅰️ SaaS-очередь</h1>
+<table><tr><th>ID</th><th>Пользователь</th><th>Канал</th><th>Пост</th><th>SKU</th><th>Дата</th><th>Действия</th></tr>
+{items if items else "<tr><td colspan='7'>Очередь пуста</td></tr>"}
+</table></body></html>"""
+        return HTMLResponse(html)
+
+    @app.post("/admin/saas-queue/flush/{user_id}")
+    async def saas_queue_flush(request: Request, user_id: int):
+        is_authenticated(request)
+        from main import flush_saas_queue_for_user
+        await flush_saas_queue_for_user(bot, user_id)
+        return RedirectResponse("/admin/saas-queue", status_code=302)
+
+    # =====================================================================
+    # === КАРАНТИН ========================================================
+    # =====================================================================
+    @app.get("/admin/quarantine", response_class=HTMLResponse)
+    async def quarantine_page(request: Request):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            rows = conn.execute(
+                "SELECT p.*, u.username FROM posts p LEFT JOIN users u ON p.user_id = u.user_id "
+                "WHERE p.status = 'quarantine' ORDER BY p.id DESC LIMIT 100"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        items = ""
+        for r in rows:
+            items += f"""
+            <tr>
+                <td>{r['id']}</td>
+                <td>@{r['username'] or r['user_id']}</td>
+                <td>{r['donor_post_id'][:30]}</td>
+                <td>{r['sku'] or '—'}</td>
+                <td>{r.get('quarantine_reason', '')}</td>
+                <td>{str(r['created_at'])[:16]}</td>
+                <td>
+                    <form action="/admin/quarantine/approve/{r['id']}" method="post" style="display:inline">
+                        <input type="text" name="erid" placeholder="ERID" required style="width:100px;">
+                        <input type="text" name="advertiser" placeholder="Рекламодатель" required style="width:120px;">
+                        <button style="background:#2ecc71;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">Одобрить</button>
+                    </form>
+                    <form action="/admin/quarantine/delete/{r['id']}" method="post" style="display:inline" onsubmit="return confirm('Удалить пост из карантина?')">
+                        <button style="background:#e74c3c;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">🗑</button>
+                    </form>
+                </td>
+            </tr>"""
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Карантин</title>
+<style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}h1{{color:#fff;}}
+table{{width:100%;border-collapse:collapse;margin-top:15px;}}
+th,td{{padding:8px;border:1px solid #333;text-align:left;}}th{{background:#1a1d27;}}</style></head>
+<body><a href="/admin/dashboard">← Дашборд</a><h1>🚨 Карантин</h1>
+<table><tr><th>ID</th><th>Пользователь</th><th>Пост</th><th>SKU</th><th>Причина</th><th>Дата</th><th>Действия</th></tr>
+{items if items else "<tr><td colspan='7'>Карантин пуст</td></tr>"}
+</table></body></html>"""
+        return HTMLResponse(html)
+
+    @app.post("/admin/quarantine/approve/{post_id}")
+    async def quarantine_approve(request: Request, post_id: int, erid: str = Form(...), advertiser: str = Form(...)):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            conn.execute(
+                "UPDATE posts SET erid = ?, status = 'published', quarantine_reason = 'Одобрен вручную' WHERE id = ?",
+                (erid, post_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/quarantine", status_code=302)
+
+    @app.post("/admin/quarantine/delete/{post_id}")
+    async def quarantine_delete(request: Request, post_id: int):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/quarantine", status_code=302)
+
+    # =====================================================================
+    # === МАССОВЫЕ ДЕЙСТВИЯ ===============================================
+    # =====================================================================
+    @app.get("/admin/bulk-actions", response_class=HTMLResponse)
+    async def bulk_actions_page(request: Request):
+        is_authenticated(request)
+        return HTMLResponse("""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Массовые действия</title>
+<style>
+    body{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}
+    h1{color:#fff;}
+    label{display:block;margin:10px 0 5px;color:#ccc;}
+    select, input{background:#1e2130;border:1px solid #444;color:#fff;padding:8px;border-radius:4px;width:300px;}
+    button{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radius:4px;cursor:pointer;margin-top:15px;}
+</style></head>
+<body>
+    <a href="/admin/dashboard">← Дашборд</a>
+    <h1>👥 Массовые действия</h1>
+    <form action="/admin/bulk-actions/execute" method="post" onsubmit="return confirm('Вы уверены? Действие затронет выбранных пользователей.')">
+        <label>Группа пользователей:</label>
+        <select name="group">
+            <option value="all">Все пользователи</option>
+            <option value="saas">Только SaaS</option>
+            <option value="blogger">Только блогеры</option>
+            <option value="active">Активные (is_active=1)</option>
+            <option value="banned">Забаненные (is_active=0)</option>
+            <option value="expired">Истекшая подписка (SaaS)</option>
+        </select>
+
+        <label>Действие:</label>
+        <select name="action">
+            <option value="extend">Продлить подписку</option>
+            <option value="ban">Забанить</option>
+            <option value="unban">Разбанить</option>
+            <option value="delete">Удалить полностью</option>
+        </select>
+
+        <div id="days_block">
+            <label>Количество дней (для продления):</label>
+            <input type="number" name="days" value="30" min="1">
+        </div>
+
+        <button type="submit">Выполнить</button>
+    </form>
+</body></html>""")
+
+    @app.post("/admin/bulk-actions/execute")
+    async def bulk_actions_execute(request: Request, group: str = Form(...), action: str = Form(...), days: int = Form(30)):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            # Формируем условие WHERE
+            conditions = {"all": "1=1", "saas": "role='saas'", "blogger": "role='blogger'",
+                          "active": "is_active=1", "banned": "is_active=0",
+                          "expired": "role='saas' AND (subscription_until IS NULL OR subscription_until < datetime('now'))"}
+            where = conditions.get(group, "1=1")
+
+            if action == "extend":
+                new_date = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+                conn.execute(f"UPDATE users SET subscription_until = ?, is_active = 1 WHERE {where}", (new_date,))
+            elif action == "ban":
+                conn.execute(f"UPDATE users SET is_active = 0 WHERE {where}")
+            elif action == "unban":
+                conn.execute(f"UPDATE users SET is_active = 1 WHERE {where}")
+            elif action == "delete":
+                # Удаляем пользователей и связанные данные
+                conn.execute(f"DELETE FROM channels WHERE user_id IN (SELECT user_id FROM users WHERE {where})")
+                conn.execute(f"DELETE FROM posts WHERE user_id IN (SELECT user_id FROM users WHERE {where})")
+                conn.execute(f"DELETE FROM payouts WHERE user_id IN (SELECT user_id FROM users WHERE {where})")
+                conn.execute(f"DELETE FROM night_queue WHERE user_id IN (SELECT user_id FROM users WHERE {where})")
+                conn.execute(f"DELETE FROM saas_queue WHERE user_id IN (SELECT user_id FROM users WHERE {where})")
+                conn.execute(f"DELETE FROM promocode_activations WHERE user_id IN (SELECT user_id FROM users WHERE {where})")
+                conn.execute(f"DELETE FROM users WHERE {where}")
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/dashboard", status_code=302)
+
+            # =====================================================================
+    # === ГЛОБАЛЬНЫЕ НАСТРОЙКИ (РЕДАКТИРОВАНИЕ) ===========================
+    # =====================================================================
+    @app.get("/admin/settings-edit", response_class=HTMLResponse)
+    async def settings_edit_page(request: Request):
+        is_authenticated(request)
+        from main import load_settings
+        s = load_settings()
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Настройки</title>
+<style>
+    body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
+    h1{{color:#fff;}}
+    label{{display:block;margin:10px 0 5px;color:#ccc;}}
+    input{{background:#1e2130;border:1px solid #444;color:#fff;padding:8px;border-radius:4px;width:200px;}}
+    button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radius:4px;cursor:pointer;margin-top:15px;}}
+</style></head>
+<body>
+    <a href="/admin/dashboard">← Дашборд</a>
+    <a href="/admin/settings-edit">⚙️ Глобальные настройки</a>
+    <form action="/admin/settings-edit/save" method="post">
+        <label>Начало ночи (ЧЧ:ММ)</label>
+        <input type="text" name="NIGHT_START" value="{s['NIGHT_START']}">
+        <label>Конец ночи (ЧЧ:ММ)</label>
+        <input type="text" name="NIGHT_END" value="{s['NIGHT_END']}">
+        <label>Интервал сканирования (сек)</label>
+        <input type="number" name="RUN_INTERVAL_SECONDS" value="{s['RUN_INTERVAL_SECONDS']}">
+        <label>Минимальная выплата (₽)</label>
+        <input type="number" name="MIN_PAYOUT" value="{s['MIN_PAYOUT']}" step="0.01">
+        <label>Фикс. комиссия (₽)</label>
+        <input type="number" name="PAYOUT_FIXED_FEE" value="{s['PAYOUT_FIXED_FEE']}" step="0.01">
+        <label>Банковский %</label>
+        <input type="text" name="PAYOUT_BANK_PCT" value="{s['PAYOUT_BANK_PCT']}">
+        <button type="submit">Сохранить</button>
+    </form>
+</body></html>"""
+        return HTMLResponse(html)
+
+    @app.post("/admin/settings-edit/save")
+    async def settings_edit_save(request: Request, 
+                                 NIGHT_START: str = Form(...), NIGHT_END: str = Form(...),
+                                 RUN_INTERVAL_SECONDS: int = Form(...), MIN_PAYOUT: float = Form(...),
+                                 PAYOUT_FIXED_FEE: float = Form(...), PAYOUT_BANK_PCT: str = Form(...)):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            for key, value in [("NIGHT_START", NIGHT_START), ("NIGHT_END", NIGHT_END),
+                               ("RUN_INTERVAL_SECONDS", str(RUN_INTERVAL_SECONDS)),
+                               ("MIN_PAYOUT", str(MIN_PAYOUT)), ("PAYOUT_FIXED_FEE", str(PAYOUT_FIXED_FEE)),
+                               ("PAYOUT_BANK_PCT", PAYOUT_BANK_PCT)]:
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+            conn.commit()
+        finally:
+            conn.close()
+        # Обновляем глобальные переменные в текущем процессе
+        from main import settings, load_settings
+        new_settings = load_settings()
+        settings.update(new_settings)
+        return HTMLResponse("<h3>✅ Настройки сохранены. Некоторые изменения потребуют перезапуска бота.</h3><a href='/admin/dashboard'>Назад</a>")
+
+            # =====================================================================
+    # === АНАЛИТИКА: ОБЩАЯ ДИНАМИКА =======================================
+    # =====================================================================
+    @app.get("/admin/analytics", response_class=HTMLResponse)
+    async def analytics_page(request: Request, days: int = 30):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            # Посты по дням
+            posts_by_day = conn.execute("""
+                SELECT DATE(published_at) as day, COUNT(*) as cnt
+                FROM posts WHERE status='published'
+                AND published_at >= datetime('now', ?)
+                GROUP BY day ORDER BY day
+            """, (f'-{days} days',)).fetchall()
+
+            # Новые пользователи по дням
+            users_by_day = conn.execute("""
+                SELECT DATE(created_at) as day, COUNT(*) as cnt
+                FROM users
+                WHERE created_at >= datetime('now', ?)
+                GROUP BY day ORDER BY day
+            """, (f'-{days} days',)).fetchall()
+
+            # Транзакции по дням (если есть)
+            sales_by_day = conn.execute("""
+                SELECT DATE(created_at) as day, COUNT(*) as cnt, COALESCE(SUM(payout),0) as total
+                FROM transactions
+                WHERE created_at >= datetime('now', ?)
+                GROUP BY day ORDER BY day
+            """, (f'-{days} days',)).fetchall()
+        finally:
+            conn.close()
+
+        # Простейшая отрисовка таблиц (можно улучшить)
+        posts_rows = "".join(f"<tr><td>{r['day']}</td><td>{r['cnt']}</td></tr>" for r in posts_by_day)
+        users_rows = "".join(f"<tr><td>{r['day']}</td><td>{r['cnt']}</td></tr>" for r in users_by_day)
+        sales_rows = "".join(f"<tr><td>{r['day']}</td><td>{r['cnt']}</td><td>{r['total']:.2f} ₽</td></tr>" for r in sales_by_day)
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Аналитика</title>
+<style>
+    body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
+    h1,h2{{color:#fff;}}
+    table{{width:100%;border-collapse:collapse;margin:15px 0;}}
+    th,td{{padding:8px;border:1px solid #333;text-align:left;}}
+    th{{background:#1a1d27;}}
+    a{{color:#3498db;}}
+</style></head>
+<body>
+    <a href="/admin/dashboard">← Дашборд</a>
+    <h1>📈 Аналитика за последние {days} дней</h1>
+    <p><a href="?days=7">7 дней</a> | <a href="?days=30">30 дней</a> | <a href="?days=90">90 дней</a></p>
+
+    <h2>📬 Посты по дням</h2>
+    <table><tr><th>Дата</th><th>Количество</th></tr>{posts_rows or "<tr><td colspan='2'>Нет данных</td></tr>"}</table>
+
+    <h2>👥 Новые пользователи</h2>
+    <table><tr><th>Дата</th><th>Количество</th></tr>{users_rows or "<tr><td colspan='2'>Нет данных</td></tr>"}</table>
+
+    <h2>💰 Продажи по дням</h2>
+    <table><tr><th>Дата</th><th>Продаж</th><th>Сумма</th></tr>{sales_rows or "<tr><td colspan='3'>Нет данных</td></tr>"}</table>
+</body></html>"""
+        return HTMLResponse(html)
+
+            # =====================================================================
+    # === АНАЛИТИКА: ТОП КАНАЛОВ / БЛОГЕРОВ ===============================
+    # =====================================================================
+    @app.get("/admin/top-channels", response_class=HTMLResponse)
+    async def top_channels_page(request: Request):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            # Топ каналов по количеству постов
+            top_channels = conn.execute("""
+                SELECT c.channel_title, c.channel_id, COUNT(p.id) as post_count
+                FROM posts p
+                JOIN channels c ON p.channel_id = c.channel_id
+                WHERE p.status = 'published'
+                GROUP BY p.channel_id
+                ORDER BY post_count DESC
+                LIMIT 20
+            """).fetchall()
+
+            # Топ блогеров по заработку
+            top_bloggers = conn.execute("""
+                SELECT u.username, u.user_id,
+                       COALESCE(SUM(t.payout), 0.0) as earned
+                FROM users u
+                LEFT JOIN transactions t ON u.sub_id = t.sub_id
+                WHERE u.role = 'blogger'
+                GROUP BY u.user_id
+                ORDER BY earned DESC
+                LIMIT 20
+            """).fetchall()
+        finally:
+            conn.close()
+
+        channels_rows = "".join(f"<tr><td>{r['channel_title'] or r['channel_id']}</td><td>{r['post_count']}</td></tr>" for r in top_channels)
+        bloggers_rows = "".join(f"<tr><td>@{r['username'] or r['user_id']}</td><td>{r['earned']:.2f} ₽</td></tr>" for r in top_bloggers)
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Топ</title>
+<style>
+    body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
+    h1,h2{{color:#fff;}}
+    table{{width:100%;border-collapse:collapse;margin:15px 0;}}
+    th,td{{padding:8px;border:1px solid #333;text-align:left;}}
+    th{{background:#1a1d27;}}
+</style></head>
+<body>
+    <a href="/admin/dashboard">← Дашборд</a>
+    <h1>🏆 Топы</h1>
+
+    <h2>📢 Топ каналов по постам</h2>
+    <table><tr><th>Канал</th><th>Постов</th></tr>{channels_rows or "<tr><td colspan='2'>Нет данных</td></tr>"}</table>
+
+    <h2>💰 Топ блогеров по заработку</h2>
+    <table><tr><th>Блогер</th><th>Заработано</th></tr>{bloggers_rows or "<tr><td colspan='2'>Нет данных</td></tr>"}</table>
+</body></html>"""
+        return HTMLResponse(html)
+
+            # =====================================================================
+    # === УПРАВЛЕНИЕ ТАРИФАМИ =============================================
+    # =====================================================================
+    @app.get("/admin/tariffs", response_class=HTMLResponse)
+    async def tariffs_page(request: Request):
+        is_authenticated(request)
+        from main import load_tariffs
+        tariffs = load_tariffs()
+        conn = get_db()
+        try:
+            users = conn.execute("SELECT user_id, username FROM users WHERE role='saas' ORDER BY username").fetchall()
+        finally:
+            conn.close()
+
+        rows = ""
+        for t in tariffs:
+            rows += f"""
+            <tr>
+                <td>{t['id']}</td>
+                <td>{t['name']}</td>
+                <td>{t['days']} дн.</td>
+                <td>{t['price_rub']:.0f} ₽</td>
+                <td>{t['price_stars']} ⭐</td>
+                <td>
+                    <form action="/admin/tariffs/edit/{t['id']}" method="post" style="display:inline">
+                        <input type="hidden" name="name" value="{t['name']}">
+                        <input type="hidden" name="days" value="{t['days']}">
+                        <input type="hidden" name="price_rub" value="{t['price_rub']}">
+                        <input type="hidden" name="price_stars" value="{t['price_stars']}">
+                        <button style="background:#f39c12;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">✏️</button>
+                    </form>
+                    <form action="/admin/tariffs/delete/{t['id']}" method="post" style="display:inline" onsubmit="return confirm('Удалить?')">
+                        <button style="background:#e74c3c;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">🗑</button>
+                    </form>
+                </td>
+            </tr>"""
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Тарифы</title>
+<style>
+    body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
+    h1,h2{{color:#fff;}}
+    table{{width:100%;border-collapse:collapse;margin:15px 0;}}
+    th,td{{padding:8px;border:1px solid #333;text-align:left;}}
+    th{{background:#1a1d27;}}
+    form{{margin:5px 0;}}
+    input,select{{background:#1e2130;border:1px solid #444;color:#fff;padding:6px;border-radius:4px;}}
+    button{{padding:6px 12px;background:#3498db;border:none;color:#fff;border-radius:4px;cursor:pointer;}}
+</style></head>
+<body>
+    <a href="/admin/dashboard">← Дашборд</a>
+    <h1>💎 Тарифы</h1>
+
+    <h2>Добавить новый тариф</h2>
+    <form action="/admin/tariffs/add" method="post">
+        <input type="text" name="name" placeholder="Название" required>
+        <input type="number" name="days" placeholder="Дней" required>
+        <input type="number" name="price_rub" placeholder="Цена в рублях" required step="0.01">
+        <input type="number" name="price_stars" placeholder="Цена в звёздах" required>
+        <button>Создать</button>
+    </form>
+
+    <h2>Существующие тарифы</h2>
+    <table>
+        <tr><th>ID</th><th>Название</th><th>Дней</th><th>Рубли</th><th>Звёзды</th><th></th></tr>
+        {rows}
+    </table>
+
+    <h2>Назначить подписку пользователю</h2>
+    <form action="/admin/tariffs/assign" method="post">
+        <select name="user_id">
+            <option value="">-- Выберите пользователя --</option>
+            {"".join(f"<option value='{u['user_id']}'>@{u['username'] or u['user_id']}</option>" for u in users)}
+        </select>
+        <select name="tariff_id">
+            <option value="">-- Выберите тариф --</option>
+            {"".join(f"<option value='{t['id']}'> {t['name']} ({t['days']}дн.)</option>" for t in tariffs)}
+        </select>
+        <button>Продлить / Назначить</button>
+    </form>
+</body></html>"""
+        return HTMLResponse(html)
+
+    @app.post("/admin/tariffs/add")
+    async def add_tariff(request: Request, name: str = Form(...), days: int = Form(...),
+                         price_rub: float = Form(...), price_stars: int = Form(...)):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            conn.execute("INSERT INTO tariffs (name, days, price_rub, price_stars) VALUES (?, ?, ?, ?)",
+                         (name, days, price_rub, price_stars))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/tariffs", status_code=302)
+
+    @app.post("/admin/tariffs/edit/{tariff_id}")
+    async def edit_tariff(request: Request, tariff_id: int, name: str = Form(...), days: int = Form(...),
+                          price_rub: float = Form(...), price_stars: int = Form(...)):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            conn.execute("UPDATE tariffs SET name=?, days=?, price_rub=?, price_stars=? WHERE id=?",
+                         (name, days, price_rub, price_stars, tariff_id))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/tariffs", status_code=302)
+
+    @app.post("/admin/tariffs/delete/{tariff_id}")
+    async def delete_tariff(request: Request, tariff_id: int):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            conn.execute("DELETE FROM tariffs WHERE id=?", (tariff_id,))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/tariffs", status_code=302)
+
+    @app.post("/admin/tariffs/assign")
+    async def assign_tariff(request: Request, user_id: int = Form(...), tariff_id: int = Form(...)):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            tariff = conn.execute("SELECT days FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
+            if tariff:
+                new_date = (datetime.now(timezone.utc) + timedelta(days=tariff["days"])).isoformat()
+                conn.execute("UPDATE users SET subscription_until=?, is_active=1 WHERE user_id=?",
+                            (new_date, user_id))
+                conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/tariffs", status_code=302)
+
+            # =====================================================================
+    # === АУДИТ ДЕЙСТВИЙ АДМИНА ===========================================
+    # =====================================================================
+    @app.get("/admin/audit", response_class=HTMLResponse)
+    async def audit_page(request: Request):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            logs = conn.execute(
+                "SELECT * FROM admin_audit ORDER BY id DESC LIMIT 200"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        rows = ""
+        for l in logs:
+            rows += f"""
+            <tr>
+                <td>{l['id']}</td>
+                <td>{l['admin_id']}</td>
+                <td>{l['action']}</td>
+                <td>{l['details']}</td>
+                <td>{str(l['created_at'])[:16]}</td>
+            </tr>"""
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Аудит</title>
+<style>
+    body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
+    h1{{color:#fff;}}
+    table{{width:100%;border-collapse:collapse;margin-top:15px;}}
+    th,td{{padding:8px;border:1px solid #333;text-align:left;}}
+    th{{background:#1a1d27;}}
+</style></head>
+<body>
+    <a href="/admin/dashboard">← Дашборд</a>
+    <h1>📜 Аудит действий</h1>
+    <table>
+        <tr><th>ID</th><th>Админ</th><th>Действие</th><th>Детали</th><th>Дата</th></tr>
+        {rows if rows else "<tr><td colspan='5'>Нет записей</td></tr>"}
+    </table>
+</body></html>"""
+        return HTMLResponse(html)
 
 
 if __name__ == "__main__":
