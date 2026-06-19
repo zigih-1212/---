@@ -1371,45 +1371,6 @@ async def cb_partner_program(callback: CallbackQuery) -> None:
 # =============================================================================
 # === НАСТРОЙКИ (ФИЛЬТРЫ WB/OZON) =============================================
 # =============================================================================
-@router.callback_query(F.data == "saas_menu_settings")
-async def show_saas_settings(callback: CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT api_key, auto_pin, filter_wb, filter_ozon FROM users WHERE user_id=?", (user_id,)).fetchone()
-    finally:
-        conn.close()
-
-    if not user:
-        await callback.answer("❌ Ошибка загрузки настроек", show_alert=True)
-        return
-
-    api_key_status = "✅ Установлен" if user["api_key"] else "❌ Не задан"
-    auto_pin = bool(user["auto_pin"] if user["auto_pin"] is not None else 1)
-    wb = bool(user["filter_wb"] if user["filter_wb"] is not None else 1)
-    ozon = bool(user["filter_ozon"] if user["filter_ozon"] is not None else 1)
-
-    text = (
-        "⚙️ <b>Настройки SaaS-аккаунта</b>\n\n"
-        f"🔑 <b>API-ключ (ТакПродам):</b> {api_key_status}\n"
-        "<i>(Необходим для получения партнёрских ссылок и ERID)</i>\n\n"
-        "Управляйте настройками автопостинга с помощью кнопок ниже:"
-    )
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔑 Изменить API-ключ", callback_data="saas_set:apikey")],
-        [
-            InlineKeyboardButton(text=f"🛒 WB: {'✅' if wb else '❌'}", callback_data="saas_toggle:wb"),
-            InlineKeyboardButton(text=f"🛒 Ozon: {'✅' if ozon else '❌'}", callback_data="saas_toggle:ozon")
-        ],
-        [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
-        [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
-        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
-    ])
-    try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
-    except TelegramBadRequest:
-        pass
-    await callback.answer()
 
 @router.callback_query(F.data.startswith("saas_toggle:"))
 async def cb_saas_toggles(callback: CallbackQuery) -> None:
@@ -1853,6 +1814,7 @@ async def cb_menu_settings(callback: CallbackQuery) -> None:
         return
 
     if user["role"] == "saas":
+        await show_saas_settings(callback) 
         # Перенаправляем на SaaS-настройки
         await open_saas_settings(callback)
     else:
@@ -1923,6 +1885,15 @@ async def cmd_start_deeplink(message: Message, state: FSMContext, command: Comma
         await message.answer("🤝 Вы перешли по реферальной ссылке. Добро пожаловать!")
     # Далее стандартная логика
     await cmd_start(message, state) 
+
+@router.callback_query(F.data == "cabinet:open")
+async def cb_open_cabinet(callback: CallbackQuery) -> None:
+    try:
+        await callback.message.delete()
+    except:
+        pass
+    await show_user_cabinet(callback.message, user_id=callback.from_user.id)
+    await callback.answer()
 
 # =============================================================================
 # === ПЛАНИРОВЩИК И ВСПОМОГАТЕЛЬНЫЕ ПЕРИОДИЧЕСКИЕ ФУНКЦИИ =====================
