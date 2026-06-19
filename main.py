@@ -309,6 +309,8 @@ class AdminStates(StatesGroup):
 class SaasStates(StatesGroup):
     waiting_apikey = State()
     waiting_erid_override = State()
+    waiting_promocode = State()          # ← добавить
+    choosing_channel_for_promo = State() # ← добавить
 
 class PaymentFSM(StatesGroup):
     choosing_tariff = State()
