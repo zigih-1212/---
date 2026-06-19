@@ -387,6 +387,7 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
             [InlineKeyboardButton(text="🎥 Отправить видео", callback_data="blogger:send_video")]
+           [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ])
 
 def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
@@ -398,6 +399,7 @@ def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")]
             [InlineKeyboardButton(text="🎁 Активировать промокод", callback_data="promo:activate")]
+           [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ])
     else:
         return InlineKeyboardMarkup(inline_keyboard=[
@@ -2166,6 +2168,23 @@ async def cleanup_old_posts() -> None:
       # =============================================================================
 # === ОБРАБОТЧИКИ ИНСТРУКЦИЙ ==================================================
 # =============================================================================
+@router.callback_query(F.data == "support:contact")
+async def cb_support_contact(callback: CallbackQuery):
+    text = (
+        "📞 <b>Связь с администратором</b>\n\n"
+        "По любым вопросам, ошибкам, багам, предложениям и для оплаты пишите:\n"
+        "👉 <a href='https://t.me/Zigih90'>@Zigih90</a>\n\n"
+        "<i>Стараюсь отвечать быстро 😊</i>"
+    )
+    await callback.message.edit_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
+        ])
+    )
+    await callback.answer()
+
 @router.callback_query(F.data == "menu:instructions")
 async def cb_menu_instructions(callback: CallbackQuery) -> None:
     """Показывает инструкцию в зависимости от роли пользователя."""
