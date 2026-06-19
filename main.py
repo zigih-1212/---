@@ -2487,7 +2487,7 @@ async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "pay:card")
 async def cb_pay_card(callback: CallbackQuery, state: FSMContext) -> None:
-    """Оплата картой – показывает реквизиты для выбранного тарифа."""
+    """Оплата картой – показывает реквизиты и генерирует уникальный код заказа."""
     data = await state.get_data()
     tariff_id = data.get("chosen_tariff_id")
     days = data.get("chosen_days")
@@ -2506,16 +2506,30 @@ async def cb_pay_card(callback: CallbackQuery, state: FSMContext) -> None:
     finally:
         conn.close()
 
+    # Генерируем короткий код заказа: например, T3-U7152107861
+    order_code = f"T{tariff_id}-U{callback.from_user.id}"
+
+    # Сохраняем намерение в БД (опционально, но удобно для истории)
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) "
+        "VALUES (?, ?, ?, ?, ?, 'pending')",
+        (callback.from_user.id, rub, rub, 0, order_code)
+    )
+    conn.commit()
+    conn.close()
+
     text = (
         f"💳 <b>Оплата картой</b>\n\n"
-        f"Тариф: {name} ({days} дн.)\n"
-        f"Сумма: {rub:.0f} ₽\n\n"
+        f"Тариф: <b>{name}</b> ({days} дн.)\n"
+        f"Сумма: <b>{rub:.0f} ₽</b>\n\n"
+        f"💬 <b>Ваш код заказа:</b> <code>{order_code}</code>\n"
+        f"<i>Обязательно укажите этот код в комментарии к платежу!</i>\n\n"
         f"Сбер: <code>{CARD_SBER}</code>\n"
         f"Т-Банк: <code>{CARD_TBANK}</code>\n"
         f"Visa KG: <code>{CARD_VISA_KG}</code>\n\n"
         f"TON: <code>{CARD_TON}</code>\n\n"
         "После оплаты пришлите чек администратору.\n"
-        f"<i>Укажите в комментарии ваш ID: <code>{callback.from_user.id}</code></i>"
     )
     await callback.message.edit_text(
         text,
@@ -2525,7 +2539,6 @@ async def cb_pay_card(callback: CallbackQuery, state: FSMContext) -> None:
         ])
     )
     await callback.answer()
-
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(run_billing_check, trigger="interval", hours=1, kwargs={"bot": bot}, id="billing_check", replace_existing=True)
