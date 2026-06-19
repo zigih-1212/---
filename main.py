@@ -2082,5 +2082,54 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     return scheduler
 
 # =============================================================================
+# === MAIN ====================================================================
+# =============================================================================
+
+async def main() -> None:
+    logger.info("=== AutoPost Bot + Web Admin Panel запускается ===")
+    init_db()
+
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+
+    storage = MemoryStorage()
+    dp = Dispatcher(storage=storage)
+    dp.update.middleware(ErrorLoggingMiddleware())
+    dp.include_router(router)
+
+    scheduler = setup_scheduler(bot)
+    scheduler.start()
+    logger.info("Планировщик (APScheduler) запущен")
+
+    fastapi_app = create_fastapi_app(bot)
+
+    config = uvicorn.Config(
+        fastapi_app,
+        host=WEBAPP_HOST,
+        port=WEBAPP_PORT,
+        log_level="warning"
+    )
+    server = uvicorn.Server(config)
+
+    logger.info(f"🌐 Web Admin Panel доступен по адресу: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
+
+    try:
+        await asyncio.gather(
+            dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()),
+            server.serve(),
+            return_exceptions=True
+        )
+    finally:
+        await bot.session.close()
+        scheduler.shutdown()
+        logger.info("Бот и планировщик остановлены")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+# =============================================================================
 # === FASTAPI (ПОЛНАЯ АДМИН-ПАНЕЛЬ) ===========================================
 # =============================================================================
