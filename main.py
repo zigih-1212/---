@@ -2378,6 +2378,120 @@ async def main() -> None:
         scheduler.shutdown()
         logger.info("Бот и планировщик остановлены")
 
+    # =====================================================================
+    # === УПРАВЛЕНИЕ ПРОМОКОДАМИ ==========================================
+    # =====================================================================
+    @app.get("/admin/promocodes", response_class=HTMLResponse)
+    async def promocodes_page(request: Request):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            promos = conn.execute("""
+                SELECT p.code, p.days, p.created_at,
+                       a.user_id, a.channel_id, a.activated_at,
+                       u.username
+                FROM promocodes p
+                LEFT JOIN promocode_activations a ON p.code = a.code
+                LEFT JOIN users u ON a.user_id = u.user_id
+                ORDER BY p.created_at DESC
+            """).fetchall()
+        finally:
+            conn.close()
+
+        rows = ""
+        for p in promos:
+            used = p["activated_at"] is not None
+            status = "✅ Использован" if used else "🆕 Свободен"
+            user_info = f"@{p['username']}" if p["username"] else p["user_id"] if used else "—"
+            activated = str(p["activated_at"])[:16] if p["activated_at"] else "—"
+            rows += f"""
+            <tr>
+                <td><code>{p['code']}</code></td>
+                <td>{p['days']}</td>
+                <td>{status}</td>
+                <td>{user_info}</td>
+                <td>{activated}</td>
+                <td>
+                    <form action="/admin/promocodes/delete" method="post" style="display:inline">
+                        <input type="hidden" name="code" value="{p['code']}">
+                        <button style="padding:4px 8px;background:#e74c3c;border:none;color:#fff;border-radius:4px;cursor:pointer">🗑</button>
+                    </form>
+                </td>
+            </tr>"""
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Промокоды</title>
+<style>
+    body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
+    h1{{color:#fff;}}
+    table{{width:100%;border-collapse:collapse;margin-top:15px;}}
+    th,td{{padding:8px;border:1px solid #333;text-align:left;}}
+    th{{background:#1a1d27;}}
+    a{{color:#3498db;text-decoration:none;}}
+</style></head>
+<body>
+    <a href="/admin/dashboard">← Дашборд</a>
+    <h1>🎁 Промокоды</h1>
+    <div style="margin-bottom:15px">
+        <form action="/admin/promocodes/generate" method="post" style="display:inline">
+            <input type="text" name="code" placeholder="Один код (например, PROMO1)" required>
+            <input type="number" name="days" value="2" style="width:60px">
+            <button>Создать один</button>
+        </form>
+        <form action="/admin/promocodes/generate_bulk" method="post" style="display:inline;margin-left:10px">
+            <input type="number" name="count" placeholder="Кол-во" required style="width:70px">
+            <input type="number" name="days" value="2" style="width:60px">
+            <button>Сгенерировать массово</button>
+        </form>
+    </div>
+    <table>
+        <tr><th>Код</th><th>Дней</th><th>Статус</th><th>Кем активирован</th><th>Дата активации</th><th></th></tr>
+        {rows if rows else "<tr><td colspan='6'>Нет промокодов</td></tr>"}
+    </table>
+</body></html>"""
+        return HTMLResponse(html)
+
+    @app.post("/admin/promocodes/generate")
+    async def generate_promocode(request: Request, code: str = Form(...), days: int = Form(2)):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            conn.execute("INSERT INTO promocodes (code, days) VALUES (?, ?)", (code.strip().upper(), days))
+            conn.commit()
+        except:
+            pass  # код уже существует
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/promocodes", status_code=302)
+
+    @app.post("/admin/promocodes/generate_bulk")
+    async def generate_bulk_promocodes(request: Request, count: int = Form(...), days: int = Form(2)):
+        is_authenticated(request)
+        import random, string
+        conn = get_db()
+        try:
+            for _ in range(count):
+                code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+                try:
+                    conn.execute("INSERT INTO promocodes (code, days) VALUES (?, ?)", (code, days))
+                except:
+                    pass  # пропускаем дубликаты
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/promocodes", status_code=302)
+
+    @app.post("/admin/promocodes/delete")
+    async def delete_promocode(request: Request, code: str = Form(...)):
+        is_authenticated(request)
+        conn = get_db()
+        try:
+            conn.execute("DELETE FROM promocodes WHERE code = ?", (code,))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/admin/promocodes", status_code=302)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
