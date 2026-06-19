@@ -687,23 +687,24 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
         marketplace = row["marketplace"] or "wb"
         channel_id = row["channel_id"]
 
-      # Проверка дневного лимита по тарифу
-conn_limit = get_db()
-try:
-    tariff_row = conn_limit.execute(
-        "SELECT t.max_posts_per_day FROM users u JOIN tariffs t ON u.tariff_id = t.id WHERE u.user_id = ?",
-        (user_id,)
-    ).fetchone()
-    max_posts = tariff_row["max_posts_per_day"] if tariff_row else 25
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    posts_today = conn_limit.execute(
-        "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND channel_id = ? AND status = 'published' AND published_at >= ?",
-        (user_id, target_channel, today_start)
-    ).fetchone()["cnt"]
-    if posts_today >= max_posts:
-        continue  # пропускаем, лимит исчерпан
-finally:
-    conn_limit.close()
+        # Проверка дневного лимита по тарифу (если потребуется)
+        conn_limit = get_db()
+        try:
+            tariff_row = conn_limit.execute(
+                "SELECT t.max_posts_per_day FROM users u JOIN tariffs t ON u.tariff_id = t.id WHERE u.user_id = ?",
+                (row["user_id"],)
+            ).fetchone()
+            max_posts = tariff_row["max_posts_per_day"] if tariff_row else 25
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+            posts_today = conn_limit.execute(
+                "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND channel_id = ? AND status = 'published' AND published_at >= ?",
+                (row["user_id"], channel_id, today_start)
+            ).fetchone()["cnt"]
+        finally:
+            conn_limit.close()
+
+        if posts_today >= max_posts:
+            continue  # лимит исчерпан, оставляем в очереди до следующего раза
 
         post_html = await process_saas_core(
             bot=bot,
@@ -756,7 +757,7 @@ finally:
                 except Exception as e:
                     logger.warning(f"Не удалось закрепить пост: {e}")
 
-            # Удаляем из очереди
+            # Удаляем из очереди после успешной публикации
             conn_del = get_db()
             conn_del.execute("DELETE FROM saas_queue WHERE id = ?", (row["id"],))
             conn_del.commit()
@@ -768,7 +769,6 @@ finally:
             logger.error(f"Ошибка при публикации из очереди SaaS: {e}")
 
     return published_count
-
 # =============================================================================
 # === SAAS-ФУНКЦИИ (НОВЫЕ) ====================================================
 # =============================================================================
