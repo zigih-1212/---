@@ -155,7 +155,7 @@ CARD_TON: str = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBrDpay_FJRJoWZa1
 CARD_VISA_KG: str = os.getenv("PAY_VISA_KG", "4196720087839790")
 
 # Тарифы
-def kb_tariffs(traffic_source: str) -> InlineKeyboardMarkup:
+def kb_tariffs(traffic_source: str = "") -> InlineKeyboardMarkup:
     tariffs = load_tariffs()
     rows = []
     for t in tariffs:
