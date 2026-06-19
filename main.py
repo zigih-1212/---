@@ -299,6 +299,7 @@ class OnboardingStates(StatesGroup):
     waiting_source_channel = State()
     waiting_saas_tg_channel = State()
     waiting_target_choice = State()
+    waiting_video_link = State()
 
 class AdminStates(StatesGroup):
     broadcast_text = State()
@@ -372,7 +373,7 @@ def is_night_time() -> bool:
 # === КЛАВИАТУРЫ ==============================================================
 # =============================================================================
 def kb_main_menu(role: str) -> InlineKeyboardMarkup:
-    if role == "saas":
+    if role == "bloger":
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")]
         ])
@@ -385,6 +386,7 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
+            [InlineKeyboardButton(text="🎥 Отправить видео", callback_data="blogger:send_video")]
         ])
 
 def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
@@ -1346,6 +1348,60 @@ async def cb_menu_pub_mode(callback: CallbackQuery) -> None:
     except TelegramBadRequest:
         pass
     await callback.answer()
+
+@router.callback_query(F.data == "blogger:send_video")
+async def cb_blogger_send_video(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text(
+        "🎥 Отправьте ссылку на видео (YouTube, TikTok, Instagram), и бот сразу обработает его.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:main")]
+        ])
+    )
+    await state.set_state(OnboardingStates.waiting_video_link)
+    await callback.answer()
+
+@router.message(OnboardingStates.waiting_video_link)
+async def blogger_video_link_received(message: Message, state: FSMContext):
+    url = message.text.strip()
+    user_id = message.from_user.id
+
+    # Проверяем, что пользователь – блогер и у него привязан канал
+    conn = get_db()
+    user = conn.execute("SELECT channel_id, sub_id, blogger_mode FROM users WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    if not user or not user["channel_id"]:
+        await message.answer("❌ Сначала привяжите канал в разделе «📢 Мой канал».")
+        await state.clear()
+        return
+
+    # Извлекаем информацию о видео
+    info = extract_video_info(url)
+    if not info:
+        await message.answer("❌ Не удалось обработать ссылку. Проверьте правильность URL.")
+        await state.clear()
+        return
+
+    video_id = info.get('id') or info.get('display_id')
+    description = info.get('description') or info.get('title')
+    photo_url = info.get('thumbnail')
+    sku_list = find_product_links(description)
+    sku = sku_list[0]['value'] if sku_list else None
+    marketplace = sku_list[0].get('marketplace', 'wb') if sku_list else 'wb'
+
+    # Запускаем процесс публикации
+    from parser import process_new_video
+    await process_new_video(
+        bot=message.bot,
+        user_id=user_id,
+        video_id=video_id,
+        description=description,
+        sku=sku,
+        photo_url=photo_url,
+        marketplace=marketplace,
+    )
+
+    await message.answer("✅ Видео обработано! Пост отправлен в ваш канал.")
+    await state.clear()
 
 @router.callback_query(F.data.startswith("blogger_mode:"))
 async def cb_set_blogger_mode(callback: CallbackQuery) -> None:
