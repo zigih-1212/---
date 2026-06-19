@@ -2168,46 +2168,93 @@ async def cleanup_old_posts() -> None:
 # =============================================================================
 @router.callback_query(F.data == "menu:instructions")
 async def cb_menu_instructions(callback: CallbackQuery) -> None:
-    await callback.message.edit_text(
-        "📖 <b>Центр инструкций</b>\n\nВыбери нужный раздел:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="👤 Для блогеров", callback_data="instr:blogger")],
-            [InlineKeyboardButton(text="🔑 Для SaaS", callback_data="instr:saas")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
-        ]),
-    )
+    """Показывает инструкцию в зависимости от роли пользователя."""
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        role = user["role"] if user else "blogger"
+    finally:
+        conn.close()
+
+    if role == "saas":
+        await show_saas_instruction(callback)
+    else:
+        await show_blogger_instruction(callback)
     await callback.answer()
 
-@router.callback_query(F.data == "instr:blogger")
-async def cb_instr_blogger(callback: CallbackQuery) -> None:
-    await callback.message.edit_text(
+async def show_blogger_instruction(callback: CallbackQuery):
+    text = (
         "📖 <b>Инструкция для блогеров</b>\n\n"
-        "1. Привяжи Telegram-канал через «📢 Мой канал»\n"
-        "2. Бот автоматически публикует посты с маркировкой ERID\n"
-        "3. По каждому выкупу начисляется вознаграждение в «📊 Статистика»\n"
-        "4. Минимальная сумма для вывода: 2000 руб.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:instructions")]
-        ]),
+        "<b>1. Привязка канала</b>\n"
+        "─ Перейди в «📢 Мой канал» и отправь @username своего Telegram-канала или "
+        "перешли любое сообщение из него.\n"
+        "─ Бот проверит права и запомнит канал.\n\n"
+        "<b>2. Отправка видео</b>\n"
+        "─ Нажми «🎥 Отправить видео» в главном меню.\n"
+        "─ Пришли ссылку на видео из YouTube, TikTok или Instagram.\n"
+        "─ Бот найдёт артикулы (SKU) Wildberries/Ozon в описании, сделает рерайт, "
+        "получит партнёрскую ссылку и опубликует готовый пост с маркировкой (ERID).\n\n"
+        "<b>3. Режимы публикации</b>\n"
+        "─ В разделе «⚙️ Режим публикации» можно выбрать:\n"
+        "   • «Напрямую в мой канал» — пост придёт в твой Telegram-канал.\n"
+        "   • «VIP-закреп в главном канале (24ч)» — пост отправится в VIP-канал, "
+        "который настроил администратор, и будет закреплён на 24 часа.\n\n"
+        "<b>4. Ночной режим</b>\n"
+        "─ С 23:00 до 08:00 (МСК) посты не публикуются сразу, а попадают в очередь. "
+        "Они будут автоматически отправлены утром в 08:00.\n\n"
+        "<b>5. Заработок и выплаты</b>\n"
+        "─ Заработок отображается в «📊 Статистика».\n"
+        "─ Когда накопится минимум 2000 ₽, появится кнопка «Запросить выплату».\n"
+        "─ Выплаты обрабатываются администратором вручную.\n\n"
+        "<b>6. Настройки</b>\n"
+        "─ В «⚙️ Настройки» можно включить/отключить фильтры по Wildberries и Ozon.\n\n"
+        "<i>По всем вопросам обращайся к администратору.</i>"
     )
-    await callback.answer()
-
-@router.callback_query(F.data == "instr:saas")
-async def cb_instr_saas(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
-        "📖 <b>Инструкция для SaaS-клиентов</b>\n\n"
-        "1. Введи API-ключ от ТакПродам в настройках\n"
-        "2. Привяжи канал и настрой фильтры маркетплейсов\n"
-        "3. Активируй подписку — посты публикуются автоматически с ERID\n"
-        "4. При отсутствии ERID пост уходит в карантин на ручную проверку",
+        text,
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:instructions")]
-        ]),
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
+        ])
     )
-    await callback.answer()
+
+async def show_saas_instruction(callback: CallbackQuery):
+    text = (
+        "📖 <b>Инструкция для SaaS-клиентов</b>\n\n"
+        "<b>1. Подготовка</b>\n"
+        "─ Получи API-ключ в личном кабинете ТакПродам.\n"
+        "─ Введи его в боте: «⚙️ Настройки» → «🔑 Изменить API-ключ».\n"
+        "─ Оплати подписку или активируй промокод на 2 дня.\n\n"
+        "<b>2. Подключение каналов</b>\n"
+        "─ Перейди в «📢 Мои каналы» и отправь @username своего канала (можно несколько).\n"
+        "─ Бот проверит права администратора и добавит канал.\n\n"
+        "<b>3. Автоматический постинг</b>\n"
+        "─ Бот сам сканирует каналы-доноры (их настраивает администратор).\n"
+        "─ Каждые 15 минут он проверяет новые посты, делает рерайт и публикует их в твои каналы.\n"
+        "─ Пост содержит: уникальное описание, артикул товара, партнёрскую ссылку с твоим sub_id, "
+        "маркировку (ERID) и название рекламодателя.\n\n"
+        "<b>4. Ночной режим и очередь</b>\n"
+        "─ С 23:00 до 08:00 (МСК) посты не выходят, а сохраняются в твою личную очередь.\n"
+        "─ Ты можешь в любой момент нажать «🚀 Опубликовать сейчас (Force Post)» в настройках, "
+        "и все накопленные посты выйдут мгновенно (даже ночью).\n\n"
+        "<b>5. Авто-закреп</b>\n"
+        "─ В настройках можно включить автоматическое закрепление постов в канале.\n\n"
+        "<b>6. Промокоды</b>\n"
+        "─ В личном кабинете есть кнопка «🎁 Активировать промокод».\n"
+        "─ Введи код и выбери канал — подписка продлится на 2 дня.\n"
+        "─ Один код действует один раз на один канал.\n\n"
+        "<b>7. Если нет ERID</b>\n"
+        "─ Пост без ERID будет заблокирован и отправлен на проверку администратору (карантин).\n\n"
+        "<i>По всем вопросам обращайся к администратору.</i>"
+    )
+    await callback.message.edit_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+        ])
+    )
 
 # =============================================================================
 # === ОБРАБОТЧИКИ ТАРИФОВ И ОПЛАТЫ ===========================================
