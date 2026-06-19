@@ -1366,6 +1366,49 @@ async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
     await _show_saas_stats(callback, callback.from_user.id, channel_idx, period)
     await callback.answer()
 
+@router.pre_checkout_query()
+async def process_pre_checkout_query(query: PreCheckoutQuery):
+    """Подтверждаем возможность оплаты."""
+    await query.answer(ok=True)
+
+@router.message(SuccessfulPayment)
+async def process_successful_payment(message: Message):
+    """Активация подписки после успешной оплаты звёздами."""
+    payload = message.successful_payment.invoice_payload
+    if not payload.startswith("tariff_"):
+        return
+
+    parts = payload.split("_")
+    if len(parts) != 3:
+        return
+    tariff_id = int(parts[1])
+    days = int(parts[2])
+
+    conn = get_db()
+    try:
+        # Проверяем тариф
+        tariff = conn.execute("SELECT days FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
+        if not tariff:
+            await message.answer("❌ Тариф не найден. Обратитесь к администратору.")
+            return
+        days = tariff["days"]
+
+        new_until = datetime.now(timezone.utc) + timedelta(days=days)
+        conn.execute(
+            "UPDATE users SET subscription_until = ?, is_active = 1, tariff_id = ? WHERE user_id = ?",
+            (new_until.isoformat(), tariff_id, message.from_user.id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    await message.answer(
+        f"✅ <b>Подписка активирована!</b>\n\n"
+        f"Тариф: {tariff['name'] if tariff else '—'}\n"
+        f"Действует до: {new_until.strftime('%d.%m.%Y %H:%M')} (UTC)\n\n"
+        f"Спасибо за покупку!",
+        parse_mode=ParseMode.HTML
+    )  
 # =============================================================================
 # === ОБРАБОТЧИКИ КАНАЛОВ (БЛОГЕР) ============================================
 # =============================================================================
@@ -2453,7 +2496,7 @@ async def cb_select_tariff(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "pay:stars")
 async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
-    """Оплата звёздами – здесь нужно выставить счёт, пока заглушка."""
+    """Оплата звёздами — выставляет счёт."""
     data = await state.get_data()
     tariff_id = data.get("chosen_tariff_id")
     days = data.get("chosen_days")
@@ -2461,7 +2504,6 @@ async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("❌ Сначала выберите тариф", show_alert=True)
         return
 
-    # Загружаем тариф из БД, чтобы узнать цену в звёздах
     conn = get_db()
     try:
         tariff = conn.execute("SELECT name, price_stars FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
@@ -2469,15 +2511,25 @@ async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
             await callback.answer("Тариф не найден", show_alert=True)
             return
         stars = tariff["price_stars"]
+        name = tariff["name"]
     finally:
         conn.close()
 
-    # Здесь должен быть вызов send_invoice для звёзд. Пока заглушка.
+    # Отправляем счёт через Telegram Stars
+    await callback.bot.send_invoice(
+        chat_id=callback.from_user.id,
+        title=f"Подписка {name}",
+        description=f"Доступ на {days} дней ко всем функциям AutoPost.",
+        payload=f"tariff_{tariff_id}_{days}",
+        currency="XTR",
+        prices=[
+            LabeledPrice(label=f"{name} ({days} дн.)", amount=stars)
+        ],
+        provider_token="",  # для XTR не нужен
+        start_parameter="subscribe",
+    )
     await callback.message.edit_text(
-        f"⭐ <b>Оплата звёздами</b>\n\n"
-        f"Тариф: {tariff['name']} ({days} дн.)\n"
-        f"Стоимость: {stars} ⭐\n\n"
-        "<i>Функция в разработке.</i>",
+        "⭐ <b>Счёт отправлен в чат!</b>\n\nОплатите его, и подписка активируется автоматически.",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:tariffs")]
