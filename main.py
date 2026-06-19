@@ -18,6 +18,8 @@ from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Dict, Any, List
 from admin_panel import create_fastapi_app
+import sys
+print("DEBUG: main.py started", flush=True, file=sys.stderr)
 
 import httpx
 import uvicorn
