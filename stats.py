@@ -32,7 +32,6 @@ def get_db():
 # =============================================================================
 
 def get_blogger_stats(user_id: int) -> Dict:
-    """Полная статистика для блогера"""
     conn = get_db()
     try:
         post_stats = conn.execute("""
@@ -61,8 +60,9 @@ def get_blogger_stats(user_id: int) -> Dict:
             "posts_last_30d":   int(post_stats["posts_last_30d"] or 0),
             "published_last_30d": int(post_stats["published_last_30d"] or 0),
             "total_sales":      int(sales_stats["total_sales"] or 0),
-            "total_earned":     round(float(sales_stats["total_earned"] or 0), 2),
-            "earned_last_30d":  round(float(sales_stats["earned_last_30d"] or 0), 2),
+            # 50% блогеру
+            "total_earned":     round(float(sales_stats["total_earned"] or 0) / 2, 2),
+            "earned_last_30d":  round(float(sales_stats["earned_last_30d"] or 0) / 2, 2),
         }
     except Exception as e:
         logger.error(f"Ошибка get_blogger_stats для {user_id}: {e}")
@@ -73,7 +73,6 @@ def get_blogger_stats(user_id: int) -> Dict:
         }
     finally:
         conn.close()
-
 
 # =============================================================================
 # === SAAS ====================================================================
