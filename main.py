@@ -45,7 +45,7 @@ from aiogram.types import (
     SuccessfulPayment,
     TelegramObject,
 )
-from parser import extract_video_info, rewrite_text_with_ai, get_product_data_by_token, fetch_telegram_channel_posts, find_product_links, resolve_erid
+from parser import extract_video_info, rewrite_text_with_ai, get_product_data_by_token, fetch_telegram_channel_posts, find_product_links
 from aiogram.types import (
     WebAppInfo,
 )
