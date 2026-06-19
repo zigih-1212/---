@@ -2129,7 +2129,14 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
+  
+@app.exception_handler(Exception)
+async def debug_exception_handler(request: Request, exc: Exception):
+    logger.exception("Admin panel error")
+    return HTMLResponse(
+    f"<h3>❌ Internal Server Error</h3><pre>{html.escape(str(exc))}</pre>",
+    status_code=500
+        )
 # =============================================================================
 # === FASTAPI (ПОЛНАЯ АДМИН-ПАНЕЛЬ) ===========================================
 # =============================================================================
