@@ -946,13 +946,14 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
             finally:
                 db.close()
 
-           for row in saas_rows:
-               user_id = row["user_id"]
-               target_channel = row["channel_id"]
+                       for row in saas_rows:
+                user_id = row["user_id"]
+                target_channel = row["channel_id"]
 
-    # Проверяем, не совпадает ли целевой канал с каналом-донором
-          if target_channel.lstrip("@").lower() == channel.lstrip("@").lower():
-              continue  # пропускаем этого SaaS-клиента
+                # Проверяем, не совпадает ли целевой канал с каналом-донором
+                if target_channel.lstrip("@").lower() == channel.lstrip("@").lower():
+                    continue  # пропускаем этого SaaS-клиента
+
                 # Читаем настройку auto_pin
                 conn_pin = get_db()
                 try:
