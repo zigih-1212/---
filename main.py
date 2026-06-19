@@ -2426,20 +2426,58 @@ async def show_saas_instruction(callback: CallbackQuery):
 # =============================================================================
 @router.callback_query(F.data == "menu:tariffs")
 async def cb_tariffs(callback: CallbackQuery) -> None:
-    """Выбор способа оплаты для SaaS"""
+    """Показывает список тарифов для выбора."""
     await callback.message.edit_text(
-        "💎 <b>Продление подписки</b>\n\nВыберите удобный способ оплаты:",
+        "💎 <b>Выберите тариф:</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_tariffs()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("buy:"))
+async def cb_select_tariff(callback: CallbackQuery, state: FSMContext):
+    """Пользователь выбрал тариф – сохраняем и предлагаем оплату."""
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        await callback.answer("❌ Неверный тариф", show_alert=True)
+        return
+    tariff_id = int(parts[1])
+    days = int(parts[2])
+    await state.update_data(chosen_tariff_id=tariff_id, chosen_days=days)
+    await callback.message.edit_text(
+        "💎 <b>Выберите способ оплаты:</b>",
         parse_mode=ParseMode.HTML,
         reply_markup=kb_payment_methods()
     )
     await callback.answer()
 
 @router.callback_query(F.data == "pay:stars")
-async def cb_pay_stars(callback: CallbackQuery) -> None:
-    """Telegram Stars"""
+async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
+    """Оплата звёздами – здесь нужно выставить счёт, пока заглушка."""
+    data = await state.get_data()
+    tariff_id = data.get("chosen_tariff_id")
+    days = data.get("chosen_days")
+    if not tariff_id:
+        await callback.answer("❌ Сначала выберите тариф", show_alert=True)
+        return
+
+    # Загружаем тариф из БД, чтобы узнать цену в звёздах
+    conn = get_db()
+    try:
+        tariff = conn.execute("SELECT name, price_stars FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
+        if not tariff:
+            await callback.answer("Тариф не найден", show_alert=True)
+            return
+        stars = tariff["price_stars"]
+    finally:
+        conn.close()
+
+    # Здесь должен быть вызов send_invoice для звёзд. Пока заглушка.
     await callback.message.edit_text(
-        "⭐ <b>Оплата через Telegram Stars</b>\n\n"
-        "Здесь будет список тарифов для оплаты Stars.",
+        f"⭐ <b>Оплата звёздами</b>\n\n"
+        f"Тариф: {tariff['name']} ({days} дн.)\n"
+        f"Стоимость: {stars} ⭐\n\n"
+        "<i>Функция в разработке.</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:tariffs")]
@@ -2448,10 +2486,30 @@ async def cb_pay_stars(callback: CallbackQuery) -> None:
     await callback.answer()
 
 @router.callback_query(F.data == "pay:card")
-async def cb_pay_card(callback: CallbackQuery) -> None:
-    """Оплата картой"""
+async def cb_pay_card(callback: CallbackQuery, state: FSMContext) -> None:
+    """Оплата картой – показывает реквизиты для выбранного тарифа."""
+    data = await state.get_data()
+    tariff_id = data.get("chosen_tariff_id")
+    days = data.get("chosen_days")
+    if not tariff_id:
+        await callback.answer("❌ Сначала выберите тариф", show_alert=True)
+        return
+
+    conn = get_db()
+    try:
+        tariff = conn.execute("SELECT name, price_rub FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
+        if not tariff:
+            await callback.answer("Тариф не найден", show_alert=True)
+            return
+        rub = tariff["price_rub"]
+        name = tariff["name"]
+    finally:
+        conn.close()
+
     text = (
-        "💳 <b>Оплата банковской картой</b>\n\n"
+        f"💳 <b>Оплата картой</b>\n\n"
+        f"Тариф: {name} ({days} дн.)\n"
+        f"Сумма: {rub:.0f} ₽\n\n"
         f"Сбер: <code>{CARD_SBER}</code>\n"
         f"Т-Банк: <code>{CARD_TBANK}</code>\n"
         f"Visa KG: <code>{CARD_VISA_KG}</code>\n\n"
