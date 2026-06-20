@@ -1244,11 +1244,11 @@ async def process_saas_core(
     # Очищаем рерайт от остатков ссылок и мусора
     clean_rewritten = re.sub(r'https?://\S+', '', rewritten_text).strip()
     clean_rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_rewritten, flags=re.IGNORECASE)
-    # Убираем случайные символы < > от ИИ, чтобы не ломать HTML
+        # Убираем случайные символы < > от ИИ, чтобы не ломать HTML
     clean_rewritten = clean_rewritten.replace('<', '').replace('>', '')
 
     # Жёсткая защита от пустого текста
-       if len(clean_rewritten) < 10:
+    if len(clean_rewritten) < 10:
         clean_rewritten = "Отличный товар по ссылке – переходи и заказывай!"
         fallback_text = original_text.split('http')[0].strip()
         if len(fallback_text) < 10:
