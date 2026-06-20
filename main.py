@@ -1291,19 +1291,23 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     channel_id=target_channel,
                     force_post=force_post,
                     rewritten_text=prepared["rewritten"] if prepared else None,
-                    url=prepared["url"] if prepared else None,          # ← теперь url
+                    url=prepared["url"] if prepared else None,
                     marketplace=prepared["marketplace"] if prepared else "WB"
-              )
+                )
                 if not post_html:
                     continue
 
-                              # Получаем фото через Deeplink API, если его нет в доноре
-                if not photo_url and prepared and prepared.get("url"):
+                # Всегда пробуем получить фото через Deeplink API
+                if prepared and prepared.get("url"):
                     erid_data = await resolve_erid(bot, user_id, prepared["url"], full_donor_id, target_channel)
                     if erid_data and erid_data.get("image_url"):
                         photo_url = erid_data["image_url"]
 
-                # Заглушка, если фото так и нет
+                # Если Deeplink не дал фото – используем донорское
+                if not photo_url:
+                    photo_url = post.get("image_url")
+
+                # Заглушка только если совсем ничего нет
                 if not photo_url:
                     mp = prepared.get("marketplace", "WB") if prepared else "WB"
                     photo_url = "https://wildberries.ru/favicon.ico" if mp == "WB" else "https://ozon.ru/favicon.ico"
