@@ -954,7 +954,7 @@ async def fetch_takprodam_by_sku(token: str, sku: str) -> Optional[Dict[str, str
     except Exception as e:
         logger.error(f"Ошибка при запросе к ТакПродам для SKU {sku}: {e}")
         return None
-      async def get_source_id(token: str) -> Optional[int]:
+async def get_source_id(token: str) -> Optional[int]:
     """Получает source_id для токена (кэширует в БД)."""
     conn = get_db()
     try:
