@@ -160,27 +160,47 @@ async def get_product_data_by_token(token: str, sku: str) -> Optional[Dict]:
 # === AI REWRITE (DeepInfra / запасной) ======================================
 # =============================================================================
 async def rewrite_text_with_ai(text: str) -> str:
-    """Рерайт текста через бесплатный Groq API."""
+    """
+    Создаёт рекламный пост из сырых характеристик товара через Groq.
+    Если текст слишком короткий или API недоступен, возвращает исходный текст.
+    """
+    if not text or len(text) < 15:
+        return text
+
     api_key = os.getenv("GROQ_API_KEY", "")
     if not api_key:
         return text
 
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    system_prompt = (
+        "Ты - топовый копирайтер для Telegram-канала с находками с Wildberries и Ozon. "
+        "Твоя задача: взять сырые характеристики товара и написать короткий, сочный и продающий рекламный пост "
+        "(максимум 3-4 предложения). Используй 2-3 подходящих эмодзи. "
+        "Обязательно сохрани цену и размеры, если они указаны. "
+        "КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО: писать стихи, придумывать ссылки, здороваться, использовать HTML-теги."
+    )
+
     payload = {
         "model": "llama-3.1-8b-instant",
-        "messages": [{"role": "user", "content": f"Перепиши этот текст для рекламного поста в Telegram, сохранив суть и сделав его уникальным. Только текст без заголовков и призывов:\n\n{text}"}],
-        "temperature": 0.8,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Опиши этот товар на основе данных:\n\n{text}"}
+        ],
+        "temperature": 0.5,
         "max_tokens": 500,
     }
+
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(url, headers=headers, json=payload)
         if resp.status_code == 200:
-            return resp.json()["choices"][0]["message"]["content"]
+            return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
         logger.error(f"Ошибка Groq рерайта: {e}")
-    return text
+
+    return text  # fallback
 
 # =============================================================================
 # === ПРОВЕРКА ДУБЛИКАТОВ (БЛОГЕР) ===========================================
