@@ -1129,6 +1129,9 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
             logger.error(f"Ошибка получения постов из {channel}: {e}")
             continue
 
+        # Определяем, является ли канал источником SKU для пула
+        is_sku_source = channel.startswith("sku_")
+
         for post in posts:
             post_id = post.get("id")
             if not post_id:
@@ -1138,7 +1141,24 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
             text = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', text, flags=re.IGNORECASE)
             photo_url = post.get("image_url")
 
-            # Проверка дубликатов (глобально, один раз)
+            # === Если это канал-сборщик SKU ===
+            if is_sku_source:
+                products = find_product_links(text)
+                for p in products:
+                    if p.get("type") == "sku":
+                        sku = p["value"]
+                        marketplace = p.get("marketplace", "wb").upper()
+                        title = f"Товар {sku}"
+                        conn = get_db()
+                        try:
+                            conn.execute("INSERT OR IGNORE INTO product_pool (sku, title, marketplace, added_by) VALUES (?, ?, ?, ?)",
+                                         (sku, title, marketplace, 0))
+                            conn.commit()
+                        finally:
+                            conn.close()
+                continue  # не публикуем, только собираем SKU
+
+            # === Обычная логика для доноров ===
             if not force_post:
                 db = get_db()
                 try:
@@ -1151,10 +1171,11 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                 finally:
                     db.close()
 
-            # ОДИН РАЗ готовим контент
             prepared = await prepare_post_content(text)
             if not prepared and not force_post:
                 continue
+
+            # ... остальная логика публикации для SaaS-клиентов (без изменений)
 
             # Получаем всех активных SaaS-пользователей
             db = get_db()
