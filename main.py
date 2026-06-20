@@ -1177,8 +1177,8 @@ async def process_saas_core(
     sku: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
-    """Формирует чистый пост. Ошибки наружу не показывает."""
-    
+    """Формирует пост с партнёрской ссылкой через Deeplink API."""
+
     # Ночной режим – сохраняем в очередь
     if not force_post and is_night_time():
         if not rewritten_text:
@@ -1198,11 +1198,8 @@ async def process_saas_core(
         prepared = await prepare_post_content(original_text)
         if not prepared:
             if force_post:
-                # Нет SKU – делаем просто рерайт без артикула и ссылки
                 clean_text = re.sub(r'https?://\S+', '', original_text).strip()
                 rewritten = await rewrite_text_with_ai(clean_text)
-                if not rewritten:
-                    rewritten = clean_text   # если рерайт совсем пустой – берём оригинал
                 rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', rewritten, flags=re.IGNORECASE)
                 return f"{rewritten}\n\n<i>Реклама</i>"
             return None
@@ -1210,7 +1207,7 @@ async def process_saas_core(
         sku = prepared["sku"]
         marketplace = prepared["marketplace"]
 
-    # Пытаемся получить ERID
+    # Получаем ERID и партнёрскую ссылку через Deeplink
     erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
 
     if erid_data and erid_data.get("erid"):
@@ -1224,7 +1221,6 @@ async def process_saas_core(
             f"Реклама. {advertiser}. Erid: {erid}"
         )
     else:
-        # ERID нет, но пост должен выйти (force_post) – прямая ссылка без партнёрки
         if force_post:
             direct_link = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx" if marketplace == "WB" else f"https://ozon.ru/product/{sku}/"
             post_html = (
@@ -1234,7 +1230,7 @@ async def process_saas_core(
                 f"Реклама"
             )
         else:
-            return None   # без force_post пост не идёт
+            return None
 
     return post_html
 
