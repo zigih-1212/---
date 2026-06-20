@@ -740,14 +740,14 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
 
         post_html = await process_saas_core(
             bot=bot,
-            user_id=row["user_id"],
-            donor_post_id=row["donor_post_id"],
-            channel_id=channel_id,
-            force_post=True,
-            rewritten_text=rewritten_text,
-            sku=sku,
-            marketplace=marketplace
-        )
+            user_id=user_id,
+            donor_post_id=full_donor_id,
+            channel_id=target_channel,
+            force_post=force_post,
+            rewritten_text=prepared["rewritten"] if prepared else None,
+            url=prepared["url"] if prepared else None,          # ← теперь url
+            marketplace=prepared["marketplace"] if prepared else "WB"
+      )
         if not post_html:
             conn2 = get_db()
             conn2.execute("DELETE FROM saas_queue WHERE id = ?", (row["id"],))
