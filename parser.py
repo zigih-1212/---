@@ -133,10 +133,6 @@ async def get_product_data(sku: str, sub_id: str) -> Optional[Dict]:
 
 
 async def get_product_data_by_token(token: str, sub_id: str) -> Optional[Dict]:
-    """
-    Получение данных через КЛИЕНТСКИЙ токен (SaaS-клиент).
-    Возвращает {erid, advertiser, link} или None.
-    """
     url = "https://api.takprodam.ru/v1/products/info"
     headers = {"Authorization": f"Bearer {token}"}
     try:
@@ -149,6 +145,7 @@ async def get_product_data_by_token(token: str, sub_id: str) -> Optional[Dict]:
                     "erid": data.get("erid"),
                     "advertiser": data.get("advertiser"),
                     "link": f"{original_link}?sub_id={sub_id}" if original_link else "",
+                    "image_url": data.get("image") or data.get("photo") or "",
                 }
     except Exception as e:
         logger.error(f"get_product_data_by_token error: {e}")
