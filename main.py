@@ -2113,9 +2113,6 @@ async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     code = data.get("promocode")
     days = data.get("promo_days", 2)
-    card = user["payout_card"] if user else None
-        if card:
-            await callback.message.edit_text(...)
     
     conn = get_db()
     try:
@@ -2148,7 +2145,22 @@ async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
     )
     await state.clear()
     await callback.answer("Готово!", show_alert=True)
-  
+
+
+@router.callback_query(F.data == "payout:request")
+async def cb_payout_request(callback: CallbackQuery, state: FSMContext) -> None:
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT payout_card FROM users WHERE user_id=?", (user_id,)).fetchone()
+        active = conn.execute("SELECT COUNT(*) as cnt FROM payouts WHERE user_id=? AND status='pending'", (user_id,)).fetchone()
+    finally:
+        conn.close()
+
+    if active["cnt"] >= MAX_ACTIVE_PAYOUTS:
+        await callback.answer(f"❌ У вас уже {MAX_ACTIVE_PAYOUTS} активные заявки.", show_alert=True)
+        return
+
     card = user["payout_card"] if user else None
     if card:
         await callback.message.edit_text(
@@ -2175,6 +2187,7 @@ async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
         await state.set_state(PayoutStates.waiting_for_card)
     await callback.answer()
 
+
 @router.callback_query(F.data == "payout:change_card")
 async def cb_payout_change_card(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
@@ -2186,6 +2199,7 @@ async def cb_payout_change_card(callback: CallbackQuery, state: FSMContext) -> N
     )
     await state.set_state(PayoutStates.waiting_for_card)
     await callback.answer()
+
 
 @router.message(PayoutStates.waiting_for_card)
 async def payout_got_card(message: Message, state: FSMContext) -> None:
@@ -2206,6 +2220,7 @@ async def payout_got_card(message: Message, state: FSMContext) -> None:
         f"Теперь введите сумму для вывода (минимум {MIN_PAYOUT:.0f} ₽):",
         parse_mode=ParseMode.HTML
     )
+
 
 @router.message(PayoutStates.waiting_for_amount)
 async def payout_got_amount(message: Message, state: FSMContext) -> None:
@@ -2278,6 +2293,7 @@ async def payout_got_amount(message: Message, state: FSMContext) -> None:
             )
         except TelegramAPIError as e:
             logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
+
 
 @router.callback_query(F.data.startswith("payout:done:"))
 async def cb_payout_done(callback: CallbackQuery) -> None:
