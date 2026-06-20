@@ -954,6 +954,34 @@ async def fetch_takprodam_by_sku(token: str, sku: str) -> Optional[Dict[str, str
     except Exception as e:
         logger.error(f"Ошибка при запросе к ТакПродам для SKU {sku}: {e}")
         return None
+      async def get_source_id(token: str) -> Optional[int]:
+    """Получает source_id для токена (кэширует в БД)."""
+    conn = get_db()
+    try:
+        cached = conn.execute("SELECT source_id FROM takprodam_sources WHERE token = ?", (token,)).fetchone()
+        if cached:
+            return cached["source_id"]
+    finally:
+        conn.close()
+
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get("https://api.takprodam.ru/v2/publisher/source/", headers=headers)
+        if resp.status_code == 200:
+            sources = resp.json().get("results", [])
+            if sources:
+                source_id = sources[0]["id"]
+                conn = get_db()
+                try:
+                    conn.execute("INSERT OR REPLACE INTO takprodam_sources (token, source_id) VALUES (?, ?)", (token, source_id))
+                    conn.commit()
+                finally:
+                    conn.close()
+                return source_id
+    except Exception as e:
+        logger.error(f"get_source_id error: {e}")
+    return None
 async def fetch_products_from_takprodam(token: str, marketplace: str = "Wildberries", limit: int = 10) -> List[Dict]:
     """Получает список товаров с партнёрскими ссылками через API v2."""
     headers = {"Authorization": f"Bearer {token}"}
@@ -1052,60 +1080,53 @@ async def resolve_erid(
         db.close()
 
     if not row:
-        logger.warning(f"resolve_erid: пользователь {user_id} не найден")
         return None
 
     api_key = row["api_key"] or ""
     override_erid = (row["client_erid_override"] or "").strip()
 
-    # Строим прямую ссылку на товар
     direct_url = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx"
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
     erid = None
     advertiser = None
     partner_link = None
     image_url = None
 
-    # Пробуем Deeplink API с ключом клиента
-    if api_key:
+    async def try_deeplink(token: str):
+        nonlocal erid, advertiser, partner_link, image_url
+        source_id = await get_source_id(token)
+        if not source_id:
+            logger.warning(f"Deeplink: не удалось получить source_id для токена {token[:4]}...")
+            return
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {"source_id": source_id, "target_url": direct_url}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
                     "https://api.takprodam.ru/v2/publisher/deeplink/",
                     headers=headers,
-                    json={"source_id": None, "target_url": direct_url}
+                    json=payload
                 )
             if resp.status_code == 200:
                 data = resp.json()
-                partner_link = data.get("tracking_link") or data.get("link")
-                erid = (data.get("erid") or "").strip()
-                advertiser = (data.get("advertiser") or "").strip()
-                image_url = data.get("image_url") or data.get("image") or ""
+                partner_link = data.get("tracking_link") or data.get("link") or partner_link
+                erid = (data.get("erid") or "").strip() or erid
+                advertiser = (data.get("advertiser") or "").strip() or advertiser
+                image_url = data.get("image_url") or data.get("image") or image_url
             else:
                 logger.warning(f"Deeplink API error {resp.status_code}: {resp.text}")
         except Exception as e:
             logger.error(f"Deeplink API exception: {e}")
 
-    # Если не получилось через клиента – пробуем мастер-токен
-    if not erid and TAKPRODAM_MASTER_TOKEN and api_key != TAKPRODAM_MASTER_TOKEN:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    "https://api.takprodam.ru/v2/publisher/deeplink/",
-                    headers={"Authorization": f"Bearer {TAKPRODAM_MASTER_TOKEN}"},
-                    json={"source_id": None, "target_url": direct_url}
-                )
-            if resp.status_code == 200:
-                data = resp.json()
-                partner_link = partner_link or data.get("tracking_link") or data.get("link")
-                erid = erid or (data.get("erid") or "").strip()
-                advertiser = advertiser or (data.get("advertiser") or "").strip()
-                image_url = image_url or data.get("image_url") or data.get("image") or ""
-        except Exception as e:
-            logger.error(f"Deeplink API (master) exception: {e}")
+    # Пробуем с клиентским токеном
+    if api_key:
+        await try_deeplink(api_key)
 
-    # Если есть override_erid – используем его
+    # Если нет ERID, пробуем мастер-токен
+    if not erid and TAKPRODAM_MASTER_TOKEN and TAKPRODAM_MASTER_TOKEN != api_key:
+        await try_deeplink(TAKPRODAM_MASTER_TOKEN)
+
+    # override_erid
     if not erid and override_erid:
         erid = override_erid
 
@@ -1117,22 +1138,6 @@ async def resolve_erid(
             "image_url": image_url or ""
         }
 
-    # Если совсем ничего не вышло – возвращаем None (пост не публикуется или идёт без маркировки)
-    return None
-    if override_erid:
-        logger.info(f"DEBUG: Используем override_erid для SKU {sku}")
-        link = api_data.get("link") if api_data else ""
-        advertiser = api_data.get("advertiser") if api_data else "Не определён"
-        image_url = api_data.get("image_url") if api_data else ""
-        return {
-            "link": link,
-            "erid": override_erid,
-            "advertiser": advertiser,
-            "image_url": image_url
-        }
-
-    # Нет ERID — молча пропускаем пост (без карантина)
-    logger.info(f"Пост {donor_post_id} пропущен (нет ERID для SKU {sku})")
     return None
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
@@ -1246,9 +1251,6 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
             logger.error(f"Ошибка получения постов из {channel}: {e}")
             continue
 
-        # Определяем, является ли канал источником SKU для пула
-        is_sku_source = channel.startswith("sku_")
-
         for post in posts:
             post_id = post.get("id")
             if not post_id:
@@ -1258,24 +1260,7 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
             text = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', text, flags=re.IGNORECASE)
             photo_url = post.get("image_url")
 
-            # === Если это канал-сборщик SKU ===
-            if is_sku_source:
-                products = find_product_links(text)
-                for p in products:
-                    if p.get("type") == "sku":
-                        sku = p["value"]
-                        marketplace = p.get("marketplace", "wb").upper()
-                        title = f"Товар {sku}"
-                        conn = get_db()
-                        try:
-                            conn.execute("INSERT OR IGNORE INTO product_pool (sku, title, marketplace, added_by) VALUES (?, ?, ?, ?)",
-                                         (sku, title, marketplace, 0))
-                            conn.commit()
-                        finally:
-                            conn.close()
-                continue  # не публикуем, только собираем SKU
-
-            # === Обычная логика для доноров ===
+            # Проверка дубликатов
             if not force_post:
                 db = get_db()
                 try:
@@ -1291,8 +1276,6 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
             prepared = await prepare_post_content(text)
             if not prepared and not force_post:
                 continue
-
-            # ... остальная логика публикации для SaaS-клиентов (без изменений)
 
             # Получаем всех активных SaaS-пользователей
             db = get_db()
@@ -1313,7 +1296,7 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                 user_id = row["user_id"]
                 target_channel = row["channel_id"]
 
-                # Проверяем, не совпадает ли целевой канал с каналом-донором
+                # Проверка, чтобы донор не получал свои же посты
                 if target_channel.lstrip("@").lower() == channel.lstrip("@").lower():
                     continue
 
@@ -1340,59 +1323,18 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                 if not post_html:
                     continue
 
-                              # Если фото нет, пробуем получить через ТакПродам (если есть API-ключ)
+                # Получаем фото через Deeplink API, если его нет в доноре
                 if not photo_url and prepared and prepared.get("sku"):
-                    conn_api = get_db()
-                    try:
-                        api_key_row = conn_api.execute(
-                            "SELECT api_key FROM users WHERE user_id = ?", (user_id,)
-                        ).fetchone()
-                        if api_key_row and api_key_row["api_key"]:
-                            product_data = await fetch_takprodam_by_sku(api_key_row["api_key"], prepared["sku"])
-                            if product_data and product_data.get("image_url"):
-                                photo_url = product_data["image_url"]
-                    finally:
-                        conn_api.close()
-
-                # Если фото так и нет — заглушка по маркетплейсу
-                if not photo_url:
-                    marketplace = prepared.get("marketplace", "WB") if prepared else "WB"
-                    if marketplace == "WB":
-                        photo_url = "https://wildberries.ru/favicon.ico"  # или другая заглушка
-                    else:
-                        photo_url = "https://ozon.ru/favicon.ico"
-
-                              # Если фото нет, пробуем через ТакПродам
-                if not photo_url and prepared and prepared.get("sku"):
-                    conn_api = get_db()
-                    try:
-                        api_key_row = conn_api.execute(
-                            "SELECT api_key FROM users WHERE user_id = ?", (user_id,)
-                        ).fetchone()
-                        if api_key_row and api_key_row["api_key"]:
-                            try:
-                                product_data = await fetch_takprodam_by_sku(api_key_row["api_key"], prepared["sku"])
-                                if product_data and product_data.get("image_url"):
-                                    photo_url = product_data["image_url"]
-                            except Exception as e:
-                                logger.warning(f"Не удалось получить фото из ТакПродам: {e}")
-                    finally:
-                        conn_api.close()
+                    erid_data = await resolve_erid(bot, user_id, prepared["sku"], full_donor_id, target_channel)
+                    if erid_data and erid_data.get("image_url"):
+                        photo_url = erid_data["image_url"]
 
                 # Заглушка, если фото так и нет
                 if not photo_url:
-                    marketplace = prepared.get("marketplace", "WB") if prepared else "WB"
-                    photo_url = "https://wildberries.ru/favicon.ico" if marketplace == "WB" else "https://ozon.ru/favicon.ico"
+                    mp = prepared.get("marketplace", "WB") if prepared else "WB"
+                    photo_url = "https://wildberries.ru/favicon.ico" if mp == "WB" else "https://ozon.ru/favicon.ico"
 
-                # Публикуем с фото
-                msg = await publish_post_with_fallback(
-                    bot=bot,
-                    channel_id=target_channel,
-                    caption=post_html,
-                    photo_url=photo_url
-                )
-
-                # Публикуем безопасно
+                # Публикуем
                 msg = await publish_post_with_fallback(
                     bot=bot,
                     channel_id=target_channel,
