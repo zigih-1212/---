@@ -1135,6 +1135,10 @@ async def resolve_erid(
     return None
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
+    """Находит прямую ссылку и SKU, возвращает очищенный текст для рерайта."""
+    if not original_text:
+        return None
+
     products = find_product_links(original_text)
     if not products:
         return None
@@ -1147,6 +1151,7 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
         if p.get("type") == "url":
             url = p["value"]
             marketplace = p.get("marketplace", "wb").upper()
+            # Извлекаем SKU из URL
             match = re.search(r'/catalog/(\d{6,12})', url)
             if match:
                 sku = match.group(1)
@@ -1161,13 +1166,21 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     if not url and not sku:
         return None
 
-    # Текст для рерайта: первые 2-3 строки поста без ссылок
-    lines = [line.strip() for line in original_text.split('\n') if line.strip() and not line.startswith('http')]
-    clean_text = ' '.join(lines[:3])
-    if len(clean_text) < 30:
-        clean_text = original_text.split('http')[0].strip()
-    if len(clean_text) < 30:
-        clean_text = "Интересный товар по ссылке"
+    # Очистка текста от ссылок и мусора
+    clean_text = re.sub(r'https?://\S+|www\.\S+', '', original_text)
+    # Убираем слова-крючки, которые остаются перед удалённой ссылкой
+    clean_text = re.sub(r'(?i)(купить|заказать|ссылка|артикул|тут|здесь|подробнее)[:\s👉👇⬇️]*$', '', clean_text)
+    # Убираем множественные пустые строки
+    clean_text = re.sub(r'\n{3,}', '\n\n', clean_text).strip()
+
+    if len(clean_text) < 15:
+        # Слишком короткий текст – берём первые строки исходного поста
+        lines = [l.strip() for l in original_text.split('\n') if l.strip() and not l.startswith('http')]
+        clean_text = ' '.join(lines[:3])
+        if len(clean_text) < 15:
+            clean_text = original_text.split('http')[0].strip()
+        if len(clean_text) < 15:
+            clean_text = "Товар по ссылке"
 
     rewritten = await rewrite_text_with_ai(clean_text)
 
