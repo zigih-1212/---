@@ -1169,13 +1169,12 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
                     sku = match.group(1)
             break
 
-    # Если URL нет, но есть SKU в тексте – формируем прямую ссылку
+        # Если URL нет, но есть SKU в тексте – формируем прямую ссылку
     if not url:
         for p in products:
             if p.get("type") == "sku":
                 sku = p["value"]
                 marketplace = p.get("marketplace", "wb").upper()
-                # Формируем прямую ссылку
                 if marketplace == "WB":
                     url = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx"
                 else:
@@ -1391,15 +1390,14 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                 if not post_html:
                     continue
 
-                                # Пытаемся получить фото через Deeplink API
-                                # Пытаемся скачать фото из донорского поста
-                               # Пытаемся скачать фото из донорского поста
+                                
                                # Пытаемся скачать фото из донорского поста
                                 # 1. Донорское фото
+                                # 1. Пытаемся скачать фото из донорского поста (если есть)
                 if not photo_url and post.get("image_url"):
                     photo_url = post["image_url"]
 
-                # 2. ТакПродам (мастер-токен)
+                # 2. Пробуем через API ТакПродам (мастер-токен)
                 if not photo_url and prepared and prepared.get("sku") and TAKPRODAM_MASTER_TOKEN:
                     try:
                         product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["sku"])
@@ -1410,16 +1408,17 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
 
                 # 3. Открытое API WB (images.wbstatic.net)
                 if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
-                    photo_url = f"https://images.wbstatic.net/big/new/{prepared['sku'][:4]}0000/{prepared['sku']}.jpg"
+                    sku = prepared["sku"]
+                    photo_url = f"https://images.wbstatic.net/big/new/{sku[:4]}0000/{sku}.jpg"
 
-                # 4. Резервный источник – корзина WB (basket-01.wb.ru)
+                # 4. Резервный источник – basket-01.wb.ru
                 if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
                     sku = prepared["sku"]
                     vol = int(sku) // 100000
                     part = int(sku) // 1000
                     photo_url = f"https://basket-01.wb.ru/vol{vol}/part{part}/{sku}/images/big/1.jpg"
 
-                # Публикуем
+                # Публикуем (если фото не найдено — уйдет текст)
                 msg = await publish_post_with_fallback(
                     bot=bot,
                     channel_id=target_channel,
