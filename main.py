@@ -863,21 +863,27 @@ async def resolve_erid(
 
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
-    """
-    Подготавливает контент поста: ищет SKU, чистит текст и делает рерайт.
-    Возвращает словарь с ключами rewritten, sku, marketplace или None, если SKU не найден.
-    """
     products = find_product_links(original_text)
     if not products:
-        logger.info("SKU не найден при подготовке контента")
         return None
 
-    sku_item = products[0]
+    # Берём первый элемент с типом 'sku', игнорируем чистые URL
+    sku_item = None
+    for p in products:
+        if p.get("type") == "sku":
+            sku_item = p
+            break
+    if not sku_item:
+        # Если SKU нет, возвращаем None (даже если есть ссылки)
+        return None
+
     sku = sku_item["value"]
     marketplace = sku_item.get("marketplace", "wb").upper()
 
     clean_text = re.sub(r'https?://\S+', '', original_text)
     clean_text = re.sub(r'\b\d{6,12}\b', '', clean_text)
+    # Убираем артефакты типа "MAX(клик)" и подобные
+    clean_text = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_text, flags=re.IGNORECASE)
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
 
     rewritten = await rewrite_text_with_ai(clean_text)
@@ -895,17 +901,15 @@ async def process_saas_core(
     donor_post_id: str = "unknown",
     channel_id: str = "unknown",
     force_post: bool = False,
-    # Новые опциональные параметры для уже готового контента:
     rewritten_text: Optional[str] = None,
     sku: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
     """
-    Формирует HTML-пост. Если передан готовый rewritten_text и sku,
-    пропускает этапы поиска SKU и рерайта.
-    В ночном режиме сохраняет подготовленный контент в очередь.
+    Формирует HTML-пост для SaaS-клиента.
+    Все внутренние ошибки скрыты от пользователя.
     """
-    # Ночной режим (если не force_post) – сохраняем в очередь, но сначала готовим контент
+    # Ночной режим (если не force_post) – сохраняем в очередь
     if not force_post and is_night_time():
         if not rewritten_text:
             prepared = await prepare_post_content(original_text)
@@ -924,9 +928,12 @@ async def process_saas_core(
         prepared = await prepare_post_content(original_text)
         if not prepared:
             if force_post:
+                # Пост без SKU – просто рерайт текста с пометкой "Реклама"
                 clean_text = re.sub(r'https?://\S+', '', original_text).strip()
                 rewritten = await rewrite_text_with_ai(clean_text)
-                return f"{rewritten}\n\n<i>Товар не определён</i>"
+                # Убираем оставшийся мусор
+                rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', rewritten, flags=re.IGNORECASE)
+                return f"{rewritten}\n\n<i>Реклама</i>"
             return None
         rewritten_text = prepared["rewritten"]
         sku = prepared["sku"]
@@ -936,11 +943,12 @@ async def process_saas_core(
     erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
     if not erid_data:
         if force_post:
+            # Публикуем без маркировки, но с прямой ссылкой на товар
             return (
                 f"{rewritten_text}\n\n"
                 f"🛒 Артикул ({marketplace}): <code>{sku}</code>\n\n"
-                f"👉 <i>Партнёрская ссылка недоступна</i>\n\n"
-                f"Реклама. Рекламодатель не указан."
+                f"👉 <a href='https://www.wildberries.ru/catalog/{sku}/detail.aspx'>Посмотреть и заказать</a>\n\n"
+                f"Реклама"
             )
         return None
 
@@ -974,6 +982,7 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                 continue
             full_donor_id = f"saas_{channel}_{post_id}"
             text = post.get("text", "")
+            text = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', text, flags=re.IGNORECASE)
             photo_url = post.get("image_url")
 
             # Проверка дубликатов (глобально, один раз)
