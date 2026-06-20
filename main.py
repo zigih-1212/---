@@ -758,20 +758,9 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
         photo_url = row["photo_url"]
         # Если фото нет, пробуем через ТакПродам
         if not photo_url and sku:
-            conn_api = get_db()
-            try:
-                api_key_row = conn_api.execute(
-                    "SELECT api_key FROM users WHERE user_id = ?", (row["user_id"],)
-                ).fetchone()
-                if api_key_row and api_key_row["api_key"]:
-                    try:
-                        product_data = await fetch_takprodam_by_sku(api_key_row["api_key"], sku)
-                        if product_data and product_data.get("image_url"):
-                            photo_url = product_data["image_url"]
-                    except Exception as e:
-                        logger.warning(f"Не удалось получить фото из ТакПродам: {e}")
-            finally:
-                conn_api.close()
+            erid_data = await resolve_erid(bot, row["user_id"], sku, row["donor_post_id"], channel_id)
+            if erid_data and erid_data.get("image_url"):
+                photo_url = erid_data["image_url"]
 
         # Заглушка, если фото так и нет
         if not photo_url:
@@ -2987,7 +2976,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
     scheduler.add_job(cleanup_old_posts, trigger="cron", hour=3, minute=0, id="cleanup_old_posts", replace_existing=True)
     scheduler.add_job(scan_donor_channels, trigger="interval", minutes=15, kwargs={"bot": bot}, id="scan_donors", replace_existing=True)
-    scheduler.add_job(publish_from_categories, trigger="interval", minutes=30, kwargs={"bot": bot}, id="publish_categories", replace_existing=True)
+    #scheduler.add_job(publish_from_categories, trigger="interval", minutes=30, kwargs={"bot": bot}, id="publish_categories", replace_existing=True)
     return scheduler
 
 # =============================================================================
