@@ -964,6 +964,20 @@ async def get_source_id(token: str) -> Optional[int]:
     except Exception as e:
         logger.error(f"get_source_id error: {e}")
     return None
+  async def download_image(url: str) -> Optional[bytes]:
+    """Скачивает изображение по URL с правильными заголовками."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.wildberries.ru/"
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200 and resp.content:
+                return resp.content
+    except Exception as e:
+        logger.warning(f"Не удалось скачать фото {url}: {e}")
+    return None
 async def fetch_products_from_takprodam(token: str, marketplace: str = "Wildberries", limit: int = 10) -> List[Dict]:
     """Получает список товаров с партнёрскими ссылками через API v2."""
     headers = {"Authorization": f"Bearer {token}"}
@@ -1147,12 +1161,13 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     if not url and not sku:
         return None
 
-    # Берём текст до первой ссылки или первую непустую строку
-    clean_text = original_text.split('http')[0].strip()
-    if not clean_text:
-        # Если совсем пусто, берём первую строку исходного поста
-        lines = [line.strip() for line in original_text.split('\n') if line.strip()]
-        clean_text = lines[0] if lines else "Товар по ссылке"
+    # Текст для рерайта: первые 2-3 строки поста без ссылок
+    lines = [line.strip() for line in original_text.split('\n') if line.strip() and not line.startswith('http')]
+    clean_text = ' '.join(lines[:3])
+    if len(clean_text) < 30:
+        clean_text = original_text.split('http')[0].strip()
+    if len(clean_text) < 30:
+        clean_text = "Интересный товар по ссылке"
 
     rewritten = await rewrite_text_with_ai(clean_text)
 
@@ -1317,12 +1332,11 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     continue
 
                                 # Пытаемся получить фото через Deeplink API
-                if prepared and prepared.get("url"):
-                    erid_data = await resolve_erid(bot, user_id, prepared["url"], full_donor_id, target_channel)
-                    if erid_data and erid_data.get("image_url"):
-                        photo_url = erid_data["image_url"]
+                                # Пытаемся скачать фото из донорского поста
+                if not photo_url and post.get("image_url"):
+                    photo_url = post["image_url"]
 
-                # Пытаемся получить фото через мастер-токен (если есть SKU)
+                # Если нет – пробуем через API ТакПродам (мастер-токен)
                 if not photo_url and prepared and prepared.get("sku") and TAKPRODAM_MASTER_TOKEN:
                     try:
                         product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["sku"])
@@ -1331,16 +1345,9 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     except Exception:
                         pass
 
-                # Если фото нет, а товар с WB – пробуем открытое API WB
+                # Для WB пробуем открытое API (тоже скачаем через download_image)
                 if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
-                    sku = prepared["sku"]
-                    # Формируем прямую ссылку на фото WB
-                    photo_url = f"https://images.wbstatic.net/big/new/{sku[:4]}0000/{sku}.jpg"
-                    # Проверять не будем, Telegram сам отбросит при ошибке
-
-                # Если всё равно нет – оставляем донорское (может сработать)
-                if not photo_url:
-                    photo_url = post.get("image_url")
+                    photo_url = f"https://images.wbstatic.net/big/new/{prepared['sku'][:4]}0000/{prepared['sku']}.jpg"
 
                 # Публикуем
                 msg = await publish_post_with_fallback(
@@ -1391,6 +1398,23 @@ async def publish_post_with_fallback(
     video_url: Optional[str] = None,
     reply_markup: Optional[InlineKeyboardMarkup] = None,
 ) -> Optional[Message]:
+    # Если есть фото, пробуем скачать и отправить как файл
+    if photo_url:
+        image_bytes = await download_image(photo_url)
+        if image_bytes:
+            try:
+                from aiogram.types import BufferedInputFile
+                return await bot.send_photo(
+                    chat_id=channel_id,
+                    photo=BufferedInputFile(image_bytes, filename="product.jpg"),
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=reply_markup,
+                )
+            except TelegramAPIError as e:
+                logger.warning(f"Не удалось отправить фото как файл: {e}")
+
+    # Если фото нет или не удалось – пробуем видео
     if video_url:
         try:
             return await bot.send_video(
@@ -1399,21 +1423,9 @@ async def publish_post_with_fallback(
                 reply_markup=reply_markup,
             )
         except TelegramAPIError as e:
-            logger.warning(f"Видео отклонено: {e}. Пробуем фото/текст...")
+            logger.warning(f"Видео отклонено: {e}")
 
-    if photo_url:
-        try:
-            return await bot.send_photo(
-                chat_id=channel_id, photo=photo_url,
-                caption=caption, parse_mode=ParseMode.HTML,
-                reply_markup=reply_markup,
-            )
-        except TelegramAPIError as e:
-            if "wrong type" not in str(e).lower():
-                logger.error(f"Ошибка фото: {e}")
-                return None
-            logger.warning(f"Фото отклонено: {e}. Пробуем текст...")
-
+    # Последний fallback – просто текст
     try:
         return await bot.send_message(
             chat_id=channel_id, text=caption,
