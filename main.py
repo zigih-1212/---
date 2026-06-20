@@ -1397,29 +1397,26 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                                 # 1. Донорское фото
                                 # 1. Пытаемся скачать фото из донорского поста (если есть)
                                 # 1. Донорское фото
-                if not photo_url and post.get("image_url"):
-                    photo_url = post["image_url"]
+                                # Используем Telegram file_id для фото (гарантированный способ)
+                if not photo_url and post.get("image_file_id"):
+                    photo_url = post["image_file_id"]
 
-                # 2. ТакПродам (мастер-токен)
-                if not photo_url and prepared and prepared.get("sku") and TAKPRODAM_MASTER_TOKEN:
-                    try:
-                        product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["sku"])
-                        if product_data and product_data.get("image_url"):
-                            photo_url = product_data["image_url"]
-                    except Exception:
-                        pass
-
-                # 3. Открытое API WB (basket-01.wb.ru) – самый надёжный источник
-                if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
-                    sku = prepared["sku"]
-                    vol = int(sku) // 100000
-                    part = int(sku) // 1000
-                    photo_url = f"https://basket-01.wb.ru/vol{vol}/part{part}/{sku}/images/big/1.jpg"
-
-                # 4. Запасной вариант – images.wbstatic.net
-                if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
-                    sku = prepared["sku"]
-                    photo_url = f"https://images.wbstatic.net/big/new/{sku[:4]}0000/{sku}.jpg"
+                # Если file_id нет – пробуем старые методы (API ТакПродам, WB)
+                if not photo_url:
+                    if post.get("image_url"):
+                        photo_url = post["image_url"]
+                    elif prepared and prepared.get("sku") and TAKPRODAM_MASTER_TOKEN:
+                        try:
+                            product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["sku"])
+                            if product_data and product_data.get("image_url"):
+                                photo_url = product_data["image_url"]
+                        except Exception:
+                            pass
+                    elif prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
+                        sku = prepared["sku"]
+                        vol = int(sku) // 100000
+                        part = int(sku) // 1000
+                        photo_url = f"https://basket-01.wb.ru/vol{vol}/part{part}/{sku}/images/big/1.jpg"
 
                 # Публикуем
                 msg = await publish_post_with_fallback(
