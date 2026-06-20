@@ -1300,7 +1300,7 @@ async def process_saas_core(
 
     post_html = (
         f"{clean_rewritten}\n\n"
-        f"🛒 <b>Артикул ({marketplace.upper()}):</b> <code>{sku or 'не указан'}</code>\n\n"
+        f"🛒 <b>Артикул:</b> <code>{sku or 'не указан'}</code>\n\n"
         f"{link_block}\n\n"
         f"{legal_block}"
     ).strip()
