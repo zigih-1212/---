@@ -1130,25 +1130,24 @@ async def resolve_erid(
     return None
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
+    """Находит прямую ссылку на товар (WB/Ozon) в тексте."""
     products = find_product_links(original_text)
     if not products:
         return None
 
-    # Берём первый элемент с типом 'sku', игнорируем чистые URL
-    sku_item = None
+    # Берём первый URL
+    url_item = None
     for p in products:
-        if p.get("type") == "sku":
-            sku_item = p
+        if p.get("type") == "url":
+            url_item = p
             break
-    if not sku_item:
-        return None   # SKU нет → пост не формируем (или вернём None)
+    if not url_item:
+        return None
 
-    sku = sku_item["value"]
-    marketplace = sku_item.get("marketplace", "wb").upper()
+    product_url = url_item["value"]
+    marketplace = url_item.get("marketplace", "wb").upper()
 
-    # Убираем ссылки и мусор
     clean_text = re.sub(r'https?://\S+', '', original_text)
-    clean_text = re.sub(r'\b\d{6,12}\b', '', clean_text)          # убираем чистые числа, похожие на артикулы (чтобы не дублировались)
     clean_text = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_text, flags=re.IGNORECASE)
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
 
@@ -1156,7 +1155,7 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
 
     return {
         "rewritten": rewritten,
-        "sku": sku,
+        "url": product_url,
         "marketplace": marketplace
     }
 
