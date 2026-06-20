@@ -1038,6 +1038,10 @@ async def resolve_erid(
     bot: Bot, user_id: int, sku: str,
     donor_post_id: str = "unknown", channel_id: str = "unknown"
 ) -> Optional[Dict[str, str]]:
+    """
+    Генерирует партнёрскую ссылку через Deeplink API ТакПродам.
+    Возвращает {link, erid, advertiser, image_url} или None.
+    """
     db = get_db()
     try:
         row = db.execute(
@@ -1049,25 +1053,72 @@ async def resolve_erid(
 
     if not row:
         logger.warning(f"resolve_erid: пользователь {user_id} не найден")
-        # Без карантина — просто не публикуем
         return None
 
-    api_key = row["api_key"]
+    api_key = row["api_key"] or ""
     override_erid = (row["client_erid_override"] or "").strip()
 
-    api_data = None
-    if api_key:
-        api_data = await fetch_takprodam_by_sku(api_key, sku)
-        logger.info(f"DEBUG: API ТакПродам для SKU {sku} (user {user_id}): {api_data}")
+    # Строим прямую ссылку на товар
+    direct_url = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx"
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
-    if api_data and api_data.get("erid"):
+    erid = None
+    advertiser = None
+    partner_link = None
+    image_url = None
+
+    # Пробуем Deeplink API с ключом клиента
+    if api_key:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://api.takprodam.ru/v2/publisher/deeplink/",
+                    headers=headers,
+                    json={"source_id": None, "target_url": direct_url}
+                )
+            if resp.status_code == 200:
+                data = resp.json()
+                partner_link = data.get("tracking_link") or data.get("link")
+                erid = (data.get("erid") or "").strip()
+                advertiser = (data.get("advertiser") or "").strip()
+                image_url = data.get("image_url") or data.get("image") or ""
+            else:
+                logger.warning(f"Deeplink API error {resp.status_code}: {resp.text}")
+        except Exception as e:
+            logger.error(f"Deeplink API exception: {e}")
+
+    # Если не получилось через клиента – пробуем мастер-токен
+    if not erid and TAKPRODAM_MASTER_TOKEN and api_key != TAKPRODAM_MASTER_TOKEN:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://api.takprodam.ru/v2/publisher/deeplink/",
+                    headers={"Authorization": f"Bearer {TAKPRODAM_MASTER_TOKEN}"},
+                    json={"source_id": None, "target_url": direct_url}
+                )
+            if resp.status_code == 200:
+                data = resp.json()
+                partner_link = partner_link or data.get("tracking_link") or data.get("link")
+                erid = erid or (data.get("erid") or "").strip()
+                advertiser = advertiser or (data.get("advertiser") or "").strip()
+                image_url = image_url or data.get("image_url") or data.get("image") or ""
+        except Exception as e:
+            logger.error(f"Deeplink API (master) exception: {e}")
+
+    # Если есть override_erid – используем его
+    if not erid and override_erid:
+        erid = override_erid
+
+    if erid:
         return {
-            "link": api_data.get("link", ""),
-            "erid": api_data["erid"],
-            "advertiser": api_data.get("advertiser", ""),
-            "image_url": api_data.get("image_url", "")
+            "link": partner_link or direct_url,
+            "erid": erid,
+            "advertiser": advertiser or "Рекламодатель",
+            "image_url": image_url or ""
         }
 
+    # Если совсем ничего не вышло – возвращаем None (пост не публикуется или идёт без маркировки)
+    return None
     if override_erid:
         logger.info(f"DEBUG: Используем override_erid для SKU {sku}")
         link = api_data.get("link") if api_data else ""
