@@ -1043,12 +1043,12 @@ async def fetch_products_by_category(token: str, keyword: str, limit: int = 5) -
         logger.error(f"fetch_products_by_category error: {e}")
         return []
 async def resolve_erid(
-    bot: Bot, user_id: int, sku: str,
+    bot: Bot, user_id: int, url: str,
     donor_post_id: str = "unknown", channel_id: str = "unknown"
 ) -> Optional[Dict[str, str]]:
     """
     Генерирует партнёрскую ссылку через Deeplink API ТакПродам.
-    Возвращает {link, erid, advertiser, image_url} или None.
+    Принимает прямую ссылку на товар (url), возвращает {link, erid, advertiser, image_url}.
     """
     db = get_db()
     try:
@@ -1065,8 +1065,6 @@ async def resolve_erid(
     api_key = row["api_key"] or ""
     override_erid = (row["client_erid_override"] or "").strip()
 
-    direct_url = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx"
-
     erid = None
     advertiser = None
     partner_link = None
@@ -1079,7 +1077,7 @@ async def resolve_erid(
             logger.warning(f"Deeplink: не удалось получить source_id для токена {token[:4]}...")
             return
         headers = {"Authorization": f"Bearer {token}"}
-        payload = {"source_id": source_id, "target_url": direct_url}
+        payload = {"source_id": source_id, "target_url": url}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
@@ -1112,7 +1110,7 @@ async def resolve_erid(
 
     if erid:
         return {
-            "link": partner_link or direct_url,
+            "link": partner_link or url,
             "erid": erid,
             "advertiser": advertiser or "Рекламодатель",
             "image_url": image_url or ""
@@ -1293,9 +1291,9 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     channel_id=target_channel,
                     force_post=force_post,
                     rewritten_text=prepared["rewritten"] if prepared else None,
-                    sku=prepared["url"] if prepared else None,
+                    url=prepared["url"] if prepared else None,          # ← теперь url
                     marketplace=prepared["marketplace"] if prepared else "WB"
-                )
+              )
                 if not post_html:
                     continue
 
