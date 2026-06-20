@@ -965,7 +965,6 @@ async def get_source_id(token: str) -> Optional[int]:
         logger.error(f"get_source_id error: {e}")
     return None
 async def download_image(url: str) -> Optional[bytes]:
-    """Скачивает изображение по URL с имитацией браузера (для WB/Ozon)."""
     if not url or not url.startswith("http"):
         return None
 
@@ -976,7 +975,7 @@ async def download_image(url: str) -> Optional[bytes]:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 200 and len(resp.content) > 1024:
                 return resp.content
@@ -1249,7 +1248,8 @@ async def process_saas_core(
     clean_rewritten = clean_rewritten.replace('<', '').replace('>', '')
 
     # Жёсткая защита от пустого текста
-    if len(clean_rewritten) < 10:
+       if len(clean_rewritten) < 10:
+        clean_rewritten = "Отличный товар по ссылке – переходи и заказывай!"
         fallback_text = original_text.split('http')[0].strip()
         if len(fallback_text) < 10:
             fallback_text = "Интересный товар по ссылке"
@@ -1381,10 +1381,11 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                                 # Пытаемся скачать фото из донорского поста
                                # Пытаемся скачать фото из донорского поста
                                # Пытаемся скачать фото из донорского поста
+                                # 1. Донорское фото
                 if not photo_url and post.get("image_url"):
                     photo_url = post["image_url"]
 
-                # Если нет – пробуем через API ТакПродам (мастер-токен)
+                # 2. ТакПродам (мастер-токен)
                 if not photo_url and prepared and prepared.get("sku") and TAKPRODAM_MASTER_TOKEN:
                     try:
                         product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["sku"])
@@ -1393,9 +1394,16 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     except Exception:
                         pass
 
-                # Для WB пробуем открытое API (прямая ссылка на фото)
+                # 3. Открытое API WB (images.wbstatic.net)
                 if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
                     photo_url = f"https://images.wbstatic.net/big/new/{prepared['sku'][:4]}0000/{prepared['sku']}.jpg"
+
+                # 4. Резервный источник – корзина WB (basket-01.wb.ru)
+                if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
+                    sku = prepared["sku"]
+                    vol = int(sku) // 100000
+                    part = int(sku) // 1000
+                    photo_url = f"https://basket-01.wb.ru/vol{vol}/part{part}/{sku}/images/big/1.jpg"
 
                 # Публикуем
                 msg = await publish_post_with_fallback(
