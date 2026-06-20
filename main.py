@@ -1209,6 +1209,9 @@ async def process_saas_core(
     sku: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
+    """Формирует пост с партнёрской ссылкой и ERID (если товар найден в ТакПродам)."""
+
+    # Ночной режим – сохраняем в очередь
     if not force_post and is_night_time():
         if not rewritten_text:
             prepared = await prepare_post_content(original_text)
@@ -1222,6 +1225,7 @@ async def process_saas_core(
                 )
         return None
 
+    # Подготавливаем контент, если ещё не готов
     if not rewritten_text:
         prepared = await prepare_post_content(original_text)
         if not prepared:
@@ -1229,6 +1233,8 @@ async def process_saas_core(
                 clean_text = re.sub(r'https?://\S+', '', original_text).strip()
                 if not clean_text:
                     clean_text = original_text.split('http')[0].strip()
+                if not clean_text:
+                    clean_text = "Интересный товар по ссылке"
                 rewritten = await rewrite_text_with_ai(clean_text)
                 return f"{rewritten}\n\n<i>Реклама</i>"
             return None
@@ -1237,9 +1243,19 @@ async def process_saas_core(
         sku = prepared.get("sku")
         marketplace = prepared["marketplace"]
 
+    # Очищаем рерайт от остатков ссылок и мусора
     clean_rewritten = re.sub(r'https?://\S+', '', rewritten_text).strip()
     clean_rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_rewritten, flags=re.IGNORECASE)
 
+    # Жёсткая защита от пустого текста
+    if len(clean_rewritten) < 10:
+        # Пробуем взять текст из исходного поста до первой ссылки
+        fallback_text = original_text.split('http')[0].strip()
+        if len(fallback_text) < 10:
+            fallback_text = "Интересный товар по ссылке"
+        clean_rewritten = await rewrite_text_with_ai(fallback_text)
+
+    # Получаем ERID и партнёрскую ссылку
     erid_data = None
     if sku and TAKPRODAM_MASTER_TOKEN:
         erid_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, sku)
@@ -1254,7 +1270,6 @@ async def process_saas_core(
             f"Реклама. {advertiser}. Erid: {erid}"
         )
     else:
-        # Всегда вставляем прямую ссылку, если она была в посте
         if url:
             post_html = (
                 f"{clean_rewritten}\n\n"
