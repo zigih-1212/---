@@ -739,14 +739,17 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
             continue  # лимит исчерпан, оставляем в очереди до следующего раза
 
         # Вызываем process_saas_core с оригинальным текстом, он сам найдёт URL и сгенерирует пост
-        post_html = await process_saas_core(
-            bot=bot,
-            user_id=user_id,
-            original_text=original_text,
-            donor_post_id=donor_post_id,
-            channel_id=channel_id,
-            force_post=True
-        )
+                post_html = await process_saas_core(
+                    bot=bot,
+                    user_id=user_id,
+                    donor_post_id=full_donor_id,
+                    channel_id=target_channel,
+                    force_post=force_post,
+                    rewritten_text=prepared["rewritten"] if prepared else None,
+                    url=prepared.get("url") if prepared else None,
+                    sku=prepared.get("sku") if prepared else None,
+                    marketplace=prepared["marketplace"] if prepared else "WB"
+                )
         if not post_html:
             conn2 = get_db()
             conn2.execute("DELETE FROM saas_queue WHERE id = ?", (row["id"],))
@@ -1119,26 +1122,36 @@ async def resolve_erid(
     return None
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
-    """Находит прямую ссылку и возвращает информативный текст для рерайта."""
+    """Находит прямую ссылку и SKU, возвращает оба."""
     products = find_product_links(original_text)
     if not products:
         return None
 
-    # Берём первый URL
-    url_item = None
+    url = None
+    sku = None
+    marketplace = "WB"
+
+    # Ищем первый URL
     for p in products:
         if p.get("type") == "url":
-            url_item = p
+            url = p["value"]
+            marketplace = p.get("marketplace", "wb").upper()
             break
-    if not url_item:
+
+    # Ищем первый SKU
+    for p in products:
+        if p.get("type") == "sku":
+            sku = p["value"]
+            if not url:  # если URL нет, marketplace берём из SKU
+                marketplace = p.get("marketplace", "wb").upper()
+            break
+
+    # Если нет ни URL, ни SKU — не можем работать
+    if not url and not sku:
         return None
 
-    product_url = url_item["value"]
-    marketplace = url_item.get("marketplace", "wb").upper()
-
-    # Для рерайта берём исходный текст, но убираем только ссылки, оставляя описание товара
+    # Текст для рерайта: убираем ссылки, оставляем описание
     clean_text = re.sub(r'https?://\S+', '', original_text).strip()
-    # Если остался только мусор – возьмём фрагмент до первой ссылки
     if len(clean_text) < 15:
         clean_text = original_text.split('http')[0].strip()
     if not clean_text:
@@ -1148,7 +1161,8 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
 
     return {
         "rewritten": rewritten,
-        "url": product_url,
+        "url": url,
+        "sku": sku,
         "marketplace": marketplace
     }
 async def process_saas_core(
@@ -1160,9 +1174,10 @@ async def process_saas_core(
     force_post: bool = False,
     rewritten_text: Optional[str] = None,
     url: Optional[str] = None,
+    sku: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
-    """Формирует пост с партнёрской ссылкой и маркировкой."""
+    """Формирует пост с партнёрской ссылкой через fetch_takprodam_by_sku."""
 
     # Ночной режим – сохраняем в очередь
     if not force_post and is_night_time():
@@ -1173,32 +1188,46 @@ async def process_saas_core(
                     user_id, channel_id, donor_post_id,
                     original_text, None,
                     rewritten_text=prepared["rewritten"],
-                    sku=None,
+                    sku=prepared.get("sku"),
                     marketplace=prepared["marketplace"]
                 )
         return None
 
     # Подготавливаем контент, если ещё не готов
-    if not rewritten_text or not url:
+    if not rewritten_text:
         prepared = await prepare_post_content(original_text)
         if not prepared:
             if force_post:
                 clean_text = re.sub(r'https?://\S+', '', original_text).strip()
                 rewritten = await rewrite_text_with_ai(clean_text)
-                rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', rewritten, flags=re.IGNORECASE)
                 return f"{rewritten}\n\n<i>Реклама</i>"
             return None
         rewritten_text = prepared["rewritten"]
-        url = prepared["url"]
+        url = prepared.get("url")
+        sku = prepared.get("sku")
         marketplace = prepared["marketplace"]
 
-    # Убираем из рерайта остатки ссылок и мусор
+    # Убираем из рерайта остатки ссылок
     clean_rewritten = re.sub(r'https?://\S+', '', rewritten_text).strip()
     clean_rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_rewritten, flags=re.IGNORECASE)
-    clean_rewritten = re.sub(r'\s+', ' ', clean_rewritten).strip()
 
-    # Получаем партнёрскую ссылку через Deeplink API
-    erid_data = await resolve_erid(bot, user_id, url, donor_post_id, channel_id)
+    # Пытаемся получить ERID и партнёрскую ссылку через API (если есть SKU)
+    erid_data = None
+    if sku:
+        # Сначала мастер-токен, потом клиентский
+        api_key = None
+        db = get_db()
+        try:
+            row = db.execute("SELECT api_key FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if row:
+                api_key = row["api_key"]
+        finally:
+            db.close()
+
+        if api_key:
+            erid_data = await fetch_takprodam_by_sku(api_key, sku)
+        if not erid_data and TAKPRODAM_MASTER_TOKEN:
+            erid_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, sku)
 
     if erid_data and erid_data.get("erid"):
         link = erid_data["link"]
@@ -1210,13 +1239,14 @@ async def process_saas_core(
             f"Реклама. {advertiser}. Erid: {erid}"
         )
     else:
-        # Если Deeplink не сработал – просто прямая ссылка
-        if force_post:
+        if url:
             post_html = (
                 f"{clean_rewritten}\n\n"
                 f"👉 <a href='{url}'>Посмотреть и заказать</a>\n\n"
                 f"Реклама"
             )
+        elif force_post:
+            post_html = f"{clean_rewritten}\n\n<i>Реклама</i>"
         else:
             return None
 
@@ -1312,19 +1342,20 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                         photo_url = erid_data["image_url"]
 
                 # Если фото нет – пробуем запросить товар через мастер-токен (он часто возвращает фото)
-                if not photo_url and prepared and prepared.get("url"):
+                                # Пытаемся получить фото через мастер-токен (если есть SKU)
+                if not photo_url and prepared and prepared.get("sku"):
                     try:
-                        product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["url"])
+                        product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["sku"])
                         if product_data and product_data.get("image_url"):
                             photo_url = product_data["image_url"]
                     except Exception:
                         pass
 
-                # Если и так нет – оставляем фото из донора (может сработать)
+                # Если фото так и нет – оставляем донорское (может сработать)
                 if not photo_url:
                     photo_url = post.get("image_url")
 
-                # Публикуем (если photo_url None – будет отправлен текст)
+                # Публикуем
                 msg = await publish_post_with_fallback(
                     bot=bot,
                     channel_id=target_channel,
