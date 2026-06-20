@@ -329,6 +329,32 @@ def init_db() -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+  cursor.execute("""
+    CREATE TABLE IF NOT EXISTS product_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        keyword TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1
+    )
+""")
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_category_preferences (
+        user_id INTEGER NOT NULL,
+        category_id INTEGER NOT NULL,
+        PRIMARY KEY (user_id, category_id),
+        FOREIGN KEY(user_id) REFERENCES users(user_id),
+        FOREIGN KEY(category_id) REFERENCES product_categories(id)
+    )
+""")
+# Добавляем поля в tariffs для ограничений по категориям и минимальному кешбэку
+try:
+    cursor.execute("ALTER TABLE tariffs ADD COLUMN max_categories INTEGER DEFAULT 3")
+except sqlite3.OperationalError:
+    pass
+try:
+    cursor.execute("ALTER TABLE tariffs ADD COLUMN min_cashback REAL DEFAULT 0")
+except sqlite3.OperationalError:
+    pass
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS promocode_activations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -508,6 +534,7 @@ def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
     if role == "saas":
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")],
+            [InlineKeyboardButton(text="📂 Категории", callback_data="menu:categories")],
             [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
@@ -733,6 +760,27 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
             if not msg:
                 continue
 
+                  photo_url = row["photo_url"]
+        # Если фото нет, пробуем через ТакПродам
+        if not photo_url and sku:
+            conn_api = get_db()
+            try:
+                api_key_row = conn_api.execute(
+                    "SELECT api_key FROM users WHERE user_id = ?", (row["user_id"],)
+                ).fetchone()
+                if api_key_row and api_key_row["api_key"]:
+                    try:
+                        product_data = await fetch_takprodam_by_sku(api_key_row["api_key"], sku)
+                        if product_data and product_data.get("image_url"):
+                            photo_url = product_data["image_url"]
+                    except Exception as e:
+                        logger.warning(f"Не удалось получить фото из ТакПродам: {e}")
+            finally:
+                conn_api.close()
+
+        if not photo_url:
+            photo_url = "https://wildberries.ru/favicon.ico" if marketplace == "WB" else "https://ozon.ru/favicon.ico"
+
             # Авто-закреп, если включён
             conn_pin = get_db()
             try:
@@ -790,6 +838,82 @@ async def flush_all_saas_queues(bot: Bot):
         await flush_saas_queue_for_user(bot, row["user_id"])
         await asyncio.sleep(2)  # небольшая пауза между пользователями
     logger.info("🅰️ Обработка SaaS-очереди завершена")
+
+  async def publish_from_categories(bot: Bot):
+    """Публикует посты из ТакПродам по выбранным категориям для всех SaaS-клиентов."""
+    conn = get_db()
+    try:
+        users = conn.execute("""
+            SELECT u.user_id, u.tariff_id, u.api_key
+            FROM users u
+            WHERE u.role = 'saas' AND u.is_active = 1
+            AND u.subscription_until > datetime('now')
+        """).fetchall()
+    finally:
+        conn.close()
+
+    for user in users:
+        user_id = user["user_id"]
+        api_key = user["api_key"]
+        if not api_key:
+            continue
+
+        # Получаем лимиты по тарифу
+        conn = get_db()
+        try:
+            tariff = conn.execute("SELECT max_categories, min_cashback FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
+            max_cat = tariff["max_categories"] if tariff and tariff["max_categories"] else 3
+            min_cash = tariff["min_cashback"] if tariff and tariff["min_cashback"] else 0
+            # Выбираем случайную категорию пользователя
+            cats = conn.execute("""
+                SELECT pc.keyword FROM product_categories pc
+                JOIN user_category_preferences ucp ON pc.id = ucp.category_id
+                WHERE ucp.user_id = ? AND pc.is_active = 1
+                ORDER BY RANDOM() LIMIT ?
+            """, (user_id, max_cat)).fetchall()
+        finally:
+            conn.close()
+
+        if not cats:
+            continue
+
+        keyword = random.choice(cats)["keyword"]
+        products = await fetch_products_by_category(api_key, keyword, limit=10)
+        if not products:
+            continue
+
+        # Фильтруем по минимальному кешбэку
+        products = [p for p in products if p["cashback"] >= min_cash]
+        if not products:
+            continue
+
+        product = random.choice(products)
+
+        # Получаем каналы пользователя
+        conn = get_db()
+        try:
+            channels = conn.execute(
+                "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
+                (user_id,)
+            ).fetchall()
+        finally:
+            conn.close()
+
+        for ch in channels:
+            channel_id = ch["channel_id"]
+            caption = (
+                f"{product['title']}\n\n"
+                f"💰 Цена: {product['price']}\n\n"
+                f"<a href='{product['link']}'>👉 Купить товар</a>\n\n"
+                f"Реклама. {product['advertiser']}. Erid: {product['erid']}"
+            )
+            await publish_post_with_fallback(
+                bot=bot,
+                channel_id=channel_id,
+                caption=caption,
+                photo_url=product["image_url"]
+            )
+            await asyncio.sleep(1)
 # =============================================================================
 # === SAAS-ФУНКЦИИ (НОВЫЕ) ====================================================
 # =============================================================================
@@ -817,7 +941,37 @@ async def fetch_takprodam_by_sku(token: str, sku: str) -> Optional[Dict[str, str
     except Exception as e:
         logger.error(f"Ошибка при запросе к ТакПродам для SKU {sku}: {e}")
         return None
-
+      async def fetch_products_by_category(token: str, keyword: str, limit: int = 5) -> List[Dict]:
+    """Получает топ товаров из ТакПродам по ключевому слову."""
+    url = "https://api.takprodam.ru/v1/products/search"
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {"query": keyword, "limit": limit}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers, params=params)
+        if resp.status_code != 200:
+            logger.warning(f"Поиск ТакПродам: статус {resp.status_code}")
+            return []
+        data = resp.json()
+        products = data.get("products", [])
+        result = []
+        for p in products:
+            cashback = float(p.get("cashback", 0))
+            result.append({
+                "sku": p.get("sku"),
+                "title": p.get("title"),
+                "description": p.get("description"),
+                "price": p.get("price"),
+                "image_url": p.get("image") or p.get("photo") or "",
+                "link": p.get("link"),
+                "erid": p.get("erid"),
+                "advertiser": p.get("advertiser"),
+                "cashback": cashback,
+            })
+        return result
+    except Exception as e:
+        logger.error(f"fetch_products_by_category error: {e}")
+        return []
 async def resolve_erid(
     bot: Bot, user_id: int, sku: str,
     donor_post_id: str = "unknown", channel_id: str = "unknown"
@@ -846,8 +1000,7 @@ async def resolve_erid(
         api_data = await fetch_takprodam_by_sku(api_key, sku)
         logger.info(f"DEBUG: API ТакПродам для SKU {sku} (user {user_id}): {api_data}")
 
-    if api_data and api_data.get("erid"):
-        # возвращаем данные, включая image_url, если есть
+        if api_data and api_data.get("erid"):
         return {
             "link": api_data.get("link", ""),
             "erid": api_data["erid"],
@@ -855,7 +1008,6 @@ async def resolve_erid(
             "image_url": api_data.get("image_url", "")
         }
 
-    # 2. Если нет – используем переопределение ERID
     if override_erid:
         logger.info(f"DEBUG: Используем override_erid для SKU {sku}")
         link = api_data.get("link") if api_data else ""
@@ -871,7 +1023,7 @@ async def resolve_erid(
     # 3. Ничего нет – карантин
     reason = "API не вернул ERID и нет переопределения"
     logger.warning(f"⚠️ Карантин: {reason} для SKU {sku}")
-    await _send_to_quarantine(bot, user_id, donor_post_id, channel_id, reason=reason)
+    logger.info(f"Пост {donor_post_id} пропущен (нет ERID для SKU {sku})")
     return None
 
     api_key = row["api_key"]
@@ -896,7 +1048,7 @@ async def resolve_erid(
     # 3. Ничего нет – карантин
     reason = "API не вернул ERID и нет переопределения"
     logger.warning(f"⚠️ Карантин: {reason} для SKU {sku}")
-    await _send_to_quarantine(bot, user_id, donor_post_id, channel_id, reason=reason)
+    logger.info(f"Пост {donor_post_id} пропущен (нет ERID для SKU {sku})")
     return None
 
   
@@ -1109,6 +1261,28 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                         photo_url = "https://wildberries.ru/favicon.ico"  # или другая заглушка
                     else:
                         photo_url = "https://ozon.ru/favicon.ico"
+
+                              # Если фото нет, пробуем через ТакПродам
+                if not photo_url and prepared and prepared.get("sku"):
+                    conn_api = get_db()
+                    try:
+                        api_key_row = conn_api.execute(
+                            "SELECT api_key FROM users WHERE user_id = ?", (user_id,)
+                        ).fetchone()
+                        if api_key_row and api_key_row["api_key"]:
+                            try:
+                                product_data = await fetch_takprodam_by_sku(api_key_row["api_key"], prepared["sku"])
+                                if product_data and product_data.get("image_url"):
+                                    photo_url = product_data["image_url"]
+                            except Exception as e:
+                                logger.warning(f"Не удалось получить фото из ТакПродам: {e}")
+                    finally:
+                        conn_api.close()
+
+                # Заглушка, если фото так и нет
+                if not photo_url:
+                    marketplace = prepared.get("marketplace", "WB") if prepared else "WB"
+                    photo_url = "https://wildberries.ru/favicon.ico" if marketplace == "WB" else "https://ozon.ru/favicon.ico"
 
                 # Публикуем с фото
                 msg = await publish_post_with_fallback(
@@ -1508,6 +1682,60 @@ async def process_successful_payment(message: Message):
         f"Спасибо за покупку!",
         parse_mode=ParseMode.HTML
     )  
+
+@router.callback_query(F.data == "menu:categories")
+async def cb_categories(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        all_cats = conn.execute("SELECT id, name FROM product_categories WHERE is_active = 1").fetchall()
+        user_cats = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id = ?", (user_id,)).fetchall()
+        user_cat_ids = {r["category_id"] for r in user_cats}
+    finally:
+        conn.close()
+
+    text = "📂 <b>Выберите категории товаров:</b>\n\n"
+    kb_rows = []
+    for cat in all_cats:
+        emoji = "✅" if cat["id"] in user_cat_ids else "❌"
+        text += f"{emoji} {cat['name']}\n"
+        kb_rows.append([InlineKeyboardButton(
+            text=f"{emoji} {cat['name']}",
+            callback_data=f"cat_toggle:{cat['id']}"
+        )])
+    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("cat_toggle:"))
+async def cb_toggle_category(callback: CallbackQuery):
+    cat_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        existing = conn.execute("SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
+                                (user_id, cat_id)).fetchone()
+        if existing:
+            conn.execute("DELETE FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
+                         (user_id, cat_id))
+        else:
+            # Проверка лимита по тарифу
+            tariff = conn.execute("SELECT t.max_categories FROM users u JOIN tariffs t ON u.tariff_id = t.id WHERE u.user_id = ?",
+                                  (user_id,)).fetchone()
+            max_cat = tariff["max_categories"] if tariff and tariff["max_categories"] else 3
+            current_count = conn.execute("SELECT COUNT(*) as cnt FROM user_category_preferences WHERE user_id = ?",
+                                         (user_id,)).fetchone()["cnt"]
+            if current_count >= max_cat:
+                await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_cat} категорий", show_alert=True)
+                return
+            conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
+                         (user_id, cat_id))
+        conn.commit()
+    finally:
+        conn.close()
+    await cb_categories(callback)
+    await callback.answer()
 # =============================================================================
 # === ОБРАБОТЧИКИ КАНАЛОВ (БЛОГЕР) ============================================
 # =============================================================================
@@ -2701,6 +2929,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
     scheduler.add_job(cleanup_old_posts, trigger="cron", hour=3, minute=0, id="cleanup_old_posts", replace_existing=True)
     scheduler.add_job(scan_donor_channels, trigger="interval", minutes=15, kwargs={"bot": bot}, id="scan_donors", replace_existing=True)
+    scheduler.add_job(publish_from_categories, trigger="interval", minutes=30, kwargs={"bot": bot}, id="publish_categories", replace_existing=True)
     return scheduler
 
 # =============================================================================
