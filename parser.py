@@ -168,7 +168,7 @@ async def rewrite_text_with_ai(text: str) -> str:
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
-        "model": "meta-llama/llama-3.1-8b-instruct",
+        "model": "llama-3.1-8b-instant",
         "messages": [{"role": "user", "content": f"Перепиши этот текст для рекламного поста в Telegram, сохранив суть и сделав его уникальным. Только текст без заголовков и призывов:\n\n{text}"}],
         "temperature": 0.8,
         "max_tokens": 500,
