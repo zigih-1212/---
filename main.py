@@ -1152,12 +1152,12 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     sku = None
     marketplace = "WB"
 
-    # Ищем первый URL и вытаскиваем SKU
+    # Ищем первый URL и извлекаем SKU
     for p in products:
         if p.get("type") == "url":
             url = p["value"]
             marketplace = p.get("marketplace", "wb").upper()
-            # Извлекаем SKU
+            # Извлекаем SKU из URL
             match = re.search(r'/catalog/(\d{6,12})', url)
             if match:
                 sku = match.group(1)
@@ -1169,6 +1169,19 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
                     sku = match.group(1)
             break
 
+    # Если URL нет, но есть SKU в тексте – формируем прямую ссылку
+    if not url:
+        for p in products:
+            if p.get("type") == "sku":
+                sku = p["value"]
+                marketplace = p.get("marketplace", "wb").upper()
+                # Формируем прямую ссылку
+                if marketplace == "WB":
+                    url = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx"
+                else:
+                    url = f"https://www.ozon.ru/product/{sku}/"
+                break
+
     if not url and not sku:
         return None
 
@@ -1177,7 +1190,7 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     clean_text = re.sub(r'(?i)(купить|заказать|ссылка|артикул|тут|здесь|подробнее)[:\s👉👇⬇️]*$', '', clean_text)
     clean_text = re.sub(r'\n{3,}', '\n\n', clean_text).strip()
 
-    # Если после очистки текст пустой или слишком короткий – берём первые 3 строки исходного поста
+    # Если после очистки текст слишком короткий – берём первые 3 строки
     if len(clean_text) < 15:
         lines = [l.strip() for l in original_text.split('\n') if l.strip() and not l.startswith('http')]
         clean_text = ' '.join(lines[:3])
@@ -1186,7 +1199,6 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     if len(clean_text) < 15:
         clean_text = "Интересный товар по ссылке"
 
-    # Рерайт через Groq (с супер-строгим промптом)
     rewritten = await rewrite_text_with_ai(clean_text)
 
     return {
