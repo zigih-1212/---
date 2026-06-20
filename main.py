@@ -1175,9 +1175,8 @@ async def process_saas_core(
     sku: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
-    """Формирует пост с партнёрской ссылкой через fetch_takprodam_by_sku."""
+    """Формирует пост с партнёрской ссылкой и ERID (если товар найден в ТакПродам)."""
 
-    # Ночной режим – сохраняем в очередь
     if not force_post and is_night_time():
         if not rewritten_text:
             prepared = await prepare_post_content(original_text)
@@ -1191,7 +1190,6 @@ async def process_saas_core(
                 )
         return None
 
-    # Подготавливаем контент, если ещё не готов
     if not rewritten_text:
         prepared = await prepare_post_content(original_text)
         if not prepared:
@@ -1205,27 +1203,13 @@ async def process_saas_core(
         sku = prepared.get("sku")
         marketplace = prepared["marketplace"]
 
-    # Убираем из рерайта остатки ссылок
     clean_rewritten = re.sub(r'https?://\S+', '', rewritten_text).strip()
     clean_rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_rewritten, flags=re.IGNORECASE)
 
-    # Пытаемся получить ERID и партнёрскую ссылку через API (если есть SKU)
+    # Пытаемся получить ERID и ссылку через мастер-токен (если есть SKU)
     erid_data = None
-    if sku:
-        # Сначала мастер-токен, потом клиентский
-        api_key = None
-        db = get_db()
-        try:
-            row = db.execute("SELECT api_key FROM users WHERE user_id = ?", (user_id,)).fetchone()
-            if row:
-                api_key = row["api_key"]
-        finally:
-            db.close()
-
-        if api_key:
-            erid_data = await fetch_takprodam_by_sku(api_key, sku)
-        if not erid_data and TAKPRODAM_MASTER_TOKEN:
-            erid_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, sku)
+    if sku and TAKPRODAM_MASTER_TOKEN:
+        erid_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, sku)
 
     if erid_data and erid_data.get("erid"):
         link = erid_data["link"]
