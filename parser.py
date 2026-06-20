@@ -88,9 +88,10 @@ def find_product_links(description: str) -> List[Dict[str, str]]:
         links.append({"type": "url", "value": match.group(0)})
 
     # SKU: упоминания с префиксами или просто 8-10 цифр
-    sku_patterns = [
-        r'(?:арт|артикул|wb|ozon|id)[:\s]*([A-Za-z0-9-]{6,12})',
-        r'\b(\d{8,10})\b',
+        sku_patterns = [
+        r'(?:арт|артикул|wb|ozon|id|арт\.|арт:|артикул:)[:\s]*([A-Za-z0-9-]{6,12})',  # ключевые слова
+        r'(?:^|\s)-(\d{8,10})\b',  # дефис перед артикулом
+        r'\b(\d{8,10})\b',  # просто число из 8-10 цифр
     ]
     for pattern in sku_patterns:
         for match in re.finditer(pattern, description, re.IGNORECASE):
