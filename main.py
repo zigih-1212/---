@@ -845,7 +845,8 @@ async def flush_all_saas_queues(bot: Bot):
         await asyncio.sleep(2)  # небольшая пауза между пользователями
     logger.info("🅰️ Обработка SaaS-очереди завершена")
 
-  async def publish_from_categories(bot: Bot):
+
+async def publish_from_categories(bot: Bot):
     """Публикует посты из ТакПродам по выбранным категориям для всех SaaS-клиентов."""
     conn = get_db()
     try:
