@@ -1119,7 +1119,7 @@ async def resolve_erid(
     return None
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
-    """Находит прямую ссылку на товар и возвращает непустой текст для рерайта."""
+    """Находит прямую ссылку на товар и возвращает текст для рерайта."""
     products = find_product_links(original_text)
     if not products:
         return None
@@ -1136,18 +1136,8 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     product_url = url_item["value"]
     marketplace = url_item.get("marketplace", "wb").upper()
 
-    # Убираем ссылки и мусор
-    clean_text = re.sub(r'https?://\S+', '', original_text)
-    clean_text = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_text, flags=re.IGNORECASE)
-    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-
-    # Если после очистки текст пустой, берём первую строку исходного поста (до первой ссылки)
-    if not clean_text:
-        clean_text = original_text.split('http')[0].strip()
-    if not clean_text:
-        clean_text = "Товар по ссылке"
-
-    rewritten = await rewrite_text_with_ai(clean_text)
+    # Для рерайта берём ИСХОДНЫЙ текст (без удаления ссылок!)
+    rewritten = await rewrite_text_with_ai(original_text.strip())
 
     return {
         "rewritten": rewritten,
