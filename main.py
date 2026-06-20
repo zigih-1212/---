@@ -487,7 +487,7 @@ def is_night_time() -> bool:
 # === КЛАВИАТУРЫ ==============================================================
 # =============================================================================
 def kb_main_menu(role: str) -> InlineKeyboardMarkup:
-    if role == "bloger":
+    if role == "blogger":
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")]
         ])
@@ -1900,6 +1900,9 @@ async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     code = data.get("promocode")
     days = data.get("promo_days", 2)
+    card = user["payout_card"] if user else None
+        if card:
+            await callback.message.edit_text(...)
     
     conn = get_db()
     try:
