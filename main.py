@@ -1311,6 +1311,8 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                 continue
             full_donor_id = f"saas_{channel}_{post_id}"
             text = post.get("text", "")
+            if not text or len(text) < 20:
+                continue  # пропускаем служебные и пустые сообщения
             text = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', text, flags=re.IGNORECASE)
             photo_url = post.get("image_url")
 
