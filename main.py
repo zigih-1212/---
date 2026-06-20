@@ -934,6 +934,55 @@ async def fetch_takprodam_by_sku(token: str, sku: str) -> Optional[Dict[str, str
     except Exception as e:
         logger.error(f"Ошибка при запросе к ТакПродам для SKU {sku}: {e}")
         return None
+async def fetch_products_from_takprodam(token: str, marketplace: str = "Wildberries", limit: int = 10) -> List[Dict]:
+    """Получает список товаров с партнёрскими ссылками через API v2."""
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Получаем source_id (кэшируем в БД, чтобы не запрашивать каждый раз)
+    conn = get_db()
+    try:
+        cached = conn.execute("SELECT source_id FROM takprodam_sources WHERE token = ?", (token,)).fetchone()
+        if cached:
+            source_id = cached["source_id"]
+        else:
+            # Запрашиваем список площадок
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get("https://api.takprodam.ru/v2/publisher/source/", headers=headers)
+            if resp.status_code != 200:
+                logger.warning(f"Не удалось получить source_id: {resp.status_code}")
+                return []
+            sources = resp.json().get("results", [])
+            if not sources:
+                return []
+            source_id = sources[0]["id"]  # берём первую площадку
+            conn.execute("INSERT OR REPLACE INTO takprodam_sources (token, source_id) VALUES (?, ?)", (token, source_id))
+            conn.commit()
+    finally:
+        conn.close()
+
+    # Запрашиваем товары
+    params = {
+        "source_id": source_id,
+        "marketplace": marketplace,
+        "limit": limit
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get("https://api.takprodam.ru/v2/publisher/product/", headers=headers, params=params)
+    if resp.status_code != 200:
+        logger.warning(f"Ошибка получения товаров: {resp.status_code}")
+        return []
+
+    products = resp.json().get("results", [])
+    result = []
+    for p in products:
+        result.append({
+            "title": p.get("title"),
+            "price": p.get("price"),
+            "image_url": p.get("image_url"),
+            "tracking_link": p.get("tracking_link"),
+            "legal_text": p.get("legal_text"),  # готовая маркировка
+        })
+    return result
 async def fetch_products_by_category(token: str, keyword: str, limit: int = 5) -> List[Dict]:
     """Получает топ товаров из ТакПродам по ключевому слову."""
     url = "https://api.takprodam.ru/v1/products/search"
