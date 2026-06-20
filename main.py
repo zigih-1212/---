@@ -1167,10 +1167,10 @@ async def process_saas_core(
     channel_id: str = "unknown",
     force_post: bool = False,
     rewritten_text: Optional[str] = None,
-    sku: Optional[str] = None,
+    url: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
-    """Формирует пост с партнёрской ссылкой через Deeplink API."""
+    """Формирует пост с партнёрской ссылкой через Deeplink API (по URL)."""
 
     # Ночной режим – сохраняем в очередь
     if not force_post and is_night_time():
@@ -1181,13 +1181,13 @@ async def process_saas_core(
                     user_id, channel_id, donor_post_id,
                     original_text, None,
                     rewritten_text=prepared["rewritten"],
-                    sku=prepared["sku"],
+                    sku=None,
                     marketplace=prepared["marketplace"]
                 )
         return None
 
     # Подготавливаем контент, если ещё не готов
-    if not rewritten_text or not sku:
+    if not rewritten_text or not url:
         prepared = await prepare_post_content(original_text)
         if not prepared:
             if force_post:
@@ -1197,11 +1197,11 @@ async def process_saas_core(
                 return f"{rewritten}\n\n<i>Реклама</i>"
             return None
         rewritten_text = prepared["rewritten"]
-        sku = prepared["sku"]
+        url = prepared["url"]
         marketplace = prepared["marketplace"]
 
     # Получаем ERID и партнёрскую ссылку через Deeplink
-    erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
+    erid_data = await resolve_erid(bot, user_id, url, donor_post_id, channel_id)
 
     if erid_data and erid_data.get("erid"):
         link = erid_data["link"]
@@ -1209,17 +1209,14 @@ async def process_saas_core(
         erid = erid_data["erid"]
         post_html = (
             f"{rewritten_text}\n\n"
-            f"🛒 Артикул ({marketplace}): <code>{sku}</code>\n\n"
             f"👉 <a href='{link}'>Посмотреть и заказать</a>\n\n"
             f"Реклама. {advertiser}. Erid: {erid}"
         )
     else:
         if force_post:
-            direct_link = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx" if marketplace == "WB" else f"https://ozon.ru/product/{sku}/"
             post_html = (
                 f"{rewritten_text}\n\n"
-                f"🛒 Артикул ({marketplace}): <code>{sku}</code>\n\n"
-                f"👉 <a href='{direct_link}'>Посмотреть и заказать</a>\n\n"
+                f"👉 <a href='{url}'>Посмотреть и заказать</a>\n\n"
                 f"Реклама"
             )
         else:
