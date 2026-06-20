@@ -106,6 +106,9 @@ def load_tariffs():
                 "price_stars": r["price_stars"],
                 "max_channels": r["max_channels"] if "max_channels" in r.keys() else 5,
                 "max_posts_per_day": r["max_posts_per_day"] if "max_posts_per_day" in r.keys() else 25,
+                "max_categories": r["max_categories"] if "max_categories" in r.keys() else 3,
+                "min_cashback": r["min_cashback"] if "min_cashback" in r.keys() else 0,
+                "max_cashback": r["max_cashback"] if "max_cashback" in r.keys() else 0,
             }
             for r in rows
         ]
@@ -289,7 +292,7 @@ def init_db() -> None:
         )
     """)
 
-    cursor.execute("""
+        cursor.execute("""
         CREATE TABLE IF NOT EXISTS saas_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -322,39 +325,13 @@ def init_db() -> None:
         )
     """)
     cursor.execute("""
-            CREATE TABLE IF NOT EXISTS promocodes (
+        CREATE TABLE IF NOT EXISTS promocodes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             code TEXT UNIQUE NOT NULL,
             days INTEGER NOT NULL DEFAULT 2,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-  cursor.execute("""
-    CREATE TABLE IF NOT EXISTS product_categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        keyword TEXT NOT NULL,
-        is_active INTEGER DEFAULT 1
-    )
-""")
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS user_category_preferences (
-        user_id INTEGER NOT NULL,
-        category_id INTEGER NOT NULL,
-        PRIMARY KEY (user_id, category_id),
-        FOREIGN KEY(user_id) REFERENCES users(user_id),
-        FOREIGN KEY(category_id) REFERENCES product_categories(id)
-    )
-""")
-# Добавляем поля в tariffs для ограничений по категориям и минимальному кешбэку
-try:
-    cursor.execute("ALTER TABLE tariffs ADD COLUMN max_categories INTEGER DEFAULT 3")
-except sqlite3.OperationalError:
-    pass
-try:
-    cursor.execute("ALTER TABLE tariffs ADD COLUMN min_cashback REAL DEFAULT 0")
-except sqlite3.OperationalError:
-    pass
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS promocode_activations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -374,6 +351,24 @@ except sqlite3.OperationalError:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS product_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            keyword TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_category_preferences (
+            user_id INTEGER NOT NULL,
+            category_id INTEGER NOT NULL,
+            PRIMARY KEY (user_id, category_id),
+            FOREIGN KEY(user_id) REFERENCES users(user_id),
+            FOREIGN KEY(category_id) REFERENCES product_categories(id)
+        )
+    """)
+
     # Миграции
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN payout_card TEXT")
@@ -391,7 +386,6 @@ except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE channels ADD COLUMN max_posts_per_day INTEGER DEFAULT 25")
     except sqlite3.OperationalError:
         pass
-
     try:
         cursor.execute("ALTER TABLE tariffs ADD COLUMN max_channels INTEGER DEFAULT 5")
     except sqlite3.OperationalError:
@@ -400,7 +394,18 @@ except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE tariffs ADD COLUMN max_posts_per_day INTEGER DEFAULT 25")
     except sqlite3.OperationalError:
         pass
-
+    try:
+        cursor.execute("ALTER TABLE tariffs ADD COLUMN max_categories INTEGER DEFAULT 3")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE tariffs ADD COLUMN min_cashback REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE tariffs ADD COLUMN max_cashback REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN tariff_id INTEGER")
     except sqlite3.OperationalError:
