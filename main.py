@@ -451,6 +451,56 @@ class PayoutStates(StatesGroup):
   # =============================================================================
 # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =================================================
 # =============================================================================
+def get_wb_image_url(sku: int) -> str:
+    """Вычисляет прямую ссылку на фото Wildberries по артикулу (SKU)."""
+    try:
+        sku = int(sku)
+    except (ValueError, TypeError):
+        return ""
+
+    vol = sku // 100000
+    part = sku // 1000
+
+    # Определяем нужную корзину (basket) на основе vol
+    if 0 <= vol <= 143:
+        host = "basket-01.wbbasket.ru"
+    elif 144 <= vol <= 287:
+        host = "basket-02.wbbasket.ru"
+    elif 288 <= vol <= 431:
+        host = "basket-03.wbbasket.ru"
+    elif 432 <= vol <= 719:
+        host = "basket-04.wbbasket.ru"
+    elif 720 <= vol <= 1007:
+        host = "basket-05.wbbasket.ru"
+    elif 1008 <= vol <= 1061:
+        host = "basket-06.wbbasket.ru"
+    elif 1062 <= vol <= 1115:
+        host = "basket-07.wbbasket.ru"
+    elif 1116 <= vol <= 1169:
+        host = "basket-08.wbbasket.ru"
+    elif 1170 <= vol <= 1313:
+        host = "basket-09.wbbasket.ru"
+    elif 1314 <= vol <= 1601:
+        host = "basket-10.wbbasket.ru"
+    elif 1602 <= vol <= 1655:
+        host = "basket-11.wbbasket.ru"
+    elif 1656 <= vol <= 1919:
+        host = "basket-12.wbbasket.ru"
+    elif 1920 <= vol <= 2045:
+        host = "basket-13.wbbasket.ru"
+    elif 2046 <= vol <= 2189:
+        host = "basket-14.wbbasket.ru"
+    elif 2190 <= vol <= 2405:
+        host = "basket-15.wbbasket.ru"
+    elif 2406 <= vol <= 2621:
+        host = "basket-16.wbbasket.ru"
+    elif 2622 <= vol <= 2837:
+        host = "basket-17.wbbasket.ru"
+    else:
+        host = "basket-18.wbbasket.ru"
+
+    return f"https://{host}/vol{vol}/part{part}/{sku}/images/big/1.webp"
+
 def log_admin_action(admin_id: int, action: str, details: str = ""):
     conn = get_db()
     try:
@@ -1398,25 +1448,29 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                                 # 1. Пытаемся скачать фото из донорского поста (если есть)
                                 # 1. Донорское фото
                                 # Используем Telegram file_id для фото (гарантированный способ)
-                if not photo_url and post.get("image_file_id"):
-                    photo_url = post["image_file_id"]
+                                # 1. Если товар с WB – математически вычисляем ссылку на фото
+                if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
+                    photo_url = get_wb_image_url(prepared["sku"])
 
-                # Если file_id нет – пробуем старые методы (API ТакПродам, WB)
-                if not photo_url:
-                    if post.get("image_url"):
-                        photo_url = post["image_url"]
-                    elif prepared and prepared.get("sku") and TAKPRODAM_MASTER_TOKEN:
-                        try:
-                            product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["sku"])
-                            if product_data and product_data.get("image_url"):
-                                photo_url = product_data["image_url"]
-                        except Exception:
-                            pass
-                    elif prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
-                        sku = prepared["sku"]
-                        vol = int(sku) // 100000
-                        part = int(sku) // 1000
-                        photo_url = f"https://basket-01.wb.ru/vol{vol}/part{part}/{sku}/images/big/1.jpg"
+                # 2. Если WB не дал фото – пробуем скачать из донорского поста
+                if not photo_url and post.get("image_url"):
+                    photo_url = post["image_url"]
+
+                # 3. Пробуем через API ТакПродам (мастер-токен)
+                if not photo_url and prepared and prepared.get("sku") and TAKPRODAM_MASTER_TOKEN:
+                    try:
+                        product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["sku"])
+                        if product_data and product_data.get("image_url"):
+                            photo_url = product_data["image_url"]
+                    except Exception:
+                        pass
+
+                # 4. Последний шанс – старая корзина basket-01.wb.ru
+                if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
+                    sku = prepared["sku"]
+                    vol = int(sku) // 100000
+                    part = int(sku) // 1000
+                    photo_url = f"https://basket-01.wbbasket.ru/vol{vol}/part{part}/{sku}/images/big/1.webp"
 
                 # Публикуем
                 msg = await publish_post_with_fallback(
