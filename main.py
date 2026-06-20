@@ -809,10 +809,11 @@ async def fetch_takprodam_by_sku(token: str, sku: str) -> Optional[Dict[str, str
         link = data.get("link", "")
         erid = data.get("erid", "").strip()
         advertiser = data.get("advertiser", "").strip()
+        image_url = data.get("image") or data.get("photo") or ""
         if not erid or not advertiser:
             logger.warning(f"ТакПродам: неполные данные для SKU {sku}: {data}")
             return None
-        return {"link": link, "erid": erid, "advertiser": advertiser}
+        return {"link": link, "erid": erid, "advertiser": advertiser, "image_url": image_url}
     except Exception as e:
         logger.error(f"Ошибка при запросе к ТакПродам для SKU {sku}: {e}")
         return None
@@ -835,6 +836,43 @@ async def resolve_erid(
         await _send_to_quarantine(bot, user_id, donor_post_id, channel_id,
                                   reason="Пользователь не найден")
         return None
+
+    api_key = row["api_key"]
+    override_erid = (row["client_erid_override"] or "").strip()
+
+    # 1. Пробуем через API клиента
+    api_data = None
+    if api_key:
+        api_data = await fetch_takprodam_by_sku(api_key, sku)
+        logger.info(f"DEBUG: API ТакПродам для SKU {sku} (user {user_id}): {api_data}")
+
+    if api_data and api_data.get("erid"):
+        # возвращаем данные, включая image_url, если есть
+        return {
+            "link": api_data.get("link", ""),
+            "erid": api_data["erid"],
+            "advertiser": api_data.get("advertiser", ""),
+            "image_url": api_data.get("image_url", "")
+        }
+
+    # 2. Если нет – используем переопределение ERID
+    if override_erid:
+        logger.info(f"DEBUG: Используем override_erid для SKU {sku}")
+        link = api_data.get("link") if api_data else ""
+        advertiser = api_data.get("advertiser") if api_data else "Не определён"
+        image_url = api_data.get("image_url") if api_data else ""
+        return {
+            "link": link,
+            "erid": override_erid,
+            "advertiser": advertiser,
+            "image_url": image_url
+        }
+
+    # 3. Ничего нет – карантин
+    reason = "API не вернул ERID и нет переопределения"
+    logger.warning(f"⚠️ Карантин: {reason} для SKU {sku}")
+    await _send_to_quarantine(bot, user_id, donor_post_id, channel_id, reason=reason)
+    return None
 
     api_key = row["api_key"]
     override_erid = (row["client_erid_override"] or "").strip()
@@ -1049,6 +1087,36 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                 )
                 if not post_html:
                     continue
+
+                              # Если фото нет, пробуем получить через ТакПродам (если есть API-ключ)
+                if not photo_url and prepared and prepared.get("sku"):
+                    conn_api = get_db()
+                    try:
+                        api_key_row = conn_api.execute(
+                            "SELECT api_key FROM users WHERE user_id = ?", (user_id,)
+                        ).fetchone()
+                        if api_key_row and api_key_row["api_key"]:
+                            product_data = await fetch_takprodam_by_sku(api_key_row["api_key"], prepared["sku"])
+                            if product_data and product_data.get("image_url"):
+                                photo_url = product_data["image_url"]
+                    finally:
+                        conn_api.close()
+
+                # Если фото так и нет — заглушка по маркетплейсу
+                if not photo_url:
+                    marketplace = prepared.get("marketplace", "WB") if prepared else "WB"
+                    if marketplace == "WB":
+                        photo_url = "https://wildberries.ru/favicon.ico"  # или другая заглушка
+                    else:
+                        photo_url = "https://ozon.ru/favicon.ico"
+
+                # Публикуем с фото
+                msg = await publish_post_with_fallback(
+                    bot=bot,
+                    channel_id=target_channel,
+                    caption=post_html,
+                    photo_url=photo_url
+                )
 
                 # Публикуем безопасно
                 msg = await publish_post_with_fallback(
