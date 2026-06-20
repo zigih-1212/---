@@ -874,15 +874,14 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
             sku_item = p
             break
     if not sku_item:
-        # Если SKU нет, возвращаем None (даже если есть ссылки)
-        return None
+        return None   # SKU нет → пост не формируем (или вернём None)
 
     sku = sku_item["value"]
     marketplace = sku_item.get("marketplace", "wb").upper()
 
+    # Убираем ссылки и мусор
     clean_text = re.sub(r'https?://\S+', '', original_text)
-    clean_text = re.sub(r'\b\d{6,12}\b', '', clean_text)
-    # Убираем артефакты типа "MAX(клик)" и подобные
+    clean_text = re.sub(r'\b\d{6,12}\b', '', clean_text)          # убираем чистые числа, похожие на артикулы (чтобы не дублировались)
     clean_text = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_text, flags=re.IGNORECASE)
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
 
@@ -905,11 +904,9 @@ async def process_saas_core(
     sku: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
-    """
-    Формирует HTML-пост для SaaS-клиента.
-    Все внутренние ошибки скрыты от пользователя.
-    """
-    # Ночной режим (если не force_post) – сохраняем в очередь
+    """Формирует чистый пост. Ошибки наружу не показывает."""
+    
+    # Ночной режим – сохраняем в очередь
     if not force_post and is_night_time():
         if not rewritten_text:
             prepared = await prepare_post_content(original_text)
@@ -923,15 +920,16 @@ async def process_saas_core(
                 )
         return None
 
-    # Если контент не передан, готовим его
+    # Подготавливаем контент, если ещё не готов
     if not rewritten_text or not sku:
         prepared = await prepare_post_content(original_text)
         if not prepared:
             if force_post:
-                # Пост без SKU – просто рерайт текста с пометкой "Реклама"
+                # Нет SKU – делаем просто рерайт без артикула и ссылки
                 clean_text = re.sub(r'https?://\S+', '', original_text).strip()
                 rewritten = await rewrite_text_with_ai(clean_text)
-                # Убираем оставшийся мусор
+                if not rewritten:
+                    rewritten = clean_text   # если рерайт совсем пустой – берём оригинал
                 rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', rewritten, flags=re.IGNORECASE)
                 return f"{rewritten}\n\n<i>Реклама</i>"
             return None
@@ -939,29 +937,32 @@ async def process_saas_core(
         sku = prepared["sku"]
         marketplace = prepared["marketplace"]
 
-    # Получаем ERID и партнёрскую ссылку
+    # Пытаемся получить ERID
     erid_data = await resolve_erid(bot, user_id, sku, donor_post_id, channel_id)
-    if not erid_data:
+
+    if erid_data and erid_data.get("erid"):
+        link = erid_data["link"]
+        advertiser = erid_data["advertiser"]
+        erid = erid_data["erid"]
+        post_html = (
+            f"{rewritten_text}\n\n"
+            f"🛒 Артикул ({marketplace}): <code>{sku}</code>\n\n"
+            f"👉 <a href='{link}'>Посмотреть и заказать</a>\n\n"
+            f"Реклама. {advertiser}. Erid: {erid}"
+        )
+    else:
+        # ERID нет, но пост должен выйти (force_post) – прямая ссылка без партнёрки
         if force_post:
-            # Публикуем без маркировки, но с прямой ссылкой на товар
-            return (
+            direct_link = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx" if marketplace == "WB" else f"https://ozon.ru/product/{sku}/"
+            post_html = (
                 f"{rewritten_text}\n\n"
                 f"🛒 Артикул ({marketplace}): <code>{sku}</code>\n\n"
-                f"👉 <a href='https://www.wildberries.ru/catalog/{sku}/detail.aspx'>Посмотреть и заказать</a>\n\n"
+                f"👉 <a href='{direct_link}'>Посмотреть и заказать</a>\n\n"
                 f"Реклама"
             )
-        return None
+        else:
+            return None   # без force_post пост не идёт
 
-    link = erid_data["link"]
-    advertiser = erid_data["advertiser"]
-    erid = erid_data["erid"]
-
-    post_html = (
-        f"{rewritten_text}\n\n"
-        f"🛒 Артикул ({marketplace}): <code>{sku}</code>\n\n"
-        f"👉 <a href='{link}'>Посмотреть и заказать</a>\n\n"
-        f"Реклама. {advertiser}. Erid: {erid}"
-    )
     return post_html
 
 async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
