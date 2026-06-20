@@ -1119,7 +1119,7 @@ async def resolve_erid(
     return None
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
-    """Находит прямую ссылку на товар и возвращает текст для рерайта."""
+    """Находит прямую ссылку и возвращает информативный текст для рерайта."""
     products = find_product_links(original_text)
     if not products:
         return None
@@ -1136,15 +1136,21 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     product_url = url_item["value"]
     marketplace = url_item.get("marketplace", "wb").upper()
 
-    # Для рерайта берём ИСХОДНЫЙ текст (без удаления ссылок!)
-    rewritten = await rewrite_text_with_ai(original_text.strip())
+    # Для рерайта берём исходный текст, но убираем только ссылки, оставляя описание товара
+    clean_text = re.sub(r'https?://\S+', '', original_text).strip()
+    # Если остался только мусор – возьмём фрагмент до первой ссылки
+    if len(clean_text) < 15:
+        clean_text = original_text.split('http')[0].strip()
+    if not clean_text:
+        clean_text = "Товар по ссылке"
+
+    rewritten = await rewrite_text_with_ai(clean_text)
 
     return {
         "rewritten": rewritten,
         "url": product_url,
         "marketplace": marketplace
     }
-
 async def process_saas_core(
     bot: Bot,
     user_id: int,
@@ -1156,7 +1162,7 @@ async def process_saas_core(
     url: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
-    """Формирует пост с партнёрской ссылкой через Deeplink API (по URL)."""
+    """Формирует пост с партнёрской ссылкой и маркировкой."""
 
     # Ночной режим – сохраняем в очередь
     if not force_post and is_night_time():
@@ -1186,12 +1192,12 @@ async def process_saas_core(
         url = prepared["url"]
         marketplace = prepared["marketplace"]
 
-    # Очищаем рерайт от ссылок и мусора
-    clean_rewritten = re.sub(r'https?://\S+', '', rewritten_text)
+    # Убираем из рерайта остатки ссылок и мусор
+    clean_rewritten = re.sub(r'https?://\S+', '', rewritten_text).strip()
     clean_rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_rewritten, flags=re.IGNORECASE)
     clean_rewritten = re.sub(r'\s+', ' ', clean_rewritten).strip()
 
-    # Получаем ERID и партнёрскую ссылку через Deeplink
+    # Получаем партнёрскую ссылку через Deeplink API
     erid_data = await resolve_erid(bot, user_id, url, donor_post_id, channel_id)
 
     if erid_data and erid_data.get("erid"):
@@ -1204,6 +1210,7 @@ async def process_saas_core(
             f"Реклама. {advertiser}. Erid: {erid}"
         )
     else:
+        # Если Deeplink не сработал – просто прямая ссылка
         if force_post:
             post_html = (
                 f"{clean_rewritten}\n\n"
@@ -1214,7 +1221,6 @@ async def process_saas_core(
             return None
 
     return post_html
-
 async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
     if not SAAS_DONOR_CHANNELS:
         return
@@ -1299,13 +1305,22 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                 if not post_html:
                     continue
 
-                # Пытаемся получить фото через Deeplink API
+                                # Пытаемся получить фото через Deeplink API
                 if prepared and prepared.get("url"):
                     erid_data = await resolve_erid(bot, user_id, prepared["url"], full_donor_id, target_channel)
                     if erid_data and erid_data.get("image_url"):
                         photo_url = erid_data["image_url"]
 
-                # Если Deeplink не дал фото – используем донорскую ссылку
+                # Если фото нет – пробуем запросить товар через мастер-токен (он часто возвращает фото)
+                if not photo_url and prepared and prepared.get("url"):
+                    try:
+                        product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["url"])
+                        if product_data and product_data.get("image_url"):
+                            photo_url = product_data["image_url"]
+                    except Exception:
+                        pass
+
+                # Если и так нет – оставляем фото из донора (может сработать)
                 if not photo_url:
                     photo_url = post.get("image_url")
 
