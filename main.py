@@ -714,10 +714,10 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
 
     published_count = 0
     for row in rows:
-        rewritten_text = row["rewritten_text"]
-        sku = row["sku"]
-        marketplace = row["marketplace"] or "wb"
+        original_text = row["original_text"]
         channel_id = row["channel_id"]
+        donor_post_id = row["donor_post_id"]
+        marketplace = row["marketplace"] or "wb"
 
         # Проверка дневного лимита по тарифу
         conn_limit = get_db()
@@ -738,16 +738,15 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
         if posts_today >= max_posts:
             continue  # лимит исчерпан, оставляем в очереди до следующего раза
 
+        # Вызываем process_saas_core с оригинальным текстом, он сам найдёт URL и сгенерирует пост
         post_html = await process_saas_core(
             bot=bot,
             user_id=user_id,
-            donor_post_id=full_donor_id,
-            channel_id=target_channel,
-            force_post=force_post,
-            rewritten_text=prepared["rewritten"] if prepared else None,
-            url=prepared["url"] if prepared else None,          # ← теперь url
-            marketplace=prepared["marketplace"] if prepared else "WB"
-      )
+            original_text=original_text,
+            donor_post_id=donor_post_id,
+            channel_id=channel_id,
+            force_post=True
+        )
         if not post_html:
             conn2 = get_db()
             conn2.execute("DELETE FROM saas_queue WHERE id = ?", (row["id"],))
@@ -756,13 +755,6 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
             continue
 
         photo_url = row["photo_url"]
-        # Если фото нет, пробуем через ТакПродам
-        if not photo_url and sku:
-            erid_data = await resolve_erid(bot, row["user_id"], sku, row["donor_post_id"], channel_id)
-            if erid_data and erid_data.get("image_url"):
-                photo_url = erid_data["image_url"]
-
-        # Заглушка, если фото так и нет
         if not photo_url:
             photo_url = "https://wildberries.ru/favicon.ico" if marketplace == "WB" else "https://ozon.ru/favicon.ico"
 
@@ -812,7 +804,6 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
             logger.error(f"Ошибка при публикации из очереди SaaS: {e}")
 
     return published_count
-
 async def flush_all_saas_queues(bot: Bot):
     """Публикует все накопленные посты из SaaS-очереди для всех пользователей."""
     conn = get_db()
@@ -1302,16 +1293,16 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     channel_id=target_channel,
                     force_post=force_post,
                     rewritten_text=prepared["rewritten"] if prepared else None,
-                    sku=prepared["sku"] if prepared else None,
+                    sku=prepared["url"] if prepared else None,
                     marketplace=prepared["marketplace"] if prepared else "WB"
                 )
                 if not post_html:
                     continue
 
                 # Получаем фото через Deeplink API, если его нет в доноре
-                if not photo_url and prepared and prepared.get("sku"):
-                    erid_data = await resolve_erid(bot, user_id, prepared["sku"], full_donor_id, target_channel)
-                    if erid_data and erid_data.get("image_url"):
+                if not photo_url and prepared and prepared.get("url"):
+                    erid_data = await resolve_erid(bot, user_id, prepared["url"], full_donor_id, target_channel)
+                   if erid_data and erid_data.get("image_url"):
                         photo_url = erid_data["image_url"]
 
                 # Заглушка, если фото так и нет
