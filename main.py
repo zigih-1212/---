@@ -1186,6 +1186,11 @@ async def process_saas_core(
         url = prepared["url"]
         marketplace = prepared["marketplace"]
 
+    # Очищаем рерайт от ссылок и мусора
+    clean_rewritten = re.sub(r'https?://\S+', '', rewritten_text)
+    clean_rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_rewritten, flags=re.IGNORECASE)
+    clean_rewritten = re.sub(r'\s+', ' ', clean_rewritten).strip()
+
     # Получаем ERID и партнёрскую ссылку через Deeplink
     erid_data = await resolve_erid(bot, user_id, url, donor_post_id, channel_id)
 
@@ -1194,14 +1199,14 @@ async def process_saas_core(
         advertiser = erid_data["advertiser"]
         erid = erid_data["erid"]
         post_html = (
-            f"{rewritten_text}\n\n"
+            f"{clean_rewritten}\n\n"
             f"👉 <a href='{link}'>Посмотреть и заказать</a>\n\n"
             f"Реклама. {advertiser}. Erid: {erid}"
         )
     else:
         if force_post:
             post_html = (
-                f"{rewritten_text}\n\n"
+                f"{clean_rewritten}\n\n"
                 f"👉 <a href='{url}'>Посмотреть и заказать</a>\n\n"
                 f"Реклама"
             )
