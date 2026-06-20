@@ -769,6 +769,27 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
             logger.error(f"Ошибка при публикации из очереди SaaS: {e}")
 
     return published_count
+
+async def flush_all_saas_queues(bot: Bot):
+    """Публикует все накопленные посты из SaaS-очереди для всех пользователей."""
+    conn = get_db()
+    try:
+        # Получаем список уникальных user_id, у которых есть посты в saas_queue
+        user_ids = conn.execute(
+            "SELECT DISTINCT user_id FROM saas_queue"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not user_ids:
+        logger.info("🅰️ SaaS-очередь пуста")
+        return
+
+    logger.info(f"🅰️ Обрабатываю SaaS-очередь для {len(user_ids)} пользователей")
+    for row in user_ids:
+        await flush_saas_queue_for_user(bot, row["user_id"])
+        await asyncio.sleep(2)  # небольшая пауза между пользователями
+    logger.info("🅰️ Обработка SaaS-очереди завершена")
 # =============================================================================
 # === SAAS-ФУНКЦИИ (НОВЫЕ) ====================================================
 # =============================================================================
@@ -2595,6 +2616,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(run_billing_check, trigger="interval", hours=1, kwargs={"bot": bot}, id="billing_check", replace_existing=True)
     scheduler.add_job(flush_night_queue, trigger="cron", hour=8, minute=0, kwargs={"bot": bot}, id="flush_night_queue", replace_existing=True)
+    scheduler.add_job(flush_all_saas_queues, trigger="cron", hour=8, minute=0, kwargs={"bot": bot}, id="flush_saas_queues", replace_existing=True)
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
     scheduler.add_job(cleanup_old_posts, trigger="cron", hour=3, minute=0, id="cleanup_old_posts", replace_existing=True)
     scheduler.add_job(scan_donor_channels, trigger="interval", minutes=15, kwargs={"bot": bot}, id="scan_donors", replace_existing=True)
