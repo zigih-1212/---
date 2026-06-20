@@ -1142,7 +1142,6 @@ async def resolve_erid(
     return None
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
-    """Находит прямую ссылку и SKU, возвращает очищенный текст для рерайта."""
     if not original_text:
         return None
 
@@ -1154,12 +1153,12 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     sku = None
     marketplace = "WB"
 
-    # Ищем первый URL и извлекаем SKU
+    # Ищем первый URL и вытаскиваем SKU
     for p in products:
         if p.get("type") == "url":
             url = p["value"]
             marketplace = p.get("marketplace", "wb").upper()
-            # Извлекаем SKU из URL
+            # Извлекаем SKU
             match = re.search(r'/catalog/(\d{6,12})', url)
             if match:
                 sku = match.group(1)
@@ -1179,7 +1178,7 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     clean_text = re.sub(r'(?i)(купить|заказать|ссылка|артикул|тут|здесь|подробнее)[:\s👉👇⬇️]*$', '', clean_text)
     clean_text = re.sub(r'\n{3,}', '\n\n', clean_text).strip()
 
-    # Если после очистки текст слишком короткий – берём первые строки исходного поста
+    # Если после очистки текст пустой или слишком короткий – берём первые 3 строки исходного поста
     if len(clean_text) < 15:
         lines = [l.strip() for l in original_text.split('\n') if l.strip() and not l.startswith('http')]
         clean_text = ' '.join(lines[:3])
@@ -1188,6 +1187,7 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     if len(clean_text) < 15:
         clean_text = "Интересный товар по ссылке"
 
+    # Рерайт через Groq (с супер-строгим промптом)
     rewritten = await rewrite_text_with_ai(clean_text)
 
     return {
