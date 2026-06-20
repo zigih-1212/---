@@ -847,31 +847,11 @@ async def flush_all_saas_queues(bot: Bot):
 
 
 async def publish_from_categories(bot: Bot):
-    """Публикует последний пост из канала ТакПродам всем SaaS-клиентам."""
-    # Ищем канал с префиксом takprodam_
-    takprodam_channel = None
-    for ch in SAAS_DONOR_CHANNELS:
-        if ch.startswith("takprodam_"):
-            takprodam_channel = ch
-            break
-    if not takprodam_channel:
-        return
-
-    posts = await fetch_telegram_channel_posts(takprodam_channel)
-    if not posts:
-        return
-
-    last_post = posts[-1]  # самый свежий пост
-    text = last_post.get("text", "")
-    photo_url = last_post.get("image_url")
-
-    if not text:
-        return
-
+    """Публикует товары из API v2, а если их нет – репостит канал ТакПродам."""
     conn = get_db()
     try:
         users = conn.execute("""
-            SELECT u.user_id
+            SELECT u.user_id, u.api_key
             FROM users u
             WHERE u.role = 'saas' AND u.is_active = 1
             AND u.subscription_until > datetime('now')
@@ -879,24 +859,72 @@ async def publish_from_categories(bot: Bot):
     finally:
         conn.close()
 
+    products = []   # будет наполнен, если API вернёт товары
     for user in users:
-        user_id = user["user_id"]
+        api_key = user["api_key"]
+        if not api_key:
+            continue
+        # Пробуем получить товары через API (WB + Ozon)
+        prods = await fetch_products_from_takprodam(api_key, "Wildberries", 5)
+        if prods:
+            products.extend(prods)
+        prods = await fetch_products_from_takprodam(api_key, "Ozon", 5)
+        if prods:
+            products.extend(prods)
+        if products:   # если хоть один товар нашёлся – выходим
+            break
 
+    if not products:
+        # API не дал товаров – забираем последний пост из канала ТакПродам
+        for ch in SAAS_DONOR_CHANNELS:
+            if ch.startswith("takprodam_"):
+                posts = await fetch_telegram_channel_posts(ch)
+                if posts:
+                    last = posts[-1]
+                    text = last.get("text", "")
+                    photo_url = last.get("image_url")
+                    if text:
+                        # публикуем этот пост всем клиентам
+                        for user in users:
+                            conn = get_db()
+                            try:
+                                channels = conn.execute(
+                                    "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
+                                    (user["user_id"],)
+                                ).fetchall()
+                            finally:
+                                conn.close()
+                            for c in channels:
+                                await publish_post_with_fallback(
+                                    bot=bot, channel_id=c["channel_id"],
+                                    caption=text, photo_url=photo_url
+                                )
+                                await asyncio.sleep(1)
+                        return  # закончили
+                break
+        return
+
+    # Если API вернул товары – публикуем случайный
+    product = random.choice(products)
+    caption = (
+        f"{product['title']}\n\n"
+        f"💰 Цена: {product['price']}\n\n"
+        f"<a href='{product['tracking_link']}'>👉 Посмотреть и заказать</a>\n\n"
+        f"{product['legal_text']}"
+    )
+    for user in users:
         conn = get_db()
         try:
             channels = conn.execute(
                 "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
-                (user_id,)
+                (user["user_id"],)
             ).fetchall()
         finally:
             conn.close()
-
-        for ch in channels:
+        for c in channels:
             await publish_post_with_fallback(
-                bot=bot,
-                channel_id=ch["channel_id"],
-                caption=text,
-                photo_url=photo_url
+                bot=bot, channel_id=c["channel_id"],
+                caption=caption, photo_url=product["image_url"]
             )
             await asyncio.sleep(1)
 # =============================================================================
