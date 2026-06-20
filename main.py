@@ -1154,6 +1154,7 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     sku = None
     marketplace = "WB"
 
+    # Ищем первый URL и извлекаем SKU
     for p in products:
         if p.get("type") == "url":
             url = p["value"]
@@ -1175,19 +1176,17 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
 
     # Очистка текста от ссылок и мусора
     clean_text = re.sub(r'https?://\S+|www\.\S+', '', original_text)
-    # Убираем слова-крючки, которые остаются перед удалённой ссылкой
     clean_text = re.sub(r'(?i)(купить|заказать|ссылка|артикул|тут|здесь|подробнее)[:\s👉👇⬇️]*$', '', clean_text)
-    # Убираем множественные пустые строки
     clean_text = re.sub(r'\n{3,}', '\n\n', clean_text).strip()
 
+    # Если после очистки текст слишком короткий – берём первые строки исходного поста
     if len(clean_text) < 15:
-        # Слишком короткий текст – берём первые строки исходного поста
         lines = [l.strip() for l in original_text.split('\n') if l.strip() and not l.startswith('http')]
         clean_text = ' '.join(lines[:3])
-        if len(clean_text) < 15:
-            clean_text = original_text.split('http')[0].strip()
-        if len(clean_text) < 15:
-            clean_text = "Товар по ссылке"
+    if len(clean_text) < 15:
+        clean_text = original_text.split('http')[0].strip()
+    if len(clean_text) < 15:
+        clean_text = "Интересный товар по ссылке"
 
     rewritten = await rewrite_text_with_ai(clean_text)
 
@@ -1236,7 +1235,7 @@ async def process_saas_core(
                 if not clean_text:
                     clean_text = "Интересный товар по ссылке"
                 rewritten = await rewrite_text_with_ai(clean_text)
-                return f"{rewritten}\n\n<i>Реклама</i>"
+                return f"{rewritten}\n\n👉 <a href='{clean_text}'>Посмотреть и заказать</a>\n\n<i>Реклама</i>"
             return None
         rewritten_text = prepared["rewritten"]
         url = prepared.get("url")
@@ -1246,10 +1245,11 @@ async def process_saas_core(
     # Очищаем рерайт от остатков ссылок и мусора
     clean_rewritten = re.sub(r'https?://\S+', '', rewritten_text).strip()
     clean_rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_rewritten, flags=re.IGNORECASE)
+    # Убираем случайные символы < > от ИИ, чтобы не ломать HTML
+    clean_rewritten = clean_rewritten.replace('<', '').replace('>', '')
 
     # Жёсткая защита от пустого текста
     if len(clean_rewritten) < 10:
-        # Пробуем взять текст из исходного поста до первой ссылки
         fallback_text = original_text.split('http')[0].strip()
         if len(fallback_text) < 10:
             fallback_text = "Интересный товар по ссылке"
@@ -1260,26 +1260,37 @@ async def process_saas_core(
     if sku and TAKPRODAM_MASTER_TOKEN:
         erid_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, sku)
 
+    # Формируем ссылку
     if erid_data and erid_data.get("erid"):
-        link = erid_data["link"]
+        final_link = erid_data["link"]
         advertiser = erid_data["advertiser"]
         erid = erid_data["erid"]
-        post_html = (
-            f"{clean_rewritten}\n\n"
-            f"👉 <a href='{link}'>Посмотреть и заказать</a>\n\n"
-            f"Реклама. {advertiser}. Erid: {erid}"
-        )
+        legal_block = f"<i>Реклама. {advertiser}. Erid: {erid}</i>"
     else:
+        # Прямая ссылка
         if url:
-            post_html = (
-                f"{clean_rewritten}\n\n"
-                f"👉 <a href='{url}'>Посмотреть и заказать</a>\n\n"
-                f"Реклама"
-            )
-        elif force_post:
-            post_html = f"{clean_rewritten}\n\n<i>Реклама</i>"
+            final_link = url
+        elif sku:
+            if marketplace == "WB":
+                final_link = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx"
+            else:
+                final_link = f"https://www.ozon.ru/product/{sku}/"
         else:
-            return None
+            final_link = None
+        legal_block = ""
+
+    # Собираем пост
+    if final_link:
+        link_block = f"👉 <a href='{final_link}'>Посмотреть и заказать</a>"
+    else:
+        link_block = "👉 <i>Ссылка временно недоступна</i>"
+
+    post_html = (
+        f"{clean_rewritten}\n\n"
+        f"🛒 <b>Артикул ({marketplace.upper()}):</b> <code>{sku or 'не указан'}</code>\n\n"
+        f"{link_block}\n\n"
+        f"{legal_block}"
+    ).strip()
 
     return post_html
 async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
@@ -1368,6 +1379,7 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
 
                                 # Пытаемся получить фото через Deeplink API
                                 # Пытаемся скачать фото из донорского поста
+                               # Пытаемся скачать фото из донорского поста
                                # Пытаемся скачать фото из донорского поста
                 if not photo_url and post.get("image_url"):
                     photo_url = post["image_url"]
