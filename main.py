@@ -987,7 +987,7 @@ async def fetch_products_by_category(token: str, keyword: str, limit: int = 5) -
     except Exception as e:
         logger.error(f"fetch_products_by_category error: {e}")
         return []
-aasync def resolve_erid(
+async def resolve_erid(
     bot: Bot, user_id: int, sku: str,
     donor_post_id: str = "unknown", channel_id: str = "unknown"
 ) -> Optional[Dict[str, str]]:
@@ -1002,14 +1002,12 @@ aasync def resolve_erid(
 
     if not row:
         logger.warning(f"resolve_erid: пользователь {user_id} не найден")
-        await _send_to_quarantine(bot, user_id, donor_post_id, channel_id,
-                                  reason="Пользователь не найден")
+        # Без карантина — просто не публикуем
         return None
 
     api_key = row["api_key"]
     override_erid = (row["client_erid_override"] or "").strip()
 
-    # 1. Пробуем через API клиента
     api_data = None
     if api_key:
         api_data = await fetch_takprodam_by_sku(api_key, sku)
@@ -1023,7 +1021,6 @@ aasync def resolve_erid(
             "image_url": api_data.get("image_url", "")
         }
 
-    # 2. Если нет – используем переопределение ERID
     if override_erid:
         logger.info(f"DEBUG: Используем override_erid для SKU {sku}")
         link = api_data.get("link") if api_data else ""
@@ -1036,7 +1033,7 @@ aasync def resolve_erid(
             "image_url": image_url
         }
 
-    # 3. Ничего нет – просто логируем и пропускаем пост (без карантина)
+    # Нет ERID — молча пропускаем пост (без карантина)
     logger.info(f"Пост {donor_post_id} пропущен (нет ERID для SKU {sku})")
     return None
   
