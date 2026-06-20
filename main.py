@@ -847,11 +847,11 @@ async def flush_all_saas_queues(bot: Bot):
 
 
 async def publish_from_categories(bot: Bot):
-    """Публикует посты из ТакПродам по выбранным категориям для всех SaaS-клиентов."""
+    """Публикует случайный товар из запасного списка SKU (временное решение)."""
     conn = get_db()
     try:
         users = conn.execute("""
-            SELECT u.user_id, u.tariff_id, u.api_key
+            SELECT u.user_id, u.api_key
             FROM users u
             WHERE u.role = 'saas' AND u.is_active = 1
             AND u.subscription_until > datetime('now')
@@ -867,44 +867,28 @@ async def publish_from_categories(bot: Bot):
 
         conn = get_db()
         try:
-            tariff = conn.execute("SELECT max_categories, min_cashback FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
-            max_cat = tariff["max_categories"] if tariff and tariff["max_categories"] else 3
-            min_cash = tariff["min_cashback"] if tariff and tariff["min_cashback"] else 0
-            cats = conn.execute("""
-                SELECT pc.keyword FROM product_categories pc
-                JOIN user_category_preferences ucp ON pc.id = ucp.category_id
-                WHERE ucp.user_id = ? AND pc.is_active = 1
-                ORDER BY RANDOM() LIMIT ?
-            """, (user_id, max_cat)).fetchall()
+            sku_row = conn.execute('SELECT * FROM fallback_skus ORDER BY RANDOM() LIMIT 1').fetchone()
         finally:
             conn.close()
 
-        if not cats:
+        if not sku_row:
             continue
 
-        keyword = random.choice(cats)["keyword"]
-        products = await fetch_products_by_category(api_key, keyword, limit=10)
-        if not products:
+        # Запрашиваем данные через API ТакПродам (гарантированно работает)
+        product_data = await fetch_takprodam_by_sku(api_key, sku_row["sku"])
+        if not product_data:
             continue
 
-        conn = get_db()
-        try:
-            tariff = conn.execute("SELECT max_cashback FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
-            max_cash = tariff["max_cashback"] if tariff and tariff["max_cashback"] else 0
-        finally:
-            conn.close()
+        # Собираем пост
+        caption = (
+            f"{sku_row['title']}\n\n"
+            f"🛒 Артикул: <code>{sku_row['sku']}</code>\n\n"
+            f"<a href='{product_data['link']}'>👉 Посмотреть и заказать</a>\n\n"
+            f"Реклама. {product_data['advertiser']}. Erid: {product_data['erid']}"
+        )
+        photo_url = product_data.get("image_url") or ""
 
-        if max_cash > 0:
-            products = [p for p in products if p["cashback"] <= max_cash]
-        if not products:
-            continue
-
-        products = [p for p in products if p["cashback"] >= min_cash]
-        if not products:
-            continue
-
-        product = random.choice(products)
-
+        # Публикуем в каналы пользователя
         conn = get_db()
         try:
             channels = conn.execute(
@@ -915,18 +899,11 @@ async def publish_from_categories(bot: Bot):
             conn.close()
 
         for ch in channels:
-            channel_id = ch["channel_id"]
-            caption = (
-                f"{product['title']}\n\n"
-                f"💰 Цена: {product['price']}\n\n"
-                f"<a href='{product['link']}'>👉 Купить товар</a>\n\n"
-                f"Реклама. {product['advertiser']}. Erid: {product['erid']}"
-            )
             await publish_post_with_fallback(
                 bot=bot,
-                channel_id=channel_id,
+                channel_id=ch["channel_id"],
                 caption=caption,
-                photo_url=product["image_url"]
+                photo_url=photo_url
             )
             await asyncio.sleep(1)
 # =============================================================================
