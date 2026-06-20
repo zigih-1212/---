@@ -965,18 +965,25 @@ async def get_source_id(token: str) -> Optional[int]:
         logger.error(f"get_source_id error: {e}")
     return None
 async def download_image(url: str) -> Optional[bytes]:
-    """Скачивает изображение по URL с правильными заголовками."""
+    """Скачивает изображение по URL с имитацией браузера (для WB/Ozon)."""
+    if not url or not url.startswith("http"):
+        return None
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "image/webp,image/jpeg,image/png,*/*;q=0.8",
         "Referer": "https://www.wildberries.ru/"
     }
+
     try:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
-            if resp.status_code == 200 and resp.content:
+            if resp.status_code == 200 and len(resp.content) > 1024:
                 return resp.content
+            logger.warning(f"download_image: статус {resp.status_code}, размер {len(resp.content)}")
     except Exception as e:
-        logger.warning(f"Не удалось скачать фото {url}: {e}")
+        logger.warning(f"download_image error: {e}")
+
     return None
 async def fetch_products_from_takprodam(token: str, marketplace: str = "Wildberries", limit: int = 10) -> List[Dict]:
     """Получает список товаров с партнёрскими ссылками через API v2."""
@@ -1346,6 +1353,7 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
 
                                 # Пытаемся получить фото через Deeplink API
                                 # Пытаемся скачать фото из донорского поста
+                               # Пытаемся скачать фото из донорского поста
                 if not photo_url and post.get("image_url"):
                     photo_url = post["image_url"]
 
@@ -1358,7 +1366,7 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     except Exception:
                         pass
 
-                # Для WB пробуем открытое API (тоже скачаем через download_image)
+                # Для WB пробуем открытое API (прямая ссылка на фото)
                 if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
                     photo_url = f"https://images.wbstatic.net/big/new/{prepared['sku'][:4]}0000/{prepared['sku']}.jpg"
 
@@ -1411,7 +1419,10 @@ async def publish_post_with_fallback(
     video_url: Optional[str] = None,
     reply_markup: Optional[InlineKeyboardMarkup] = None,
 ) -> Optional[Message]:
-    # Если есть фото, пробуем скачать и отправить как файл
+    """
+    Публикует пост с фото. Если фото не скачалось – отправляет текст.
+    """
+    # Пробуем отправить фото
     if photo_url:
         image_bytes = await download_image(photo_url)
         if image_bytes:
@@ -1425,28 +1436,32 @@ async def publish_post_with_fallback(
                     reply_markup=reply_markup,
                 )
             except TelegramAPIError as e:
-                logger.warning(f"Не удалось отправить фото как файл: {e}")
+                logger.warning(f"Ошибка отправки фото: {e}")
 
-    # Если фото нет или не удалось – пробуем видео
+    # Пробуем видео
     if video_url:
         try:
             return await bot.send_video(
-                chat_id=channel_id, video=video_url,
-                caption=caption, parse_mode=ParseMode.HTML,
+                chat_id=channel_id,
+                video=video_url,
+                caption=caption,
+                parse_mode=ParseMode.HTML,
                 reply_markup=reply_markup,
             )
         except TelegramAPIError as e:
-            logger.warning(f"Видео отклонено: {e}")
+            logger.warning(f"Ошибка отправки видео: {e}")
 
-    # Последний fallback – просто текст
+    # Fallback – текст
     try:
         return await bot.send_message(
-            chat_id=channel_id, text=caption,
-            parse_mode=ParseMode.HTML, reply_markup=reply_markup,
+            chat_id=channel_id,
+            text=caption,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup,
             disable_web_page_preview=False
         )
     except TelegramAPIError as e:
-        logger.error(f"Ошибка текста: {e}")
+        logger.error(f"Ошибка отправки текста: {e}")
         return None
       
 # =============================================================================
