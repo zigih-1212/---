@@ -887,9 +887,7 @@ async def flush_all_saas_queues(bot: Bot):
         if not products:
             continue
 
-        # Фильтруем по минимальному кешбэку
-        products = [p for p in products if p["cashback"] >= min_cash]
-              # Применяем фильтр по максимальному кешбэку (если задан)
+        # Применяем фильтр по максимальному кешбэку (если задан)
         conn = get_db()
         try:
             tariff = conn.execute("SELECT max_cashback FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
@@ -901,7 +899,11 @@ async def flush_all_saas_queues(bot: Bot):
             products = [p for p in products if p["cashback"] <= max_cash]
         if not products:
             continue
-        
+
+        # Фильтруем по минимальному кешбэку
+        products = [p for p in products if p["cashback"] >= min_cash]
+        if not products:
+            continue
 
         product = random.choice(products)
 
