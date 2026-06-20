@@ -956,7 +956,7 @@ async def fetch_takprodam_by_sku(token: str, sku: str) -> Optional[Dict[str, str
     except Exception as e:
         logger.error(f"Ошибка при запросе к ТакПродам для SKU {sku}: {e}")
         return None
-      async def fetch_products_by_category(token: str, keyword: str, limit: int = 5) -> List[Dict]:
+async def fetch_products_by_category(token: str, keyword: str, limit: int = 5) -> List[Dict]:
     """Получает топ товаров из ТакПродам по ключевому слову."""
     url = "https://api.takprodam.ru/v1/products/search"
     headers = {"Authorization": f"Bearer {token}"}
