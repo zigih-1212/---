@@ -14,6 +14,7 @@ import re
 import secrets
 import sqlite3
 import time
+import random
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Dict, Any, List
@@ -863,13 +864,11 @@ async def flush_all_saas_queues(bot: Bot):
         if not api_key:
             continue
 
-        # Получаем лимиты по тарифу
         conn = get_db()
         try:
             tariff = conn.execute("SELECT max_categories, min_cashback FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
             max_cat = tariff["max_categories"] if tariff and tariff["max_categories"] else 3
             min_cash = tariff["min_cashback"] if tariff and tariff["min_cashback"] else 0
-            # Выбираем случайную категорию пользователя
             cats = conn.execute("""
                 SELECT pc.keyword FROM product_categories pc
                 JOIN user_category_preferences ucp ON pc.id = ucp.category_id
@@ -887,7 +886,6 @@ async def flush_all_saas_queues(bot: Bot):
         if not products:
             continue
 
-        # Применяем фильтр по максимальному кешбэку (если задан)
         conn = get_db()
         try:
             tariff = conn.execute("SELECT max_cashback FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
@@ -900,14 +898,12 @@ async def flush_all_saas_queues(bot: Bot):
         if not products:
             continue
 
-        # Фильтруем по минимальному кешбэку
         products = [p for p in products if p["cashback"] >= min_cash]
         if not products:
             continue
 
         product = random.choice(products)
 
-        # Получаем каналы пользователя
         conn = get_db()
         try:
             channels = conn.execute(
