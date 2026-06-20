@@ -987,7 +987,7 @@ async def fetch_products_by_category(token: str, keyword: str, limit: int = 5) -
     except Exception as e:
         logger.error(f"fetch_products_by_category error: {e}")
         return []
-async def resolve_erid(
+aasync def resolve_erid(
     bot: Bot, user_id: int, sku: str,
     donor_post_id: str = "unknown", channel_id: str = "unknown"
 ) -> Optional[Dict[str, str]]:
@@ -1015,7 +1015,7 @@ async def resolve_erid(
         api_data = await fetch_takprodam_by_sku(api_key, sku)
         logger.info(f"DEBUG: API ТакПродам для SKU {sku} (user {user_id}): {api_data}")
 
-        if api_data and api_data.get("erid"):
+    if api_data and api_data.get("erid"):
         return {
             "link": api_data.get("link", ""),
             "erid": api_data["erid"],
@@ -1023,6 +1023,7 @@ async def resolve_erid(
             "image_url": api_data.get("image_url", "")
         }
 
+    # 2. Если нет – используем переопределение ERID
     if override_erid:
         logger.info(f"DEBUG: Используем override_erid для SKU {sku}")
         link = api_data.get("link") if api_data else ""
@@ -1035,37 +1036,9 @@ async def resolve_erid(
             "image_url": image_url
         }
 
-    # 3. Ничего нет – карантин
-    reason = "API не вернул ERID и нет переопределения"
-    logger.warning(f"⚠️ Карантин: {reason} для SKU {sku}")
+    # 3. Ничего нет – просто логируем и пропускаем пост (без карантина)
     logger.info(f"Пост {donor_post_id} пропущен (нет ERID для SKU {sku})")
     return None
-
-    api_key = row["api_key"]
-    override_erid = (row["client_erid_override"] or "").strip()
-
-    # 1. Пробуем через API клиента
-    api_data = None
-    if api_key:
-        api_data = await fetch_takprodam_by_sku(api_key, sku)
-        logger.info(f"DEBUG: API ТакПродам для SKU {sku} (user {user_id}): {api_data}")
-
-    if api_data and api_data.get("erid"):
-        return api_data
-
-    # 2. Если нет – используем переопределение ERID
-    if override_erid:
-        logger.info(f"DEBUG: Используем override_erid для SKU {sku}")
-        link = api_data.get("link") if api_data else ""
-        advertiser = api_data.get("advertiser") if api_data else "Не определён"
-        return {"link": link, "erid": override_erid, "advertiser": advertiser}
-
-    # 3. Ничего нет – карантин
-    reason = "API не вернул ERID и нет переопределения"
-    logger.warning(f"⚠️ Карантин: {reason} для SKU {sku}")
-    logger.info(f"Пост {donor_post_id} пропущен (нет ERID для SKU {sku})")
-    return None
-
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
     products = find_product_links(original_text)
