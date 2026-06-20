@@ -736,20 +736,17 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
             conn_limit.close()
 
         if posts_today >= max_posts:
-            continue  # лимит исчерпан, оставляем в очереди до следующего раза
+            continue
 
-        # Вызываем process_saas_core с оригинальным текстом, он сам найдёт URL и сгенерирует пост
-                post_html = await process_saas_core(
-                    bot=bot,
-                    user_id=user_id,
-                    donor_post_id=full_donor_id,
-                    channel_id=target_channel,
-                    force_post=force_post,
-                    rewritten_text=prepared["rewritten"] if prepared else None,
-                    url=prepared.get("url") if prepared else None,
-                    sku=prepared.get("sku") if prepared else None,
-                    marketplace=prepared["marketplace"] if prepared else "WB"
-                )
+        # Вызываем process_saas_core с оригинальным текстом, он сам всё найдёт
+        post_html = await process_saas_core(
+            bot=bot,
+            user_id=user_id,
+            original_text=original_text,
+            donor_post_id=donor_post_id,
+            channel_id=channel_id,
+            force_post=True
+        )
         if not post_html:
             conn2 = get_db()
             conn2.execute("DELETE FROM saas_queue WHERE id = ?", (row["id"],))
@@ -757,9 +754,7 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
             conn2.close()
             continue
 
-        photo_url = row["photo_url"]
-        if not photo_url:
-            photo_url = "https://wildberries.ru/favicon.ico" if marketplace == "WB" else "https://ozon.ru/favicon.ico"
+        photo_url = row["photo_url"]   # берём из очереди, без заглушек
 
         try:
             msg = await publish_post_with_fallback(
@@ -807,6 +802,7 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
             logger.error(f"Ошибка при публикации из очереди SaaS: {e}")
 
     return published_count
+  
 async def flush_all_saas_queues(bot: Bot):
     """Публикует все накопленные посты из SaaS-очереди для всех пользователей."""
     conn = get_db()
