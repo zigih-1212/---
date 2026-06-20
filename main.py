@@ -847,20 +847,7 @@ async def flush_all_saas_queues(bot: Bot):
 
 
 async def publish_from_categories(bot: Bot):
-    """Публикует случайный товар из общего пула (product_pool)."""
-    conn = get_db()
-    try:
-        sku_row = conn.execute("SELECT * FROM product_pool ORDER BY RANDOM() LIMIT 1").fetchone()
-        if not sku_row:
-            logger.info("📦 Пул товаров пуст")
-            return
-        conn.execute("UPDATE product_pool SET check_count = check_count + 1, last_checked = ? WHERE id = ?",
-                     (datetime.now(timezone.utc).isoformat(), sku_row["id"]))
-        conn.commit()
-    finally:
-        conn.close()
-
-    # Получаем всех SaaS-клиентов
+    """Публикует случайный товар из ТакПродам для всех SaaS-клиентов (API v2)."""
     conn = get_db()
     try:
         users = conn.execute("""
@@ -878,17 +865,21 @@ async def publish_from_categories(bot: Bot):
         if not api_key:
             continue
 
-        product_data = await fetch_takprodam_by_sku(api_key, sku_row["sku"])
-        if not product_data or not product_data.get("erid"):
+        # Пробуем получить товары (сначала WB, потом Ozon)
+        products = await fetch_products_from_takprodam(api_key, "Wildberries", 10)
+        if not products:
+            products = await fetch_products_from_takprodam(api_key, "Ozon", 10)
+        if not products:
             continue
 
+        product = random.choice(products)
+
         caption = (
-            f"{sku_row['title']}\n\n"
-            f"🛒 Артикул: <code>{sku_row['sku']}</code>\n\n"
-            f"<a href='{product_data['link']}'>👉 Посмотреть и заказать</a>\n\n"
-            f"Реклама. {product_data['advertiser']}. Erid: {product_data['erid']}"
+            f"{product['title']}\n\n"
+            f"💰 Цена: {product['price']}\n\n"
+            f"<a href='{product['tracking_link']}'>👉 Посмотреть и заказать</a>\n\n"
+            f"{product['legal_text']}"
         )
-        photo_url = product_data.get("image_url") or ""
 
         conn = get_db()
         try:
@@ -904,7 +895,7 @@ async def publish_from_categories(bot: Bot):
                 bot=bot,
                 channel_id=ch["channel_id"],
                 caption=caption,
-                photo_url=photo_url
+                photo_url=product["image_url"]
             )
             await asyncio.sleep(1)
 # =============================================================================
