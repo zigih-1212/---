@@ -160,22 +160,18 @@ async def get_product_data_by_token(token: str, sku: str) -> Optional[Dict]:
 # === AI REWRITE (DeepInfra / запасной) ======================================
 # =============================================================================
 async def rewrite_text_with_ai(text: str) -> str:
-    """
-    Рерайт текста через AI. Если ключ не задан, возвращает исходный текст.
-    Использует DeepInfra (из переменной DEEPINFRA_API_KEY в main).
-    Чтобы избежать циклического импорта, читаем переменную окружения здесь.
-    """
-    api_key = os.getenv("DEEPINFRA_API_KEY", "")
+    """Рерайт текста через бесплатный Groq API."""
+    api_key = os.getenv("GROQ_API_KEY", "")
     if not api_key:
         return text
 
-    url = "https://api.deepinfra.com/v1/openai/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}"}
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
-        "model": "meta-llama/Meta-Llama-3-8B-Instruct",
-        "messages": [{"role": "user", "content": (
-            f"Перепиши текст для рекламного поста в Telegram, сохранив суть: {text}"
-        )}],
+        "model": "llama3-8b-8192",
+        "messages": [{"role": "user", "content": f"Перепиши этот текст для рекламного поста в Telegram, сохранив суть и сделав его уникальным. Только текст без заголовков и призывов:\n\n{text}"}],
+        "temperature": 0.8,
+        "max_tokens": 500,
     }
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -183,9 +179,8 @@ async def rewrite_text_with_ai(text: str) -> str:
         if resp.status_code == 200:
             return resp.json()["choices"][0]["message"]["content"]
     except Exception as e:
-        logger.error(f"Ошибка AI-рерайта: {e}")
+        logger.error(f"Ошибка Groq рерайта: {e}")
     return text
-
 
 # =============================================================================
 # === ПРОВЕРКА ДУБЛИКАТОВ (БЛОГЕР) ===========================================
