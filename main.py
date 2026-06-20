@@ -1121,7 +1121,6 @@ async def resolve_erid(
     return None
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
-    """Находит прямую ссылку и извлекает SKU из URL."""
     products = find_product_links(original_text)
     if not products:
         return None
@@ -1130,17 +1129,14 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     sku = None
     marketplace = "WB"
 
-    # Ищем первый URL и сразу пытаемся вытащить SKU
     for p in products:
         if p.get("type") == "url":
             url = p["value"]
             marketplace = p.get("marketplace", "wb").upper()
-            # WB: /catalog/12345678/detail.aspx
             match = re.search(r'/catalog/(\d{6,12})', url)
             if match:
                 sku = match.group(1)
             else:
-                # Ozon: /product/название-123456789/ или /context/detail/id/123456789/
                 match = re.search(r'/product/.*?-(\d{6,12})/', url)
                 if not match:
                     match = re.search(r'/context/detail/id/(\d{6,12})/', url)
@@ -1151,12 +1147,12 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     if not url and not sku:
         return None
 
-    # Текст для рерайта (без ссылок)
-    clean_text = re.sub(r'https?://\S+', '', original_text).strip()
-    if len(clean_text) < 15:
-        clean_text = original_text.split('http')[0].strip()
+    # Берём текст до первой ссылки или первую непустую строку
+    clean_text = original_text.split('http')[0].strip()
     if not clean_text:
-        clean_text = "Товар по ссылке"
+        # Если совсем пусто, берём первую строку исходного поста
+        lines = [line.strip() for line in original_text.split('\n') if line.strip()]
+        clean_text = lines[0] if lines else "Товар по ссылке"
 
     rewritten = await rewrite_text_with_ai(clean_text)
 
@@ -1178,8 +1174,6 @@ async def process_saas_core(
     sku: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
-    """Формирует пост с партнёрской ссылкой и ERID (если товар найден в ТакПродам)."""
-
     if not force_post and is_night_time():
         if not rewritten_text:
             prepared = await prepare_post_content(original_text)
@@ -1198,6 +1192,8 @@ async def process_saas_core(
         if not prepared:
             if force_post:
                 clean_text = re.sub(r'https?://\S+', '', original_text).strip()
+                if not clean_text:
+                    clean_text = original_text.split('http')[0].strip()
                 rewritten = await rewrite_text_with_ai(clean_text)
                 return f"{rewritten}\n\n<i>Реклама</i>"
             return None
@@ -1209,7 +1205,6 @@ async def process_saas_core(
     clean_rewritten = re.sub(r'https?://\S+', '', rewritten_text).strip()
     clean_rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_rewritten, flags=re.IGNORECASE)
 
-    # Пытаемся получить ERID и ссылку через мастер-токен (если есть SKU)
     erid_data = None
     if sku and TAKPRODAM_MASTER_TOKEN:
         erid_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, sku)
@@ -1224,6 +1219,7 @@ async def process_saas_core(
             f"Реклама. {advertiser}. Erid: {erid}"
         )
     else:
+        # Всегда вставляем прямую ссылку, если она была в посте
         if url:
             post_html = (
                 f"{clean_rewritten}\n\n"
@@ -1326,9 +1322,8 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     if erid_data and erid_data.get("image_url"):
                         photo_url = erid_data["image_url"]
 
-                # Если фото нет – пробуем запросить товар через мастер-токен (он часто возвращает фото)
-                                # Пытаемся получить фото через мастер-токен (если есть SKU)
-                if not photo_url and prepared and prepared.get("sku"):
+                # Пытаемся получить фото через мастер-токен (если есть SKU)
+                if not photo_url and prepared and prepared.get("sku") and TAKPRODAM_MASTER_TOKEN:
                     try:
                         product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["sku"])
                         if product_data and product_data.get("image_url"):
@@ -1336,7 +1331,14 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     except Exception:
                         pass
 
-                # Если фото так и нет – оставляем донорское (может сработать)
+                # Если фото нет, а товар с WB – пробуем открытое API WB
+                if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
+                    sku = prepared["sku"]
+                    # Формируем прямую ссылку на фото WB
+                    photo_url = f"https://images.wbstatic.net/big/new/{sku[:4]}0000/{sku}.jpg"
+                    # Проверять не будем, Telegram сам отбросит при ошибке
+
+                # Если всё равно нет – оставляем донорское (может сработать)
                 if not photo_url:
                     photo_url = post.get("image_url")
 
