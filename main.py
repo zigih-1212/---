@@ -1152,7 +1152,7 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     sku = None
     marketplace = "WB"
 
-    # Ищем первый URL и извлекаем SKU
+    # Ищем первый URL и извлекаем SKU из него
     for p in products:
         if p.get("type") == "url":
             url = p["value"]
@@ -1169,27 +1169,29 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
                     sku = match.group(1)
             break
 
-        # Если URL нет, но есть SKU в тексте – формируем прямую ссылку
-    if not url:
+    # Если SKU не найден в URL, ищем в тексте (по ключевым словам)
+    if not sku:
         for p in products:
             if p.get("type") == "sku":
                 sku = p["value"]
                 marketplace = p.get("marketplace", "wb").upper()
-                if marketplace == "WB":
-                    url = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx"
-                else:
-                    url = f"https://www.ozon.ru/product/{sku}/"
                 break
+
+    # Если URL нет, но есть SKU – формируем прямую ссылку
+    if not url and sku:
+        if marketplace == "WB":
+            url = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx"
+        else:
+            url = f"https://www.ozon.ru/product/{sku}/"
 
     if not url and not sku:
         return None
 
-    # Очистка текста от ссылок и мусора
+    # Очистка текста для рерайта
     clean_text = re.sub(r'https?://\S+|www\.\S+', '', original_text)
     clean_text = re.sub(r'(?i)(купить|заказать|ссылка|артикул|тут|здесь|подробнее)[:\s👉👇⬇️]*$', '', clean_text)
     clean_text = re.sub(r'\n{3,}', '\n\n', clean_text).strip()
 
-    # Если после очистки текст слишком короткий – берём первые 3 строки
     if len(clean_text) < 15:
         lines = [l.strip() for l in original_text.split('\n') if l.strip() and not l.startswith('http')]
         clean_text = ' '.join(lines[:3])
@@ -1394,10 +1396,11 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                                # Пытаемся скачать фото из донорского поста
                                 # 1. Донорское фото
                                 # 1. Пытаемся скачать фото из донорского поста (если есть)
+                                # 1. Донорское фото
                 if not photo_url and post.get("image_url"):
                     photo_url = post["image_url"]
 
-                # 2. Пробуем через API ТакПродам (мастер-токен)
+                # 2. ТакПродам (мастер-токен)
                 if not photo_url and prepared and prepared.get("sku") and TAKPRODAM_MASTER_TOKEN:
                     try:
                         product_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, prepared["sku"])
@@ -1406,19 +1409,19 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     except Exception:
                         pass
 
-                # 3. Открытое API WB (images.wbstatic.net)
-                if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
-                    sku = prepared["sku"]
-                    photo_url = f"https://images.wbstatic.net/big/new/{sku[:4]}0000/{sku}.jpg"
-
-                # 4. Резервный источник – basket-01.wb.ru
+                # 3. Открытое API WB (basket-01.wb.ru) – самый надёжный источник
                 if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
                     sku = prepared["sku"]
                     vol = int(sku) // 100000
                     part = int(sku) // 1000
                     photo_url = f"https://basket-01.wb.ru/vol{vol}/part{part}/{sku}/images/big/1.jpg"
 
-                # Публикуем (если фото не найдено — уйдет текст)
+                # 4. Запасной вариант – images.wbstatic.net
+                if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
+                    sku = prepared["sku"]
+                    photo_url = f"https://images.wbstatic.net/big/new/{sku[:4]}0000/{sku}.jpg"
+
+                # Публикуем
                 msg = await publish_post_with_fallback(
                     bot=bot,
                     channel_id=target_channel,
