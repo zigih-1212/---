@@ -964,7 +964,7 @@ async def get_source_id(token: str) -> Optional[int]:
     except Exception as e:
         logger.error(f"get_source_id error: {e}")
     return None
-  async def download_image(url: str) -> Optional[bytes]:
+async def download_image(url: str) -> Optional[bytes]:
     """Скачивает изображение по URL с правильными заголовками."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
