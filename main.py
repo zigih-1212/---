@@ -1118,7 +1118,7 @@ async def resolve_erid(
     return None
   
 async def prepare_post_content(original_text: str) -> Optional[dict]:
-    """Находит прямую ссылку и SKU, возвращает оба."""
+    """Находит прямую ссылку и извлекает SKU из URL."""
     products = find_product_links(original_text)
     if not products:
         return None
@@ -1127,26 +1127,28 @@ async def prepare_post_content(original_text: str) -> Optional[dict]:
     sku = None
     marketplace = "WB"
 
-    # Ищем первый URL
+    # Ищем первый URL и сразу пытаемся вытащить SKU
     for p in products:
         if p.get("type") == "url":
             url = p["value"]
             marketplace = p.get("marketplace", "wb").upper()
+            # WB: /catalog/12345678/detail.aspx
+            match = re.search(r'/catalog/(\d{6,12})', url)
+            if match:
+                sku = match.group(1)
+            else:
+                # Ozon: /product/название-123456789/ или /context/detail/id/123456789/
+                match = re.search(r'/product/.*?-(\d{6,12})/', url)
+                if not match:
+                    match = re.search(r'/context/detail/id/(\d{6,12})/', url)
+                if match:
+                    sku = match.group(1)
             break
 
-    # Ищем первый SKU
-    for p in products:
-        if p.get("type") == "sku":
-            sku = p["value"]
-            if not url:  # если URL нет, marketplace берём из SKU
-                marketplace = p.get("marketplace", "wb").upper()
-            break
-
-    # Если нет ни URL, ни SKU — не можем работать
     if not url and not sku:
         return None
 
-    # Текст для рерайта: убираем ссылки, оставляем описание
+    # Текст для рерайта (без ссылок)
     clean_text = re.sub(r'https?://\S+', '', original_text).strip()
     if len(clean_text) < 15:
         clean_text = original_text.split('http')[0].strip()
