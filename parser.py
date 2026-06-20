@@ -132,19 +132,23 @@ async def get_product_data(sku: str, sub_id: str) -> Optional[Dict]:
     return None
 
 
-async def get_product_data_by_token(token: str, sub_id: str) -> Optional[Dict]:
+async def get_product_data_by_token(token: str, sku: str) -> Optional[Dict]:
+    """
+    Получение данных через КЛИЕНТСКИЙ токен по конкретному SKU.
+    Возвращает {erid, advertiser, link, image_url} или None.
+    """
     url = "https://api.takprodam.ru/v1/products/info"
     headers = {"Authorization": f"Bearer {token}"}
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers=headers)
+            resp = await client.get(url, headers=headers, params={"sku": sku})
             if resp.status_code == 200:
                 data = resp.json()
                 original_link = data.get("link", "")
                 return {
                     "erid": data.get("erid"),
                     "advertiser": data.get("advertiser"),
-                    "link": f"{original_link}?sub_id={sub_id}" if original_link else "",
+                    "link": f"{original_link}?sub_id={token}" if original_link else "",
                     "image_url": data.get("image") or data.get("photo") or "",
                 }
     except Exception as e:
