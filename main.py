@@ -847,7 +847,20 @@ async def flush_all_saas_queues(bot: Bot):
 
 
 async def publish_from_categories(bot: Bot):
-    """Публикует случайный товар из запасного списка SKU (временное решение)."""
+    """Публикует случайный товар из общего пула (product_pool)."""
+    conn = get_db()
+    try:
+        sku_row = conn.execute("SELECT * FROM product_pool ORDER BY RANDOM() LIMIT 1").fetchone()
+        if not sku_row:
+            logger.info("📦 Пул товаров пуст")
+            return
+        conn.execute("UPDATE product_pool SET check_count = check_count + 1, last_checked = ? WHERE id = ?",
+                     (datetime.now(timezone.utc).isoformat(), sku_row["id"]))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Получаем всех SaaS-клиентов
     conn = get_db()
     try:
         users = conn.execute("""
@@ -865,21 +878,10 @@ async def publish_from_categories(bot: Bot):
         if not api_key:
             continue
 
-        conn = get_db()
-        try:
-            sku_row = conn.execute('SELECT * FROM fallback_skus ORDER BY RANDOM() LIMIT 1').fetchone()
-        finally:
-            conn.close()
-
-        if not sku_row:
-            continue
-
-        # Запрашиваем данные через API ТакПродам (гарантированно работает)
         product_data = await fetch_takprodam_by_sku(api_key, sku_row["sku"])
-        if not product_data:
+        if not product_data or not product_data.get("erid"):
             continue
 
-        # Собираем пост
         caption = (
             f"{sku_row['title']}\n\n"
             f"🛒 Артикул: <code>{sku_row['sku']}</code>\n\n"
@@ -888,7 +890,6 @@ async def publish_from_categories(bot: Bot):
         )
         photo_url = product_data.get("image_url") or ""
 
-        # Публикуем в каналы пользователя
         conn = get_db()
         try:
             channels = conn.execute(
