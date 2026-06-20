@@ -379,12 +379,12 @@ async def fetch_telegram_channel_posts(channel: str) -> List[Dict[str, str]]:
             if img_style and 'background-image:url(' in img_style.get('style', ''):
                 image_url = img_style['style'].split("background-image:url('")[1].split("')")[0]
 
-             if post_id and text:
+            if post_id and text:
                 posts.append({
                     "id": post_id,
                     "text": text.strip(),
                     "image_url": image_url,
-                    "image_file_id": None,  # будет заполнено, если бот админ канала
+                    "image_file_id": None,
                     "channel": channel
                 })
         return posts
