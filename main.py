@@ -718,7 +718,7 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
         marketplace = row["marketplace"] or "wb"
         channel_id = row["channel_id"]
 
-        # Проверка дневного лимита по тарифу (если потребуется)
+        # Проверка дневного лимита по тарифу
         conn_limit = get_db()
         try:
             tariff_row = conn_limit.execute(
@@ -754,17 +754,7 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
             conn2.close()
             continue
 
-        try:
-            msg = await publish_post_with_fallback(
-                bot=bot,
-                channel_id=channel_id,
-                caption=post_html,
-                photo_url=row["photo_url"]
-            )
-            if not msg:
-                continue
-
-                  photo_url = row["photo_url"]
+        photo_url = row["photo_url"]
         # Если фото нет, пробуем через ТакПродам
         if not photo_url and sku:
             conn_api = get_db()
@@ -782,8 +772,19 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
             finally:
                 conn_api.close()
 
+        # Заглушка, если фото так и нет
         if not photo_url:
             photo_url = "https://wildberries.ru/favicon.ico" if marketplace == "WB" else "https://ozon.ru/favicon.ico"
+
+        try:
+            msg = await publish_post_with_fallback(
+                bot=bot,
+                channel_id=channel_id,
+                caption=post_html,
+                photo_url=photo_url
+            )
+            if not msg:
+                continue
 
             # Авто-закреп, если включён
             conn_pin = get_db()
