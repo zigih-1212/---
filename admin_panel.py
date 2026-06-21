@@ -252,42 +252,47 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     # =============================================================================
     # === КАРТОЧКА ПОЛЬЗОВАТЕЛЯ ====================================================
     # =============================================================================
-    @app.get("/admin/user/{user_id}", response_class=HTMLResponse)
-    async def user_card(request: Request, user_id: int):
-        is_authenticated(request)
-        conn = get_db()
-        try:
-            user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
-            if not user:
-                return HTMLResponse("<h3>❌ Пользователь не найден</h3>", status_code=404)
+   @app.get("/admin/user/{user_id}", response_class=HTMLResponse)
+async def user_card(request: Request, user_id: int):
+    is_authenticated(request)
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user:
+            return HTMLResponse("<h3>❌ Пользователь не найден</h3>", status_code=404)
 
-# Вот здесь должен быть запрос счётчика
-            catalog_count = conn.execute("SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0", (user_id,)).fetchone()["cnt"]
-            channels = conn.execute("SELECT * FROM channels WHERE user_id=?", (user_id,)).fetchall()
-            posts = conn.execute("SELECT * FROM posts WHERE user_id=? ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
+        # Один запрос счётчика (неиспользованные товары)
+        catalog_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0",
+            (user_id,)
+        ).fetchone()["cnt"]
 
-            earned = 0.0
-            withdrawn = 0.0
-            pending = 0.0
-            catalog_count = conn.execute("SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
-            if user["role"] == "blogger":
-                earned_row = conn.execute(
-                    "SELECT COALESCE(SUM(payout), 0.0) as total FROM transactions WHERE sub_id=?",
-                    (user["sub_id"],)
-                ).fetchone()
-                withdrawn_row = conn.execute(
-                    "SELECT COALESCE(SUM(amount_blogger), 0.0) as total FROM payouts WHERE user_id=? AND status='completed'",
-                    (user_id,)
-                ).fetchone()
-                pending_row = conn.execute(
-                    "SELECT COALESCE(SUM(amount_blogger), 0.0) as total FROM payouts WHERE user_id=? AND status='pending'",
-                    (user_id,)
-                ).fetchone()
-                earned = round(float(earned_row["total"] or 0), 2)
-                withdrawn = round(float(withdrawn_row["total"] or 0), 2)
-                pending = round(float(pending_row["total"] or 0), 2)
-        finally:
-            conn.close()
+        channels = conn.execute("SELECT * FROM channels WHERE user_id=?", (user_id,)).fetchall()
+        posts = conn.execute("SELECT * FROM posts WHERE user_id=? ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
+
+        earned = 0.0
+        withdrawn = 0.0
+        pending = 0.0
+        if user["role"] == "blogger":
+            earned_row = conn.execute(
+                "SELECT COALESCE(SUM(payout), 0.0) as total FROM transactions WHERE sub_id=?",
+                (user["sub_id"],)
+            ).fetchone()
+            withdrawn_row = conn.execute(
+                "SELECT COALESCE(SUM(amount_blogger), 0.0) as total FROM payouts WHERE user_id=? AND status='completed'",
+                (user_id,)
+            ).fetchone()
+            pending_row = conn.execute(
+                "SELECT COALESCE(SUM(amount_blogger), 0.0) as total FROM payouts WHERE user_id=? AND status='pending'",
+                (user_id,)
+            ).fetchone()
+            earned = round(float(earned_row["total"] or 0), 2)
+            withdrawn = round(float(withdrawn_row["total"] or 0), 2)
+            pending = round(float(pending_row["total"] or 0), 2)
+    finally:
+        conn.close()
+
+    # ... (остальной код формирования HTML с использованием {catalog_count})
 
         channel_rows = "".join(
             f"<tr><td>{'🟢' if ch['is_active'] else '🔴'}</td><td><code>{ch['channel_id']}</code></td><td>{ch['channel_title'] or '—'}</td></tr>"
