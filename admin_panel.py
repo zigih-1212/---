@@ -1092,7 +1092,7 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
 
         try:
             # Вызываем пополнение для всех (можно доработать на одного пользователя)
-            await refill_all_catalogs(None)
+            await refill_all_catalogs(bot)
             return RedirectResponse(f"/admin/user/{user_id}", status_code=302)
         except Exception as e:
             return HTMLResponse(f"Ошибка: {e}", status_code=500)
