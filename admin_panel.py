@@ -1080,7 +1080,7 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
 <form action="/admin/refill-catalog/{user_id}/run" method="post">
 <button>Запустить пополнение</button></form></body></html>""")
 
-       @app.post("/admin/refill-catalog/{user_id}/run")
+    @app.post("/admin/refill-catalog/{user_id}/run")
     async def refill_catalog_run(request: Request, user_id: int):
         is_authenticated(request)
         from main import refill_all_catalogs
@@ -1094,12 +1094,8 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
         if not user:
             return HTMLResponse("Пользователь не найден", status_code=404)
 
-        # Сколько товаров сейчас в каталоге (неиспользованных)
         conn = get_db()
-        before = conn.execute(
-            "SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0",
-            (user_id,)
-        ).fetchone()["cnt"]
+        before = conn.execute("SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0", (user_id,)).fetchone()["cnt"]
         conn.close()
 
         try:
@@ -1107,12 +1103,8 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
         except Exception as e:
             return HTMLResponse(f"<h3>Ошибка при пополнении</h3><pre>{html.escape(str(e))}</pre>", status_code=500)
 
-        # После пополнения
         conn = get_db()
-        after = conn.execute(
-            "SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0",
-            (user_id,)
-        ).fetchone()["cnt"]
+        after = conn.execute("SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0", (user_id,)).fetchone()["cnt"]
         conn.close()
 
         added = after - before
@@ -1127,4 +1119,6 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
 a{{color:#3498db;}}</style></head>
 <body><h2>{message}</h2>
 <a href="/admin/user/{user_id}">← Назад к карточке</a></body></html>""")
+
+    return app
     return app
