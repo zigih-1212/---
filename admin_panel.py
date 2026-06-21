@@ -267,6 +267,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             earned = 0.0
             withdrawn = 0.0
             pending = 0.0
+            catalog_count = conn.execute("SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
             if user["role"] == "blogger":
                 earned_row = conn.execute(
                     "SELECT COALESCE(SUM(payout), 0.0) as total FROM transactions WHERE sub_id=?",
