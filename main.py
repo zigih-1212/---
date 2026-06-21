@@ -982,8 +982,9 @@ async def publish_from_catalog(bot: Bot):
         try:
             hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
             posts_last_hour = conn.execute(
-                "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND status = 'published' AND published_at >= ?",
+                "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND status = 'published' AND published_at >= ? AND donor_post_id LIKE 'gdeslon_%'",
                 (user_id, hour_ago)
+            ).fetchone()["cnt"]
             ).fetchone()["cnt"]
         finally:
             conn.close()
