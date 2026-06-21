@@ -359,6 +359,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     <form action="/admin/user/{user_id}/toggle_ban" method="post" style="display:inline">
         <button class="{'danger' if user['is_active'] else ''}">{'⛔ Забанить' if user['is_active'] else '✅ Разбанить'}</button>
     </form>
+    <a href="/admin/refill-catalog/{user_id}"><button>🔄 Пополнить каталог GdeSlon</button></a>
     <form action="/admin/user/{user_id}/update_field" method="post">
         <input type="text" name="field" placeholder="Поле (api_key, client_erid_override)">
         <input type="text" name="value" placeholder="Новое значение">
@@ -1062,5 +1063,38 @@ input,textarea{{background:#1e2130;border:1px solid #444;color:#fff;padding:6px;
         is_authenticated(request)
         await channel_quick_action(bot, channel_id, "set_photo", photo_url=photo_url)
         return RedirectResponse(f"/admin/channel/{channel_id}", status_code=302)
+
+    # =====================================================================
+    # === ПОПОЛНЕНИЕ КАТАЛОГА GDESLON (АДМИН) ============================
+    # =====================================================================
+    @app.get("/admin/refill-catalog/{user_id}", response_class=HTMLResponse)
+    async def refill_catalog_page(request: Request, user_id: int):
+        is_authenticated(request)
+        return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Пополнение каталога</title>
+<style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
+button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radius:4px;cursor:pointer;}}</style></head>
+<body><h2>Пополнить каталог для пользователя {user_id}</h2>
+<form action="/admin/refill-catalog/{user_id}/run" method="post">
+<button>Запустить пополнение</button></form></body></html>""")
+
+    @app.post("/admin/refill-catalog/{user_id}/run")
+    async def refill_catalog_run(request: Request, user_id: int):
+        is_authenticated(request)
+        from main import refill_all_catalogs
+        conn = get_db()
+        try:
+            user = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        finally:
+            conn.close()
+        if not user:
+            return HTMLResponse("Пользователь не найден", status_code=404)
+
+        try:
+            # Вызываем пополнение для всех (можно доработать на одного пользователя)
+            await refill_all_catalogs(None)
+            return RedirectResponse(f"/admin/user/{user_id}", status_code=302)
+        except Exception as e:
+            return HTMLResponse(f"Ошибка: {e}", status_code=500)
 
     return app
