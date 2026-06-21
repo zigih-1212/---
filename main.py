@@ -1014,7 +1014,7 @@ async def publish_from_catalog(bot: Bot):
             f"{product['title']}\n\n"
             f"💰 Цена: {product['price']} {product['currency']}\n\n"
             f"👉 <a href='{product['partner_url']}'>Посмотреть и заказать</a>\n\n"
-            f"Реклама. {product['advertiser']}. Erid: {product['erid']}"
+            f"Реклама. {product['advertiser']}. Erid: {product['erid']}" if product['erid'] else f"Реклама. {product['advertiser']}"
         )
         photo_url = product["image_url"]
 
@@ -2398,7 +2398,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         f"{product['title']}\n\n"
         f"💰 Цена: {product['price']} {product['currency']}\n\n"
         f"👉 <a href='{product['partner_url']}'>Посмотреть и заказать</a>\n\n"
-        f"Реклама. {product['advertiser']}. Erid: {product['erid']}"
+        f"Реклама. {product['advertiser']}. Erid: {product['erid']}" if product['erid'] else f"Реклама. {product['advertiser']}"
     )
     photo_url = product["image_url"]
 
@@ -2461,6 +2461,60 @@ async def msg_saas_text_input(message: Message, state: FSMContext) -> None:
             [InlineKeyboardButton(text="🔙 Вернуться в настройки", callback_data="menu:settings")]
         ])
         await message.answer(ans_text, reply_markup=kb)
+        return
+
+    # Если ввод SKU для каталога (старый функционал, оставляем без изменений)
+    if input_type == "sku":
+        sku = message.text.strip()
+        user_id = message.from_user.id
+        conn = get_db()
+        try:
+            api_key_row = conn.execute("SELECT api_key FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        finally:
+            conn.close()
+
+        if api_key_row and api_key_row["api_key"]:
+            product_data = await fetch_takprodam_by_sku(api_key_row["api_key"], sku)
+            if product_data and product_data.get("erid"):
+                title = product_data.get("title") or "Товар " + sku
+                conn = get_db()
+                try:
+                    conn.execute("INSERT OR IGNORE INTO user_products (user_id, sku, title, marketplace) VALUES (?, ?, ?, ?)",
+                                 (user_id, sku, title, "WB"))
+                    conn.commit()
+                finally:
+                    conn.close()
+                await message.answer(f"✅ Товар добавлен: {title} ({sku})")
+                await state.clear()
+                return
+            else:
+                await message.answer("❌ Этот SKU не найден в ТакПродам или отсутствует ERID. Попробуйте другой.")
+                await state.clear()
+                return
+        else:
+            await message.answer("❌ Сначала установите API-ключ в настройках.")
+            await state.clear()
+            return
+
+    # Старая логика для ввода API-ключа (на всякий случай)
+    api_key = message.text.strip()
+    user_id = message.from_user.id
+    if api_key == "0":
+        api_key = None
+        ans_text = "🗑 API-ключ удалён."
+    else:
+        ans_text = "✅ API-ключ успешно сохранён!"
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET api_key=? WHERE user_id=?", (api_key, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Вернуться в настройки", callback_data="menu:settings")]
+    ])
+    await message.answer(ans_text, reply_markup=kb)
         return
 
     # Если ввод SKU для каталога (старый функционал, оставляем без изменений)
@@ -3089,7 +3143,7 @@ async def open_saas_settings(callback: CallbackQuery) -> None:
 
     text = (
         "⚙️ <b>Настройки SaaS-аккаунта</b>\n\n"
-        f"🔑 <b>API-ключ (ТакПродам):</b> {api_key_status}\n"
+        f"🔑 <b>API-ключ (GdeSlon):</b> {api_key_status}\n"
         "<i>(Необходим для получения партнёрских ссылок и ERID)</i>\n\n"
         "Управляйте настройками автопостинга с помощью кнопок ниже:"
     )
