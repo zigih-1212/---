@@ -15,6 +15,7 @@ import secrets
 import sqlite3
 import time
 import random
+import hashlib
 from xml.etree import ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
