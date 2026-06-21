@@ -2524,7 +2524,7 @@ async def msg_saas_text_input(message: Message, state: FSMContext) -> None:
         [InlineKeyboardButton(text="🔙 Вернуться в настройки", callback_data="menu:settings")]
     ])
     await message.answer(ans_text, reply_markup=kb)
-        return
+    return
 
     # Если ввод SKU для каталога (старый функционал, оставляем без изменений)
     if input_type == "sku":
