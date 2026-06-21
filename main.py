@@ -2404,11 +2404,11 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         await asyncio.sleep(1)
 
     await callback.message.answer("✅ Пост опубликован!")
-@router.callback_query(F.data == "saas_set:apikey")
-async def cb_saas_set_apikey(callback: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(F.data == "saas_set:gdeslon_apikey")
+async def cb_saas_set_gdeslon_apikey(callback: CallbackQuery, state: FSMContext) -> None:
     text = (
-        "🔑 <b>Настройка API-ключа</b>\n\n"
-        "Отправьте сообщением ваш API-ключ от ТакПродам.\n"
+        "🔑 <b>Настройка API-ключа GdeSlon</b>\n\n"
+        "Отправьте сообщением ваш API-ключ от GdeSlon.\n"
         "<i>Если вы хотите удалить ключ, отправьте цифру 0</i>"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -2416,10 +2416,70 @@ async def cb_saas_set_apikey(callback: CallbackQuery, state: FSMContext) -> None
     ])
     await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     await state.set_state(SaasStates.waiting_apikey)
+    await state.update_data(input_type="gdeslon_apikey")
     await callback.answer()
 
 @router.message(SaasStates.waiting_apikey)
-async def msg_saas_apikey_input(message: Message, state: FSMContext) -> None:
+async def msg_saas_text_input(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    input_type = data.get("input_type", "apikey")
+
+    # Если ввод API-ключа GdeSlon (новый функционал)
+    if input_type == "gdeslon_apikey":
+        api_key = message.text.strip()
+        user_id = message.from_user.id
+        if api_key == "0":
+            api_key = None
+            ans_text = "🗑 API-ключ GdeSlon удалён."
+        else:
+            ans_text = "✅ API-ключ GdeSlon успешно сохранён!"
+        conn = get_db()
+        try:
+            conn.execute("UPDATE users SET api_key=? WHERE user_id=?", (api_key, user_id))
+            conn.commit()
+        finally:
+            conn.close()
+        await state.clear()
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Вернуться в настройки", callback_data="menu:settings")]
+        ])
+        await message.answer(ans_text, reply_markup=kb)
+        return
+
+    # Если ввод SKU для каталога (старый функционал, оставляем без изменений)
+    if input_type == "sku":
+        sku = message.text.strip()
+        user_id = message.from_user.id
+        conn = get_db()
+        try:
+            api_key_row = conn.execute("SELECT api_key FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        finally:
+            conn.close()
+
+        if api_key_row and api_key_row["api_key"]:
+            product_data = await fetch_takprodam_by_sku(api_key_row["api_key"], sku)
+            if product_data and product_data.get("erid"):
+                title = product_data.get("title") or "Товар " + sku
+                conn = get_db()
+                try:
+                    conn.execute("INSERT OR IGNORE INTO user_products (user_id, sku, title, marketplace) VALUES (?, ?, ?, ?)",
+                                 (user_id, sku, title, "WB"))
+                    conn.commit()
+                finally:
+                    conn.close()
+                await message.answer(f"✅ Товар добавлен: {title} ({sku})")
+                await state.clear()
+                return
+            else:
+                await message.answer("❌ Этот SKU не найден в ТакПродам или отсутствует ERID. Попробуйте другой.")
+                await state.clear()
+                return
+        else:
+            await message.answer("❌ Сначала установите API-ключ в настройках.")
+            await state.clear()
+            return
+
+    # Старая логика для ввода API-ключа (на всякий случай)
     api_key = message.text.strip()
     user_id = message.from_user.id
     if api_key == "0":
@@ -2989,7 +3049,7 @@ async def open_saas_settings(callback: CallbackQuery) -> None:
         "Управляйте настройками автопостинга с помощью кнопок ниже:"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔑 Изменить API-ключ", callback_data="saas_set:apikey")],
+        [InlineKeyboardButton(text="🔑 Изменить API-ключ GdeSlon", callback_data="saas_set:gdeslon_apikey")],
         [
             InlineKeyboardButton(text=f"🛒 WB: {'✅' if wb else '❌'}", callback_data="saas_toggle:wb"),
             InlineKeyboardButton(text=f"🛒 Ozon: {'✅' if ozon else '❌'}", callback_data="saas_toggle:ozon")
