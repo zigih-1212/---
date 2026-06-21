@@ -565,6 +565,37 @@ def is_night_time() -> bool:
         return now.time() >= start or now.time() <= end
 
 async def refill_all_catalogs(bot: Bot):
+    conn = get_db()
+    try:
+        users = conn.execute("""
+            SELECT u.user_id
+            FROM users u
+            WHERE u.role = 'saas' AND u.is_active = 1
+            AND u.subscription_until > datetime('now')
+        """).fetchall()
+    finally:
+        conn.close()
+
+    for user in users:
+        user_id = user["user_id"]
+        conn = get_db()
+        try:
+            cats = conn.execute("""
+                SELECT pc.keyword FROM product_categories pc
+                JOIN user_category_preferences ucp ON pc.id = ucp.category_id
+                WHERE ucp.user_id = ?
+            """, (user_id,)).fetchall()
+        finally:
+            conn.close()
+
+        if not cats:
+            continue
+
+        for cat in cats:
+            await fetch_gdeslon_catalog(user_id, cat["keyword"], limit=5)
+            await asyncio.sleep(1)
+
+async def refill_all_catalogs(bot: Bot):
     """Раз в 3 часа пополняет каталог GdeSlon для всех активных SaaS-клиентов."""
     conn = get_db()
     try:
@@ -913,11 +944,10 @@ async def flush_all_saas_queues(bot: Bot):
 
 
 async def publish_from_catalog(bot: Bot):
-    """Публикует случайный товар из локального каталога GdeSlon для каждого SaaS-клиента."""
     conn = get_db()
     try:
         users = conn.execute("""
-            SELECT u.user_id
+            SELECT u.user_id, u.tariff_id
             FROM users u
             WHERE u.role = 'saas' AND u.is_active = 1
             AND u.subscription_until > datetime('now')
@@ -927,6 +957,33 @@ async def publish_from_catalog(bot: Bot):
 
     for user in users:
         user_id = user["user_id"]
+        tariff_id = user["tariff_id"]
+
+        # Определяем лимит постов в час по тарифу
+        max_posts_per_hour = 1  # по умолчанию
+        if tariff_id:
+            conn = get_db()
+            try:
+                tariff = conn.execute("SELECT max_posts_per_day FROM tariffs WHERE id = ?", (tariff_id,)).fetchone()
+                if tariff and tariff["max_posts_per_day"]:
+                    max_posts_per_hour = max(1, tariff["max_posts_per_day"] // 24)
+            finally:
+                conn.close()
+
+        # Проверяем, сколько уже опубликовано за последний час
+        conn = get_db()
+        try:
+            hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            posts_last_hour = conn.execute(
+                "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND status = 'published' AND published_at >= ?",
+                (user_id, hour_ago)
+            ).fetchone()["cnt"]
+        finally:
+            conn.close()
+
+        if posts_last_hour >= max_posts_per_hour:
+            continue  # лимит исчерпан
+
         # Берём случайный неиспользованный товар
         conn = get_db()
         try:
@@ -935,7 +992,6 @@ async def publish_from_catalog(bot: Bot):
                 (user_id,)
             ).fetchone()
             if not product:
-                # Если все использованы — сбрасываем used и берём снова
                 conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
                 conn.commit()
                 product = conn.execute(
@@ -1054,18 +1110,17 @@ async def fetch_gdeslon_by_sku(sku: str) -> Optional[Dict[str, str]]:
         logger.error(f"GdeSlon API error for SKU {sku}: {e}")
     return None
 
-async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 10) -> List[Dict]:
-    """Запрашивает товары из GdeSlon по ключевому слову и сохраняет в локальный каталог пользователя."""
+async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 10) -> int:
     token = os.getenv("GDESLON_API_KEY", "")
     if not token:
-        return []
+        return 0
 
     url = f"https://www.gdeslon.ru/api/search.xml?q={keyword}&l={limit}&_gs_at={token}"
     try:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             resp = await client.get(url)
         if resp.status_code != 200:
-            return []
+            return 0
 
         root = ET.fromstring(resp.text)
         offers = root.findall('.//offer')
@@ -1095,11 +1150,10 @@ async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 10) -> 
                     pass
         conn.commit()
         conn.close()
-        logger.info(f"GdeSlon: добавлено {saved} товаров для user {user_id} по ключу '{keyword}'")
         return saved
     except Exception as e:
         logger.error(f"fetch_gdeslon_catalog error: {e}")
-        return []
+        return 0
 async def get_source_id(token: str) -> Optional[int]:
     """Получает source_id для токена (кэширует в БД)."""
     conn = get_db()
@@ -2287,16 +2341,60 @@ async def cb_saas_toggles(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
-    await callback.answer("🚀 Публикую накопленные посты...", show_alert=True)
-    try:
-        count = await flush_saas_queue_for_user(bot, callback.from_user.id)
-        if count > 0:
-            await callback.message.answer(f"✅ Опубликовано {count} постов из очереди.")
-        else:
-            await callback.message.answer("ℹ️ В очереди нет постов.")
-    except Exception as e:
-        await callback.message.answer(f"❌ Ошибка: {e}")
+    await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
+    user_id = callback.from_user.id
 
+    # Берём один случайный товар из каталога пользователя
+    conn = get_db()
+    try:
+        product = conn.execute(
+            "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 ORDER BY RANDOM() LIMIT 1",
+            (user_id,)
+        ).fetchone()
+        if not product:
+            conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
+            conn.commit()
+            product = conn.execute(
+                "SELECT * FROM gdeslon_catalog WHERE user_id = ? ORDER BY RANDOM() LIMIT 1",
+                (user_id,)
+            ).fetchone()
+        if product:
+            conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
+            conn.commit()
+    finally:
+        conn.close()
+
+    if not product:
+        await callback.message.answer("❌ В каталоге нет товаров. Попробуйте позже.")
+        return
+
+    caption = (
+        f"{product['title']}\n\n"
+        f"💰 Цена: {product['price']} {product['currency']}\n\n"
+        f"👉 <a href='{product['partner_url']}'>Посмотреть и заказать</a>\n\n"
+        f"Реклама. {product['advertiser']}. Erid: {product['erid']}"
+    )
+    photo_url = product["image_url"]
+
+    conn = get_db()
+    try:
+        channels = conn.execute(
+            "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    for ch in channels:
+        await publish_post_with_fallback(
+            bot=bot,
+            channel_id=ch["channel_id"],
+            caption=caption,
+            photo_url=photo_url
+        )
+        await asyncio.sleep(1)
+
+    await callback.message.answer("✅ Пост опубликован!")
 @router.callback_query(F.data == "saas_set:apikey")
 async def cb_saas_set_apikey(callback: CallbackQuery, state: FSMContext) -> None:
     text = (
