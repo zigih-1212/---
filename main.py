@@ -1128,34 +1128,33 @@ async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 10) -> 
         saved = 0
         conn = get_db()
         for offer in offers:
-            # Вместо SKU используем хеш партнёрской ссылки как уникальный идентификатор
+            # Берём партнёрскую ссылку как уникальный идентификатор
             url_elem = offer.find('url')
             partner_url = url_elem.text if url_elem is not None else ''
             if not partner_url:
                 continue
+
+            # Создаём уникальный идентификатор из хеша ссылки
             sku = hashlib.md5(partner_url.encode()).hexdigest()[:12]
 
-            name = offer.findtext('name', '')
+            name = offer.findtext('name', 'Товар')
             price = offer.findtext('price', '0')
             currency = offer.findtext('currencyId', 'RUR')
             picture = offer.findtext('picture', '')
-            description = offer.findtext('description', '')[:200]  # краткое описание
-
-            # Извлекаем ERID из ссылки
             erid = ''
             if 'erid=' in partner_url:
                 erid = partner_url.split('erid=')[-1].split('&')[0]
-
-            vendor = offer.findtext('vendor', '') or offer.findtext('merchant', '') or 'Рекламодатель'
+            vendor = offer.findtext('vendor', '') or 'Рекламодатель'
 
             try:
                 conn.execute(
                     "INSERT OR IGNORE INTO gdeslon_catalog (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (sku, user_id, name or 'Товар', float(price) if price else 0, currency, partner_url, erid, vendor, picture or '', keyword)
+                    (sku, user_id, name, float(price) if price else 0, currency, partner_url, erid, vendor, picture or '', keyword)
                 )
                 saved += 1
             except Exception as e:
                 logger.warning(f"Gdeslon insert error: {e}")
+
         conn.commit()
         conn.close()
         logger.info(f"Gdeslon: добавлено {saved} товаров для user {user_id} по ключу '{keyword}'")
