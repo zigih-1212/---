@@ -967,7 +967,7 @@ async def publish_from_catalog(bot: Bot):
         tariff_id = user["tariff_id"]
 
         # Определяем лимит постов в час по тарифу
-        max_posts_per_hour = 1  # по умолчанию
+        max_posts_per_hour = 1
         if tariff_id:
             conn = get_db()
             try:
@@ -989,7 +989,7 @@ async def publish_from_catalog(bot: Bot):
             conn.close()
 
         if posts_last_hour >= max_posts_per_hour:
-            continue  # лимит исчерпан
+            continue
 
         # Берём случайный неиспользованный товар
         conn = get_db()
@@ -1014,13 +1014,34 @@ async def publish_from_catalog(bot: Bot):
         if not product:
             continue
 
+        # Проверяем обязательные поля
+        partner_url = (product['partner_url'] or '').strip()
+        title = (product['title'] or '').strip()
+        price = product['price'] or 0
+        currency = product['currency'] or '₽'
+        advertiser = product['advertiser'] or 'Рекламодатель'
+        erid = (product['erid'] or '').strip()
+
+        # Если нет ссылки – удаляем товар из каталога и пропускаем
+        if not partner_url:
+            conn = get_db()
+            try:
+                conn.execute("DELETE FROM gdeslon_catalog WHERE id = ?", (product["id"],))
+                conn.commit()
+            finally:
+                conn.close()
+            continue
+
         # Формируем пост
-        caption = (
-            f"{product['title']}\n\n"
-            f"💰 Цена: {product['price']} {product['currency']}\n\n"
-            f"👉 <a href='{product['partner_url']}'>Посмотреть и заказать</a>\n\n"
-            f"Реклама. {product['advertiser']}. Erid: {product['erid']}" if product['erid'] else f"Реклама. {product['advertiser']}"
-        )
+        caption = f"{title}\n\n"
+        if price > 0:
+            caption += f"💰 Цена: {price} {currency}\n\n"
+        caption += f"👉 <a href='{partner_url}'>Посмотреть и заказать</a>\n\n"
+        if erid:
+            caption += f"Реклама. {advertiser}. Erid: {erid}"
+        else:
+            caption += f"Реклама. {advertiser}"
+
         photo_url = product["image_url"]
 
         # Публикуем в каналы пользователя
@@ -1137,8 +1158,8 @@ async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 10) -> 
             # Берём партнёрскую ссылку как уникальный идентификатор
             url_elem = offer.find('url')
             partner_url = url_elem.text if url_elem is not None else ''
-            if not partner_url:
-                continue
+            if not partner_url or not name or not price:
+                continue   # пропускаем товары без ссылки, названия или цены
 
             # Создаём уникальный идентификатор из хеша ссылки
             sku = hashlib.md5(partner_url.encode()).hexdigest()[:12]
@@ -2412,12 +2433,35 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         await callback.message.answer("❌ В каталоге нет товаров. Попробуйте позже.")
         return
 
-    caption = (
-        f"{product['title']}\n\n"
-        f"💰 Цена: {product['price']} {product['currency']}\n\n"
-        f"👉 <a href='{product['partner_url']}'>Посмотреть и заказать</a>\n\n"
-        f"Реклама. {product['advertiser']}. Erid: {product['erid']}" if product['erid'] else f"Реклама. {product['advertiser']}"
-    )
+    # Проверяем обязательные поля
+    partner_url = (product['partner_url'] or '').strip()
+    title = (product['title'] or '').strip()
+    price = product['price'] or 0
+    currency = product['currency'] or '₽'
+    advertiser = product['advertiser'] or 'Рекламодатель'
+    erid = (product['erid'] or '').strip()
+
+    # Если нет ссылки – удаляем товар из каталога и сообщаем
+    if not partner_url:
+        conn = get_db()
+        try:
+            conn.execute("DELETE FROM gdeslon_catalog WHERE id = ?", (product["id"],))
+            conn.commit()
+        finally:
+            conn.close()
+        await callback.message.answer("❌ Товар из каталога повреждён, удалён. Попробуйте снова.")
+        return
+
+    # Формируем пост
+    caption = f"{title}\n\n"
+    if price > 0:
+        caption += f"💰 Цена: {price} {currency}\n\n"
+    caption += f"👉 <a href='{partner_url}'>Посмотреть и заказать</a>\n\n"
+    if erid:
+        caption += f"Реклама. {advertiser}. Erid: {erid}"
+    else:
+        caption += f"Реклама. {advertiser}"
+
     photo_url = product["image_url"]
 
     conn = get_db()
