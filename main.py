@@ -2077,11 +2077,18 @@ async def cb_categories(callback: CallbackQuery):
     await callback.answer()
 
 @router.callback_query(F.data.startswith("cat_toggle:"))
-async def cb_toggle_category(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("cat_toggle:"))
+async def cb_toggle_category(callback: CallbackQuery, bot: Bot):
     cat_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
     conn = get_db()
+    keyword = None
     try:
+        # Получаем ключевое слово категории
+        cat_row = conn.execute("SELECT keyword FROM product_categories WHERE id=?", (cat_id,)).fetchone()
+        if cat_row:
+            keyword = cat_row["keyword"]
+
         existing = conn.execute("SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
                                 (user_id, cat_id)).fetchone()
         if existing:
@@ -2102,8 +2109,18 @@ async def cb_toggle_category(callback: CallbackQuery):
         conn.commit()
     finally:
         conn.close()
+
+    # Если категория была добавлена (не удалена) – сразу наполняем каталог
+    if not existing and keyword:
+        await callback.answer("✅ Категория добавлена, загружаем товары...", show_alert=False)
+        saved = await fetch_gdeslon_catalog(user_id, keyword, limit=5)
+        if saved > 0:
+            await callback.answer(f"Загружено {saved} товаров", show_alert=True)
+        else:
+            await callback.answer("Товары не найдены, попробуйте позже", show_alert=True)
+
+    # Перерисовываем список категорий
     await cb_categories(callback)
-    await callback.answer()
 # =============================================================================
 # === ОБРАБОТЧИКИ КАНАЛОВ (БЛОГЕР) ============================================
 # =============================================================================
@@ -2969,7 +2986,7 @@ async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
     conn = get_db()
     try:
         channels = conn.execute(
-            "SELECT channel_title, channel_id FROM channels WHERE user_id=? AND is_active=1",
+            "SELECT id, channel_title, channel_id FROM channels WHERE user_id=? AND is_active=1",
             (user_id,)
         ).fetchall()
     finally:
@@ -2977,15 +2994,22 @@ async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
 
     if channels:
         text = "📢 <b>Ваши подключенные каналы:</b>\n\n"
+        kb_rows = []
         for i, ch in enumerate(channels, 1):
             text += f"{i}. {ch['channel_title']} (<code>{ch['channel_id']}</code>)\n"
+            kb_rows.append([InlineKeyboardButton(
+                text=f"🗑 Удалить {ch['channel_title']}",
+                callback_data=f"channel_delete:{ch['id']}"
+            )])
         text += "\n<i>Для добавления нового канала отправьте его @username прямо сейчас.</i>"
+        kb_rows.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")])
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     else:
         text = "📢 <b>У вас пока нет подключенных каналов.</b>\n\nДля добавления канала отправьте его @username."
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
+        ])
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
-    ])
     try:
         await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except:
@@ -2993,6 +3017,27 @@ async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(OnboardingStates.waiting_saas_tg_channel)
     await callback.answer()
 
+@router.callback_query(F.data.startswith("channel_delete:"))
+async def cb_delete_channel(callback: CallbackQuery):
+    channel_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+
+    conn = get_db()
+    try:
+        # Проверяем, что канал принадлежит пользователю
+        ch = conn.execute("SELECT id, channel_title FROM channels WHERE id=? AND user_id=?", 
+                         (channel_id, user_id)).fetchone()
+        if ch:
+            conn.execute("DELETE FROM channels WHERE id=?", (channel_id,))
+            conn.commit()
+            await callback.answer(f"Канал {ch['channel_title']} удалён", show_alert=True)
+        else:
+            await callback.answer("Канал не найден", show_alert=True)
+    finally:
+        conn.close()
+
+    # Обновляем список каналов
+    await cb_my_channels(callback, None)
 # =============================================================================
 # === НАСТРОЙКИ ДЛЯ БЛОГЕРА (ФИЛЬТРЫ WB/OZON) =================================
 # =============================================================================
