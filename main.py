@@ -991,20 +991,34 @@ async def publish_from_catalog(bot: Bot):
         if posts_last_hour >= max_posts_per_hour:
             continue
 
-        # Берём случайный неиспользованный товар
+                # Берём случайный неиспользованный товар (предпочитаем с ERID)
         conn = get_db()
         try:
+            # Сначала пробуем товар с ERID
             product = conn.execute(
                 "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                 (user_id,)
             ).fetchone()
+            # Если нет ни одного товара с ERID, берём любой неиспользованный
+            if not product:
+                product = conn.execute(
+                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 ORDER BY RANDOM() LIMIT 1",
+                    (user_id,)
+                ).fetchone()
+            # Если и таких нет (все использованы), сбрасываем used и пробуем снова (сначала с ERID)
             if not product:
                 conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
                 conn.commit()
+                # После сброса опять приоритет ERID
                 product = conn.execute(
-                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? ORDER BY RANDOM() LIMIT 1",
+                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                     (user_id,)
                 ).fetchone()
+                if not product:
+                    product = conn.execute(
+                        "SELECT * FROM gdeslon_catalog WHERE user_id = ? ORDER BY RANDOM() LIMIT 1",
+                        (user_id,)
+                    ).fetchone()
             if product:
                 conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
                 conn.commit()
