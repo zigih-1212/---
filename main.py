@@ -986,6 +986,54 @@ async def fetch_takprodam_by_sku(token: str, sku: str) -> Optional[Dict[str, str
     except Exception as e:
         logger.error(f"Ошибка при запросе к ТакПродам для SKU {sku}: {e}")
         return None
+
+async def fetch_gdeslon_by_sku(sku: str) -> Optional[Dict[str, str]]:
+    """Ищет товар в GdeSlon по артикулу и возвращает партнёрскую ссылку, ERID, фото."""
+    token = os.getenv("GDESLON_API_KEY", "")
+    if not token:
+        return None
+
+    url = f"https://www.gdeslon.ru/api/search.xml?articles={sku}&l=1&_gs_at={token}"
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            return None
+
+        root = ET.fromstring(resp.text)
+        offers = root.findall('.//offer')
+        if not offers:
+            return None
+
+        offer = offers[0]
+        name = offer.findtext('name', '')
+        price = offer.findtext('price', '')
+        currency = offer.findtext('currencyId', 'RUB')
+        picture = offer.findtext('picture', '')
+        url_elem = offer.find('url')
+        partner_url = url_elem.text if url_elem is not None else ''
+
+        # Извлекаем ERID из ссылки (если есть)
+        erid = ''
+        if 'erid=' in partner_url:
+            erid = partner_url.split('erid=')[-1].split('&')[0]
+
+        # Название магазина
+        shop_name = offer.findtext('shop_name', '') or offer.findtext('merchant', '') or 'Рекламодатель'
+
+        if partner_url:
+            return {
+                "link": partner_url,
+                "erid": erid,
+                "advertiser": shop_name,
+                "image_url": picture or "",
+                "title": name,
+                "price": price,
+                "currency": currency,
+            }
+    except Exception as e:
+        logger.error(f"GdeSlon API error for SKU {sku}: {e}")
+    return None
 async def get_source_id(token: str) -> Optional[int]:
     """Получает source_id для токена (кэширует в БД)."""
     conn = get_db()
@@ -1270,7 +1318,7 @@ async def process_saas_core(
     sku: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
-    """Формирует пост с партнёрской ссылкой и ERID (если товар найден в ТакПродам)."""
+    """Формирует пост с партнёрской ссылкой через GdeSlon (основной источник)."""
 
     # Ночной режим – сохраняем в очередь
     if not force_post and is_night_time():
@@ -1307,23 +1355,22 @@ async def process_saas_core(
     # Очищаем рерайт от остатков ссылок и мусора
     clean_rewritten = re.sub(r'https?://\S+', '', rewritten_text).strip()
     clean_rewritten = re.sub(r'\bMAX\s*\(\s*клик\s*\)\b', '', clean_rewritten, flags=re.IGNORECASE)
-        # Убираем случайные символы < > от ИИ, чтобы не ломать HTML
     clean_rewritten = clean_rewritten.replace('<', '').replace('>', '')
 
     # Жёсткая защита от пустого текста
     if len(clean_rewritten) < 10:
-        clean_rewritten = "Отличный товар по ссылке – переходи и заказывай!"
         fallback_text = original_text.split('http')[0].strip()
         if len(fallback_text) < 10:
             fallback_text = "Интересный товар по ссылке"
         clean_rewritten = await rewrite_text_with_ai(fallback_text)
+    if len(clean_rewritten) < 10:
+        clean_rewritten = "Отличный товар по ссылке – переходи и заказывай!"
 
-    # Получаем ERID и партнёрскую ссылку
+    # Пытаемся получить ERID через GdeSlon (основной источник)
     erid_data = None
-    if sku and TAKPRODAM_MASTER_TOKEN:
-        erid_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, sku)
+    if sku:
+        erid_data = await fetch_gdeslon_by_sku(sku)
 
-    # Формируем ссылку
     if erid_data and erid_data.get("erid"):
         final_link = erid_data["link"]
         advertiser = erid_data["advertiser"]
