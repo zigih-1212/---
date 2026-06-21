@@ -259,7 +259,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         try:
             user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
             if not user:
-        return HTMLResponse("<h3>❌ Пользователь не найден</h3>", status_code=404)
+                return HTMLResponse("<h3>❌ Пользователь не найден</h3>", status_code=404)
 
 # Вот здесь должен быть запрос счётчика
             catalog_count = conn.execute("SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0", (user_id,)).fetchone()["cnt"]
