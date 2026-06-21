@@ -2480,6 +2480,13 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             caption=caption,
             photo_url=photo_url
         )
+      # Помечаем товар как использованный
+    conn = get_db()
+    try:
+            conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
+            conn.commit()
+    finally:
+        conn.close()
         await asyncio.sleep(1)
 
     await callback.message.answer("✅ Пост опубликован!")
