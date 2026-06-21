@@ -665,8 +665,13 @@ def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ])
     else:
+        # Полное меню для блогера
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💸 Вывод средств", callback_data="payout:request")]
+            [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")],
+            [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
+            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
+            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
+            [InlineKeyboardButton(text="💸 Вывод средств", callback_data="payout:request")],
         ])
 
 def kb_admin_panel() -> InlineKeyboardMarkup:
