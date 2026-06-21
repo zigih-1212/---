@@ -2077,18 +2077,11 @@ async def cb_categories(callback: CallbackQuery):
     await callback.answer()
 
 @router.callback_query(F.data.startswith("cat_toggle:"))
-@router.callback_query(F.data.startswith("cat_toggle:"))
-async def cb_toggle_category(callback: CallbackQuery, bot: Bot):
+async def cb_toggle_category(callback: CallbackQuery):
     cat_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
     conn = get_db()
-    keyword = None
     try:
-        # Получаем ключевое слово категории
-        cat_row = conn.execute("SELECT keyword FROM product_categories WHERE id=?", (cat_id,)).fetchone()
-        if cat_row:
-            keyword = cat_row["keyword"]
-
         existing = conn.execute("SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
                                 (user_id, cat_id)).fetchone()
         if existing:
@@ -2104,7 +2097,7 @@ async def cb_toggle_category(callback: CallbackQuery, bot: Bot):
             if current_count >= max_cat:
                 await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_cat} категорий", show_alert=True)
                 return
-                          conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
+            conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
                          (user_id, cat_id))
         conn.commit()
     finally:
