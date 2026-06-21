@@ -994,10 +994,10 @@ async def publish_from_catalog(bot: Bot):
         # Берём случайный неиспользованный товар
         conn = get_db()
         try:
-            product = conn.execute(
-                "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 ORDER BY RANDOM() LIMIT 1",
-                (user_id,)
-            ).fetchone()
+        product = conn.execute(
+        "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
+        (user_id,)
+        ).fetchone()
             if not product:
                 conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
                 conn.commit()
