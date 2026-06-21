@@ -230,11 +230,7 @@ async def process_new_video(
     photo_url: Optional[str] = None,
     marketplace: str = 'wb',
 ):
-    """
-    Публикует пост для блогера: проверяет ночной режим,
-    получает партнёрские данные через мастер-токен, собирает подпись
-    и отправляет в канал блогера (или VIP-канал).
-    """
+    """Публикует пост для блогера, используя GdeSlon как основной источник, ТакПродам — запасной."""
     conn = get_db()
     try:
         user = conn.execute(
@@ -258,7 +254,6 @@ async def process_new_video(
         now_msk = datetime.now(timezone(timedelta(hours=3)))
         if now_msk.hour < 8:
             logger.info(f"🌙 Ночной режим: пост {video_id} → night_queue")
-            # Импортируем здесь, чтобы избежать цикла
             from main import add_to_night_queue
             await add_to_night_queue(
                 user_id=user_id,
@@ -270,17 +265,44 @@ async def process_new_video(
             )
             return
 
-        product_info = await get_product_data(sku, sub_id) if sku else None
+        product_info = None
+        if sku:
+            # 1. Пробуем GdeSlon
+            from main import fetch_gdeslon_by_sku
+            gdeslon_data = await fetch_gdeslon_by_sku(sku)
+            if gdeslon_data:
+                link = gdeslon_data.get("link", "")
+                # Добавляем sub_id блогера к ссылке (надеемся, что рекламодатель поддержит)
+                if "?" in link:
+                    link += "&sub_id=" + sub_id
+                else:
+                    link += "?sub_id=" + sub_id
+                product_info = {
+                    "link": link,
+                    "erid": gdeslon_data.get("erid", ""),
+                    "advertiser": gdeslon_data.get("advertiser", "Рекламодатель"),
+                    "price": gdeslon_data.get("price", ""),
+                    "title": gdeslon_data.get("title", ""),
+                    "image_url": gdeslon_data.get("image_url", ""),
+                }
+            else:
+                # 2. Запасной — ТакПродам (мастер-токен)
+                product_info = await get_product_data(sku, sub_id)
+
         video_title = "🔥 Новое видео!"
 
         if product_info:
             caption = (
                 f"🎬 <b>{video_title}</b>\n\n"
-                f"💰 Цена: {product_info['price']}\n\n"
+                f"{product_info.get('title', '')}\n"
+                f"💰 Цена: {product_info.get('price', '—')}\n\n"
                 f"<a href=\"{product_info['link']}\">👉 Купить товар из видео</a>\n\n"
                 f"<i>Реклама. {product_info['advertiser']}. Erid: {product_info['erid']}</i>"
             )
-            erid_to_save = product_info['erid']
+            erid_to_save = product_info.get('erid', 'none')
+            # Используем фото из GdeSlon, если есть
+            if not photo_url and product_info.get('image_url'):
+                photo_url = product_info['image_url']
         else:
             caption = f"🎬 <b>{video_title}</b>\n\nСмотри новое видео на канале!"
             erid_to_save = "none"
