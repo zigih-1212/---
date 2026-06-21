@@ -360,6 +360,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         <button class="{'danger' if user['is_active'] else ''}">{'⛔ Забанить' if user['is_active'] else '✅ Разбанить'}</button>
     </form>
     <a href="/admin/refill-catalog/{user_id}"><button>🔄 Пополнить каталог GdeSlon</button></a>
+    <div class="row"><span class="lbl">Товаров в каталоге GdeSlon:</span> <span>{catalog_count}</span></div>
     <form action="/admin/user/{user_id}/update_field" method="post">
         <input type="text" name="field" placeholder="Поле (api_key, client_erid_override)">
         <input type="text" name="value" placeholder="Новое значение">
@@ -1085,6 +1086,7 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
         conn = get_db()
         try:
             user = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            catalog_count = conn.execute("SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
         finally:
             conn.close()
         if not user:
