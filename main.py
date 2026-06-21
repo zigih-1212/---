@@ -2104,11 +2104,27 @@ async def cb_toggle_category(callback: CallbackQuery, bot: Bot):
             if current_count >= max_cat:
                 await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_cat} категорий", show_alert=True)
                 return
-            conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
+                          conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
                          (user_id, cat_id))
         conn.commit()
     finally:
         conn.close()
+
+    # Сразу наполняем каталог для этого пользователя по выбранной категории
+    keyword = None
+    conn = get_db()
+    try:
+        cat = conn.execute("SELECT keyword FROM product_categories WHERE id = ?", (cat_id,)).fetchone()
+        if cat:
+            keyword = cat["keyword"]
+    finally:
+        conn.close()
+
+    if keyword:
+        await fetch_gdeslon_catalog(user_id, keyword, limit=5)
+
+    await cb_categories(callback)
+    await callback.answer()
 
     # Если категория была добавлена (не удалена) – сразу наполняем каталог
     if not existing and keyword:
