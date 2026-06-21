@@ -1090,15 +1090,11 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
         conn = get_db()
         try:
             user = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if not user:
+                return HTMLResponse("Пользователь не найден", status_code=404)
+            before = conn.execute("SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0", (user_id,)).fetchone()["cnt"]
         finally:
             conn.close()
-
-        if not user:
-            return HTMLResponse("Пользователь не найден", status_code=404)
-
-        conn = get_db()
-        before = conn.execute("SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0", (user_id,)).fetchone()["cnt"]
-        conn.close()
 
         try:
             await refill_all_catalogs(bot)
@@ -1111,15 +1107,22 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
 
         added = after - before
         if added > 0:
-            message = f"✅ Каталог пополнен! Добавлено {added} новых товаров."
+            title = "✅ Каталог успешно пополнен!"
+            desc = f"В базу добавлено <b>{added}</b> новых товаров."
+            color = "#2ecc71"
         else:
-            message = "ℹ️ Новые товары не добавлены. Проверьте категории или попробуйте позже."
+            title = "ℹ️ Новых товаров нет"
+            desc = "Каталог не был пополнен. Фиды пусты или все товары уже загружены."
+            color = "#f39c12"
 
-        return HTMLResponse(f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Пополнение каталога</title>
-<style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
-a{{color:#3498db;}}</style></head>
-<body><h2>{message}</h2>
-<a href="/admin/user/{user_id}">← Назад к карточке</a></body></html>""")
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=/admin/user/{user_id}"><title>Пополнение</title>
+<style>body{{font-family:Arial;background:#0f1117;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}}
+.box{{background:#1a1d27;padding:40px;border-radius:10px;text-align:center;border-top:5px solid {color};}}
+a{{color:#3498db;text-decoration:none;}}</style></head>
+<body><div class="box"><h2 style="color:{color};">{title}</h2><p style="font-size:18px;">{desc}</p>
+<p style="color:#888;font-size:14px;margin-top:20px;">Возвращаем обратно в карточку...</p>
+<a href="/admin/user/{user_id}">Вернуться немедленно</a></div></body></html>"""
+        return HTMLResponse(html)
 
     return app
