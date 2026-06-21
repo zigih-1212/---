@@ -1121,4 +1121,3 @@ a{{color:#3498db;}}</style></head>
 <a href="/admin/user/{user_id}">← Назад к карточке</a></body></html>""")
 
     return app
-    return app
