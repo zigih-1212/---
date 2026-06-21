@@ -260,7 +260,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
             if not user:
                 return HTMLResponse("<h3>❌ Пользователь не найден</h3>", status_code=404)
-
+            catalog_count = conn.execute("SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
             channels = conn.execute("SELECT * FROM channels WHERE user_id=?", (user_id,)).fetchall()
             posts = conn.execute("SELECT * FROM posts WHERE user_id=? ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
 
