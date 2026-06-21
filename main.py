@@ -564,6 +564,40 @@ def is_night_time() -> bool:
     else:
         return now.time() >= start or now.time() <= end
 
+async def refill_all_catalogs(bot: Bot):
+    """Раз в 3 часа пополняет каталог GdeSlon для всех активных SaaS-клиентов."""
+    conn = get_db()
+    try:
+        users = conn.execute("""
+            SELECT u.user_id
+            FROM users u
+            WHERE u.role = 'saas' AND u.is_active = 1
+            AND u.subscription_until > datetime('now')
+        """).fetchall()
+    finally:
+        conn.close()
+
+    for user in users:
+        user_id = user["user_id"]
+        # Получаем категории пользователя
+        conn = get_db()
+        try:
+            cats = conn.execute("""
+                SELECT pc.keyword FROM product_categories pc
+                JOIN user_category_preferences ucp ON pc.id = ucp.category_id
+                WHERE ucp.user_id = ?
+            """, (user_id,)).fetchall()
+        finally:
+            conn.close()
+
+        if not cats:
+            continue
+
+        for cat in cats:
+            await fetch_gdeslon_catalog(user_id, cat["keyword"], limit=5)
+            await asyncio.sleep(1)
+
+    logger.info("🔄 Пополнение каталогов GdeSlon завершено")
 # =============================================================================
 # === КЛАВИАТУРЫ ==============================================================
 # =============================================================================
@@ -878,12 +912,12 @@ async def flush_all_saas_queues(bot: Bot):
     logger.info("🅰️ Обработка SaaS-очереди завершена")
 
 
-async def publish_from_categories(bot: Bot):
-    """Публикует товары из API v2, а если их нет – репостит канал ТакПродам."""
+async def publish_from_catalog(bot: Bot):
+    """Публикует случайный товар из локального каталога GdeSlon для каждого SaaS-клиента."""
     conn = get_db()
     try:
         users = conn.execute("""
-            SELECT u.user_id, u.api_key
+            SELECT u.user_id
             FROM users u
             WHERE u.role = 'saas' AND u.is_active = 1
             AND u.subscription_until > datetime('now')
@@ -891,72 +925,57 @@ async def publish_from_categories(bot: Bot):
     finally:
         conn.close()
 
-    products = []   # будет наполнен, если API вернёт товары
     for user in users:
-        api_key = user["api_key"]
-        if not api_key:
+        user_id = user["user_id"]
+        # Берём случайный неиспользованный товар
+        conn = get_db()
+        try:
+            product = conn.execute(
+                "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 ORDER BY RANDOM() LIMIT 1",
+                (user_id,)
+            ).fetchone()
+            if not product:
+                # Если все использованы — сбрасываем used и берём снова
+                conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
+                conn.commit()
+                product = conn.execute(
+                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? ORDER BY RANDOM() LIMIT 1",
+                    (user_id,)
+                ).fetchone()
+            if product:
+                conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
+                conn.commit()
+        finally:
+            conn.close()
+
+        if not product:
             continue
-        # Пробуем получить товары через API (WB + Ozon)
-        prods = await fetch_products_from_takprodam(api_key, "Wildberries", 5)
-        if prods:
-            products.extend(prods)
-        prods = await fetch_products_from_takprodam(api_key, "Ozon", 5)
-        if prods:
-            products.extend(prods)
-        if products:   # если хоть один товар нашёлся – выходим
-            break
 
-    if not products:
-        # API не дал товаров – забираем последний пост из канала ТакПродам
-        for ch in SAAS_DONOR_CHANNELS:
-            if ch.startswith("takprodam_"):
-                posts = await fetch_telegram_channel_posts(ch)
-                if posts:
-                    last = posts[-1]
-                    text = last.get("text", "")
-                    photo_url = last.get("image_url")
-                    if text:
-                        # публикуем этот пост всем клиентам
-                        for user in users:
-                            conn = get_db()
-                            try:
-                                channels = conn.execute(
-                                    "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
-                                    (user["user_id"],)
-                                ).fetchall()
-                            finally:
-                                conn.close()
-                            for c in channels:
-                                await publish_post_with_fallback(
-                                    bot=bot, channel_id=c["channel_id"],
-                                    caption=text, photo_url=photo_url
-                                )
-                                await asyncio.sleep(1)
-                        return  # закончили
-                break
-        return
+        # Формируем пост
+        caption = (
+            f"{product['title']}\n\n"
+            f"💰 Цена: {product['price']} {product['currency']}\n\n"
+            f"👉 <a href='{product['partner_url']}'>Посмотреть и заказать</a>\n\n"
+            f"Реклама. {product['advertiser']}. Erid: {product['erid']}"
+        )
+        photo_url = product["image_url"]
 
-    # Если API вернул товары – публикуем случайный
-    product = random.choice(products)
-    caption = (
-        f"{product['title']}\n\n"
-        f"💰 Цена: {product['price']}\n\n"
-        f"<a href='{product['tracking_link']}'>👉 Посмотреть и заказать</a>\n\n"
-        f"{product['legal_text']}"
-    )
-    for user in users:
+        # Публикуем в каналы пользователя
         conn = get_db()
         try:
             channels = conn.execute(
                 "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
-                (user["user_id"],)
+                (user_id,)
             ).fetchall()
         finally:
             conn.close()
-        for c in channels:
+
+        for ch in channels:
             await publish_post_with_fallback(
-                bot=bot, channel_id=c["channel_id"],
-                caption=caption, photo_url=product["image_url"]
+                bot=bot,
+                channel_id=ch["channel_id"],
+                caption=caption,
+                photo_url=photo_url
             )
             await asyncio.sleep(1)
 # =============================================================================
@@ -1034,6 +1053,53 @@ async def fetch_gdeslon_by_sku(sku: str) -> Optional[Dict[str, str]]:
     except Exception as e:
         logger.error(f"GdeSlon API error for SKU {sku}: {e}")
     return None
+
+async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 10) -> List[Dict]:
+    """Запрашивает товары из GdeSlon по ключевому слову и сохраняет в локальный каталог пользователя."""
+    token = os.getenv("GDESLON_API_KEY", "")
+    if not token:
+        return []
+
+    url = f"https://www.gdeslon.ru/api/search.xml?q={keyword}&l={limit}&_gs_at={token}"
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            return []
+
+        root = ET.fromstring(resp.text)
+        offers = root.findall('.//offer')
+        saved = 0
+        conn = get_db()
+        for offer in offers:
+            sku = offer.findtext('id', '')
+            name = offer.findtext('name', '')
+            price = offer.findtext('price', '')
+            currency = offer.findtext('currencyId', 'RUB')
+            picture = offer.findtext('picture', '')
+            url_elem = offer.find('url')
+            partner_url = url_elem.text if url_elem is not None else ''
+            erid = ''
+            if 'erid=' in partner_url:
+                erid = partner_url.split('erid=')[-1].split('&')[0]
+            shop_name = offer.findtext('shop_name', '') or offer.findtext('merchant', '') or 'Рекламодатель'
+
+            if sku and partner_url:
+                try:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO gdeslon_catalog (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (sku, user_id, name, float(price) if price else 0, currency, partner_url, erid, shop_name, picture or "", keyword)
+                    )
+                    saved += 1
+                except:
+                    pass
+        conn.commit()
+        conn.close()
+        logger.info(f"GdeSlon: добавлено {saved} товаров для user {user_id} по ключу '{keyword}'")
+        return saved
+    except Exception as e:
+        logger.error(f"fetch_gdeslon_catalog error: {e}")
+        return []
 async def get_source_id(token: str) -> Optional[int]:
     """Получает source_id для токена (кэширует в БД)."""
     conn = get_db()
@@ -3184,7 +3250,8 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
     scheduler.add_job(cleanup_old_posts, trigger="cron", hour=3, minute=0, id="cleanup_old_posts", replace_existing=True)
     scheduler.add_job(scan_donor_channels, trigger="interval", minutes=15, kwargs={"bot": bot}, id="scan_donors", replace_existing=True)
-    #scheduler.add_job(publish_from_categories, trigger="interval", minutes=30, kwargs={"bot": bot}, id="publish_categories", replace_existing=True)
+    scheduler.add_job(refill_all_catalogs, trigger="interval", hours=3, kwargs={"bot": bot}, id="refill_catalogs", replace_existing=True)
+    scheduler.add_job(publish_from_catalog, trigger="interval", minutes=30, kwargs={"bot": bot}, id="publish_catalog", replace_existing=True)
     return scheduler
 
 # =============================================================================
