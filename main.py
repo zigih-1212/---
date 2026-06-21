@@ -1779,9 +1779,13 @@ async def cmd_start(message: Message, state: FSMContext):
             ])
             await message.answer("👋 Добро пожаловать! Выберите вашу роль:", reply_markup=kb)
             await state.set_state(OnboardingStates.waiting_role)
-        elif user["role"] == "blogger" and not user["channel_id"]:
-            await message.answer("⚠️ Вы ещё не привязали свой канал.\nПерешлите сообщение из канала.")
-            await state.set_state(OnboardingStates.waiting_source_channel)
+    elif user["role"] == "blogger" and not user["channel_id"]:
+        await message.answer( "⚠️ Вы ещё не привязали свой канал.\nПерешлите сообщение из канала или отправьте @username.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📢 Привязать канал", callback_data="menu:channel")]
+        ])
+    )
+        await state.set_state(OnboardingStates.waiting_channel)
     finally:
         conn.close()
 
