@@ -78,12 +78,6 @@ print("DEBUG: all imports done", flush=True, file=sys.stderr)
 
 from services.db import get_db
 
-def get_db():
-    db = sqlite3.connect(DB_PATH, timeout=30)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode=WAL;")
-    return db
-
 def load_settings():
     """Загружает настройки из БД. Если настройки нет – берёт из переменной окружения."""
     defaults = {
