@@ -162,8 +162,8 @@ async def get_product_data_by_token(token: str, sku: str) -> Optional[Dict]:
 # =============================================================================
 async def rewrite_text_with_ai(text: str) -> str:
     """
-    Создаёт рекламный пост из сырых характеристик товара через Groq.
-    Если текст слишком короткий или API недоступен, возвращает исходный текст.
+    Рерайт текста через Groq с автоматическими повторными попытками при сбоях.
+    Если все попытки исчерпаны — возвращает исходный текст.
     """
     if not text or len(text) < 15:
         return text
@@ -172,16 +172,19 @@ async def rewrite_text_with_ai(text: str) -> str:
     if not api_key:
         return text
 
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
     system_prompt = (
-    "Ты — копирайтер для Telegram-канала с товарами. "
-    "Напиши короткий продающий пост (2-3 предложения) на основе данных о товаре. "
-    "Используй не более 2 эмодзи. Сохрани цену и размеры, если они есть. "
-    "ЗАПРЕЩЕНО: писать стихи, просить дополнительную информацию, говорить 'не могу', здороваться, использовать HTML-теги."
-   )
+        "Ты - топовый копирайтер для Telegram-канала с находками с Wildberries и Ozon. "
+        "Твоя задача: взять сырые характеристики товара и написать короткий, сочный и продающий рекламный пост "
+        "(максимум 3-4 предложения). Используй 2-3 подходящих эмодзи. "
+        "Обязательно сохрани цену и размеры, если они указаны. "
+        "КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО: писать стихи, придумывать ссылки, здороваться, использовать HTML-теги."
+    )
 
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
     payload = {
         "model": "llama-3.1-8b-instant",
         "messages": [
@@ -192,15 +195,25 @@ async def rewrite_text_with_ai(text: str) -> str:
         "max_tokens": 500,
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-        if resp.status_code == 200:
-            return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        logger.error(f"Ошибка Groq рерайта: {e}")
+    max_retries = 3
+    base_delay = 2  # секунды
 
-    return text  # fallback
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code == 200:
+                return resp.json()["choices"][0]["message"]["content"].strip()
+            else:
+                logger.warning(f"Groq API error {resp.status_code} (попытка {attempt}/{max_retries})")
+        except Exception as e:
+            logger.warning(f"Groq API exception (попытка {attempt}/{max_retries}): {e}")
+
+        if attempt < max_retries:
+            await asyncio.sleep(base_delay ** attempt)  # 2, 4, 8 секунд
+
+    logger.error("Все попытки рерайта исчерпаны. Публикуем исходный текст.")
+    return text
 
 # =============================================================================
 # === ПРОВЕРКА ДУБЛИКАТОВ (БЛОГЕР) ===========================================
