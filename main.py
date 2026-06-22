@@ -2437,20 +2437,13 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
     user_id = callback.from_user.id
 
-    # Берём один случайный товар из каталога пользователя
+    # Берём только товар с ERID (ручная публикация должна быть безопасной)
     conn = get_db()
     try:
         product = conn.execute(
-            "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 ORDER BY RANDOM() LIMIT 1",
+            "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
             (user_id,)
         ).fetchone()
-        if not product:
-            conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
-            conn.commit()
-            product = conn.execute(
-                "SELECT * FROM gdeslon_catalog WHERE user_id = ? ORDER BY RANDOM() LIMIT 1",
-                (user_id,)
-            ).fetchone()
         if product:
             conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
             conn.commit()
@@ -2458,7 +2451,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         conn.close()
 
     if not product:
-        await callback.message.answer("❌ В каталоге нет товаров. Попробуйте позже.")
+        await callback.message.answer("❌ В каталоге нет товаров с маркировкой ERID. Дождитесь пополнения или используйте автоматическую публикацию.")
         return
 
     # Проверяем обязательные поля
