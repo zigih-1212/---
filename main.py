@@ -72,6 +72,7 @@ from config import (
 from services.saas_core import (
     publish_post_with_fallback, fetch_gdeslon_catalog, fetch_gdeslon_by_sku,
     prepare_post_content, process_saas_core, add_to_saas_queue,
+    add_to_night_queue,   # <-- добавь
     flush_saas_queue_for_user, flush_all_saas_queues, publish_from_catalog,
     scan_donor_channels, get_wb_image_url
 )
@@ -94,32 +95,6 @@ print("DEBUG: all imports done", flush=True, file=sys.stderr)
 
 from services.db import get_db
 
-def load_tariffs():
-    conn = get_db()
-    try:
-        rows = conn.execute("SELECT * FROM tariffs WHERE is_active = 1 ORDER BY days").fetchall()
-        return [
-            {
-                "id": r["id"],
-                "name": r["name"],
-                "days": r["days"],
-                "price_rub": r["price_rub"],
-                "price_stars": r["price_stars"],
-                "max_channels": r["max_channels"] if "max_channels" in r.keys() else 5,
-                "max_posts_per_day": r["max_posts_per_day"] if "max_posts_per_day" in r.keys() else 25,
-                "max_categories": r["max_categories"] if "max_categories" in r.keys() else 3,
-                "min_cashback": r["min_cashback"] if "min_cashback" in r.keys() else 0,
-                "max_cashback": r["max_cashback"] if "max_cashback" in r.keys() else 0,
-            }
-            for r in rows
-        ]
-    finally:
-        conn.close()
-
-# Обновляем глобальные переменные из настроек
-MIN_PAYOUT = float(settings["MIN_PAYOUT"])
-PAYOUT_FIXED_FEE = float(settings["PAYOUT_FIXED_FEE"])
-PAYOUT_BANK_PCT = float(settings["PAYOUT_BANK_PCT"])
 # =============================================================================
 # === LOGGING =================================================================
 # =============================================================================
@@ -132,42 +107,6 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("autopost_bot")
-
-# =============================================================================
-# === КОНФИГУРАЦИЯ ===========================================================
-# =============================================================================
-BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
-ADMIN_IDS: list[int] = [
-    int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()
-]
-WEBAPP_ADMIN_URL: str = os.getenv("WEBAPP_ADMIN_URL", "")
-QUARANTINE_CHAT_ID: int = int(os.getenv("QUARANTINE_CHAT_ID", "0"))
-ADMIN_VIP_CHANNEL_ID: int = int(os.getenv("ADMIN_VIP_CHANNEL_ID", "0"))
-DEEPINFRA_API_KEY: str = os.getenv("DEEPINFRA_API_KEY", "")
-STARS_PROVIDER_TOKEN: str = os.getenv("STARS_PROVIDER_TOKEN", "")
-WEBAPP_HOST: str = os.getenv("WEBAPP_HOST", "0.0.0.0")
-WEBAPP_PORT: int = int(os.getenv("PORT", os.getenv("WEBAPP_PORT", "8000")))
-SAAS_DONOR_CHANNELS: list[str] = [
-    x.strip() for x in os.getenv("SAAS_DONOR_CHANNELS", "").split(",") if x.strip()
-]
-TAKPRODAM_MASTER_TOKEN: str = os.getenv("TAKPRODAM_MASTER_TOKEN", "")
-
-# Реквизиты оплаты
-CARD_SBER: str = os.getenv("PAY_SBER", "2202 2081 0829 0025")
-CARD_TBANK: str = os.getenv("PAY_TBANK", "2200 7013 7009 3863")
-CARD_TON: str = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBray_FJRJoWZa1OOLnq-geGIbGT")
-CARD_VISA_KG: str = os.getenv("PAY_VISA_KG", "4196720087839790")
-
-# Тарифы
-
-
-# Ниже идут уже правильные константы, загруженные из настроек
-MIN_PAYOUT = float(settings["MIN_PAYOUT"])
-PAYOUT_FIXED_FEE = float(settings["PAYOUT_FIXED_FEE"])
-PAYOUT_BANK_PCT = float(settings["PAYOUT_BANK_PCT"])
-MAX_ACTIVE_PAYOUTS: int = 2
-DB_PATH: str = "/app/data/autopost.db"
-
 
 # =============================================================================
 # === MIDDLEWARE ==============================================================
@@ -466,19 +405,6 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         logger.error(f"Ошибка проверки админки в {channel_id}: {e}")
         return False
 
-def is_night_time() -> bool:
-    now = datetime.now(tz=timezone(timedelta(hours=3)))
-    start_h, start_m = map(int, settings["NIGHT_START"].split(":"))
-    end_h, end_m = map(int, settings["NIGHT_END"].split(":"))
-    start = datetime.time(start_h, start_m)
-    end = datetime.time(end_h, end_m)
-    if start <= end:
-        return start <= now.time() <= end
-    else:
-        return now.time() >= start or now.time() <= end
-
-
-
 async def refill_all_catalogs(bot: Bot):
     """Раз в 3 часа пополняет каталог GdeSlon для всех активных SaaS-клиентов."""
     conn = get_db()
@@ -600,63 +526,6 @@ async def _send_to_quarantine(
         await bot.send_message(QUARANTINE_CHAT_ID, msg, parse_mode=ParseMode.HTML)
     except TelegramAPIError as e:
         logger.error(f"Не удалось отправить в карантин: {e}")
-
-async def add_to_night_queue(
-    user_id: int, video_id: str, description: str,
-    sku: Optional[str], photo_url: Optional[str], marketplace: str = "wb"
-) -> None:
-    conn = get_db()
-    try:
-        conn.execute(
-            "INSERT OR IGNORE INTO night_queue "
-            "(user_id, video_id, description, sku, photo_url, marketplace) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, video_id, description, sku, photo_url, marketplace)
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-
-async def flush_night_queue(bot: Bot) -> None:
-    """Утром в 08:00 МСК публикует посты из ночной очереди."""
-    conn = get_db()
-    try:
-        rows = conn.execute(
-            "SELECT * FROM night_queue ORDER BY created_at ASC"
-        ).fetchall()
-    finally:
-        conn.close()
-
-    if not rows:
-        return
-
-    logger.info(f"🌅 Публикуем {len(rows)} отложенных постов")
-    for row in rows:
-        try:
-            await process_new_video(
-                bot=bot,
-                user_id=row["user_id"],
-                video_id=row["video_id"],
-                description=row["description"] or "",
-                sku=row["sku"],
-                photo_url=row["photo_url"],
-                marketplace=row["marketplace"] or "wb",
-            )
-            conn = get_db()
-            conn.execute("DELETE FROM night_queue WHERE id=?", (row["id"],))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Ошибка flush_night_queue: {e}")
-        await asyncio.sleep(10)
-
-
-
-
-
-
 
 # =============================================================================
 # === SAAS-ФУНКЦИИ (НОВЫЕ) ====================================================
