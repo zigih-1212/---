@@ -1,11 +1,11 @@
 beautifulsoup4>=4.12.0
 apscheduler>=3.10.0
 yt-dlp
-aiogram==3.7.0
+aiogram==2.25.1
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 httpx==0.25.2
 python-dotenv
 jinja2
 python-multipart
-pydantic==2.5.0
+pydantic==1.10.13
