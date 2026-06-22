@@ -960,9 +960,8 @@ async def flush_all_saas_queues(bot: Bot):
 
 
 async def publish_from_catalog(bot: Bot):
-      # Ночной режим – не публикуем
     if is_night_time():
-        logger.info("🌙 Ночной режим, автоматическая публикация приостановлена")
+        logger.info("🌙 Ночной режим активен, автоматическая публикация приостановлена")
         return
     conn = get_db()
     try:
