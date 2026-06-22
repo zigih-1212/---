@@ -506,8 +506,12 @@ def get_wb_image_url(sku: int) -> str:
         host = "basket-16.wbbasket.ru"
     elif 2622 <= vol <= 2837:
         host = "basket-17.wbbasket.ru"
-    else:
+    elif 2838 <= vol <= 3053:
         host = "basket-18.wbbasket.ru"
+    elif 3054 <= vol <= 3269:
+        host = "basket-19.wbbasket.ru"
+    else:
+        host = "basket-20.wbbasket.ru"
 
     return f"https://{host}/vol{vol}/part{part}/{sku}/images/big/1.webp"
 
@@ -602,7 +606,7 @@ async def refill_all_catalogs(bot: Bot):
             continue
 
         for cat in cats:
-            await fetch_gdeslon_catalog(user_id, cat["keyword"], limit=5)
+            await fetch_gdeslon_catalog(user_id, cat["keyword"], limit=50)
             await asyncio.sleep(1)
 
 async def refill_all_catalogs(bot: Bot):
@@ -1164,12 +1168,16 @@ async def fetch_gdeslon_by_sku(sku: str) -> Optional[Dict[str, str]]:
         logger.error(f"GdeSlon API error for SKU {sku}: {e}")
     return None
 
-async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 10) -> int:
+async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 50) -> int:
+    """Запрашивает свежие товары из GdeSlon по ключевому слову (сортировка по новизне + случайная страница)."""
     token = os.getenv("GDESLON_API_KEY", "")
     if not token:
         return 0
 
-    url = f"https://www.gdeslon.ru/api/search.xml?q={keyword}&l={limit}&_gs_at={token}"
+    # Случайная страница от 1 до 5, чтобы всегда получать разные товары
+    page = random.randint(1, 5)
+    url = f"https://www.gdeslon.ru/api/search.xml?q={keyword}&l={limit}&p={page}&order=newest&_gs_at={token}"
+
     try:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             resp = await client.get(url)
@@ -1181,17 +1189,12 @@ async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 10) -> 
         saved = 0
         conn = get_db()
         for offer in offers:
-            # Берём партнёрскую ссылку как уникальный идентификатор
-            url_elem = offer.find('url')
-            partner_url = url_elem.text if url_elem is not None else ''
-            if not partner_url or not name or not price:
-                continue   # пропускаем товары без ссылки, названия или цены
-
-            # Создаём уникальный идентификатор из хеша ссылки
+            partner_url = (offer.findtext('url') or '').strip()
+            if not partner_url:
+                continue
             sku = hashlib.md5(partner_url.encode()).hexdigest()[:12]
-
             name = offer.findtext('name', 'Товар')
-            price = offer.findtext('price', '0')
+            price = float(offer.findtext('price', '0'))
             currency = offer.findtext('currencyId', 'RUR')
             picture = offer.findtext('picture', '')
             erid = ''
@@ -1202,12 +1205,11 @@ async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 10) -> 
             try:
                 conn.execute(
                     "INSERT OR IGNORE INTO gdeslon_catalog (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (sku, user_id, name, float(price) if price else 0, currency, partner_url, erid, vendor, picture or '', keyword)
+                    (sku, user_id, name, price, currency, partner_url, erid, vendor, picture or '', keyword)
                 )
                 saved += 1
             except Exception as e:
                 logger.warning(f"Gdeslon insert error: {e}")
-
         conn.commit()
         conn.close()
         logger.info(f"Gdeslon: добавлено {saved} товаров для user {user_id} по ключу '{keyword}'")
