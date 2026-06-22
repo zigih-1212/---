@@ -11,6 +11,7 @@ from states import SaasStates, PaymentFSM
 from services.db import get_db
 from services.saas_core import fetch_gdeslon_catalog, publish_post_with_fallback
 from keyboards.saas import kb_tariffs, kb_payment_methods
+from config import load_tariffs
 
 router = Router(name="saas")
 
