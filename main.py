@@ -26,31 +26,30 @@ print("DEBUG: main.py started", flush=True, file=sys.stderr)
 
 import httpx
 import uvicorn
-from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
-from aiogram.filters import Command, CommandStart
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram import Bot, Dispatcher, executor, types
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    LabeledPrice,
     Message,
-    PreCheckoutQuery,
-    SuccessfulPayment,
-    TelegramObject,
-    WebAppInfo,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
     BotCommand,
     BotCommandScopeDefault,
     BotCommandScopeChat,
+    LabeledPrice,
+    PreCheckoutQuery,
+    SuccessfulPayment,
+    WebAppInfo,
 )
+from aiogram.utils.exceptions import TelegramAPIError, BadRequest as TelegramBadRequest
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
+from aiogram import Dispatcher
 
 from parser import (
     extract_video_info,
@@ -63,6 +62,7 @@ from parser import (
 )
 from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats, STAT_PERIODS
 print("DEBUG: all imports done", flush=True, file=sys.stderr)
+
 
 DB_PATH: str = "/app/data/autopost.db"
 
