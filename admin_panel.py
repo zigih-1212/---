@@ -251,82 +251,81 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
 
     # =============================================================================
     # === КАРТОЧКА ПОЛЬЗОВАТЕЛЯ ====================================================
-    # =============================================================================
     @app.get("/admin/user/{user_id}", response_class=HTMLResponse)
     async def user_card(request: Request, user_id: int):
         is_authenticated(request)
         conn = get_db()
         try:
-        user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
-        if not user:
-            return HTMLResponse("<h3>❌ Пользователь не найден</h3>", status_code=404)
+            user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
+            if not user:
+                return HTMLResponse("<h3>❌ Пользователь не найден</h3>", status_code=404)
 
-        # ЕДИНСТВЕННЫЙ запрос счётчика (неиспользованные товары)
-        catalog_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0",
-            (user_id,)
-        ).fetchone()["cnt"]
+            # ЕДИНСТВЕННЫЙ запрос счётчика (неиспользованные товары)
+            catalog_count = conn.execute(
+                "SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0",
+                (user_id,)
+            ).fetchone()["cnt"]
 
-        channels = conn.execute("SELECT * FROM channels WHERE user_id=?", (user_id,)).fetchall()
-        posts = conn.execute("SELECT * FROM posts WHERE user_id=? ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
+            channels = conn.execute("SELECT * FROM channels WHERE user_id=?", (user_id,)).fetchall()
+            posts = conn.execute("SELECT * FROM posts WHERE user_id=? ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
 
-        earned = 0.0
-        withdrawn = 0.0
-        pending = 0.0
+            earned = 0.0
+            withdrawn = 0.0
+            pending = 0.0
+            if user["role"] == "blogger":
+                earned_row = conn.execute(
+                    "SELECT COALESCE(SUM(payout), 0.0) as total FROM transactions WHERE sub_id=?",
+                    (user["sub_id"],)
+                ).fetchone()
+                withdrawn_row = conn.execute(
+                    "SELECT COALESCE(SUM(amount_blogger), 0.0) as total FROM payouts WHERE user_id=? AND status='completed'",
+                    (user_id,)
+                ).fetchone()
+                pending_row = conn.execute(
+                    "SELECT COALESCE(SUM(amount_blogger), 0.0) as total FROM payouts WHERE user_id=? AND status='pending'",
+                    (user_id,)
+                ).fetchone()
+                earned = round(float(earned_row["total"] or 0), 2)
+                withdrawn = round(float(withdrawn_row["total"] or 0), 2)
+                pending = round(float(pending_row["total"] or 0), 2)
+        finally:
+            conn.close()
+
+        channel_rows = "".join(
+            f"<tr><td>{'🟢' if ch['is_active'] else '🔴'}</td><td><code>{ch['channel_id']}</code></td><td>{ch['channel_title'] or '—'}</td></tr>"
+            for ch in channels
+        )
+        post_rows = "".join(
+            f"<tr><td>{p['id']}</td><td>{p['status']}</td><td>{p['donor_post_id'][:30]}</td><td>{str(p['published_at'])[:16] if p['published_at'] else '—'}</td></tr>"
+            for p in posts
+        )
+
+        finance_block = ""
         if user["role"] == "blogger":
-            earned_row = conn.execute(
-                "SELECT COALESCE(SUM(payout), 0.0) as total FROM transactions WHERE sub_id=?",
-                (user["sub_id"],)
-            ).fetchone()
-            withdrawn_row = conn.execute(
-                "SELECT COALESCE(SUM(amount_blogger), 0.0) as total FROM payouts WHERE user_id=? AND status='completed'",
-                (user_id,)
-            ).fetchone()
-            pending_row = conn.execute(
-                "SELECT COALESCE(SUM(amount_blogger), 0.0) as total FROM payouts WHERE user_id=? AND status='pending'",
-                (user_id,)
-            ).fetchone()
-            earned = round(float(earned_row["total"] or 0), 2)
-            withdrawn = round(float(withdrawn_row["total"] or 0), 2)
-            pending = round(float(pending_row["total"] or 0), 2)
-    finally:
-        conn.close()
+            available = round(earned - withdrawn - pending, 2)
+            finance_block = f"""
+            <h2>💰 Финансы</h2>
+            <table>
+                <tr><th>Заработано</th><th>Выведено</th><th>Ожидает</th><th style="color:#2ecc71">Доступно</th></tr>
+                <tr><td>{earned} ₽</td><td>{withdrawn} ₽</td><td style="color:#f39c12">{pending} ₽</td><td style="color:#2ecc71"><b>{available} ₽</b></td></tr>
+            </table>"""
 
-    channel_rows = "".join(
-        f"<tr><td>{'🟢' if ch['is_active'] else '🔴'}</td><td><code>{ch['channel_id']}</code></td><td>{ch['channel_title'] or '—'}</td></tr>"
-        for ch in channels
-    )
-    post_rows = "".join(
-        f"<tr><td>{p['id']}</td><td>{p['status']}</td><td>{p['donor_post_id'][:30]}</td><td>{str(p['published_at'])[:16] if p['published_at'] else '—'}</td></tr>"
-        for p in posts
-    )
+        sub_until = user["subscription_until"]
+        if sub_until:
+            try:
+                end_dt = datetime.fromisoformat(sub_until.replace("Z", "+00:00"))
+                now_dt = datetime.now(timezone.utc)
+                if now_dt < end_dt:
+                    diff = end_dt - now_dt
+                    sub_status = f"✅ Активна • {diff.days} дн. {diff.seconds // 3600} ч."
+                else:
+                    sub_status = "❌ Истекла"
+            except:
+                sub_status = "⚠️ Ошибка даты"
+        else:
+            sub_status = "♾️ Бессрочно" if user["role"] == "blogger" else "❌ Не активирована"
 
-    finance_block = ""
-    if user["role"] == "blogger":
-        available = round(earned - withdrawn - pending, 2)
-        finance_block = f"""
-        <h2>💰 Финансы</h2>
-        <table>
-            <tr><th>Заработано</th><th>Выведено</th><th>Ожидает</th><th style="color:#2ecc71">Доступно</th></tr>
-            <tr><td>{earned} ₽</td><td>{withdrawn} ₽</td><td style="color:#f39c12">{pending} ₽</td><td style="color:#2ecc71"><b>{available} ₽</b></td></tr>
-        </table>"""
-
-    sub_until = user["subscription_until"]
-    if sub_until:
-        try:
-            end_dt = datetime.fromisoformat(sub_until.replace("Z", "+00:00"))
-            now_dt = datetime.now(timezone.utc)
-            if now_dt < end_dt:
-                diff = end_dt - now_dt
-                sub_status = f"✅ Активна • {diff.days} дн. {diff.seconds // 3600} ч."
-            else:
-                sub_status = "❌ Истекла"
-        except:
-            sub_status = "⚠️ Ошибка даты"
-    else:
-        sub_status = "♾️ Бессрочно" if user["role"] == "blogger" else "❌ Не активирована"
-
-    html = f"""<!DOCTYPE html>
+        html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Пользователь {user_id}</title>
 <style>
     body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
@@ -385,7 +384,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         {post_rows if post_rows else "<tr><td colspan='4'>Нет постов</td></tr>"}
     </table>
 </body></html>"""
-    return HTMLResponse(html)
+        return HTMLResponse(html)
 
     # =============================================================================
     # === POST-ЭНДПОИНТЫ ДЛЯ КАРТОЧКИ ПОЛЬЗОВАТЕЛЯ ================================
