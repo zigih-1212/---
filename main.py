@@ -24,6 +24,9 @@ import sqlite3
 import time
 import random
 import hashlib
+import os
+from aiogram.types import FSInputFile
+from datetime import datetime
 from xml.etree import ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
@@ -3602,6 +3605,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(flush_all_saas_queues, trigger="cron", hour=8, minute=0, kwargs={"bot": bot}, id="flush_saas_queues", replace_existing=True)
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
     scheduler.add_job(cleanup_old_posts, trigger="cron", hour=3, minute=0, id="cleanup_old_posts", replace_existing=True)
+    scheduler.add_job(backup_database_to_telegram, trigger="cron", hour=3, minute=0, kwargs={"bot": bot}, id="backup_database", replace_existing=True)
     scheduler.add_job(scan_donor_channels, trigger="interval", minutes=15, kwargs={"bot": bot}, id="scan_donors", replace_existing=True)
     scheduler.add_job(refill_all_catalogs, trigger="interval", minutes=30, kwargs={"bot": bot}, id="refill_catalogs", replace_existing=True)
     scheduler.add_job(publish_from_catalog, trigger="interval", minutes=10, kwargs={"bot": bot}, id="publish_catalog", replace_existing=True)
@@ -3680,11 +3684,31 @@ async def main() -> None:
         scheduler.shutdown()
         logger.info("Бот и планировщик остановлены")
 
-   
+async def backup_database_to_telegram(bot: Bot):
+    """Отправляет копию базы данных администратору (первому из списка)."""
+    db_path = DB_PATH  # "/app/data/autopost.db"
+    if not os.path.exists(db_path):
+        logger.error("Бэкап: файл базы данных не найден")
+        return
+
+    admin_id = ADMIN_IDS[0] if ADMIN_IDS else None
+    if not admin_id:
+        logger.error("Бэкап: не указан администратор")
+        return
+
+    try:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"autopost_backup_{timestamp}.db"
+        db_file = FSInputFile(db_path, filename=filename)
+        await bot.send_document(
+            chat_id=admin_id,
+            document=db_file,
+            caption=f"📦 Ежедневный бэкап базы данных ({timestamp})"
+        )
+        logger.info("Бэкап базы данных отправлен администратору")
+    except Exception as e:
+        logger.error(f"Ошибка при отправке бэкапа: {e}")   
 
 if __name__ == "__main__":
     asyncio.run(main())
   
-# =============================================================================
-# === FASTAPI (ПОЛНАЯ АДМИН-ПАНЕЛЬ) ===========================================
-# =============================================================================
