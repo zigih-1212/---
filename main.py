@@ -6,14 +6,6 @@
 =============================================================================
 """
 
-"""
-=============================================================================
-  АВТОПОСТИНГ-БОТ | SaaS-платформа для монетизации Telegram-каналов
-  Stack: Python 3.10+, aiogram 3.x, FastAPI, SQLite3, httpx, APScheduler
-  Юридическая защита: ERID обязателен. Публикация без маркировки — запрещена.
-=============================================================================
-"""
-
 import asyncio
 import html
 import logging
@@ -1165,24 +1157,6 @@ async def cb_saas_toggles(callback: CallbackQuery) -> None:
     finally:
         conn.close()
     await open_saas_settings(callback)
-
-
-@router.callback_query(F.data == "saas_set:gdeslon_apikey")
-async def cb_saas_set_gdeslon_apikey(callback: CallbackQuery, state: FSMContext) -> None:
-    text = (
-        "🔑 <b>Настройка API-ключа GdeSlon</b>\n\n"
-        "Отправьте сообщением ваш API-ключ от GdeSlon.\n"
-        "<i>Если вы хотите удалить ключ, отправьте цифру 0</i>"
-    )
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:settings")]
-    ])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
-    await state.set_state(SaasStates.waiting_apikey)
-    await state.update_data(input_type="gdeslon_apikey")
-    await callback.answer()
-
-
 
 # =============================================================================
 # === ВЫПЛАТЫ =================================================================
