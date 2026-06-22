@@ -72,7 +72,7 @@ from config import (
 from services.saas_core import (
     publish_post_with_fallback, fetch_gdeslon_catalog, fetch_gdeslon_by_sku,
     prepare_post_content, process_saas_core, add_to_saas_queue,
-    add_to_night_queue,   # <-- добавь
+    add_to_night_queue, refill_all_catalogs,  
     flush_saas_queue_for_user, flush_all_saas_queues, publish_from_catalog,
     scan_donor_channels, get_wb_image_url
 )
@@ -405,40 +405,7 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         logger.error(f"Ошибка проверки админки в {channel_id}: {e}")
         return False
 
-async def refill_all_catalogs(bot: Bot):
-    """Раз в 3 часа пополняет каталог GdeSlon для всех активных SaaS-клиентов."""
-    conn = get_db()
-    try:
-        users = conn.execute("""
-            SELECT u.user_id
-            FROM users u
-            WHERE u.role = 'saas' AND u.is_active = 1
-            AND u.subscription_until > datetime('now')
-        """).fetchall()
-    finally:
-        conn.close()
 
-    for user in users:
-        user_id = user["user_id"]
-        # Получаем категории пользователя
-        conn = get_db()
-        try:
-            cats = conn.execute("""
-                SELECT pc.keyword FROM product_categories pc
-                JOIN user_category_preferences ucp ON pc.id = ucp.category_id
-                WHERE ucp.user_id = ?
-            """, (user_id,)).fetchall()
-        finally:
-            conn.close()
-
-        if not cats:
-            continue
-
-        for cat in cats:
-            await fetch_gdeslon_catalog(user_id, cat["keyword"], limit=5)
-            await asyncio.sleep(1)
-
-    logger.info("🔄 Пополнение каталогов GdeSlon завершено")
 # =============================================================================
 # === КЛАВИАТУРЫ ==============================================================
 # =============================================================================
