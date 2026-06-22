@@ -252,11 +252,11 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     # =============================================================================
     # === КАРТОЧКА ПОЛЬЗОВАТЕЛЯ ====================================================
     # =============================================================================
-@app.get("/admin/user/{user_id}", response_class=HTMLResponse)
-async def user_card(request: Request, user_id: int):
-    is_authenticated(request)
-    conn = get_db()
-    try:
+    @app.get("/admin/user/{user_id}", response_class=HTMLResponse)
+    async def user_card(request: Request, user_id: int):
+        is_authenticated(request)
+        conn = get_db()
+        try:
         user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
         if not user:
             return HTMLResponse("<h3>❌ Пользователь не найден</h3>", status_code=404)
