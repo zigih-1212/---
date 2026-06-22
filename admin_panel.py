@@ -10,6 +10,8 @@ import random
 import string
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from config import load_settings, load_tariffs, settings
+from services.saas_core import flush_saas_queue_for_user, refill_all_catalogs
 
 from fastapi import FastAPI, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -703,7 +705,6 @@ table{{width:100%;border-collapse:collapse;margin-top:15px;}}th,td{{padding:8px;
     @app.post("/admin/saas-queue/flush/{user_id}")
     async def saas_queue_flush(request: Request, user_id: int):
         is_authenticated(request)
-        from main import flush_saas_queue_for_user
         await flush_saas_queue_for_user(bot, user_id)
         return RedirectResponse("/admin/saas-queue", status_code=302)
 
@@ -817,7 +818,6 @@ button{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radius
     @app.get("/admin/settings-edit", response_class=HTMLResponse)
     async def settings_edit_page(request: Request):
         is_authenticated(request)
-        from main import load_settings
         s = load_settings()
         return HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Настройки</title>
@@ -847,7 +847,6 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
                                ("PAYOUT_BANK_PCT", PAYOUT_BANK_PCT)]:
                 conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
             conn.commit()
-            from main import settings, load_settings, log_admin_action
             new_settings = load_settings()
             settings.update(new_settings)
             admin_id = int(request.cookies.get("admin_user_id", 0))
@@ -912,7 +911,6 @@ table{{width:100%;border-collapse:collapse;margin:15px 0;}}th,td{{padding:8px;bo
     @app.get("/admin/tariffs", response_class=HTMLResponse)
     async def tariffs_page(request: Request):
         is_authenticated(request)
-        from main import load_tariffs
         tariffs = load_tariffs()
         conn = get_db()
         try:
@@ -1089,7 +1087,6 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
     @app.post("/admin/refill-catalog/{user_id}/run")
     async def refill_catalog_run(request: Request, user_id: int):
         is_authenticated(request)
-        from main import refill_all_catalogs
 
         conn = get_db()
         try:
