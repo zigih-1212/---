@@ -61,6 +61,14 @@ from aiogram.types import (
     BotCommandScopeDefault,
     BotCommandScopeChat,
 )
+from config import (
+    settings, MIN_PAYOUT, PAYOUT_FIXED_FEE, PAYOUT_BANK_PCT, MAX_ACTIVE_PAYOUTS,
+    is_night_time, load_tariffs,
+    BOT_TOKEN, ADMIN_IDS, WEBAPP_ADMIN_URL, QUARANTINE_CHAT_ID, ADMIN_VIP_CHANNEL_ID,
+    DEEPINFRA_API_KEY, STARS_PROVIDER_TOKEN, WEBAPP_HOST, WEBAPP_PORT,
+    SAAS_DONOR_CHANNELS, TAKPRODAM_MASTER_TOKEN,
+    CARD_SBER, CARD_TBANK, CARD_TON, CARD_VISA_KG, DB_PATH
+)
 from services.saas_core import (
     publish_post_with_fallback, fetch_gdeslon_catalog, fetch_gdeslon_by_sku,
     prepare_post_content, process_saas_core, add_to_saas_queue,
@@ -85,30 +93,6 @@ from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats, 
 print("DEBUG: all imports done", flush=True, file=sys.stderr)
 
 from services.db import get_db
-
-def load_settings():
-    """Загружает настройки из БД. Если настройки нет – берёт из переменной окружения."""
-    defaults = {
-        "NIGHT_START": os.getenv("NIGHT_START", "23:00"),
-        "NIGHT_END": os.getenv("NIGHT_END", "08:00"),
-        "RUN_INTERVAL_SECONDS": os.getenv("RUN_INTERVAL_SECONDS", "900"),
-        "MIN_PAYOUT": os.getenv("MIN_PAYOUT", "2000"),
-        "PAYOUT_FIXED_FEE": os.getenv("PAYOUT_FIXED_FEE", "35"),
-        "PAYOUT_BANK_PCT": os.getenv("PAYOUT_BANK_PCT", "0.043"),
-    }
-    conn = get_db()
-    try:
-        rows = conn.execute("SELECT key, value FROM settings").fetchall()
-        for row in rows:
-            if row["key"] in defaults:
-                defaults[row["key"]] = row["value"]
-    except:
-        pass  # таблицы может ещё не быть при первом запуске
-    finally:
-        conn.close()
-    return defaults
-
-settings = load_settings()
 
 def load_tariffs():
     conn = get_db()
