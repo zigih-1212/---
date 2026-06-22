@@ -28,12 +28,12 @@ logger = logging.getLogger("autopost_bot.saas")
 router = Router()
 
 @router.callback_query(F.data == "menu:my_channels")
-async def cb_my_channels(callback: CallbackQuery, state: FSMContext):
+async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
     conn = get_db()
     try:
         channels = conn.execute(
-            "SELECT channel_title, channel_id FROM channels WHERE user_id=? AND is_active=1",
+            "SELECT id, channel_title, channel_id FROM channels WHERE user_id=? AND is_active=1",
             (user_id,)
         ).fetchall()
     finally:
@@ -41,16 +41,26 @@ async def cb_my_channels(callback: CallbackQuery, state: FSMContext):
 
     if channels:
         text = "📢 <b>Ваши подключенные каналы:</b>\n\n"
+        kb_rows = []
         for i, ch in enumerate(channels, 1):
             text += f"{i}. {ch['channel_title']} (<code>{ch['channel_id']}</code>)\n"
+            kb_rows.append([InlineKeyboardButton(
+                text=f"🗑 Удалить {ch['channel_title']}",
+                callback_data=f"channel_delete:{ch['id']}"
+            )])
         text += "\n<i>Для добавления нового канала отправьте его @username прямо сейчас.</i>"
+        kb_rows.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")])
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     else:
         text = "📢 <b>У вас пока нет подключенных каналов.</b>\n\nДля добавления канала отправьте его @username."
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
+        ])
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
-    ])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    except:
+        pass
     await state.set_state(OnboardingStates.waiting_saas_tg_channel)
     await callback.answer()
 
