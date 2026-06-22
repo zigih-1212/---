@@ -72,7 +72,6 @@ from parser import (
 from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats, STAT_PERIODS
 print("DEBUG: all imports done", flush=True, file=sys.stderr)
 
-
 DB_PATH: str = "/app/data/autopost.db"
 
 def get_db():
