@@ -398,7 +398,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             conn.execute("UPDATE users SET subscription_until=?, is_active=1 WHERE user_id=?", (new_date, user_id))
             conn.commit()
             # Аудит
-            from main import log_admin_action
+            from utils import log_admin_action
             admin_id = int(request.cookies.get("admin_user_id", 0))
             log_admin_action(admin_id, "extend_subscription", f"user {user_id} +{days} days")
         finally:
@@ -414,7 +414,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             new_status = 0 if current and current["is_active"] else 1
             conn.execute("UPDATE users SET is_active=? WHERE user_id=?", (new_status, user_id))
             conn.commit()
-            from main import log_admin_action
+            from utils import log_admin_action
             admin_id = int(request.cookies.get("admin_user_id", 0))
             log_admin_action(admin_id, "toggle_ban", f"user {user_id} new_status={new_status}")
         finally:
@@ -431,7 +431,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         try:
             conn.execute(f"UPDATE users SET {field}=? WHERE user_id=?", (value.strip() or None, user_id))
             conn.commit()
-            from main import log_admin_action
+            from utils import log_admin_action
             admin_id = int(request.cookies.get("admin_user_id", 0))
             log_admin_action(admin_id, "update_field", f"user {user_id} {field}={value}")
         finally:
@@ -802,7 +802,9 @@ button{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radius
                 conn.execute(f"DELETE FROM promocode_activations WHERE user_id IN (SELECT user_id FROM users WHERE {where})")
                 conn.execute(f"DELETE FROM users WHERE {where}")
             conn.commit()
-            from main import log_admin_action
+            from utils import log_admin_action
+
+
             admin_id = int(request.cookies.get("admin_user_id", 0))
             log_admin_action(admin_id, "bulk_action", f"{action} on group {group}")
         finally:
