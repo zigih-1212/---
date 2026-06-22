@@ -394,7 +394,7 @@ async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
         description=f"Доступ на {days} дней ко всем функциям AutoPost.",
         payload=f"tariff_{tariff_id}_{days}",
         currency="XTR",
-        prices=[Labelerice(label=f"{name} ({days} дн.)", amount=stars)],
+        prices=[LabeledPrice(label=f"{name} ({days} дн.)", amount=stars)],
         provider_token="",
         start_parameter="subscribe",
     )
