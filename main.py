@@ -571,8 +571,8 @@ def is_night_time() -> bool:
     now = datetime.now(tz=timezone(timedelta(hours=3)))
     start_h, start_m = map(int, settings["NIGHT_START"].split(":"))
     end_h, end_m = map(int, settings["NIGHT_END"].split(":"))
-    start = time(start_h, start_m)
-    end = time(end_h, end_m)
+    start = datetime.time(start_h, start_m)
+    end = datetime.time(end_h, end_m)
     if start <= end:
         return start <= now.time() <= end
     else:
