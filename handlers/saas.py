@@ -64,6 +64,20 @@ async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(OnboardingStates.waiting_saas_tg_channel)
     await callback.answer()
 
+@router.callback_query(F.data.startswith("channel_delete:"))
+async def cb_delete_channel(callback: CallbackQuery):
+    channel_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM channels WHERE id = ? AND user_id = ?", (channel_id, user_id))
+        conn.commit()
+        await callback.answer("✅ Канал удалён.", show_alert=True)
+    finally:
+        conn.close()
+    # Обновляем список каналов
+    await cb_my_channels(callback, state=None)  # state здесь не нужен, можно передать заглушку
+
 @router.callback_query(F.data == "menu:categories")
 async def cb_categories(callback: CallbackQuery):
     user_id = callback.from_user.id
