@@ -267,7 +267,7 @@ async def process_new_video(
         now_msk = datetime.now(timezone(timedelta(hours=3)))
         if now_msk.hour < 8:
             logger.info(f"🌙 Ночной режим: пост {video_id} → night_queue")
-            from main import add_to_night_queue
+            from services.saas_core import add_to_night_queue, fetch_gdeslon_by_sku
             await add_to_night_queue(
                 user_id=user_id,
                 video_id=video_id,
@@ -281,7 +281,6 @@ async def process_new_video(
         product_info = None
         if sku:
             # 1. Пробуем GdeSlon
-            from main import fetch_gdeslon_by_sku
             gdeslon_data = await fetch_gdeslon_by_sku(sku)
             if gdeslon_data:
                 link = gdeslon_data.get("link", "")
