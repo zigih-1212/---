@@ -33,6 +33,7 @@ from logging.handlers import RotatingFileHandler
 from typing import Optional, Dict, Any, List
 from admin_panel import create_fastapi_app
 import sys
+from keyboards.saas import kb_cabinet_menu, kb_tariffs, kb_payment_methods
 from handlers.saas import router as saas_router
 print("DEBUG: main.py started", flush=True, file=sys.stderr)
 
@@ -168,14 +169,7 @@ CARD_TON: str = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBray_FJRJoWZa1OO
 CARD_VISA_KG: str = os.getenv("PAY_VISA_KG", "4196720087839790")
 
 # Тарифы
-def kb_tariffs(traffic_source: str = "") -> InlineKeyboardMarkup:
-    tariffs = load_tariffs()
-    rows = []
-    for t in tariffs:
-        text = f"⭐ {t['name']} — {t['price_rub']:.0f} руб. / {t['price_stars']} ⭐"
-        rows.append([InlineKeyboardButton(text=text, callback_data=f"buy:{t['id']}:{t['days']}")])
-    rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 
 # Ниже идут уже правильные константы, загруженные из настроек
 MIN_PAYOUT = float(settings["MIN_PAYOUT"])
@@ -632,26 +626,7 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ])
 
-def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
-    if role == "saas":
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")],
-            [InlineKeyboardButton(text="📂 Категории", callback_data="menu:categories")],
-            [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")],
-            [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
-            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
-            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            [InlineKeyboardButton(text="🎁 Активировать промокод", callback_data="promo:activate")],
-            [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
-        ])
-    else:
-        # Полное меню для блогера
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")],
-            [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
-            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
-            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            [InlineKeyboardButton(text="💸 Вывод средств", callback_data="payout:request")],
+
         ])
 
 def kb_admin_panel() -> InlineKeyboardMarkup:
@@ -662,18 +637,7 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔧 Продлить подписку", callback_data="admin:extend_sub")],
     ])
 
-def kb_payment_methods() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="💳 Банковская карта (Sber / Т-Банк / Visa KG)",
-            callback_data="pay:card"
-        )],
-        [InlineKeyboardButton(
-            text="⭐ Telegram Stars",
-            callback_data="pay:stars"
-        )],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
-    ])
+
 
 def kb_filter_settings(wb: int, ozon: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
