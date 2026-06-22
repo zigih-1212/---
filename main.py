@@ -626,9 +626,6 @@ def kb_main_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ])
 
-
-        ])
-
 def kb_admin_panel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌐 Открыть Web-админку", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))],
