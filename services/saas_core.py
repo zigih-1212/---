@@ -347,7 +347,22 @@ async def resolve_erid(
         }
     return None
 
-
+async def add_to_night_queue(
+    user_id: int, video_id: str, description: str,
+    sku: Optional[str], photo_url: Optional[str], marketplace: str = "wb"
+) -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO night_queue "
+            "(user_id, video_id, description, sku, photo_url, marketplace) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, video_id, description, sku, photo_url, marketplace)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+        
 # ---------------------------------------------------------------------------
 # Очереди SaaS и публикация
 # ---------------------------------------------------------------------------
