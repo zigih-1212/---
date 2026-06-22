@@ -73,6 +73,7 @@ from parser import (
     process_new_video,
     is_video_processed,
 )
+from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, PayoutStates
 from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats, STAT_PERIODS
 print("DEBUG: all imports done", flush=True, file=sys.stderr)
 
@@ -423,38 +424,7 @@ def init_db() -> None:
     conn.close()
     logger.info("База данных инициализирована")
 
-# =============================================================================
-# === FSM СОСТОЯНИЯ ===========================================================
-# =============================================================================
-class OnboardingStates(StatesGroup):
-    waiting_role = State()
-    waiting_channel = State()
-    waiting_source_channel = State()
-    waiting_saas_tg_channel = State()
-    waiting_target_choice = State()
-    waiting_video_link = State()
 
-class AdminStates(StatesGroup):
-    broadcast_text = State()
-    extend_user_id = State()
-    extend_days = State()
-
-class SaasStates(StatesGroup):
-    waiting_apikey = State()
-    waiting_erid_override = State()
-    waiting_promocode = State()          # ← добавить
-    choosing_channel_for_promo = State() # ← добавить
-
-class PaymentFSM(StatesGroup):
-    choosing_tariff = State()
-    choosing_method = State()
-    waiting_for_receipt = State()
-    waiting_promocode = State()
-    choosing_channel_for_promo = State()
-
-class PayoutStates(StatesGroup):
-    waiting_for_card = State()
-    waiting_for_amount = State()
 
   # =============================================================================
 # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =================================================
