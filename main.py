@@ -43,7 +43,7 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    Labelerice,
+    LabeledPrice,
     Message,
     PreCheckoutQuery,
     SuccessfulPayment,
