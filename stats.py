@@ -10,7 +10,6 @@ from typing import Dict, List
 logger = logging.getLogger("autopost_bot")
 
 DB_PATH = "/app/data/autopost.db"
-MIN_PAYOUT = 2000.0
 
 # Периоды для переключения статистики
 STAT_PERIODS = {
@@ -60,7 +59,6 @@ def get_blogger_stats(user_id: int) -> Dict:
             "posts_last_30d":   int(post_stats["posts_last_30d"] or 0),
             "published_last_30d": int(post_stats["published_last_30d"] or 0),
             "total_sales":      int(sales_stats["total_sales"] or 0),
-            # 50% блогеру
             "total_earned":     round(float(sales_stats["total_earned"] or 0) / 2, 2),
             "earned_last_30d":  round(float(sales_stats["earned_last_30d"] or 0) / 2, 2),
         }
@@ -73,6 +71,7 @@ def get_blogger_stats(user_id: int) -> Dict:
         }
     finally:
         conn.close()
+
 
 # =============================================================================
 # === SAAS ====================================================================
@@ -167,4 +166,3 @@ def get_saas_channel_stats(user_id: int, channel_id: str, period: str = "30d") -
         }
     finally:
         conn.close()
-        
