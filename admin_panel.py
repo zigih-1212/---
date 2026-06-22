@@ -256,12 +256,11 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     async def user_card(request: Request, user_id: int):
         is_authenticated(request)
         conn = get_db()
-        try:
-            user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
+                    user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
             if not user:
                 return HTMLResponse("<h3>❌ Пользователь не найден</h3>", status_code=404)
 
-            # Один запрос счётчика (неиспользованные товары)
+            # ЕДИНСТВЕННЫЙ запрос счётчика (неиспользованные товары)
             catalog_count = conn.execute(
                 "SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0",
                 (user_id,)
@@ -1118,14 +1117,6 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
             desc = "Каталог не был пополнен. Фиды пусты или все товары уже загружены."
             color = "#f39c12"
 
-        html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=/admin/user/{user_id}"><title>Пополнение</title>
-<style>body{{font-family:Arial;background:#0f1117;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}}
-.box{{background:#1a1d27;padding:40px;border-radius:10px;text-align:center;border-top:5px solid {color};}}
-a{{color:#3498db;text-decoration:none;}}</style></head>
-<body><div class="box"><h2 style="color:{color};">{title}</h2><p style="font-size:18px;">{desc}</p>
-<p style="color:#888;font-size:14px;margin-top:20px;">Возвращаем обратно в карточку...</p>
-<a href="/admin/user/{user_id}">Вернуться немедленно</a></div></body></html>"""
+        html = f"""..."""  # оставь текущую HTML-страницу с авто‑возвратом
         return HTMLResponse(html)
-
     return app
