@@ -440,7 +440,7 @@ async def process_saas_core(
     sku: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
-    from main import is_night_time  # временно, позже вынесем
+    from config import is_night_time  # временно, позже вынесем
 
     if not force_post and is_night_time():
         if not rewritten_text:
@@ -642,7 +642,7 @@ async def flush_all_saas_queues(bot: Bot):
 
 
 async def publish_from_catalog(bot: Bot):
-    from main import is_night_time  # временно
+    from config import is_night_time
     if is_night_time():
         logger.info("🌙 Ночной режим активен, автоматическая публикация приостановлена")
         return
