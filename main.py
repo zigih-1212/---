@@ -486,6 +486,38 @@ async def _send_to_quarantine(
     except TelegramAPIError as e:
         logger.error(f"Не удалось отправить в карантин: {e}")
 
+async def flush_night_queue(bot: Bot) -> None:
+    """Утром в 08:00 МСК публикует посты из ночной очереди."""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM night_queue ORDER BY created_at ASC"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return
+
+    logger.info(f"🌅 Публикуем {len(rows)} отложенных постов")
+    for row in rows:
+        try:
+            await process_new_video(
+                bot=bot,
+                user_id=row["user_id"],
+                video_id=row["video_id"],
+                description=row["description"] or "",
+                sku=row["sku"],
+                photo_url=row["photo_url"],
+                marketplace=row["marketplace"] or "wb",
+            )
+            conn = get_db()
+            conn.execute("DELETE FROM night_queue WHERE id=?", (row["id"],))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Ошибка flush_night_queue: {e}")
+        await asyncio.sleep(10)
 # =============================================================================
 # === SAAS-ФУНКЦИИ (НОВЫЕ) ====================================================
 # =============================================================================
