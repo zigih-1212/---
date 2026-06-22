@@ -950,7 +950,12 @@ async def flush_all_saas_queues(bot: Bot):
     logger.info("🅰️ Обработка SaaS-очереди завершена")
 
 
+
 async def publish_from_catalog(bot: Bot):
+      # Ночной режим – не публикуем
+    if is_night_time():
+        logger.info("🌙 Ночной режим, автоматическая публикация приостановлена")
+        return
     conn = get_db()
     try:
         users = conn.execute("""
