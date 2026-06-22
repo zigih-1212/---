@@ -33,6 +33,7 @@ from logging.handlers import RotatingFileHandler
 from typing import Optional, Dict, Any, List
 from admin_panel import create_fastapi_app
 import sys
+from handlers.saas import router as saas_router
 print("DEBUG: main.py started", flush=True, file=sys.stderr)
 
 import httpx
@@ -49,7 +50,7 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    LabeledPrice,
+    Labelerice,
     Message,
     PreCheckoutQuery,
     SuccessfulPayment,
@@ -168,7 +169,7 @@ TAKPRODAM_MASTER_TOKEN: str = os.getenv("TAKPRODAM_MASTER_TOKEN", "")
 # Реквизиты оплаты
 CARD_SBER: str = os.getenv("PAY_SBER", "2202 2081 0829 0025")
 CARD_TBANK: str = os.getenv("PAY_TBANK", "2200 7013 7009 3863")
-CARD_TON: str = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBrDpay_FJRJoWZa1OOLnq-geGIbGT")
+CARD_TON: str = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBray_FJRJoWZa1OOLnq-geGIbGT")
 CARD_VISA_KG: str = os.getenv("PAY_VISA_KG", "4196720087839790")
 
 # Тарифы
@@ -3530,7 +3531,7 @@ async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
         payload=f"tariff_{tariff_id}_{days}",
         currency="XTR",
         prices=[
-            LabeledPrice(label=f"{name} ({days} дн.)", amount=stars)
+            Labelerice(label=f"{name} ({days} дн.)", amount=stars)
         ],
         provider_token="",  # для XTR не нужен
         start_parameter="subscribe",
