@@ -3128,29 +3128,6 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
 # =============================================================================
 # === SAAS: МЕНЮ "МОИ КАНАЛЫ" =================================================
 # =============================================================================
-
-
-@router.callback_query(F.data.startswith("channel_delete:"))
-async def cb_delete_channel(callback: CallbackQuery):
-    channel_id = int(callback.data.split(":")[1])
-    user_id = callback.from_user.id
-
-    conn = get_db()
-    try:
-        # Проверяем, что канал принадлежит пользователю
-        ch = conn.execute("SELECT id, channel_title FROM channels WHERE id=? AND user_id=?", 
-                         (channel_id, user_id)).fetchone()
-        if ch:
-            conn.execute("DELETE FROM channels WHERE id=?", (channel_id,))
-            conn.commit()
-            await callback.answer(f"Канал {ch['channel_title']} удалён", show_alert=True)
-        else:
-            await callback.answer("Канал не найден", show_alert=True)
-    finally:
-        conn.close()
-
-    # Обновляем список каналов
-    await cb_my_channels(callback, None)
 # =============================================================================
 # === НАСТРОЙКИ ДЛЯ БЛОГЕРА (ФИЛЬТРЫ WB/OZON) =================================
 # =============================================================================
