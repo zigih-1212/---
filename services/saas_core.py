@@ -703,18 +703,22 @@ async def publish_from_catalog(bot: Bot):
 
         conn = get_db()
         try:
+            # Сначала пробуем товар с ERID
             product = conn.execute(
                 "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                 (user_id,)
             ).fetchone()
+            # Если нет ни одного товара с ERID, берём любой неиспользованный
             if not product:
                 product = conn.execute(
                     "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 ORDER BY RANDOM() LIMIT 1",
                     (user_id,)
                 ).fetchone()
+            # Если и таких нет (все использованы), сбрасываем used и пробуем снова (сначала с ERID)
             if not product:
                 conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
                 conn.commit()
+                # После сброса опять приоритет ERID
                 product = conn.execute(
                     "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                     (user_id,)
@@ -733,13 +737,7 @@ async def publish_from_catalog(bot: Bot):
         if not product:
             continue
 
-            else:
-                # Нет мастер-токена — удаляем товар без ERID, чтобы не засорять
-                conn = get_db()
-                conn.execute("DELETE FROM gdeslon_catalog WHERE id = ?", (product['id'],))
-                conn.commit()
-                conn.close()
-                continue
+        # Проверяем обязательные поля
         partner_url = (product['partner_url'] or '').strip()
         title = (product['title'] or '').strip()
         price = product['price'] or 0
@@ -747,13 +745,21 @@ async def publish_from_catalog(bot: Bot):
         advertiser = product['advertiser'] or 'Рекламодатель'
         erid = (product['erid'] or '').strip()
 
+        # Если нет ссылки – удаляем товар из каталога и пропускаем
         if not partner_url:
             conn = get_db()
-            conn.execute("DELETE FROM gdeslon_catalog WHERE id = ?", (product["id"],))
-            conn.commit()
-            conn.close()
+            try:
+                conn.execute("DELETE FROM gdeslon_catalog WHERE id = ?", (product["id"],))
+                conn.commit()
+            finally:
+                conn.close()
             continue
 
+        # Пропускаем товары без ERID
+        if not erid:
+            continue
+
+        # Формируем пост
         caption = f"{title}\n\n"
         if price > 0:
             caption += f"💰 Цена: {price} {currency}\n\n"
@@ -765,12 +771,15 @@ async def publish_from_catalog(bot: Bot):
 
         photo_url = product["image_url"]
 
+        # Публикуем в каналы пользователя
         conn = get_db()
-        channels = conn.execute(
-            "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
-            (user_id,)
-        ).fetchall()
-        conn.close()
+        try:
+            channels = conn.execute(
+                "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
+                (user_id,)
+            ).fetchall()
+        finally:
+            conn.close()
 
         for ch in channels:
             await publish_post_with_fallback(
