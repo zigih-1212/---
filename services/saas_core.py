@@ -167,16 +167,18 @@ async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 50) -> 
             partner_url = (offer.findtext('url') or '').strip()
             if not partner_url:
                 continue
-            if not erid:   
-                continue 
+            # Извлекаем erid, гарантируем, что переменная существует
+            erid = ''
+            if 'erid=' in partner_url:
+                erid = partner_url.split('erid=')[-1].split('&')[0]
+            # Пропускаем товары без ERID (чтобы не засорять каталог)
+            if not erid:
+                continue
             sku = hashlib.md5(partner_url.encode()).hexdigest()[:12]
             name = offer.findtext('name', 'Товар')
             price = float(offer.findtext('price', '0'))
             currency = offer.findtext('currencyId', 'RUR')
             picture = offer.findtext('picture', '')
-            erid = ''
-            if 'erid=' in partner_url:
-                erid = partner_url.split('erid=')[-1].split('&')[0]
             vendor = offer.findtext('vendor', '') or 'Рекламодатель'
             try:
                 conn.execute(
