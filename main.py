@@ -68,7 +68,7 @@ from services.saas_core import (
     flush_saas_queue_for_user, flush_all_saas_queues, publish_from_catalog,
     scan_donor_channels, get_wb_image_url,
     refill_all_catalogs,
-    refill_takprodam_catalogs
+    #refill_takprodam_catalogs
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request, HTTPException
