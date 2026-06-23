@@ -1,5 +1,6 @@
 import os
-from datetime import datetime, timedelta, timezone
+import datetime                 # <-- модуль datetime
+from datetime import timedelta, timezone
 from typing import List, Optional, Dict, Any
 from services.db import get_db
 
