@@ -36,7 +36,7 @@ MAX_ACTIVE_PAYOUTS: int = 2
 
 # --- Ночной режим ---
 def is_night_time() -> bool:
-    now = datetime.now(tz=timezone(timedelta(hours=3)))
+    now = datetime.datetime.now(tz=timezone(timedelta(hours=3)))
     start_h, start_m = map(int, settings["NIGHT_START"].split(":"))
     end_h, end_m = map(int, settings["NIGHT_END"].split(":"))
     start = datetime.time(start_h, start_m)
