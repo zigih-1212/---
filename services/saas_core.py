@@ -167,6 +167,8 @@ async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 50) -> 
             partner_url = (offer.findtext('url') or '').strip()
             if not partner_url:
                 continue
+            if not erid:   
+                continue 
             sku = hashlib.md5(partner_url.encode()).hexdigest()[:12]
             name = offer.findtext('name', 'Товар')
             price = float(offer.findtext('price', '0'))
@@ -730,31 +732,7 @@ async def publish_from_catalog(bot: Bot):
 
         if not product:
             continue
-        # Если у товара нет ERID, пробуем получить через ТакПродам
-        if not product['erid']:
-            from config import TAKPRODAM_MASTER_TOKEN
-            if TAKPRODAM_MASTER_TOKEN:
-                try:
-                    takprodam_data = await fetch_takprodam_by_sku(TAKPRODAM_MASTER_TOKEN, product['sku'])
-                    if takprodam_data and takprodam_data.get('erid'):
-                        conn = get_db()
-                        conn.execute("UPDATE gdeslon_catalog SET erid=?, advertiser=? WHERE id=?",
-                                     (takprodam_data['erid'], takprodam_data['advertiser'], product['id']))
-                        conn.commit()
-                        conn.close()
-                        product = dict(product)  # конвертируем Row в изменяемый словарь
-                        product['erid'] = takprodam_data['erid']
-                        product['advertiser'] = takprodam_data['advertiser']
-                    else:
-                        # Не удалось получить ERID — удаляем товар из каталога и пропускаем
-                        conn = get_db()
-                        conn.execute("DELETE FROM gdeslon_catalog WHERE id = ?", (product['id'],))
-                        conn.commit()
-                        conn.close()
-                        continue
-                except Exception as e:
-                    logger.warning(f"Не удалось дополнить ERID для товара {product['id']}: {e}")
-                    continue
+
             else:
                 # Нет мастер-токена — удаляем товар без ERID, чтобы не засорять
                 conn = get_db()
