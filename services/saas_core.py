@@ -957,7 +957,7 @@ async def refill_all_catalogs(bot: Bot):
             await fetch_gdeslon_catalog(user_id, cat["keyword"], limit=5)
             await asyncio.sleep(1)
 
-    async def fetch_takprodam_catalog(user_id: int, keyword: str, limit: int = 10) -> int:
+async def fetch_takprodam_catalog(user_id: int, keyword: str, limit: int = 30) -> int:
     """Пополняет каталог товарами из ТакПродам по ключевому слову (гарантирует ERID)."""
     token = os.getenv("TAKPRODAM_MASTER_TOKEN", "")
     if not token:
@@ -979,7 +979,6 @@ async def refill_all_catalogs(bot: Bot):
         saved = 0
         conn = get_db()
         for p in products:
-            # Берём только товары с ERID
             erid = (p.get("erid") or "").strip()
             if not erid:
                 continue
