@@ -959,15 +959,14 @@ async def refill_all_catalogs(bot: Bot):
             await fetch_gdeslon_catalog(user_id, cat["keyword"], limit=5)
             await asyncio.sleep(1)
 
-async def fetch_takprodam_catalog(user_id: int, limit: int = 30) -> int:
-    """Пополняет каталог товарами из ТакПродам через v2/publisher/product (случайные товары с ERID)."""
+async def fetch_takprodam_catalog(user_id: int, limit: int = 20) -> int:
+    """Пополняет каталог товарами из ТакПродам через v2/publisher/product."""
     token = os.getenv("TAKPRODAM_MASTER_TOKEN", "")
     if not token:
         return 0
 
     headers = {"Authorization": f"Bearer {token}"}
     source_id = None
-    # Получаем source_id (кэшируем)
     conn = get_db()
     try:
         row = conn.execute("SELECT source_id FROM takprodam_sources WHERE token = ?", (token,)).fetchone()
@@ -995,15 +994,20 @@ async def fetch_takprodam_catalog(user_id: int, limit: int = 30) -> int:
     if not source_id:
         return 0
 
-    # Запрашиваем товары для двух маркетплейсов, собираем до limit штук
     saved = 0
+    # Запрашиваем по одному запросу для WB и Ozon с page=1 и лимитом = limit/2
     for marketplace in ("Wildberries", "Ozon"):
-        params = {"source_id": source_id, "marketplace": marketplace, "limit": limit // 2 + 1}
+        params = {
+            "source_id": source_id,
+            "marketplace": marketplace,
+            "limit": max(5, limit // 2),
+            "page": 1
+        }
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get("https://api.takprodam.ru/v2/publisher/product/", headers=headers, params=params)
             if resp.status_code != 200:
-                logger.warning(f"ТакПродам v2 product: статус {resp.status_code}")
+                logger.warning(f"ТакПродам v2 product {marketplace}: статус {resp.status_code}, ответ: {resp.text[:200]}")
                 continue
             data = resp.json()
             products = data.get("results", [])
@@ -1030,8 +1034,8 @@ async def fetch_takprodam_catalog(user_id: int, limit: int = 30) -> int:
                     logger.warning(f"ТакПродам insert error: {e}")
             conn.commit()
             conn.close()
-            if saved >= limit:
-                break
+            # Задержка, чтобы избежать 429
+            await asyncio.sleep(2)
         except Exception as e:
             logger.error(f"ТакПродам v2 request error: {e}")
 
