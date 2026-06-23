@@ -1038,7 +1038,7 @@ async def fetch_takprodam_catalog(user_id: int, limit: int = 30) -> int:
     logger.info(f"ТакПродам: добавлено {saved} товаров для user {user_id}")
     return saved
 async def refill_takprodam_catalogs(bot: Bot):
-    """Периодически пополняет каталог ТакПродам для всех активных SaaS-клиентов."""
+    """Периодически пополняет каталог ТакПродам для всех активных SaaS-клиентов (без привязки к категориям)."""
     conn = get_db()
     try:
         users = conn.execute("""
@@ -1052,22 +1052,8 @@ async def refill_takprodam_catalogs(bot: Bot):
 
     for user in users:
         user_id = user["user_id"]
-        conn = get_db()
-        try:
-            cats = conn.execute("""
-                SELECT pc.keyword FROM product_categories pc
-                JOIN user_category_preferences ucp ON pc.id = ucp.category_id
-                WHERE ucp.user_id = ?
-            """, (user_id,)).fetchall()
-        finally:
-            conn.close()
-
-        if not cats:
-            continue
-
-        for cat in cats:
-            await fetch_takprodam_catalog(user_id, cat["keyword"], limit=5)
-            await asyncio.sleep(1)
+        await fetch_takprodam_catalog(user_id, limit=30)
+        await asyncio.sleep(1)
 
     logger.info("🔄 Пополнение каталогов ТакПродам завершено")
 
