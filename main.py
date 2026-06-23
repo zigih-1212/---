@@ -64,9 +64,11 @@ from config import (
 from services.saas_core import (
     publish_post_with_fallback, fetch_gdeslon_catalog, fetch_gdeslon_by_sku,
     prepare_post_content, process_saas_core, add_to_saas_queue,
-    add_to_night_queue, refill_all_catalogs,refill_takprodam_catalogs  
+    add_to_night_queue,
     flush_saas_queue_for_user, flush_all_saas_queues, publish_from_catalog,
-    scan_donor_channels, get_wb_image_url
+    scan_donor_channels, get_wb_image_url,
+    refill_all_catalogs,
+    refill_takprodam_catalogs
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request, HTTPException
