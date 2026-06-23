@@ -676,6 +676,8 @@ async def publish_from_catalog(bot: Bot):
     finally:
         conn.close()
 
+    logger.info(f"[DEBUG] Найдено {len(users)} активных SaaS-пользователей")
+
     for user in users:
         user_id = user["user_id"]
         tariff_id = user["tariff_id"]
@@ -700,27 +702,26 @@ async def publish_from_catalog(bot: Bot):
         finally:
             conn.close()
 
+        logger.info(f"[DEBUG] User {user_id}: max_posts_per_hour={max_posts_per_hour}, posts_last_hour={posts_last_hour}")
+
         if posts_last_hour >= max_posts_per_hour:
+            logger.info(f"[DEBUG] User {user_id}: лимит исчерпан, пропускаем")
             continue
 
         conn = get_db()
         try:
-            # Сначала пробуем товар с ERID
             product = conn.execute(
                 "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                 (user_id,)
             ).fetchone()
-            # Если нет ни одного товара с ERID, берём любой неиспользованный
             if not product:
                 product = conn.execute(
                     "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 ORDER BY RANDOM() LIMIT 1",
                     (user_id,)
                 ).fetchone()
-            # Если и таких нет (все использованы), сбрасываем used и пробуем снова (сначала с ERID)
             if not product:
                 conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
                 conn.commit()
-                # После сброса опять приоритет ERID
                 product = conn.execute(
                     "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                     (user_id,)
@@ -737,9 +738,11 @@ async def publish_from_catalog(bot: Bot):
             conn.close()
 
         if not product:
+            logger.info(f"[DEBUG] User {user_id}: нет доступных товаров")
             continue
 
-        # Проверяем обязательные поля
+        logger.info(f"[DEBUG] User {user_id}: выбран товар id={product['id']}, erid={product.get('erid')}, partner_url={'есть' if product.get('partner_url') else 'нет'}")
+
         partner_url = (product['partner_url'] or '').strip()
         title = (product['title'] or '').strip()
         price = product['price'] or 0
@@ -747,8 +750,8 @@ async def publish_from_catalog(bot: Bot):
         advertiser = product['advertiser'] or 'Рекламодатель'
         erid = (product['erid'] or '').strip()
 
-        # Если нет ссылки – удаляем товар из каталога и пропускаем
         if not partner_url:
+            logger.info(f"[DEBUG] User {user_id}: товар {product['id']} удалён – нет partner_url")
             conn = get_db()
             try:
                 conn.execute("DELETE FROM gdeslon_catalog WHERE id = ?", (product["id"],))
@@ -757,8 +760,8 @@ async def publish_from_catalog(bot: Bot):
                 conn.close()
             continue
 
-        # Пропускаем товары без ERID
         if not erid:
+            logger.info(f"[DEBUG] User {user_id}: товар {product['id']} пропущен – нет erid")
             continue
 
         # Формируем пост
@@ -773,7 +776,6 @@ async def publish_from_catalog(bot: Bot):
 
         photo_url = product["image_url"]
 
-        # Публикуем в каналы пользователя
         conn = get_db()
         try:
             channels = conn.execute(
@@ -783,6 +785,7 @@ async def publish_from_catalog(bot: Bot):
         finally:
             conn.close()
 
+        logger.info(f"[DEBUG] User {user_id}: начинаю публикацию товара {product['id']} в {len(channels)} каналов")
         for ch in channels:
             await publish_post_with_fallback(
                 bot=bot,
@@ -791,8 +794,6 @@ async def publish_from_catalog(bot: Bot):
                 photo_url=photo_url
             )
             await asyncio.sleep(1)
-
-
 async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
     SAAS_DONOR_CHANNELS: list[str] = [
         x.strip() for x in os.getenv("SAAS_DONOR_CHANNELS", "").split(",") if x.strip()
