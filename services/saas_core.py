@@ -276,7 +276,7 @@ async def get_source_id(token: str) -> Optional[int]:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get("https://api.takprodam.ru/v2/publisher/source/", headers=headers)
         if resp.status_code == 200:
-            sources = resp.json().get("results", [])
+            sources = resp.json().get("items", [])
             if sources:
                 source_id = sources[0]["id"]
                 conn = get_db()
@@ -981,7 +981,7 @@ async def fetch_takprodam_catalog(user_id: int, limit: int = 30) -> int:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get("https://api.takprodam.ru/v2/publisher/source/", headers=headers)
             if resp.status_code == 200:
-                sources = resp.json().get("results", [])
+                sources = resp.json().get("items", [])
                 if sources:
                     source_id = sources[0]["id"]
                     conn = get_db()
