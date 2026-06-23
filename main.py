@@ -292,7 +292,28 @@ def init_db() -> None:
             FOREIGN KEY(category_id) REFERENCES product_categories(id)
         )
     """)
-
+# Создание таблицы gdeslon_catalog, если её ещё нет
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS gdeslon_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sku TEXT,
+            user_id INTEGER,
+            title TEXT,
+            price REAL,
+            currency TEXT,
+            partner_url TEXT,
+            erid TEXT,
+            advertiser TEXT,
+            image_url TEXT,
+            category_keyword TEXT,
+            used INTEGER DEFAULT 0
+        )
+    """)
+# Уникальный индекс для предотвращения дубликатов
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_gdeslon_unique 
+            ON gdeslon_catalog(user_id, sku)
+    """)
     # Миграции
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN payout_card TEXT")
