@@ -741,7 +741,7 @@ async def publish_from_catalog(bot: Bot):
             logger.info(f"[DEBUG] User {user_id}: нет доступных товаров")
             continue
 
-        logger.info(f"[DEBUG] User {user_id}: выбран товар id={product['id']}, erid={product.get('erid')}, partner_url={'есть' if product.get('partner_url') else 'нет'}")
+        logger.info(f"[DEBUG] User {user_id}: выбран товар id={product['id']}, erid={product['erid']}, partner_url={'есть' if product['partner_url'] else 'нет'}")
 
         partner_url = (product['partner_url'] or '').strip()
         title = (product['title'] or '').strip()
@@ -961,7 +961,7 @@ async def refill_all_catalogs(bot: Bot):
             await asyncio.sleep(1)
 
 async def fetch_takprodam_catalog(user_id: int, limit: int = 20) -> int:
-    """Пополняет каталог товарами из ТакПродам через v2/publisher/product."""
+    """Пополняет каталог товарами из ТакПродам через v2/publisher/product (с обработкой лимитов)."""
     token = os.getenv("TAKPRODAM_MASTER_TOKEN", "")
     if not token:
         return 0
@@ -996,51 +996,66 @@ async def fetch_takprodam_catalog(user_id: int, limit: int = 20) -> int:
         return 0
 
     saved = 0
-    # Запрашиваем по одному запросу для WB и Ozon с page=1 и лимитом = limit/2
-    for marketplace in ("Wildberries", "Ozon"):
-        params = {
-            "source_id": source_id,
-            "marketplace": marketplace,
-            "limit": max(5, limit // 2),
-            "page": 1
-        }
+    # Берём один случайный маркетплейс, чтобы не спамить API
+    marketplace = random.choice(["Ozon", "Wildberries"])
+    params = {
+        "source_id": source_id,
+        "marketplace": marketplace,
+        "limit": limit,
+        "page": 1
+    }
+
+    # Делаем до 3 попыток с экспоненциальной задержкой при 429
+    for attempt in range(3):
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get("https://api.takprodam.ru/v2/publisher/product/", headers=headers, params=params)
-            if resp.status_code != 200:
+            if resp.status_code == 200:
+                data = resp.json()
+                products = data.get("results", [])
+                conn = get_db()
+                for p in products:
+                    erid = ""
+                    legal_text = p.get("legal_text") or ""
+                    if "erid " in legal_text.lower():
+                        erid = legal_text.split("erid ")[-1].strip()
+                    else:
+                        # иногда erid может быть прямо в tracking_link
+                        track = p.get("tracking_link") or ""
+                        if "erid=" in track:
+                            erid = track.split("erid=")[-1].split("&")[0]
+                    if not erid:
+                        continue
+                    advertiser = p.get("store_title") or ""
+                    title = p.get("title") or "Товар"
+                    price = float(p.get("price", 0))
+                    tracking_link = p.get("tracking_link") or ""
+                    image_url = p.get("image_url") or ""
+                    sku = p.get("sku") or hashlib.md5(tracking_link.encode()).hexdigest()[:12]
+                    try:
+                        conn.execute(
+                            """INSERT OR IGNORE INTO gdeslon_catalog
+                            (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword, used, source)
+                            VALUES (?, ?, ?, ?, 'RUB', ?, ?, ?, ?, 'takprodam_general', 0, 'takprodam')""",
+                            (sku, user_id, title, price, tracking_link, erid, advertiser, image_url)
+                        )
+                        saved += 1
+                    except Exception as e:
+                        logger.warning(f"ТакПродам insert error: {e}")
+                conn.commit()
+                conn.close()
+                break  # успех, выходим из цикла попыток
+            elif resp.status_code == 429:
+                logger.warning(f"ТакПродам 429, попытка {attempt+1}")
+                await asyncio.sleep(5 * (attempt + 1))  # ждём 5, 10, 15 секунд
+            else:
                 logger.warning(f"ТакПродам v2 product {marketplace}: статус {resp.status_code}, ответ: {resp.text[:200]}")
-                continue
-            data = resp.json()
-            products = data.get("results", [])
-            conn = get_db()
-            for p in products:
-                erid = (p.get("erid") or "").strip()
-                if not erid:
-                    continue
-                advertiser = (p.get("advertiser") or "").strip()
-                title = p.get("title") or "Товар"
-                price = float(p.get("price", 0))
-                tracking_link = p.get("tracking_link") or ""
-                image_url = p.get("image_url") or ""
-                sku = p.get("sku") or hashlib.md5(tracking_link.encode()).hexdigest()[:12]
-                try:
-                    conn.execute(
-                        """INSERT OR IGNORE INTO gdeslon_catalog
-                        (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword, used, source)
-                        VALUES (?, ?, ?, ?, 'RUB', ?, ?, ?, ?, 'takprodam_general', 0, 'takprodam')""",
-                        (sku, user_id, title, price, tracking_link, erid, advertiser, image_url)
-                    )
-                    saved += 1
-                except Exception as e:
-                    logger.warning(f"ТакПродам insert error: {e}")
-            conn.commit()
-            conn.close()
-            # Задержка, чтобы избежать 429
-            await asyncio.sleep(2)
+                break  # не 200 и не 429 – прерываем
         except Exception as e:
             logger.error(f"ТакПродам v2 request error: {e}")
+            break
 
-    logger.info(f"ТакПродам: добавлено {saved} товаров для user {user_id}")
+    logger.info(f"ТакПродам: добавлено {saved} товаров для user {user_id} из {marketplace}")
     return saved
 async def refill_takprodam_catalogs(bot: Bot):
     """Периодически пополняет каталог ТакПродам для всех активных SaaS-клиентов (без привязки к категориям)."""
