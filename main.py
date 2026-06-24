@@ -1857,7 +1857,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(scan_donor_channels, trigger="interval", minutes=15, kwargs={"bot": bot}, id="scan_donors", replace_existing=True)
     scheduler.add_job(refill_all_catalogs, trigger="interval", minutes=30, kwargs={"bot": bot}, id="refill_catalogs", replace_existing=True)
     scheduler.add_job(publish_from_catalog, trigger="interval", minutes=10, kwargs={"bot": bot}, id="publish_catalog", replace_existing=True)
-    scheduler.add_job(refill_takprodam_catalogs,trigger="interval",minutes=30,kwargs={"bot": bot},id="refill_takprodam_catalogs",replace_existing=True)
+    #scheduler.add_job(refill_takprodam_catalogs,trigger="interval",minutes=30,kwargs={"bot": bot},id="refill_takprodam_catalogs",replace_existing=True)
     return scheduler
 
 # =============================================================================
