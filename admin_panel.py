@@ -366,7 +366,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     <form action="/admin/user/{user_id}/toggle_ban" method="post" style="display:inline">
         <button class="{'danger' if user['is_active'] else ''}">{'⛔ Забанить' if user['is_active'] else '✅ Разбанить'}</button>
     </form>
-    <a href="/admin/refill-catalog/{user_id}"><button>🔄 Пополнить каталог GdeSlon</button></a>
+    <a href="/admin/refill-catalog/{user_id}"><button>🔄 Пополнить каталог Admitad</button></a>
     <div class="row"><span class="lbl">Товаров в каталоге GdeSlon:</span> <span>{catalog_count}</span></div>
     <form action="/admin/user/{user_id}/update_field" method="post">
         <input type="text" name="field" placeholder="Поле (api_key, client_erid_override)">
