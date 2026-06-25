@@ -29,7 +29,6 @@ async def cb_stores(callback: CallbackQuery):
     finally:
         conn.close()
 
-    # Список доступных магазинов
     stores = [
         {"id": 1, "name": "AliExpress (пока недоступен)"},
         {"id": 2, "name": "Читай-город"},
@@ -47,6 +46,36 @@ async def cb_stores(callback: CallbackQuery):
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("store_toggle:"))
+async def cb_toggle_store(callback: CallbackQuery):
+    store_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+
+    # AliExpress пока не доступен
+    if store_id == 1:
+        await callback.answer("❌ AliExpress временно недоступен (отсутствует маркировка ERID).", show_alert=True)
+        return
+
+    conn = get_db()
+    try:
+        existing = conn.execute(
+            "SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
+            (user_id, store_id)
+        ).fetchone()
+        if existing:
+            conn.execute("DELETE FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
+                         (user_id, store_id))
+        else:
+            conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
+                         (user_id, store_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    await cb_stores(callback)
     await callback.answer()
 @router.callback_query(F.data.startswith("cat_toggle:"))
 async def cb_toggle_category(callback: CallbackQuery):
