@@ -9,7 +9,8 @@ from aiogram.fsm.context import FSMContext
 
 from states import SaasStates, PaymentFSM
 from services.db import get_db
-from services.saas_core import fetch_gdeslon_catalog, publish_post_with_fallback
+from services.saas_core import publish_post_with_fallback
+from services.admitad import fetch_admitad_catalog
 from keyboards.saas import kb_tariffs, kb_payment_methods
 from config import load_tariffs
 
