@@ -1526,12 +1526,12 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
 
     is_admin_ok = await check_bot_admin(message.bot, channel_username)
     if not is_admin_ok:
-        await message.answer("❌ Бот не является администратором в этом канале. Добавьте его и попробуйте снова.")
+        await message.answer("❌ Бот не является администратором в этом канале.")
         return
 
     conn = get_db()
     try:
-        # Проверка лимита каналов по тарифу
+        # Проверка лимита каналов
         user = conn.execute("SELECT tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
         if user and user["tariff_id"]:
             tariff = conn.execute("SELECT max_channels FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
@@ -1541,11 +1541,15 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
                 await message.answer(f"❌ Ваш тариф позволяет подключить не более {max_channels} каналов.")
                 return
 
+        # Генерируем уникальный sub_id (на основе user_id и channel_username)
+        import hashlib
+        sub_id = f"ch_{hashlib.md5(channel_username.encode()).hexdigest()[:12]}"
+
         conn.execute(
-            """INSERT INTO channels (user_id, channel_id, channel_title)
-               VALUES (?, ?, ?)
+            """INSERT INTO channels (user_id, channel_id, channel_title, sub_id)
+               VALUES (?, ?, ?, ?)
                ON CONFLICT(user_id, channel_id) DO UPDATE SET channel_title = excluded.channel_title""",
-            (user_id, channel_username, channel_username)
+            (user_id, channel_username, channel_username, sub_id)
         )
         conn.commit()
     except sqlite3.Error as e:
