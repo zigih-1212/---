@@ -177,7 +177,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     advertiser = product['advertiser'] or 'Рекламодатель'
     erid = product['erid'] or ''
     photo_url = product["image_url"]
-    source = product.get("source", "")
+    source = product["source"] if "source" in product.keys() else ""
 
     # Получаем каналы пользователя
     conn = get_db()
