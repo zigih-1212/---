@@ -9,10 +9,23 @@ from services.db import get_db
 
 logger = logging.getLogger("autopost_bot.admitad")
 
-FEED_URL = "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=24883&last_import="
+# Список магазинов с их фидами и признаком 18+
+STORES = {
+    "Читай-город": {
+        "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=24883&last_import=",
+        "adult": False
+    },
+    "Аквафор": {
+        "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=18482&last_import=",
+        "adult": False
+    },
+    "Розовый кролик": {
+        "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=26654&last_import=",
+        "adult": True
+    },
+}
 
 def extract_erid_from_url(url: str) -> str:
-    """Извлекает ERID из параметров URL товара."""
     if not url:
         return ""
     try:
@@ -27,53 +40,55 @@ async def fetch_admitad_catalog(user_id: int, max_items: int = 50) -> int:
     conn = get_db()
     parser = XMLPullParser(['end'])
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            async with client.stream("GET", FEED_URL) as resp:
-                if resp.status_code != 200:
-                    logger.error(f"Admitad фид недоступен: {resp.status_code}")
-                    return 0
+    for store_name, store_cfg in STORES.items():
+        feed_url = store_cfg["feed_url"]
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream("GET", feed_url) as resp:
+                    if resp.status_code != 200:
+                        logger.error(f"Admitad фид {store_name} недоступен: {resp.status_code}")
+                        continue
 
-                async for chunk in resp.aiter_bytes():
-                    parser.feed(chunk)
-                    for event, elem in parser.read_events():
-                        if elem.tag == 'offer':
-                            name = elem.findtext('name', '')
-                            price = float(elem.findtext('price', '0'))
-                            currency = elem.findtext('currencyId', 'RUR')
-                            picture = elem.findtext('picture', '')
-                            url = elem.findtext('url', '')
-                            if not url:
+                    async for chunk in resp.aiter_bytes():
+                        parser.feed(chunk)
+                        for event, elem in parser.read_events():
+                            if elem.tag == 'offer':
+                                name = elem.findtext('name', '')
+                                price = float(elem.findtext('price', '0'))
+                                currency = elem.findtext('currencyId', 'RUR')
+                                picture = elem.findtext('picture', '')
+                                url = elem.findtext('url', '')
+                                if not url:
+                                    elem.clear()
+                                    continue
+
+                                erid = extract_erid_from_url(url)
+                                if not erid:
+                                    elem.clear()
+                                    continue
+
+                                sku = hashlib.md5(url.encode()).hexdigest()[:12]
+                                conn.execute(
+                                    """INSERT OR IGNORE INTO gdeslon_catalog
+                                    (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword, used, source)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+                                    (sku, user_id, name, price, currency, url, erid, store_name, picture, store_name)
+                                )
+                                saved += 1
                                 elem.clear()
-                                continue
-
-                            # Достаём ERID из URL
-                            erid = extract_erid_from_url(url)
-                            if not erid:
-                                elem.clear()
-                                continue
-
-                            sku = hashlib.md5(url.encode()).hexdigest()[:12]
-                            conn.execute(
-                                """INSERT OR IGNORE INTO gdeslon_catalog
-                                (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword, used, source)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, 'Admitad', ?, 'admitad_general', 0, 'admitad')""",
-                                (sku, user_id, name, price, currency, url, erid, picture)
-                            )
-                            saved += 1
-                            elem.clear()
-                            if saved >= max_items:
-                                await resp.aclose()
-                                break
-                    if saved >= max_items:
-                        break
-    except Exception as e:
-        logger.error(f"Admitad stream error: {e}")
+                                if saved >= max_items:
+                                    await resp.aclose()
+                                    break
+                        if saved >= max_items:
+                            break
+        except Exception as e:
+            logger.error(f"Admitad stream error for {store_name}: {e}")
 
     conn.commit()
     conn.close()
     logger.info(f"Admitad: добавлено {saved} товаров для user {user_id}")
     return saved
+
 
 async def refill_admitad_catalogs(bot=None):
     conn = get_db()
@@ -85,7 +100,9 @@ async def refill_admitad_catalogs(bot=None):
         """).fetchall()
     finally:
         conn.close()
+
     for user in users:
         await fetch_admitad_catalog(user["user_id"], max_items=50)
         await asyncio.sleep(1)
+
     logger.info("🔄 Пополнение каталогов Admitad завершено")
