@@ -1070,13 +1070,13 @@ input,textarea{{background:#1e2130;border:1px solid #444;color:#fff;padding:6px;
         await channel_quick_action(bot, channel_id, "set_photo", photo_url=photo_url)
         return RedirectResponse(f"/admin/channel/{channel_id}", status_code=302)
 
-# =====================================================================
-# === ПОПОЛНЕНИЕ КАТАЛОГА ADMITAD (АДМИН) ============================
-# =====================================================================
-@app.get("/admin/refill-catalog/{user_id}", response_class=HTMLResponse)
-async def refill_catalog_page(request: Request, user_id: int):
-    is_authenticated(request)
-    return HTMLResponse(f"""<!DOCTYPE html>
+    # =====================================================================
+    # === ПОПОЛНЕНИЕ КАТАЛОГА ADMITAD (АДМИН) ============================
+    # =====================================================================
+    @app.get("/admin/refill-catalog/{user_id}", response_class=HTMLResponse)
+    async def refill_catalog_page(request: Request, user_id: int):
+        is_authenticated(request)
+        return HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Пополнение каталога Admitad</title>
 <style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
 button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radius:4px;cursor:pointer;}}</style></head>
@@ -1084,35 +1084,35 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
 <form action="/admin/refill-catalog/{user_id}/run" method="post">
 <button>Запустить пополнение</button></form></body></html>""")
 
-@app.post("/admin/refill-catalog/{user_id}/run")
-async def refill_catalog_run(request: Request, user_id: int):
-    is_authenticated(request)
-    from services.admitad import fetch_admitad_catalog
-    import html as html_mod
+    @app.post("/admin/refill-catalog/{user_id}/run")
+    async def refill_catalog_run(request: Request, user_id: int):
+        is_authenticated(request)
+        from services.admitad import fetch_admitad_catalog
+        import html as html_mod
 
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        if not user:
-            return HTMLResponse("Пользователь не найден", status_code=404)
-    finally:
-        conn.close()
+        conn = get_db()
+        try:
+            user = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if not user:
+                return HTMLResponse("Пользователь не найден", status_code=404)
+        finally:
+            conn.close()
 
-    try:
-        saved = await fetch_admitad_catalog(user_id, max_items=50)
-    except Exception as e:
-        return HTMLResponse(f"<h3>Ошибка при пополнении</h3><pre>{html_mod.escape(str(e))}</pre>", status_code=500)
+        try:
+            saved = await fetch_admitad_catalog(user_id, max_items=50)
+        except Exception as e:
+            return HTMLResponse(f"<h3>Ошибка при пополнении</h3><pre>{html_mod.escape(str(e))}</pre>", status_code=500)
 
-    if saved > 0:
-        title = "✅ Каталог Admitad пополнен!"
-        desc = f"Добавлено <b>{saved}</b> новых товаров."
-        color = "#2ecc71"
-    else:
-        title = "ℹ️ Новых товаров нет"
-        desc = "Возможно, фид не содержит новых товаров с ERID."
-        color = "#f39c12"
+        if saved > 0:
+            title = "✅ Каталог Admitad пополнен!"
+            desc = f"Добавлено <b>{saved}</b> новых товаров."
+            color = "#2ecc71"
+        else:
+            title = "ℹ️ Новых товаров нет"
+            desc = "Возможно, фид не содержит новых товаров с ERID."
+            color = "#f39c12"
 
-    html = f"""<!DOCTYPE html>
+        html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Пополнение каталога</title>
 <style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
 h2{{color:{color};}} a{{color:#3498db;}}</style></head>
@@ -1121,5 +1121,5 @@ h2{{color:{color};}} a{{color:#3498db;}}</style></head>
 <p>{desc}</p>
 <a href="/admin/user/{user_id}">← Вернуться к карточке</a>
 </body></html>"""
-    return HTMLResponse(html)
+        return HTMLResponse(html)
     return app
