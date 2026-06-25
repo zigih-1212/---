@@ -468,7 +468,13 @@ async def publish_from_catalog(bot: Bot):
                     final_url += '&subid=' + ch["sub_id"]
                 else:
                     final_url += '?subid=' + ch["sub_id"]
-
+            
+            adult_warning = ""
+            if product.get("source") == "Розовый кролик":
+                adult_warning = "🔞 18+\n"
+            
+            caption = adult_warning + f"{title}\n\n"
+            
             caption = f"{title}\n\n"
             if price > 0:
                 caption += f"💰 Цена: {price} {currency}\n\n"
