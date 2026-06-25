@@ -663,8 +663,9 @@ async def flush_all_saas_queues(bot: Bot):
 async def publish_from_catalog(bot: Bot):
     from config import is_night_time
     if is_night_time():
-        logger.info("🌙 Ночной режим активен, автоматическая публикация приостановлена")
+        logger.info("🌙 Ночной режим активен")
         return
+
     conn = get_db()
     try:
         users = conn.execute("""
@@ -676,17 +677,16 @@ async def publish_from_catalog(bot: Bot):
     finally:
         conn.close()
 
-    logger.info(f"[DEBUG] Найдено {len(users)} активных SaaS-пользователей")
-
     for user in users:
         user_id = user["user_id"]
         tariff_id = user["tariff_id"]
 
+        # Лимит постов в час
         max_posts_per_hour = 1
         if tariff_id:
             conn = get_db()
             try:
-                tariff = conn.execute("SELECT max_posts_per_day FROM tariffs WHERE id = ?", (tariff_id,)).fetchone()
+                tariff = conn.execute("SELECT max_posts_per_day FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
                 if tariff and tariff["max_posts_per_day"]:
                     max_posts_per_hour = max(1, tariff["max_posts_per_day"] // 24)
             finally:
@@ -696,96 +696,87 @@ async def publish_from_catalog(bot: Bot):
         try:
             hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
             posts_last_hour = conn.execute(
-                "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND status = 'published' AND published_at >= ? AND donor_post_id LIKE 'gdeslon_%'",
+                "SELECT COUNT(*) as cnt FROM posts WHERE user_id=? AND status='published' AND published_at >= ?",
                 (user_id, hour_ago)
             ).fetchone()["cnt"]
         finally:
             conn.close()
 
-        logger.info(f"[DEBUG] User {user_id}: max_posts_per_hour={max_posts_per_hour}, posts_last_hour={posts_last_hour}")
-
         if posts_last_hour >= max_posts_per_hour:
-            logger.info(f"[DEBUG] User {user_id}: лимит исчерпан, пропускаем")
             continue
 
+        # --- ВЫБОР ТОВАРА ---
         conn = get_db()
         try:
+            # Сначала пытаемся взять свежий товар Admitad с ERID
             product = conn.execute(
-                "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
+                "SELECT * FROM gdeslon_catalog WHERE user_id=? AND used=0 AND erid != '' AND erid IS NOT NULL AND source='admitad' ORDER BY id DESC LIMIT 1",
                 (user_id,)
             ).fetchone()
+            # Если нет Admitad — любой с ERID
             if not product:
                 product = conn.execute(
-                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 ORDER BY RANDOM() LIMIT 1",
+                    "SELECT * FROM gdeslon_catalog WHERE user_id=? AND used=0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                     (user_id,)
                 ).fetchone()
+            # Если вообще ничего нет — сбрасываем used и пробуем снова
             if not product:
-                conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
+                conn.execute("UPDATE gdeslon_catalog SET used=0 WHERE user_id=?", (user_id,))
                 conn.commit()
                 product = conn.execute(
-                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
+                    "SELECT * FROM gdeslon_catalog WHERE user_id=? AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                     (user_id,)
                 ).fetchone()
                 if not product:
                     product = conn.execute(
-                        "SELECT * FROM gdeslon_catalog WHERE user_id = ? ORDER BY RANDOM() LIMIT 1",
+                        "SELECT * FROM gdeslon_catalog WHERE user_id=? ORDER BY RANDOM() LIMIT 1",
                         (user_id,)
                     ).fetchone()
             if product:
-                conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
+                conn.execute("UPDATE gdeslon_catalog SET used=1 WHERE id=?", (product["id"],))
                 conn.commit()
         finally:
             conn.close()
 
         if not product:
-            logger.info(f"[DEBUG] User {user_id}: нет доступных товаров")
             continue
 
-        logger.info(f"[DEBUG] User {user_id}: выбран товар id={product['id']}, erid={product['erid']}, partner_url={'есть' if product['partner_url'] else 'нет'}")
+        # --- ПРОВЕРКА НА ПОВТОР ---
+        conn = get_db()
+        duplicate = conn.execute(
+            "SELECT 1 FROM posts WHERE user_id=? AND channel_id IN (SELECT channel_id FROM channels WHERE user_id=? AND is_active=1) AND donor_post_id LIKE 'admitad_%' AND sku=? AND status='published' LIMIT 1",
+            (user_id, user_id, product["sku"])
+        ).fetchone()
+        conn.close()
+        if duplicate:
+            logger.info(f"Товар {product['id']} уже публиковался в канал пользователя {user_id}, пропускаем")
+            continue
 
         partner_url = (product['partner_url'] or '').strip()
-        title = (product['title'] or '').strip()
+        if not partner_url:
+            continue
+        erid = (product['erid'] or '').strip()
+        if not erid:
+            continue
+
+        # --- ФОРМИРОВАНИЕ ПОСТА ---
+        title = product['title'] or ''
         price = product['price'] or 0
         currency = product['currency'] or '₽'
         advertiser = product['advertiser'] or 'Рекламодатель'
-        erid = (product['erid'] or '').strip()
-
-        if not partner_url:
-            logger.info(f"[DEBUG] User {user_id}: товар {product['id']} удалён – нет partner_url")
-            conn = get_db()
-            try:
-                conn.execute("DELETE FROM gdeslon_catalog WHERE id = ?", (product["id"],))
-                conn.commit()
-            finally:
-                conn.close()
-            continue
-
-        if not erid:
-            logger.info(f"[DEBUG] User {user_id}: товар {product['id']} пропущен – нет erid")
-            continue
-
-        # Формируем пост
         caption = f"{title}\n\n"
         if price > 0:
             caption += f"💰 Цена: {price} {currency}\n\n"
         caption += f"👉 <a href='{partner_url}'>Посмотреть и заказать</a>\n\n"
-        if erid:
-            caption += f"Реклама. {advertiser}. Erid: {erid}"
-        else:
-            caption += f"Реклама. {advertiser}"
+        caption += f"Реклама. {advertiser}. Erid: {erid}"
 
         photo_url = product["image_url"]
 
+        # --- ПУБЛИКАЦИЯ В КАНАЛЫ ---
         conn = get_db()
-        try:
-            channels = conn.execute(
-                "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
-                (user_id,)
-            ).fetchall()
-        finally:
-            conn.close()
+        channels = conn.execute("SELECT channel_id FROM channels WHERE user_id=? AND is_active=1", (user_id,)).fetchall()
+        conn.close()
 
-        logger.info(f"[DEBUG] User {user_id}: начинаю публикацию товара {product['id']} в {len(channels)} каналов")
         for ch in channels:
             await publish_post_with_fallback(
                 bot=bot,
@@ -793,6 +784,14 @@ async def publish_from_catalog(bot: Bot):
                 caption=caption,
                 photo_url=photo_url
             )
+            # Запись в posts с source-информацией
+            conn = get_db()
+            conn.execute(
+                "INSERT INTO posts (user_id, donor_post_id, channel_id, target_channel_id, status, published_at, sku) VALUES (?, 'admitad_' || ?, ?, ?, 'published', ?, ?)",
+                (user_id, product["id"], ch["channel_id"], ch["channel_id"], datetime.now(timezone.utc).isoformat(), product["sku"])
+            )
+            conn.commit()
+            conn.close()
             await asyncio.sleep(1)
 async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
     SAAS_DONOR_CHANNELS: list[str] = [
