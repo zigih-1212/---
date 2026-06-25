@@ -63,13 +63,11 @@ from config import (
     CARD_SBER, CARD_TBANK, CARD_TON, CARD_VISA_KG, DB_PATH
 )
 from services.saas_core import (
-    publish_post_with_fallback, fetch_gdeslon_catalog, fetch_gdeslon_by_sku,
+    publish_post_with_fallback,
     prepare_post_content, process_saas_core, add_to_saas_queue,
     add_to_night_queue,
     flush_saas_queue_for_user, flush_all_saas_queues, publish_from_catalog,
-    scan_donor_channels, get_wb_image_url,
-    #refill_all_catalogs,
-    #refill_takprodam_catalogs
+    scan_donor_channels, get_wb_image_url
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request, HTTPException
