@@ -2,16 +2,27 @@
 import asyncio
 import hashlib
 import logging
+from urllib.parse import urlparse, parse_qs
 from xml.etree.ElementTree import XMLPullParser
 import httpx
 from services.db import get_db
 
 logger = logging.getLogger("autopost_bot.admitad")
 
-# Фид Читай-город (300k товаров)
 FEED_URL = "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=24883&last_import="
 
-async def fetch_admitad_catalog(user_id: int, max_items: int = 100) -> int:
+def extract_erid_from_url(url: str) -> str:
+    """Извлекает ERID из параметров URL товара."""
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        return params.get('erid', [''])[0]
+    except Exception:
+        return ""
+
+async def fetch_admitad_catalog(user_id: int, max_items: int = 50) -> int:
     saved = 0
     conn = get_db()
     parser = XMLPullParser(['end'])
@@ -29,18 +40,18 @@ async def fetch_admitad_catalog(user_id: int, max_items: int = 100) -> int:
                         if elem.tag == 'offer':
                             name = elem.findtext('name', '')
                             price = float(elem.findtext('price', '0'))
-                            currency = elem.findtext('currencyId', 'RUB')
+                            currency = elem.findtext('currencyId', 'RUR')
                             picture = elem.findtext('picture', '')
                             url = elem.findtext('url', '')
                             if not url:
                                 elem.clear()
                                 continue
 
-                            erid = ''
-                            for param in elem.findall('param'):
-                                if param.get('name') == 'erid':
-                                    erid = param.text or ''
-                                    break
+                            # Достаём ERID из URL
+                            erid = extract_erid_from_url(url)
+                            if not erid:
+                                elem.clear()
+                                continue
 
                             sku = hashlib.md5(url.encode()).hexdigest()[:12]
                             conn.execute(
@@ -64,7 +75,6 @@ async def fetch_admitad_catalog(user_id: int, max_items: int = 100) -> int:
     logger.info(f"Admitad: добавлено {saved} товаров для user {user_id}")
     return saved
 
-
 async def refill_admitad_catalogs(bot=None):
     conn = get_db()
     try:
@@ -75,9 +85,7 @@ async def refill_admitad_catalogs(bot=None):
         """).fetchall()
     finally:
         conn.close()
-
     for user in users:
-        await fetch_admitad_catalog(user["user_id"], max_items=100)
+        await fetch_admitad_catalog(user["user_id"], max_items=50)
         await asyncio.sleep(1)
-
     logger.info("🔄 Пополнение каталогов Admitad завершено")
