@@ -186,18 +186,18 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
 # Настройка API-ключа GdeSlon
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "saas_set:gdeslon_apikey")
-async def cb_saas_set_gdeslon_apikey(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_saas_set_source(callback: CallbackQuery, state: FSMContext) -> None:
     text = (
-        "🔑 <b>Настройка API-ключа GdeSlon</b>\n\n"
-        "Отправьте сообщением ваш API-ключ от GdeSlon.\n"
-        "<i>Если вы хотите удалить ключ, отправьте цифру 0</i>"
+        "📦 <b>Источник товаров: Admitad</b>\n\n"
+        "Бот автоматически получает товары из магазинов-партнёров "
+        "(Читай-город, AliExpress и др.) с готовой маркировкой ERID.\n"
+        "API-ключ вводить не нужно — всё работает автоматически.\n\n"
+        "<i>В будущем вы сможете подключить свой аккаунт Admitad для отслеживания статистики.</i>"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:settings")]
+        [InlineKeyboardButton(text="🔙 Назад в настройки", callback_data="menu:settings")]
     ])
     await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
-    await state.set_state(SaasStates.waiting_apikey)
-    await state.update_data(input_type="gdeslon_apikey")
     await callback.answer()
 
 @router.message(SaasStates.waiting_apikey)
