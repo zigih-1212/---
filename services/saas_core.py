@@ -2,12 +2,9 @@
 import asyncio
 import hashlib
 import logging
-import os
-import random
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
-from xml.etree import ElementTree as ET
+from typing import Optional, Dict, List
 
 import httpx
 from aiogram import Bot
@@ -16,71 +13,19 @@ from aiogram.types import InlineKeyboardMarkup, Message
 
 from services.db import get_db
 from parser import rewrite_text_with_ai, find_product_links, process_new_video
+from config import is_night_time
 
 logger = logging.getLogger("autopost_bot")
 
 # ---------------------------------------------------------------------------
 # Вспомогательные (общие)
 # ---------------------------------------------------------------------------
-def get_wb_image_url(sku: int) -> str:
-    """Вычисляет прямую ссылку на фото Wildberries по артикулу (SKU)."""
-    try:
-        sku = int(sku)
-    except (ValueError, TypeError):
-        return ""
-
-    vol = sku // 100000
-    part = sku // 1000
-
-    if 0 <= vol <= 143:
-        host = "basket-01.wbbasket.ru"
-    elif 144 <= vol <= 287:
-        host = "basket-02.wbbasket.ru"
-    elif 288 <= vol <= 431:
-        host = "basket-03.wbbasket.ru"
-    elif 432 <= vol <= 719:
-        host = "basket-04.wbbasket.ru"
-    elif 720 <= vol <= 1007:
-        host = "basket-05.wbbasket.ru"
-    elif 1008 <= vol <= 1061:
-        host = "basket-06.wbbasket.ru"
-    elif 1062 <= vol <= 1115:
-        host = "basket-07.wbbasket.ru"
-    elif 1116 <= vol <= 1169:
-        host = "basket-08.wbbasket.ru"
-    elif 1170 <= vol <= 1313:
-        host = "basket-09.wbbasket.ru"
-    elif 1314 <= vol <= 1601:
-        host = "basket-10.wbbasket.ru"
-    elif 1602 <= vol <= 1655:
-        host = "basket-11.wbbasket.ru"
-    elif 1656 <= vol <= 1919:
-        host = "basket-12.wbbasket.ru"
-    elif 1920 <= vol <= 2045:
-        host = "basket-13.wbbasket.ru"
-    elif 2046 <= vol <= 2189:
-        host = "basket-14.wbbasket.ru"
-    elif 2190 <= vol <= 2405:
-        host = "basket-15.wbbasket.ru"
-    elif 2406 <= vol <= 2621:
-        host = "basket-16.wbbasket.ru"
-    elif 2622 <= vol <= 2837:
-        host = "basket-17.wbbasket.ru"
-    elif 2838 <= vol <= 3053:
-        host = "basket-18.wbbasket.ru"
-    elif 3054 <= vol <= 3269:
-        host = "basket-19.wbbasket.ru"
-    else:
-        host = "basket-20.wbbasket.ru"
-
-    return f"https://{host}/vol{vol}/part{part}/{sku}/images/big/1.webp"
-
 
 async def download_image(url: str) -> Optional[bytes]:
     if not url or not url.startswith("http"):
         return None
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0",
         "Accept": "image/webp,image/jpeg,image/png,*/*;q=0.8",
         "Referer": "https://www.wildberries.ru/"
     }
@@ -146,230 +91,9 @@ async def publish_post_with_fallback(
 
 
 # ---------------------------------------------------------------------------
-# GdeSlon / ТакПродам API
-# ---------------------------------------------------------------------------
-async def fetch_gdeslon_catalog(user_id: int, keyword: str, limit: int = 50) -> int:
-    token = os.getenv("GDESLON_API_KEY", "")
-    if not token:
-        return 0
-    page = random.randint(1, 5)
-    url = f"https://www.gdeslon.ru/api/search.xml?q={keyword}&l={limit}&p={page}&order=newest&_gs_at={token}"
-    try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            resp = await client.get(url)
-        if resp.status_code != 200:
-            return 0
-        root = ET.fromstring(resp.text)
-        offers = root.findall('.//offer')
-        saved = 0
-        conn = get_db()
-        for offer in offers:
-            partner_url = (offer.findtext('url') or '').strip()
-            if not partner_url:
-                continue
-            # Извлекаем erid, гарантируем, что переменная существует
-            erid = ''
-            if 'erid=' in partner_url:
-                erid = partner_url.split('erid=')[-1].split('&')[0]
-            # Пропускаем товары без ERID (чтобы не засорять каталог)
-            if not erid:
-                continue
-            sku = hashlib.md5(partner_url.encode()).hexdigest()[:12]
-            name = offer.findtext('name', 'Товар')
-            price = float(offer.findtext('price', '0'))
-            currency = offer.findtext('currencyId', 'RUR')
-            picture = offer.findtext('picture', '')
-            vendor = offer.findtext('vendor', '') or 'Рекламодатель'
-            try:
-                conn.execute(
-                    "INSERT OR IGNORE INTO gdeslon_catalog (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (sku, user_id, name, price, currency, partner_url, erid, vendor, picture or '', keyword)
-                )
-                saved += 1
-            except Exception as e:
-                logger.warning(f"Gdeslon insert error: {e}")
-        conn.commit()
-        conn.close()
-        logger.info(f"Gdeslon: добавлено {saved} товаров для user {user_id} по ключу '{keyword}'")
-        return saved
-    except Exception as e:
-        logger.error(f"fetch_gdeslon_catalog error: {e}")
-        return 0
-
-
-async def fetch_gdeslon_by_sku(sku: str) -> Optional[Dict[str, str]]:
-    token = os.getenv("GDESLON_API_KEY", "")
-    if not token:
-        return None
-    url = f"https://www.gdeslon.ru/api/search.xml?articles={sku}&l=1&_gs_at={token}"
-    try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            resp = await client.get(url)
-        if resp.status_code != 200:
-            return None
-        root = ET.fromstring(resp.text)
-        offers = root.findall('.//offer')
-        if not offers:
-            return None
-        offer = offers[0]
-        name = offer.findtext('name', '')
-        price = offer.findtext('price', '')
-        currency = offer.findtext('currencyId', 'RUB')
-        picture = offer.findtext('picture', '')
-        url_elem = offer.find('url')
-        partner_url = url_elem.text if url_elem is not None else ''
-        erid = ''
-        if 'erid=' in partner_url:
-            erid = partner_url.split('erid=')[-1].split('&')[0]
-        shop_name = offer.findtext('shop_name', '') or offer.findtext('merchant', '') or 'Рекламодатель'
-        if partner_url:
-            return {
-                "link": partner_url,
-                "erid": erid,
-                "advertiser": shop_name,
-                "image_url": picture or "",
-                "title": name,
-                "price": price,
-                "currency": currency,
-            }
-    except Exception as e:
-        logger.error(f"GdeSlon API error for SKU {sku}: {e}")
-    return None
-
-
-async def fetch_takprodam_by_sku(token: str, sku: str) -> Optional[Dict[str, str]]:
-    if not token:
-        return None
-    url = "https://api.takprodam.ru/v1/products/info"
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers=headers, params={"sku": sku})
-        if resp.status_code != 200:
-            logger.warning(f"ТакПродам API: статус {resp.status_code} для SKU {sku}")
-            return None
-        data = resp.json()
-        link = data.get("link", "")
-        erid = data.get("erid", "").strip()
-        advertiser = data.get("advertiser", "").strip()
-        image_url = data.get("image") or data.get("photo") or ""
-        if not erid or not advertiser:
-            logger.warning(f"ТакПродам: неполные данные для SKU {sku}: {data}")
-            return None
-        return {"link": link, "erid": erid, "advertiser": advertiser, "image_url": image_url}
-    except Exception as e:
-        logger.error(f"Ошибка при запросе к ТакПродам для SKU {sku}: {e}")
-        return None
-
-
-async def get_source_id(token: str) -> Optional[int]:
-    conn = get_db()
-    try:
-        cached = conn.execute("SELECT source_id FROM takprodam_sources WHERE token = ?", (token,)).fetchone()
-        if cached:
-            return cached["source_id"]
-    finally:
-        conn.close()
-
-    headers = {"Authorization": f"Bearer {token}"}
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get("https://api.takprodam.ru/v2/publisher/source/", headers=headers)
-        if resp.status_code == 200:
-            sources = resp.json().get("items", [])
-            if sources:
-                source_id = sources[0]["id"]
-                conn = get_db()
-                conn.execute("INSERT OR REPLACE INTO takprodam_sources (token, source_id) VALUES (?, ?)", (token, source_id))
-                conn.commit()
-                conn.close()
-                return source_id
-    except Exception as e:
-        logger.error(f"get_source_id error: {e}")
-    return None
-
-
-async def resolve_erid(
-    bot: Bot, user_id: int, url: str,
-    donor_post_id: str = "unknown", channel_id: str = "unknown"
-) -> Optional[Dict[str, str]]:
-    db = get_db()
-    try:
-        row = db.execute("SELECT api_key, client_erid_override FROM users WHERE user_id = ?", (user_id,)).fetchone()
-    finally:
-        db.close()
-
-    if not row:
-        return None
-
-    api_key = row["api_key"] or ""
-    override_erid = (row["client_erid_override"] or "").strip()
-
-    erid = None
-    advertiser = None
-    partner_link = None
-    image_url = None
-
-    async def try_deeplink(token: str):
-        nonlocal erid, advertiser, partner_link, image_url
-        source_id = await get_source_id(token)
-        if not source_id:
-            return
-        headers = {"Authorization": f"Bearer {token}"}
-        payload = {"source_id": source_id, "target_url": url}
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    "https://api.takprodam.ru/v2/publisher/deeplink/",
-                    headers=headers,
-                    json=payload
-                )
-            if resp.status_code == 200:
-                data = resp.json()
-                partner_link = data.get("tracking_link") or data.get("link") or partner_link
-                erid = (data.get("erid") or "").strip() or erid
-                advertiser = (data.get("advertiser") or "").strip() or advertiser
-                image_url = data.get("image_url") or data.get("image") or image_url
-            else:
-                logger.warning(f"Deeplink API error {resp.status_code}: {resp.text}")
-        except Exception as e:
-            logger.error(f"Deeplink API exception: {e}")
-
-    if api_key:
-        await try_deeplink(api_key)
-    if not erid and os.getenv("TAKPRODAM_MASTER_TOKEN", "") and os.getenv("TAKPRODAM_MASTER_TOKEN") != api_key:
-        await try_deeplink(os.getenv("TAKPRODAM_MASTER_TOKEN"))
-    if not erid and override_erid:
-        erid = override_erid
-
-    if erid:
-        return {
-            "link": partner_link or url,
-            "erid": erid,
-            "advertiser": advertiser or "Рекламодатель",
-            "image_url": image_url or ""
-        }
-    return None
-
-async def add_to_night_queue(
-    user_id: int, video_id: str, description: str,
-    sku: Optional[str], photo_url: Optional[str], marketplace: str = "wb"
-) -> None:
-    conn = get_db()
-    try:
-        conn.execute(
-            "INSERT OR IGNORE INTO night_queue "
-            "(user_id, video_id, description, sku, photo_url, marketplace) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, video_id, description, sku, photo_url, marketplace)
-        )
-        conn.commit()
-    finally:
-        conn.close()
-        
-# ---------------------------------------------------------------------------
 # Очереди SaaS и публикация
 # ---------------------------------------------------------------------------
+
 async def add_to_saas_queue(
     user_id: int, channel_id: str, donor_post_id: str,
     original_text: str, photo_url: Optional[str],
@@ -459,8 +183,6 @@ async def process_saas_core(
     sku: Optional[str] = None,
     marketplace: str = "WB"
 ) -> Optional[str]:
-    from config import is_night_time  # временно, позже вынесем
-
     if not force_post and is_night_time():
         if not rewritten_text:
             prepared = await prepare_post_content(original_text)
@@ -502,26 +224,15 @@ async def process_saas_core(
     if len(clean_rewritten) < 10:
         clean_rewritten = "Отличный товар по ссылке – переходи и заказывай!"
 
-    erid_data = None
-    if sku:
-        erid_data = await fetch_gdeslon_by_sku(sku)
-
-    if erid_data and erid_data.get("erid"):
-        final_link = erid_data["link"]
-        advertiser = erid_data["advertiser"]
-        erid = erid_data["erid"]
-        legal_block = f"<i>Реклама. {advertiser}. Erid: {erid}</i>"
-    else:
-        if url:
-            final_link = url
-        elif sku:
-            if marketplace == "WB":
-                final_link = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx"
-            else:
-                final_link = f"https://www.ozon.ru/product/{sku}/"
+    if url:
+        final_link = url
+    elif sku:
+        if marketplace == "WB":
+            final_link = f"https://www.wildberries.ru/catalog/{sku}/detail.aspx"
         else:
-            final_link = None
-        legal_block = ""
+            final_link = f"https://www.ozon.ru/product/{sku}/"
+    else:
+        final_link = None
 
     if final_link:
         link_block = f"👉 <a href='{final_link}'>Посмотреть и заказать</a>"
@@ -532,7 +243,7 @@ async def process_saas_core(
         f"{clean_rewritten}\n\n"
         f"🛒 <b>Артикул:</b> <code>{sku or 'не указан'}</code>\n\n"
         f"{link_block}\n\n"
-        f"{legal_block}"
+        f"<i>Реклама</i>"
     ).strip()
     return post_html
 
@@ -554,7 +265,6 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
     for row in rows:
         original_text = row["original_text"]
         channel_id = row["channel_id"]
-        # donor_post_id используется только для вызова process_saas_core
         donor_post_id = row["donor_post_id"]
         marketplace = row["marketplace"] or "wb"
 
@@ -661,11 +371,9 @@ async def flush_all_saas_queues(bot: Bot):
 
 
 async def publish_from_catalog(bot: Bot):
-    from config import is_night_time
     if is_night_time():
-        logger.info("🌙 Ночной режим активен")
+        logger.info("🌙 Ночной режим активен, автоматическая публикация приостановлена")
         return
-
     conn = get_db()
     try:
         users = conn.execute("""
@@ -681,12 +389,11 @@ async def publish_from_catalog(bot: Bot):
         user_id = user["user_id"]
         tariff_id = user["tariff_id"]
 
-        # Лимит постов в час
         max_posts_per_hour = 1
         if tariff_id:
             conn = get_db()
             try:
-                tariff = conn.execute("SELECT max_posts_per_day FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
+                tariff = conn.execute("SELECT max_posts_per_day FROM tariffs WHERE id = ?", (tariff_id,)).fetchone()
                 if tariff and tariff["max_posts_per_day"]:
                     max_posts_per_hour = max(1, tariff["max_posts_per_day"] // 24)
             finally:
@@ -696,7 +403,7 @@ async def publish_from_catalog(bot: Bot):
         try:
             hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
             posts_last_hour = conn.execute(
-                "SELECT COUNT(*) as cnt FROM posts WHERE user_id=? AND status='published' AND published_at >= ?",
+                "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND status = 'published' AND published_at >= ? AND donor_post_id LIKE 'gdeslon_%'",
                 (user_id, hour_ago)
             ).fetchone()["cnt"]
         finally:
@@ -705,35 +412,23 @@ async def publish_from_catalog(bot: Bot):
         if posts_last_hour >= max_posts_per_hour:
             continue
 
-        # --- ВЫБОР ТОВАРА ---
         conn = get_db()
         try:
-            # Сначала пытаемся взять свежий товар Admitad с ERID
+            # Выбираем случайный неиспользованный товар с ERID
             product = conn.execute(
-                "SELECT * FROM gdeslon_catalog WHERE user_id=? AND used=0 AND erid != '' AND erid IS NOT NULL AND source='admitad' ORDER BY id DESC LIMIT 1",
+                "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                 (user_id,)
             ).fetchone()
-            # Если нет Admitad — любой с ERID
             if not product:
-                product = conn.execute(
-                    "SELECT * FROM gdeslon_catalog WHERE user_id=? AND used=0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
-                    (user_id,)
-                ).fetchone()
-            # Если вообще ничего нет — сбрасываем used и пробуем снова
-            if not product:
-                conn.execute("UPDATE gdeslon_catalog SET used=0 WHERE user_id=?", (user_id,))
+                # Если не осталось неиспользованных с ERID, сбрасываем used
+                conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
                 conn.commit()
                 product = conn.execute(
-                    "SELECT * FROM gdeslon_catalog WHERE user_id=? AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
+                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                     (user_id,)
                 ).fetchone()
-                if not product:
-                    product = conn.execute(
-                        "SELECT * FROM gdeslon_catalog WHERE user_id=? ORDER BY RANDOM() LIMIT 1",
-                        (user_id,)
-                    ).fetchone()
             if product:
-                conn.execute("UPDATE gdeslon_catalog SET used=1 WHERE id=?", (product["id"],))
+                conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
                 conn.commit()
         finally:
             conn.close()
@@ -741,29 +436,16 @@ async def publish_from_catalog(bot: Bot):
         if not product:
             continue
 
-        # --- ПРОВЕРКА НА ПОВТОР ---
-        conn = get_db()
-        duplicate = conn.execute(
-            "SELECT 1 FROM posts WHERE user_id=? AND channel_id IN (SELECT channel_id FROM channels WHERE user_id=? AND is_active=1) AND donor_post_id LIKE 'admitad_%' AND sku=? AND status='published' LIMIT 1",
-            (user_id, user_id, product["sku"])
-        ).fetchone()
-        conn.close()
-        if duplicate:
-            logger.info(f"Товар {product['id']} уже публиковался в канал пользователя {user_id}, пропускаем")
-            continue
-
-        partner_url = (product['partner_url'] or '').strip()
-        if not partner_url:
-            continue
-        erid = (product['erid'] or '').strip()
-        if not erid:
-            continue
-
-        # --- ФОРМИРОВАНИЕ ПОСТА ---
+        partner_url = product['partner_url'] or ''
         title = product['title'] or ''
         price = product['price'] or 0
         currency = product['currency'] or '₽'
         advertiser = product['advertiser'] or 'Рекламодатель'
+        erid = product['erid'] or ''
+
+        if not partner_url or not erid:
+            continue
+
         caption = f"{title}\n\n"
         if price > 0:
             caption += f"💰 Цена: {price} {currency}\n\n"
@@ -772,10 +454,14 @@ async def publish_from_catalog(bot: Bot):
 
         photo_url = product["image_url"]
 
-        # --- ПУБЛИКАЦИЯ В КАНАЛЫ ---
         conn = get_db()
-        channels = conn.execute("SELECT channel_id FROM channels WHERE user_id=? AND is_active=1", (user_id,)).fetchall()
-        conn.close()
+        try:
+            channels = conn.execute(
+                "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
+                (user_id,)
+            ).fetchall()
+        finally:
+            conn.close()
 
         for ch in channels:
             await publish_post_with_fallback(
@@ -784,15 +470,9 @@ async def publish_from_catalog(bot: Bot):
                 caption=caption,
                 photo_url=photo_url
             )
-            # Запись в posts с source-информацией
-            conn = get_db()
-            conn.execute(
-                "INSERT INTO posts (user_id, donor_post_id, channel_id, target_channel_id, status, published_at, sku) VALUES (?, 'admitad_' || ?, ?, ?, 'published', ?, ?)",
-                (user_id, product["id"], ch["channel_id"], ch["channel_id"], datetime.now(timezone.utc).isoformat(), product["sku"])
-            )
-            conn.commit()
-            conn.close()
             await asyncio.sleep(1)
+
+
 async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
     SAAS_DONOR_CHANNELS: list[str] = [
         x.strip() for x in os.getenv("SAAS_DONOR_CHANNELS", "").split(",") if x.strip()
@@ -876,21 +556,8 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     continue
 
                 if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
-                    photo_url = get_wb_image_url(prepared["sku"])
-                if not photo_url and post.get("image_url"):
-                    photo_url = post["image_url"]
-                if not photo_url and prepared and prepared.get("sku") and os.getenv("TAKPRODAM_MASTER_TOKEN"):
-                    try:
-                        product_data = await fetch_takprodam_by_sku(os.getenv("TAKPRODAM_MASTER_TOKEN"), prepared["sku"])
-                        if product_data and product_data.get("image_url"):
-                            photo_url = product_data["image_url"]
-                    except Exception:
-                        pass
-                if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
-                    sku = prepared["sku"]
-                    vol = int(sku) // 100000
-                    part = int(sku) // 1000
-                    photo_url = f"https://basket-01.wbbasket.ru/vol{vol}/part{part}/{sku}/images/big/1.webp"
+                    from services.saas_core import get_wb_image_url  # заглушка, можно убрать
+                    photo_url = get_wb_image_url(prepared["sku"]) if get_wb_image_url else None
 
                 msg = await publish_post_with_fallback(
                     bot=bot,
@@ -927,154 +594,3 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
 
                 logger.info(f"✅ Пост {full_donor_id} опубликован в {target_channel}")
             await asyncio.sleep(1)
-async def refill_all_catalogs(bot: Bot):
-    """Раз в 30 минут пополняет каталог GdeSlon для всех активных SaaS-клиентов."""
-    conn = get_db()
-    try:
-        users = conn.execute("""
-            SELECT u.user_id
-            FROM users u
-            WHERE u.role = 'saas' AND u.is_active = 1
-            AND u.subscription_until > datetime('now')
-        """).fetchall()
-    finally:
-        conn.close()
-
-    for user in users:
-        user_id = user["user_id"]
-        conn = get_db()
-        try:
-            cats = conn.execute("""
-                SELECT pc.keyword FROM product_categories pc
-                JOIN user_category_preferences ucp ON pc.id = ucp.category_id
-                WHERE ucp.user_id = ?
-            """, (user_id,)).fetchall()
-        finally:
-            conn.close()
-
-        if not cats:
-            continue
-
-        for cat in cats:
-            await fetch_gdeslon_catalog(user_id, cat["keyword"], limit=5)
-            await asyncio.sleep(1)
-
-async def fetch_takprodam_catalog(user_id: int, limit: int = 20) -> int:
-    """Пополняет каталог товарами из ТакПродам через v2/publisher/product (с обработкой лимитов)."""
-    token = os.getenv("TAKPRODAM_MASTER_TOKEN", "")
-    if not token:
-        return 0
-
-    headers = {"Authorization": f"Bearer {token}"}
-    source_id = None
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT source_id FROM takprodam_sources WHERE token = ?", (token,)).fetchone()
-        if row:
-            source_id = row["source_id"]
-    finally:
-        conn.close()
-
-    if not source_id:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get("https://api.takprodam.ru/v2/publisher/source/", headers=headers)
-            if resp.status_code == 200:
-                sources = resp.json().get("items", [])
-                if sources:
-                    source_id = sources[0]["id"]
-                    conn = get_db()
-                    conn.execute("INSERT OR REPLACE INTO takprodam_sources (token, source_id) VALUES (?, ?)", (token, source_id))
-                    conn.commit()
-                    conn.close()
-        except Exception as e:
-            logger.error(f"get_source_id error: {e}")
-            return 0
-
-    if not source_id:
-        return 0
-
-    saved = 0
-    # Берём один случайный маркетплейс, чтобы не спамить API
-    marketplace = random.choice(["Ozon", "Wildberries"])
-    params = {
-        "source_id": source_id,
-        "marketplace": marketplace,
-        "limit": limit,
-        "page": 1
-    }
-
-    # Делаем до 3 попыток с экспоненциальной задержкой при 429
-    for attempt in range(3):
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get("https://api.takprodam.ru/v2/publisher/product/", headers=headers, params=params)
-            if resp.status_code == 200:
-                data = resp.json()
-                products = data.get("results", [])
-                conn = get_db()
-                for p in products:
-                    erid = ""
-                    legal_text = p.get("legal_text") or ""
-                    if "erid " in legal_text.lower():
-                        erid = legal_text.split("erid ")[-1].strip()
-                    else:
-                        # иногда erid может быть прямо в tracking_link
-                        track = p.get("tracking_link") or ""
-                        if "erid=" in track:
-                            erid = track.split("erid=")[-1].split("&")[0]
-                    if not erid:
-                        continue
-                    advertiser = p.get("store_title") or ""
-                    title = p.get("title") or "Товар"
-                    price = float(p.get("price", 0))
-                    tracking_link = p.get("tracking_link") or ""
-                    image_url = p.get("image_url") or ""
-                    sku = p.get("sku") or hashlib.md5(tracking_link.encode()).hexdigest()[:12]
-                    try:
-                        conn.execute(
-                            """INSERT OR IGNORE INTO gdeslon_catalog
-                            (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword, used, source)
-                            VALUES (?, ?, ?, ?, 'RUB', ?, ?, ?, ?, 'takprodam_general', 0, 'takprodam')""",
-                            (sku, user_id, title, price, tracking_link, erid, advertiser, image_url)
-                        )
-                        saved += 1
-                    except Exception as e:
-                        logger.warning(f"ТакПродам insert error: {e}")
-                conn.commit()
-                conn.close()
-                break  # успех, выходим из цикла попыток
-            elif resp.status_code == 429:
-                logger.warning(f"ТакПродам 429, попытка {attempt+1}")
-                await asyncio.sleep(5 * (attempt + 1))  # ждём 5, 10, 15 секунд
-            else:
-                logger.warning(f"ТакПродам v2 product {marketplace}: статус {resp.status_code}, ответ: {resp.text[:200]}")
-                break  # не 200 и не 429 – прерываем
-        except Exception as e:
-            logger.error(f"ТакПродам v2 request error: {e}")
-            break
-
-    logger.info(f"ТакПродам: добавлено {saved} товаров для user {user_id} из {marketplace}")
-    return saved
-async def refill_takprodam_catalogs(bot: Bot):
-    """Периодически пополняет каталог ТакПродам для всех активных SaaS-клиентов (без привязки к категориям)."""
-    conn = get_db()
-    try:
-        users = conn.execute("""
-            SELECT u.user_id
-            FROM users u
-            WHERE u.role = 'saas' AND u.is_active = 1
-            AND u.subscription_until > datetime('now')
-        """).fetchall()
-    finally:
-        conn.close()
-
-    for user in users:
-        user_id = user["user_id"]
-        await fetch_takprodam_catalog(user_id, limit=30)
-        await asyncio.sleep(1)
-
-    logger.info("🔄 Пополнение каталогов ТакПродам завершено")
-
-    
-    logger.info("🔄 Пополнение каталогов GdeSlon завершено")
