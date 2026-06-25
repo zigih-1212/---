@@ -1070,17 +1070,17 @@ input,textarea{{background:#1e2130;border:1px solid #444;color:#fff;padding:6px;
         await channel_quick_action(bot, channel_id, "set_photo", photo_url=photo_url)
         return RedirectResponse(f"/admin/channel/{channel_id}", status_code=302)
 
-    # =====================================================================
-    # === ПОПОЛНЕНИЕ КАТАЛОГА GDESLON (АДМИН) ============================
-    # =====================================================================
-    @app.get("/admin/refill-catalog/{user_id}", response_class=HTMLResponse)
-    async def refill_catalog_page(request: Request, user_id: int):
-        is_authenticated(request)
-        return HTMLResponse(f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Пополнение каталога</title>
+# =====================================================================
+# === ПОПОЛНЕНИЕ КАТАЛОГА ADMITAD (АДМИН) ============================
+# =====================================================================
+@app.get("/admin/refill-catalog/{user_id}", response_class=HTMLResponse)
+async def refill_catalog_page(request: Request, user_id: int):
+    is_authenticated(request)
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Пополнение каталога Admitad</title>
 <style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
 button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radius:4px;cursor:pointer;}}</style></head>
-<body><h2>Пополнить каталог для пользователя {user_id}</h2>
+<body><h2>Пополнить каталог Admitad для пользователя {user_id}</h2>
 <form action="/admin/refill-catalog/{user_id}/run" method="post">
 <button>Запустить пополнение</button></form></body></html>""")
 
@@ -1088,6 +1088,7 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
 async def refill_catalog_run(request: Request, user_id: int):
     is_authenticated(request)
     from services.admitad import fetch_admitad_catalog
+    import html as html_mod
 
     conn = get_db()
     try:
@@ -1100,7 +1101,7 @@ async def refill_catalog_run(request: Request, user_id: int):
     try:
         saved = await fetch_admitad_catalog(user_id, max_items=50)
     except Exception as e:
-        return HTMLResponse(f"<h3>Ошибка при пополнении</h3><pre>{html.escape(str(e))}</pre>", status_code=500)
+        return HTMLResponse(f"<h3>Ошибка при пополнении</h3><pre>{html_mod.escape(str(e))}</pre>", status_code=500)
 
     if saved > 0:
         title = "✅ Каталог Admitad пополнен!"
