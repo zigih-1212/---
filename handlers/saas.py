@@ -32,6 +32,8 @@ async def cb_stores(callback: CallbackQuery):
     stores = [
         {"id": 1, "name": "AliExpress (пока недоступен)"},
         {"id": 2, "name": "Читай-город"},
+        {"id": 3, "name": "Аквафор"},
+        {"id": 4, "name": "Розовый кролик (18+)"},
     ]
 
     text = "🏪 <b>Выберите магазины для постинга:</b>\n\n"
