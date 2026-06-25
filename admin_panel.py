@@ -11,7 +11,7 @@ import string
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from config import load_settings, load_tariffs, settings
-from services.saas_core import flush_saas_queue_for_user, refill_all_catalogs
+from services.saas_core import flush_saas_queue_for_user
 
 from fastapi import FastAPI, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
