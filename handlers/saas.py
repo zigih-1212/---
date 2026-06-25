@@ -71,7 +71,7 @@ async def cb_toggle_category(callback: CallbackQuery):
                 (user_id,)
             ).fetchone()["cnt"]
             if current_count >= max_cat:
-                await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_cat} категорий", show_alert=True)
+                await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_cat} магазинов", show_alert=True)
                 return
             conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
                          (user_id, cat_id))
@@ -96,7 +96,7 @@ async def cb_toggle_category(callback: CallbackQuery):
     await callback.answer()
 
     if not existing and keyword:
-        await callback.answer("✅ Категория добавлена, загружаем товары...", show_alert=False)
+        await callback.answer("✅ магазин добавлен, загружаем товары...", show_alert=False)
         saved = await fetch_gdeslon_catalog(user_id, keyword, limit=5)
         if saved > 0:
             await callback.answer(f"Загружено {saved} товаров", show_alert=True)
