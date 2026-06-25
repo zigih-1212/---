@@ -19,32 +19,34 @@ router = Router(name="saas")
 # Категории
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:categories")
-async def cb_categories(callback: CallbackQuery):
+async def cb_stores(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
     try:
-        all_cats = conn.execute("SELECT id, name FROM product_categories WHERE is_active = 1").fetchall()
-        user_cats = conn.execute(
-            "SELECT category_id FROM user_category_preferences WHERE user_id = ?", (user_id,)
-        ).fetchall()
-        user_cat_ids = {r["category_id"] for r in user_cats}
+        user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id = ?", (user_id,)).fetchall()
+        user_store_ids = {r["category_id"] for r in user_stores}
     finally:
         conn.close()
 
-    text = "📂 <b>Выберите категории товаров:</b>\n\n"
+    # Список доступных магазинов
+    stores = [
+        {"id": 1, "name": "AliExpress (пока недоступен)"},
+        {"id": 2, "name": "Читай-город"},
+    ]
+
+    text = "🏪 <b>Выберите магазины для постинга:</b>\n\n"
     kb_rows = []
-    for cat in all_cats:
-        emoji = "✅" if cat["id"] in user_cat_ids else "❌"
-        text += f"{emoji} {cat['name']}\n"
+    for store in stores:
+        emoji = "✅" if store["id"] in user_store_ids else "❌"
+        text += f"{emoji} {store['name']}\n"
         kb_rows.append([InlineKeyboardButton(
-            text=f"{emoji} {cat['name']}",
-            callback_data=f"cat_toggle:{cat['id']}"
+            text=f"{emoji} {store['name']}",
+            callback_data=f"store_toggle:{store['id']}"
         )])
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
-
 @router.callback_query(F.data.startswith("cat_toggle:"))
 async def cb_toggle_category(callback: CallbackQuery):
     cat_id = int(callback.data.split(":")[1])
