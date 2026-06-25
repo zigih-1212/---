@@ -363,7 +363,10 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE gdeslon_catalog ADD COLUMN source TEXT DEFAULT 'gdeslon'")
     except sqlite3.OperationalError:
         pass
-      
+    try:
+        cursor.execute("ALTER TABLE channels ADD COLUMN sub_id TEXT")
+    except sqlite3.OperationalError:
+        pass      
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
