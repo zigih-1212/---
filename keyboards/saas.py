@@ -9,7 +9,7 @@ def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
     if role == "saas":
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")],
-            [InlineKeyboardButton(text="📂 Категории", callback_data="menu:categories")],
+            [InlineKeyboardButton(text="🏪 Магазины", callback_data="menu:categories")],
             [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
