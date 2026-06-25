@@ -143,12 +143,20 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
     user_id = callback.from_user.id
 
+    # Проверим, есть ли доступные товары с ERID, если нет — пополним каталог
     conn = get_db()
     try:
         product = conn.execute(
             "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
             (user_id,)
         ).fetchone()
+        if not product:
+            # Попробуем быстро пополнить каталог из Admitad
+            await fetch_admitad_catalog(user_id, max_items=20)
+            product = conn.execute(
+                "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
+                (user_id,)
+            ).fetchone()
         if product:
             conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
             conn.commit()
@@ -157,48 +165,53 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
 
     if not product:
         await callback.message.answer(
-            "❌ В каталоге нет товаров с маркировкой ERID. Дождитесь пополнения или используйте автоматическую публикацию."
+            "❌ В каталоге пока нет товаров с маркировкой ERID. Попробуйте позже или выберите больше магазинов."
         )
         return
 
-    partner_url = (product['partner_url'] or '').strip()
-    title = (product['title'] or '').strip()
+    # Подготовка данных
+    partner_url = product['partner_url'] or ''
+    title = product['title'] or ''
     price = product['price'] or 0
     currency = product['currency'] or '₽'
     advertiser = product['advertiser'] or 'Рекламодатель'
-    erid = (product['erid'] or '').strip()
-
-    if not partner_url:
-        conn = get_db()
-        try:
-            conn.execute("DELETE FROM gdeslon_catalog WHERE id = ?", (product["id"],))
-            conn.commit()
-        finally:
-            conn.close()
-        await callback.message.answer("❌ Товар из каталога повреждён, удалён. Попробуйте снова.")
-        return
-
-    caption = f"{title}\n\n"
-    if price > 0:
-        caption += f"💰 Цена: {price} {currency}\n\n"
-    caption += f"👉 <a href='{partner_url}'>Посмотреть и заказать</a>\n\n"
-    if erid:
-        caption += f"Реклама. {advertiser}. Erid: {erid}"
-    else:
-        caption += f"Реклама. {advertiser}"
-
+    erid = product['erid'] or ''
     photo_url = product["image_url"]
+    source = product.get("source", "")
 
+    # Получаем каналы пользователя
     conn = get_db()
     try:
         channels = conn.execute(
-            "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
+            "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
             (user_id,)
         ).fetchall()
     finally:
         conn.close()
 
+    if not channels:
+        await callback.message.answer("❌ У вас нет активных каналов. Добавьте канал в разделе «Мои каналы».")
+        return
+
+    # Публикуем в каждый канал с SubID и пометкой 18+
     for ch in channels:
+        final_url = partner_url
+        if ch["sub_id"]:
+            if '?' in final_url:
+                final_url += '&subid=' + ch["sub_id"]
+            else:
+                final_url += '?subid=' + ch["sub_id"]
+
+        adult_warning = ""
+        if source == "Розовый кролик":
+            adult_warning = "🔞 18+\n"
+
+        caption = adult_warning + f"{title}\n\n"
+        if price > 0:
+            caption += f"💰 Цена: {price} {currency}\n\n"
+        caption += f"👉 <a href='{final_url}'>Посмотреть и заказать</a>\n\n"
+        caption += f"Реклама. {advertiser}. Erid: {erid}"
+
         await publish_post_with_fallback(
             bot=bot,
             channel_id=ch["channel_id"],
@@ -206,13 +219,6 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             photo_url=photo_url
         )
         await asyncio.sleep(1)
-
-    conn = get_db()
-    try:
-        conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
-        conn.commit()
-    finally:
-        conn.close()
 
     await callback.message.answer("✅ Пост опубликован!")
 
