@@ -91,14 +91,14 @@ async def cb_toggle_category(callback: CallbackQuery):
         conn.close()
 
     if keyword:
-        await fetch_gdeslon_catalog(user_id, keyword, limit=5)
+        await fetch_admitad_catalog(user_id, max_items=20)
 
     await cb_categories(callback)
     await callback.answer()
 
     if not existing and keyword:
         await callback.answer("✅ магазин добавлен, загружаем товары...", show_alert=False)
-        saved = await fetch_gdeslon_catalog(user_id, keyword, limit=5)
+        await fetch_admitad_catalog(user_id, max_items=20)
         if saved > 0:
             await callback.answer(f"Загружено {saved} товаров", show_alert=True)
         else:
