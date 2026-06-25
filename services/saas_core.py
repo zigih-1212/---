@@ -374,6 +374,7 @@ async def publish_from_catalog(bot: Bot):
     if is_night_time():
         logger.info("🌙 Ночной режим активен, автоматическая публикация приостановлена")
         return
+
     conn = get_db()
     try:
         users = conn.execute("""
@@ -389,6 +390,7 @@ async def publish_from_catalog(bot: Bot):
         user_id = user["user_id"]
         tariff_id = user["tariff_id"]
 
+        # Лимит постов в час
         max_posts_per_hour = 1
         if tariff_id:
             conn = get_db()
@@ -403,7 +405,7 @@ async def publish_from_catalog(bot: Bot):
         try:
             hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
             posts_last_hour = conn.execute(
-                "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND status = 'published' AND published_at >= ? AND donor_post_id LIKE 'gdeslon_%'",
+                "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND status = 'published' AND published_at >= ? AND donor_post_id LIKE 'admitad_%'",
                 (user_id, hour_ago)
             ).fetchone()["cnt"]
         finally:
@@ -412,15 +414,15 @@ async def publish_from_catalog(bot: Bot):
         if posts_last_hour >= max_posts_per_hour:
             continue
 
+        # Выбор товара
         conn = get_db()
         try:
-            # Выбираем случайный неиспользованный товар с ERID
             product = conn.execute(
                 "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                 (user_id,)
             ).fetchone()
             if not product:
-                # Если не осталось неиспользованных с ERID, сбрасываем used
+                # Сбрасываем used, если нет доступных
                 conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
                 conn.commit()
                 product = conn.execute(
@@ -446,24 +448,33 @@ async def publish_from_catalog(bot: Bot):
         if not partner_url or not erid:
             continue
 
-        caption = f"{title}\n\n"
-        if price > 0:
-            caption += f"💰 Цена: {price} {currency}\n\n"
-        caption += f"👉 <a href='{partner_url}'>Посмотреть и заказать</a>\n\n"
-        caption += f"Реклама. {advertiser}. Erid: {erid}"
-
         photo_url = product["image_url"]
 
+        # Получаем каналы пользователя
         conn = get_db()
         try:
             channels = conn.execute(
-                "SELECT channel_id FROM channels WHERE user_id = ? AND is_active = 1",
+                "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
                 (user_id,)
             ).fetchall()
         finally:
             conn.close()
 
+        # Публикуем в каждый канал с уникальным sub_id
         for ch in channels:
+            final_url = partner_url
+            if ch["sub_id"]:
+                if '?' in final_url:
+                    final_url += '&subid=' + ch["sub_id"]
+                else:
+                    final_url += '?subid=' + ch["sub_id"]
+
+            caption = f"{title}\n\n"
+            if price > 0:
+                caption += f"💰 Цена: {price} {currency}\n\n"
+            caption += f"👉 <a href='{final_url}'>Посмотреть и заказать</a>\n\n"
+            caption += f"Реклама. {advertiser}. Erid: {erid}"
+
             await publish_post_with_fallback(
                 bot=bot,
                 channel_id=ch["channel_id"],
