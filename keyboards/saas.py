@@ -55,7 +55,7 @@ def kb_saas_settings(user) -> InlineKeyboardMarkup:
     ozon = bool(user.get("filter_ozon", 1))
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔑 Изменить API-ключ GdeSlon", callback_data="saas_set:gdeslon_apikey")],
+        [InlineKeyboardButton(text="🔑 Настройка источников товаров", callback_data="saas_set:gdeslon_apikey")],
         [
             InlineKeyboardButton(text=f"🛒 WB: {'✅' if wb else '❌'}", callback_data="saas_toggle:wb"),
             InlineKeyboardButton(text=f"🛒 Ozon: {'✅' if ozon else '❌'}", callback_data="saas_toggle:ozon")
