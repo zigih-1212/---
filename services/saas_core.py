@@ -48,7 +48,6 @@ async def publish_post_with_fallback(
     video_url: Optional[str] = None,
     reply_markup: Optional[InlineKeyboardMarkup] = None,
 ) -> Optional[Message]:
-    """Публикует пост с фото. Если фото не скачалось – отправляет текст."""
     from aiogram.types import BufferedInputFile
 
     if photo_url:
@@ -478,10 +477,12 @@ async def publish_from_catalog(bot: Bot):
                 else:
                     final_url += '?subid=' + ch["sub_id"]
 
-                        adult_warning = ""
+            # Безопасное получение source товара
             source = product["source"] if "source" in product.keys() else ""
+            adult_warning = ""
             if source == "Розовый кролик":
                 adult_warning = "🔞 18+\n"
+
             caption = adult_warning + f"{title}\n\n"
             if price > 0:
                 caption += f"💰 Цена: {price} {currency}\n\n"
@@ -500,21 +501,6 @@ async def publish_from_catalog(bot: Bot):
                 logger.error(f"[DEBUG] Ошибка публикации в {ch['channel_id']}: {e}")
             await asyncio.sleep(1)
 
-async def add_to_night_queue(
-    user_id: int, video_id: str, description: str,
-    sku: Optional[str], photo_url: Optional[str], marketplace: str = "wb"
-) -> None:
-    conn = get_db()
-    try:
-        conn.execute(
-            "INSERT OR IGNORE INTO night_queue "
-            "(user_id, video_id, description, sku, photo_url, marketplace) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, video_id, description, sku, photo_url, marketplace)
-        )
-        conn.commit()
-    finally:
-        conn.close()
 
 async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
     SAAS_DONOR_CHANNELS: list[str] = [
@@ -599,7 +585,6 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
                     continue
 
                 if not photo_url and prepared and prepared.get("sku") and prepared.get("marketplace") == "WB":
-                    from services.saas_core import get_wb_image_url  # заглушка, можно убрать
                     photo_url = get_wb_image_url(prepared["sku"]) if get_wb_image_url else None
 
                 msg = await publish_post_with_fallback(
@@ -637,3 +622,20 @@ async def scan_donor_channels(bot: Bot, force_post: bool = False) -> None:
 
                 logger.info(f"✅ Пост {full_donor_id} опубликован в {target_channel}")
             await asyncio.sleep(1)
+
+
+async def add_to_night_queue(
+    user_id: int, video_id: str, description: str,
+    sku: Optional[str], photo_url: Optional[str], marketplace: str = "wb"
+) -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO night_queue "
+            "(user_id, video_id, description, sku, photo_url, marketplace) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, video_id, description, sku, photo_url, marketplace)
+        )
+        conn.commit()
+    finally:
+        conn.close()
