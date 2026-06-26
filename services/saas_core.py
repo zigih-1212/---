@@ -391,17 +391,6 @@ async def publish_from_catalog(bot: Bot):
         user_id = user["user_id"]
         tariff_id = user["tariff_id"]
 
-        # Загружаем выбранные пользователем магазины
-        conn = get_db()
-        try:
-            user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)).fetchall()
-            store_ids = [r["category_id"] for r in user_stores]
-        finally:
-            conn.close()
-
-        from services.admitad import STORE_ID_MAP
-        allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
-        
         max_posts_per_hour = 1
         if tariff_id:
             conn = get_db()
@@ -428,23 +417,46 @@ async def publish_from_catalog(bot: Bot):
             logger.info(f"[DEBUG] User {user_id}: лимит превышен, пропускаем")
             continue
 
+        # Загружаем выбранные пользователем магазины
         conn = get_db()
         try:
-                    if allowed_sources:
-            product = conn.execute(
-                f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND source IN ({','.join('?'*len(allowed_sources))}) ORDER BY RANDOM() LIMIT 1",
-                (user_id, *allowed_sources)
-            ).fetchone()
-        else:
-            # Если ни одного магазина не выбрано, не публикуем
-            product = None
-            if not product:
-                conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
-                conn.commit()
+            user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)).fetchall()
+            store_ids = [r["category_id"] for r in user_stores]
+        finally:
+            conn.close()
+
+        from services.admitad import STORE_ID_MAP
+        allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
+
+        conn = get_db()
+        try:
+            if allowed_sources:
+                placeholders = ','.join('?' * len(allowed_sources))
                 product = conn.execute(
-                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
-                    (user_id,)
+                    f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) ORDER BY RANDOM() LIMIT 1",
+                    (user_id, *allowed_sources)
                 ).fetchone()
+            else:
+                product = None
+
+            if not product:
+                # Сбрасываем used для разрешённых источников
+                if allowed_sources:
+                    conn.execute(
+                        f"UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ? AND source IN ({placeholders})",
+                        (user_id, *allowed_sources)
+                    )
+                else:
+                    conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
+                conn.commit()
+                if allowed_sources:
+                    product = conn.execute(
+                        f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) ORDER BY RANDOM() LIMIT 1",
+                        (user_id, *allowed_sources)
+                    ).fetchone()
+                else:
+                    product = None
+
             if product:
                 conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
                 conn.commit()
@@ -452,10 +464,10 @@ async def publish_from_catalog(bot: Bot):
             conn.close()
 
         if not product:
-            logger.info(f"[DEBUG] User {user_id}: нет доступных товаров с ERID")
+            logger.info(f"[DEBUG] User {user_id}: нет доступных товаров из выбранных магазинов")
             continue
 
-        logger.info(f"[DEBUG] User {user_id}: выбран товар id={product['id']}, erid={product['erid']}")
+        logger.info(f"[DEBUG] User {user_id}: выбран товар id={product['id']}, erid={product['erid']}, source={product['source']}")
 
         partner_url = product['partner_url'] or ''
         title = product['title'] or ''
@@ -492,7 +504,6 @@ async def publish_from_catalog(bot: Bot):
                 else:
                     final_url += '?subid=' + ch["sub_id"]
 
-            # Безопасное получение source товара
             source = product["source"] if "source" in product.keys() else ""
             adult_warning = ""
             if source == "Розовый кролик":
