@@ -35,13 +35,14 @@ def extract_erid_from_url(url: str) -> str:
     except Exception:
         return ""
 
-async def fetch_admitad_catalog(user_id: int, max_items: int = 50) -> int:
+async def fetch_admitad_catalog(user_id: int, max_items_per_store: int = 50) -> int:
     saved = 0
     conn = get_db()
     parser = XMLPullParser(['end'])
 
     for store_name, store_cfg in STORES.items():
         feed_url = store_cfg["feed_url"]
+        store_saved = 0
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 async with client.stream("GET", feed_url) as resp:
@@ -72,21 +73,24 @@ async def fetch_admitad_catalog(user_id: int, max_items: int = 50) -> int:
                                     """INSERT OR IGNORE INTO gdeslon_catalog
                                     (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword, used, source)
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
-                                   (sku, user_id, name, price, currency, url, erid, store_name, picture, store_name, store_name)
-                               )
-                                saved += 1
+                                    (sku, user_id, name, price, currency, url, erid, store_name, picture, store_name, store_name)
+                                )
+                                store_saved += 1
                                 elem.clear()
-                                if saved >= max_items:
+                                if store_saved >= max_items_per_store:
                                     await resp.aclose()
                                     break
-                        if saved >= max_items:
+                        if store_saved >= max_items_per_store:
                             break
         except Exception as e:
             logger.error(f"Admitad stream error for {store_name}: {e}")
 
+        saved += store_saved
+        logger.info(f"  {store_name}: добавлено {store_saved} товаров")
+
     conn.commit()
     conn.close()
-    logger.info(f"Admitad: добавлено {saved} товаров для user {user_id}")
+    logger.info(f"Admitad: всего добавлено {saved} товаров для user {user_id}")
     return saved
 
 
