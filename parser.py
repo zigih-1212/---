@@ -264,42 +264,42 @@ async def process_new_video(
             return
 
         # Ночной режим (00:00 – 08:00 МСК)
-        now_msk = datetime.now(timezone(timedelta(hours=3)))
-        if now_msk.hour < 8:
-            logger.info(f"🌙 Ночной режим: пост {video_id} → night_queue")
-            from services.saas_core import add_to_night_queue, fetch_gdeslon_by_sku
-            await add_to_night_queue(
-                user_id=user_id,
-                video_id=video_id,
-                description=description,
-                sku=sku,
-                photo_url=photo_url,
-                marketplace=marketplace,
-            )
-            return
+      #  now_msk = datetime.now(timezone(timedelta(hours=3)))
+       # if now_msk.hour < 8:
+       #     logger.info(f"🌙 Ночной режим: пост {video_id} → night_queue")
+        #    from services.saas_core import add_to_night_queue, fetch_gdeslon_by_sku
+         #   await add_to_night_queue(
+          #      user_id=user_id,
+           #     video_id=video_id,
+            #    description=description,
+             #   sku=sku,
+              #  photo_url=photo_url,
+               # marketplace=marketplace,
+         #   )
+         #   return
 
-        product_info = None
-        if sku:
+       # product_info = None
+        ##if sku:
             # 1. Пробуем GdeSlon
-            gdeslon_data = await fetch_gdeslon_by_sku(sku)
-            if gdeslon_data:
-                link = gdeslon_data.get("link", "")
+          #  gdeslon_data = await fetch_gdeslon_by_sku(sku)
+           # if gdeslon_data:
+            #    link = gdeslon_data.get("link", "")
                 # Добавляем sub_id блогера к ссылке (надеемся, что рекламодатель поддержит)
-                if "?" in link:
-                    link += "&sub_id=" + sub_id
-                else:
-                    link += "?sub_id=" + sub_id
-                product_info = {
-                    "link": link,
-                    "erid": gdeslon_data.get("erid", ""),
-                    "advertiser": gdeslon_data.get("advertiser", "Рекламодатель"),
-                    "price": gdeslon_data.get("price", ""),
-                    "title": gdeslon_data.get("title", ""),
-                    "image_url": gdeslon_data.get("image_url", ""),
-                }
-            else:
+             #   if "?" in link:
+              #      link += "&sub_id=" + sub_id
+               # else:
+               #     link += "?sub_id=" + sub_id
+                #product_info = {
+                 #   "link": link,
+                  ##  "erid": gdeslon_data.get("erid", ""),
+                    #"advertiser": gdeslon_data.get("advertiser", "Рекламодатель"),
+                   # "price": gdeslon_data.get("price", ""),
+                  #  "title": gdeslon_data.get("title", ""),
+                   # "image_url": gdeslon_data.get("image_url", ""),
+              #  }
+           # else:
                 # 2. Запасной — ТакПродам (мастер-токен)
-                product_info = await get_product_data(sku, sub_id)
+            #    product_info = await get_product_data(sku, sub_id)
 
         video_title = "🔥 Новое видео!"
 
