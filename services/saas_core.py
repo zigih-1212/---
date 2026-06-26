@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import logging
 import re
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List
 
@@ -47,7 +48,7 @@ async def publish_post_with_fallback(
     photo_url: Optional[str] = None,
     video_url: Optional[str] = None,
     reply_markup: Optional[InlineKeyboardMarkup] = None,
-    has_spoiler: bool = False,   # <-- новый параметр
+    has_spoiler: bool = False,
 ) -> Optional[Message]:
     from aiogram.types import BufferedInputFile
 
@@ -61,7 +62,7 @@ async def publish_post_with_fallback(
                     caption=caption,
                     parse_mode="HTML",
                     reply_markup=reply_markup,
-                    has_spoiler=has_spoiler,   # <-- размытие
+                    has_spoiler=has_spoiler,
                 )
             except TelegramAPIError as e:
                 logger.warning(f"Ошибка отправки фото: {e}")
@@ -74,7 +75,7 @@ async def publish_post_with_fallback(
                 caption=caption,
                 parse_mode="HTML",
                 reply_markup=reply_markup,
-                has_spoiler=has_spoiler,      # <-- размытие
+                has_spoiler=has_spoiler,
             )
         except TelegramAPIError as e:
             logger.warning(f"Ошибка отправки видео: {e}")
@@ -90,6 +91,7 @@ async def publish_post_with_fallback(
     except TelegramAPIError as e:
         logger.error(f"Ошибка отправки текста: {e}")
         return None
+
 
 # ---------------------------------------------------------------------------
 # Очереди SaaS и публикация
@@ -308,14 +310,6 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
         photo_url = row["photo_url"]
 
         try:
-                    await publish_post_with_fallback(
-                    bot=bot,
-                    channel_id=ch["channel_id"],
-                    caption=caption,
-                    photo_url=photo_url,
-                    has_spoiler=(source == "Розовый кролик")   # <-- если товар из Розового кролика, размываем
-            )
-            
             msg = await publish_post_with_fallback(
                 bot=bot,
                 channel_id=channel_id,
@@ -435,7 +429,7 @@ async def publish_from_catalog(bot: Bot):
         finally:
             conn.close()
 
-        from services.admitad import STORE_ID_MAP
+        from services.admitad import STORE_ID_MAP, ADULT_STORES
         allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
 
         conn = get_db()
@@ -506,9 +500,6 @@ async def publish_from_catalog(bot: Bot):
             continue
 
         logger.info(f"[DEBUG] User {user_id}: публикуем в {len(channels)} каналов")
-
-        from services.admitad import ADULT_STORES
-
         for ch in channels:
             final_url = partner_url
             if ch["sub_id"]:
