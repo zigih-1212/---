@@ -49,17 +49,10 @@ def kb_payment_methods() -> InlineKeyboardMarkup:
     ])
 
 def kb_saas_settings(user) -> InlineKeyboardMarkup:
-    api_key_status = "✅ Установлен" if user.get("api_key") else "❌ Не задан"
     auto_pin = bool(user.get("auto_pin", 1))
-    wb = bool(user.get("filter_wb", 1))
-    ozon = bool(user.get("filter_ozon", 1))
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔑 Настройка источников товаров", callback_data="saas_set:gdeslon_apikey")],
-        [
-            InlineKeyboardButton(text=f"🛒 WB: {'✅' if wb else '❌'}", callback_data="saas_toggle:wb"),
-            InlineKeyboardButton(text=f"🛒 Ozon: {'✅' if ozon else '❌'}", callback_data="saas_toggle:ozon")
-        ],
+        [InlineKeyboardButton(text="ℹ️ Об источнике товаров", callback_data="saas_set:gdeslon_apikey")],
         [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
         [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
