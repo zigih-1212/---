@@ -212,7 +212,7 @@ async def cb_saas_set_source(callback: CallbackQuery, state: FSMContext) -> None
         "Бот автоматически получает товары из магазинов-партнёров "
         "(Читай-город, Hi Store, KANZLER и др.) с готовой маркировкой ERID.\n"
         "API-ключ вводить не нужно — всё работает автоматически.\n\n"
-        "<i>В будущем вы сможете подключить свой аккаунт Admitad для отслеживания статистики.</i>"
+        "Вы можете выбрать магазины в разделе «🏪 Магазины»."
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Назад в настройки", callback_data="menu:settings")]
