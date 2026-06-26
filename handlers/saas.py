@@ -10,14 +10,13 @@ from aiogram.fsm.context import FSMContext
 from states import SaasStates, PaymentFSM
 from services.db import get_db
 from services.saas_core import publish_post_with_fallback
-from services.admitad import fetch_admitad_catalog
-from keyboards.saas import kb_tariffs, kb_payment_methods
-from config import load_tariffs
+from services.admitad import fetch_admitad_catalog_for_user  # обновлённая функция
+from keyboards.saas import kb_payment_methods
 
 router = Router(name="saas")
 
 # ---------------------------------------------------------------------------
-# Категории
+# Магазины
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:categories")
 async def cb_stores(callback: CallbackQuery):
@@ -113,61 +112,7 @@ async def cb_toggle_store(callback: CallbackQuery):
     # После изменения выбора обновляем сообщение
     await cb_stores(callback)
     await callback.answer()
-@router.callback_query(F.data.startswith("cat_toggle:"))
-async def cb_toggle_category(callback: CallbackQuery):
-    cat_id = int(callback.data.split(":")[1])
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        existing = conn.execute(
-            "SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
-            (user_id, cat_id)
-        ).fetchone()
-        if existing:
-            conn.execute("DELETE FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
-                         (user_id, cat_id))
-        else:
-            tariff = conn.execute(
-                "SELECT t.max_categories FROM users u JOIN tariffs t ON u.tariff_id = t.id WHERE u.user_id = ?",
-                (user_id,)
-            ).fetchone()
-            max_cat = tariff["max_categories"] if tariff and tariff["max_categories"] else 3
-            current_count = conn.execute(
-                "SELECT COUNT(*) as cnt FROM user_category_preferences WHERE user_id = ?",
-                (user_id,)
-            ).fetchone()["cnt"]
-            if current_count >= max_cat:
-                await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_cat} магазинов", show_alert=True)
-                return
-            conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
-                         (user_id, cat_id))
-        conn.commit()
-    finally:
-        conn.close()
 
-    # Наполняем каталог по добавленной/удалённой категории
-    keyword = None
-    conn = get_db()
-    try:
-        cat = conn.execute("SELECT keyword FROM product_categories WHERE id = ?", (cat_id,)).fetchone()
-        if cat:
-            keyword = cat["keyword"]
-    finally:
-        conn.close()
-
-    if keyword:
-        await fetch_admitad_catalog(user_id, max_items=20)
-
-    await cb_categories(callback)
-    await callback.answer()
-
-    if not existing and keyword:
-        await callback.answer("✅ магазин добавлен, загружаем товары...", show_alert=False)
-        await fetch_admitad_catalog(user_id, max_items=20)
-        if saved > 0:
-            await callback.answer(f"Загружено {saved} товаров", show_alert=True)
-        else:
-            await callback.answer("Товары не найдены, попробуйте позже", show_alert=True)
 
 # ---------------------------------------------------------------------------
 # Force Post
@@ -185,8 +130,8 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             (user_id,)
         ).fetchone()
         if not product:
-            # Попробуем быстро пополнить каталог из Admitad
-            await fetch_admitad_catalog(user_id, max_items_per_store=50)
+            # Попробуем быстро пополнить каталог из Admitad (только выбранные магазины)
+            await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)
             product = conn.execute(
                 "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                 (user_id,)
@@ -256,15 +201,16 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
 
     await callback.message.answer("✅ Пост опубликован!")
 
+
 # ---------------------------------------------------------------------------
-# Настройка API-ключа GdeSlon
+# Настройка источника товаров (заглушка)
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "saas_set:gdeslon_apikey")
 async def cb_saas_set_source(callback: CallbackQuery, state: FSMContext) -> None:
     text = (
         "📦 <b>Источник товаров: Admitad</b>\n\n"
         "Бот автоматически получает товары из магазинов-партнёров "
-        "(Читай-город, AliExpress и др.) с готовой маркировкой ERID.\n"
+        "(Читай-город, Hi Store, KANZLER и др.) с готовой маркировкой ERID.\n"
         "API-ключ вводить не нужно — всё работает автоматически.\n\n"
         "<i>В будущем вы сможете подключить свой аккаунт Admitad для отслеживания статистики.</i>"
     )
@@ -284,9 +230,9 @@ async def msg_saas_text_input(message: Message, state: FSMContext) -> None:
         user_id = message.from_user.id
         if api_key == "0":
             api_key = None
-            ans_text = "🗑 API-ключ GdeSlon удалён."
+            ans_text = "🗑 API-ключ удалён."
         else:
-            ans_text = "✅ API-ключ GdeSlon успешно сохранён!"
+            ans_text = "✅ API-ключ сохранён!"
         conn = get_db()
         try:
             conn.execute("UPDATE users SET api_key=? WHERE user_id=?", (api_key, user_id))
@@ -300,8 +246,7 @@ async def msg_saas_text_input(message: Message, state: FSMContext) -> None:
         await message.answer(ans_text, reply_markup=kb)
         return
 
-    # Остальная старая логика (если input_type == "sku" или apikey) оставлена для совместимости,
-    # но не актуальна; можно просто проигнорировать или оставить как есть.
+    # Остальная логика (если не gdeslon_apikey) – без изменений
     api_key = message.text.strip()
     user_id = message.from_user.id
     if api_key == "0":
@@ -320,6 +265,7 @@ async def msg_saas_text_input(message: Message, state: FSMContext) -> None:
         [InlineKeyboardButton(text="🔙 Вернуться в настройки", callback_data="menu:settings")]
     ])
     await message.answer(ans_text, reply_markup=kb)
+
 
 # ---------------------------------------------------------------------------
 # Промокоды
@@ -414,17 +360,64 @@ async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer("Готово!", show_alert=True)
 
+
 # ---------------------------------------------------------------------------
 # Тарифы и оплата
 # ---------------------------------------------------------------------------
+def kb_tariffs() -> InlineKeyboardMarkup:
+    from config import load_tariffs
+    tariffs = load_tariffs()
+
+    # Группируем тарифы по названию (Базовый, Профи, VIP)
+    groups = {}
+    for t in tariffs:
+        base_name = t['name'].split('(')[0].strip()
+        if base_name not in groups:
+            groups[base_name] = []
+        groups[base_name].append(t)
+
+    order = ['Базовый', 'Профи', 'VIP']
+    sorted_groups = {k: groups[k] for k in order if k in groups}
+
+    rows = []
+    for level, items in sorted_groups.items():
+        emoji = {'Базовый': '🟢', 'Профи': '🔵', 'VIP': '👑'}.get(level, '⭐')
+        rows.append([InlineKeyboardButton(text=f"{emoji} {level}", callback_data="none")])
+
+        items.sort(key=lambda x: x['days'])
+        for t in items:
+            text = (
+                f"📅 {t['days']} дн. — 💰 {t['price_rub']:.0f} ₽ | "
+                f"📢 {t['max_channels']}кан. 🏪 {t['max_stores']}маг. 📬 {t['max_posts_per_day']}пост/д"
+            )
+            rows.append([InlineKeyboardButton(
+                text=text,
+                callback_data=f"buy:{t['id']}:{t['days']}"
+            )])
+
+    rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 @router.callback_query(F.data == "menu:tariffs")
 async def cb_tariffs(callback: CallbackQuery) -> None:
+    text = (
+        "💎 <b>Выберите тарифный план</b>\n\n"
+        "<u>Что входит в любой тариф:</u>\n"
+        "• Автоматический постинг товаров из выбранных магазинов\n"
+        "• Уникальные описания (ИИ-рерайт)\n"
+        "• Маркировка рекламы (ERID) — всё по закону\n"
+        "• Отслеживание продаж через SubID\n"
+        "• Авто-закрепление постов (опционально)\n\n"
+        "<i>Чем выше уровень — тем больше каналов, магазинов и постов в день.</i>"
+    )
     await callback.message.edit_text(
-        "💎 <b>Выберите тариф:</b>",
+        text,
         parse_mode=ParseMode.HTML,
         reply_markup=kb_tariffs()
     )
     await callback.answer()
+
 
 @router.callback_query(F.data.startswith("buy:"))
 async def cb_select_tariff(callback: CallbackQuery, state: FSMContext):
@@ -441,6 +434,7 @@ async def cb_select_tariff(callback: CallbackQuery, state: FSMContext):
         reply_markup=kb_payment_methods()
     )
     await callback.answer()
+
 
 @router.callback_query(F.data == "pay:stars")
 async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
@@ -481,6 +475,7 @@ async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
     )
     await callback.answer()
 
+
 @router.callback_query(F.data == "pay:card")
 async def cb_pay_card(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
@@ -511,7 +506,6 @@ async def cb_pay_card(callback: CallbackQuery, state: FSMContext) -> None:
     conn.commit()
     conn.close()
 
-    # Импорт реквизитов из main – временное решение через os.getenv
     import os
     CARD_SBER = os.getenv("PAY_SBER", "2202 2081 0829 0025")
     CARD_TBANK = os.getenv("PAY_TBANK", "2200 7013 7009 3863")
