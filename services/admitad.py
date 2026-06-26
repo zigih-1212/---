@@ -72,8 +72,8 @@ async def fetch_admitad_catalog(user_id: int, max_items: int = 50) -> int:
                                     """INSERT OR IGNORE INTO gdeslon_catalog
                                     (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword, used, source)
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
-                                    (sku, user_id, name, price, currency, url, erid, store_name, picture, store_name)
-                                )
+                                   (sku, user_id, name, price, currency, url, erid, store_name, picture, store_name, store_name)
+                               )
                                 saved += 1
                                 elem.clear()
                                 if saved >= max_items:
