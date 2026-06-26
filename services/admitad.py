@@ -58,14 +58,40 @@ def extract_erid_from_url(url: str) -> str:
     except Exception:
         return ""
 
-async def fetch_admitad_catalog(user_id: int, max_items_per_store: int = 50) -> int:
-    saved = 0
+async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int = 50) -> int:
+    # Получаем список выбранных магазинов
     conn = get_db()
+    try:
+        selected_rows = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id = ?", (user_id,)).fetchall()
+        selected_ids = {r["category_id"] for r in selected_rows}
+    finally:
+        conn.close()
 
-    for store_name, store_cfg in STORES.items():
+    # Сопоставляем id магазинов с ключами словаря STORES
+    store_id_map = {
+        2: "Читай-город",
+        3: "Аквафор",
+        4: "Розовый кролик",
+        6: "Hi Store RU",
+        7: "KANZLER",
+        8: "KIKO MILANO",
+        9: "Moulinex",
+        10: "Playtoday",
+        11: "SELA",
+    }
+
+    saved = 0
+    for store_id, store_name in store_id_map.items():
+        if store_id not in selected_ids:
+            continue  # магазин не выбран пользователем
+
+        if store_name not in STORES:
+            continue
+
+        store_cfg = STORES[store_name]
         feed_url = store_cfg["feed_url"]
         store_saved = 0
-        parser = XMLPullParser(['end'])   # новый парсер для каждого магазина
+        parser = XMLPullParser(['end'])
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 async with client.stream("GET", feed_url) as resp:
@@ -77,7 +103,6 @@ async def fetch_admitad_catalog(user_id: int, max_items_per_store: int = 50) -> 
                         try:
                             parser.feed(chunk)
                         except Exception as parse_error:
-                            # Пропускаем битый кусок и продолжаем
                             logger.warning(f"Ошибка парсинга XML в {store_name}: {parse_error}")
                             continue
 
@@ -98,12 +123,15 @@ async def fetch_admitad_catalog(user_id: int, max_items_per_store: int = 50) -> 
                                     continue
 
                                 sku = hashlib.md5(url.encode()).hexdigest()[:12]
+                                conn = get_db()
                                 conn.execute(
                                     """INSERT OR IGNORE INTO gdeslon_catalog
                                     (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword, used, source)
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
                                     (sku, user_id, name, price, currency, url, erid, store_name, picture, store_name, store_name)
                                 )
+                                conn.commit()
+                                conn.close()
                                 store_saved += 1
                                 elem.clear()
                                 if store_saved >= max_items_per_store:
@@ -117,8 +145,6 @@ async def fetch_admitad_catalog(user_id: int, max_items_per_store: int = 50) -> 
         saved += store_saved
         logger.info(f"  {store_name}: добавлено {store_saved} товаров")
 
-    conn.commit()
-    conn.close()
     logger.info(f"Admitad: всего добавлено {saved} товаров для user {user_id}")
     return saved
 
