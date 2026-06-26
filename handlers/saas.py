@@ -67,7 +67,9 @@ async def cb_toggle_store(callback: CallbackQuery):
     if store_id == 5:  # Love Republic
         await callback.answer("❌ Love Republic временно недоступен (отсутствует маркировка ERID).", show_alert=True)
         return
-
+    # Новые магазины – без ограничений
+    if store_id in (6, 7, 8, 9, 10, 11):
+        pass   # просто продолжаем сохранение
     conn = get_db()
     try:
         existing = conn.execute(
