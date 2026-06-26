@@ -24,12 +24,21 @@ async def cb_stores(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
     try:
+        # Получаем тариф пользователя и его лимит магазинов
+        user_row = conn.execute("SELECT tariff_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+        max_stores = 3  # значение по умолчанию
+        if user_row and user_row["tariff_id"]:
+            tariff_row = conn.execute("SELECT max_stores FROM tariffs WHERE id=?", (user_row["tariff_id"],)).fetchone()
+            if tariff_row and tariff_row["max_stores"]:
+                max_stores = tariff_row["max_stores"]
+
         user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id = ?", (user_id,)).fetchall()
         user_store_ids = {r["category_id"] for r in user_stores}
+        selected_count = len(user_store_ids)
     finally:
         conn.close()
 
-        stores = [
+    stores = [
         {"id": 1, "name": "AliExpress (пока недоступен)"},
         {"id": 2, "name": "Читай-город"},
         {"id": 3, "name": "Аквафор"},
@@ -42,7 +51,8 @@ async def cb_stores(callback: CallbackQuery):
         {"id": 10, "name": "Playtoday"},
         {"id": 11, "name": "SELA"},
     ]
-    text = "🏪 <b>Выберите магазины для постинга:</b>\n\n"
+
+    text = f"🏪 <b>Выберите магазины для постинга:</b> (выбрано {selected_count}/{max_stores})\n\n"
     kb_rows = []
     for store in stores:
         emoji = "✅" if store["id"] in user_store_ids else "❌"
