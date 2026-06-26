@@ -73,15 +73,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from parser import (
-    extract_video_info,
-    rewrite_text_with_ai,
-    get_product_data_by_token,
-    fetch_telegram_channel_posts,
-    find_product_links,
-    process_new_video,
-    is_video_processed,
-)
 from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, PayoutStates
 from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats, STAT_PERIODS
 print("DEBUG: all imports done", flush=True, file=sys.stderr)
@@ -989,80 +980,6 @@ async def cb_menu_pub_mode(callback: CallbackQuery) -> None:
         pass
     await callback.answer()
 
-@router.callback_query(F.data == "blogger:send_video")
-async def cb_blogger_send_video(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(
-        "🎥 Отправьте ссылку на видео (YouTube, TikTok, Instagram), и бот сразу обработает его.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:main")]
-        ])
-    )
-    await state.set_state(OnboardingStates.waiting_video_link)
-    await callback.answer()
-
-@router.message(OnboardingStates.waiting_video_link)
-async def blogger_video_link_received(message: Message, state: FSMContext):
-    url = message.text.strip()
-    user_id = message.from_user.id
-
-    # Проверяем, что пользователь – блогер и у него привязан канал
-    conn = get_db()
-    user = conn.execute("SELECT channel_id, sub_id, blogger_mode FROM users WHERE user_id=?", (user_id,)).fetchone()
-    conn.close()
-    if not user or not user["channel_id"]:
-        await message.answer("❌ Сначала привяжите канал в разделе «📢 Мой канал».")
-        await state.clear()
-        return
-
-    # Извлекаем информацию о видео
-    info = extract_video_info(url)
-    if not info:
-        await message.answer("❌ Не удалось обработать ссылку. Проверьте правильность URL.")
-        await state.clear()
-        return
-
-    video_id = info.get('id') or info.get('display_id')
-    description = info.get('description') or info.get('title')
-    photo_url = info.get('thumbnail')
-    sku_list = find_product_links(description)
-    sku = sku_list[0]['value'] if sku_list else None
-    marketplace = sku_list[0].get('marketplace', 'wb') if sku_list else 'wb'
-
-    # Запускаем процесс публикации
-    from parser import process_new_video
-    await process_new_video(
-        bot=message.bot,
-        user_id=user_id,
-        video_id=video_id,
-        description=description,
-        sku=sku,
-        photo_url=photo_url,
-        marketplace=marketplace,
-    )
-
-    await message.answer("✅ Видео обработано! Пост отправлен в ваш канал.")
-    await state.clear()
-
-@router.callback_query(F.data.startswith("blogger_mode:"))
-async def cb_set_blogger_mode(callback: CallbackQuery) -> None:
-    mode = callback.data.split(":")[1]
-    if mode not in ("direct", "vip_pin"):
-        await callback.answer("❌ Неизвестный режим", show_alert=True)
-        return
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET blogger_mode=? WHERE user_id=?", (mode, callback.from_user.id))
-        conn.commit()
-    finally:
-        conn.close()
-    labels = {"direct": "Напрямую в канал", "vip_pin": "VIP-закреп (24ч)"}
-    await callback.answer(f"✅ Режим изменён: {labels[mode]}", show_alert=False)
-    await callback.message.edit_text(
-        "⚙️ <b>Режим публикации</b>\n\nВыберите как публиковать посты:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_blogger_mode(mode)
-    )
-
 # =============================================================================
 # === ПАРТНЁРСКАЯ ПРОГРАММА ===================================================
 # =============================================================================
@@ -1304,15 +1221,6 @@ async def cb_payout_done(callback: CallbackQuery) -> None:
   # =============================================================================
 # === АДМИНСКИЕ КОЛЛБЭКИ ======================================================
 # =============================================================================
-
-@router.message(Command("debug_scan"))
-async def debug_scan(message: Message):
-    await message.answer("🔄 Запускаю принудительное сканирование доноров...")
-    try:
-        await scan_donor_channels(message.bot, force_post=True)
-        await message.answer("✅ Сканирование завершено. Проверь логи.")
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
 
 @router.message(Command("force_trial"))
 async def force_trial(message: Message):
@@ -1744,7 +1652,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
     scheduler.add_job(cleanup_old_posts, trigger="cron", hour=3, minute=0, id="cleanup_old_posts", replace_existing=True)
     scheduler.add_job(backup_database_to_telegram, trigger="cron", hour=3, minute=0, kwargs={"bot": bot}, id="backup_database", replace_existing=True)
-    scheduler.add_job(scan_donor_channels, trigger="interval", minutes=15, kwargs={"bot": bot}, id="scan_donors", replace_existing=True)
+    #scheduler.add_job(scan_donor_channels, trigger="interval", minutes=15, kwargs={"bot": bot}, id="scan_donors", replace_existing=True)
     #scheduler.add_job(refill_all_catalogs, trigger="interval", minutes=10, kwargs={"bot": bot}, id="refill_catalogs", replace_existing=True)
     scheduler.add_job(publish_from_catalog, trigger="interval", minutes=10, kwargs={"bot": bot}, id="publish_catalog", replace_existing=True)
     #scheduler.add_job(refill_takprodam_catalogs,trigger="interval",minutes=30,kwargs={"bot": bot},id="refill_takprodam_catalogs",replace_existing=True)
@@ -1791,7 +1699,6 @@ async def main() -> None:
                 commands=[
                     BotCommand(command="start", description="Панель администратора"),
                     BotCommand(command="cabinet", description="Панель администратора"),
-                    BotCommand(command="debug_scan", description="Принудительное сканирование доноров"),
                     BotCommand(command="debug_sub", description="Проверить подписку пользователя"),
                     BotCommand(command="force_trial", description="Выдать тестовые 3 дня"),
                     BotCommand(command="fix_channels", description="Удалить дубликаты каналов"),
