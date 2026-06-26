@@ -195,6 +195,13 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             bot=bot,
             channel_id=ch["channel_id"],
             caption=caption,
+            photo_url=photo_url,
+            has_spoiler=(source == "Розовый кролик")   # <-- если товар из Розового кролика, размываем
+        )
+        await publish_post_with_fallback(
+            bot=bot,
+            channel_id=ch["channel_id"],
+            caption=caption,
             photo_url=photo_url
         )
         await asyncio.sleep(1)
