@@ -12,6 +12,7 @@ from services.db import get_db
 from services.saas_core import publish_post_with_fallback
 from services.admitad import fetch_admitad_catalog_for_user  # обновлённая функция
 from keyboards.saas import kb_payment_methods
+from services.admitad import ADULT_STORES
 
 router = Router(name="saas")
 
