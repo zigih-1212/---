@@ -506,6 +506,9 @@ async def publish_from_catalog(bot: Bot):
             continue
 
         logger.info(f"[DEBUG] User {user_id}: публикуем в {len(channels)} каналов")
+
+        from services.admitad import ADULT_STORES
+
         for ch in channels:
             final_url = partner_url
             if ch["sub_id"]:
@@ -516,7 +519,7 @@ async def publish_from_catalog(bot: Bot):
 
             source = product["source"] if "source" in product.keys() else ""
             adult_warning = ""
-            if source == "Розовый кролик":
+            if source in ADULT_STORES:
                 adult_warning = "🔞 18+\n"
 
             caption = adult_warning + f"{title}\n\n"
@@ -530,7 +533,8 @@ async def publish_from_catalog(bot: Bot):
                     bot=bot,
                     channel_id=ch["channel_id"],
                     caption=caption,
-                    photo_url=photo_url
+                    photo_url=photo_url,
+                    has_spoiler=(source in ADULT_STORES)
                 )
                 logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}")
             except Exception as e:
