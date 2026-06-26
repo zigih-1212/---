@@ -106,7 +106,7 @@ async def refill_admitad_catalogs(bot=None):
         conn.close()
 
     for user in users:
-        await fetch_admitad_catalog(user["user_id"], max_items=50)
+        await fetch_admitad_catalog(user["user_id"], max_items_per_store=50)
         await asyncio.sleep(1)
 
     logger.info("🔄 Пополнение каталогов Admitad завершено")
