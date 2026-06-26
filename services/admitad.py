@@ -97,8 +97,7 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
     saved = 0
     for store_id, store_name in store_id_map.items():
         if store_id not in selected_ids:
-            continue  # магазин не выбран пользователем
-
+            continue
         if store_name not in STORES:
             continue
 
@@ -155,6 +154,8 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
                             break
         except Exception as e:
             logger.error(f"Admitad stream error for {store_name}: {e}")
+        finally:
+            parser.close()
 
         saved += store_saved
         logger.info(f"  {store_name}: добавлено {store_saved} товаров")
