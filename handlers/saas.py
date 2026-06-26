@@ -71,31 +71,46 @@ async def cb_toggle_store(callback: CallbackQuery):
     store_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
 
+    # Заглушки для недоступных магазинов
     if store_id == 1:  # AliExpress
         await callback.answer("❌ AliExpress временно недоступен (отсутствует маркировка ERID).", show_alert=True)
         return
     if store_id == 5:  # Love Republic
         await callback.answer("❌ Love Republic временно недоступен (отсутствует маркировка ERID).", show_alert=True)
         return
-    # Новые магазины – без ограничений
-    if store_id in (6, 7, 8, 9, 10, 11):
-        pass   # просто продолжаем сохранение
+
     conn = get_db()
     try:
+        # Получаем лимит магазинов
+        user_row = conn.execute("SELECT tariff_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+        max_stores = 3
+        if user_row and user_row["tariff_id"]:
+            tariff_row = conn.execute("SELECT max_stores FROM tariffs WHERE id=?", (user_row["tariff_id"],)).fetchone()
+            if tariff_row and tariff_row["max_stores"]:
+                max_stores = tariff_row["max_stores"]
+
         existing = conn.execute(
             "SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
             (user_id, store_id)
         ).fetchone()
         if existing:
+            # Удаляем магазин
             conn.execute("DELETE FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
                          (user_id, store_id))
         else:
+            # Проверяем, не превышен ли лимит
+            current_count = conn.execute("SELECT COUNT(*) as cnt FROM user_category_preferences WHERE user_id = ?",
+                                         (user_id,)).fetchone()["cnt"]
+            if current_count >= max_stores:
+                await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_stores} магазинов.", show_alert=True)
+                return
             conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
                          (user_id, store_id))
         conn.commit()
     finally:
         conn.close()
 
+    # После изменения выбора обновляем сообщение
     await cb_stores(callback)
     await callback.answer()
 @router.callback_query(F.data.startswith("cat_toggle:"))
