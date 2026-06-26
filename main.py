@@ -1607,23 +1607,18 @@ async def open_saas_settings(callback: CallbackQuery) -> None:
         await callback.answer("❌ Ошибка загрузки настроек", show_alert=True)
         return
 
-    api_key_status = "✅ Установлен" if user["api_key"] else "❌ Не задан"
     auto_pin = bool(user["auto_pin"] if user["auto_pin"] is not None else 1)
-    wb = bool(user["filter_wb"] if user["filter_wb"] is not None else 1)
-    ozon = bool(user["filter_ozon"] if user["filter_ozon"] is not None else 1)
 
     text = (
         "⚙️ <b>Настройки SaaS-аккаунта</b>\n\n"
-        f"🔑 <b>API-ключ (GdeSlon):</b> {api_key_status}\n"
-        "<i>(Необходим для получения партнёрских ссылок и ERID)</i>\n\n"
-        "Управляйте настройками автопостинга с помощью кнопок ниже:"
+        "📦 <b>Товары поступают автоматически из магазинов-партнёров Admitad.</b>\n"
+        "Вы выбираете магазины в разделе «🏪 Магазины». Бот сам пополняет каталог и публикует посты с маркировкой ERID.\n\n"
+        "🔑 Ручной ввод API-ключей не требуется.\n\n"
+        "⚡ Дополнительные возможности:"
     )
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔑 Изменить API-ключ GdeSlon", callback_data="saas_set:gdeslon_apikey")],
-        [
-            InlineKeyboardButton(text=f"🛒 WB: {'✅' if wb else '❌'}", callback_data="saas_toggle:wb"),
-            InlineKeyboardButton(text=f"🛒 Ozon: {'✅' if ozon else '❌'}", callback_data="saas_toggle:ozon")
-        ],
+        [InlineKeyboardButton(text="ℹ️ Об источнике товаров", callback_data="saas_set:gdeslon_apikey")],
         [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
         [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
