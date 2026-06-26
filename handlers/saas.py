@@ -182,7 +182,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
                 final_url += '?subid=' + ch["sub_id"]
 
         adult_warning = ""
-        if source == "Розовый кролик":
+        if source in ADULT_STORES:
             adult_warning = "🔞 18+\n"
 
         caption = adult_warning + f"{title}\n\n"
@@ -196,13 +196,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             channel_id=ch["channel_id"],
             caption=caption,
             photo_url=photo_url,
-            has_spoiler=(source == "Розовый кролик")   # <-- если товар из Розового кролика, размываем
-        )
-        await publish_post_with_fallback(
-            bot=bot,
-            channel_id=ch["channel_id"],
-            caption=caption,
-            photo_url=photo_url
+            has_spoiler=(source in ADULT_STORES)
         )
         await asyncio.sleep(1)
 
