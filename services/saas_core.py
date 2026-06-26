@@ -47,6 +47,7 @@ async def publish_post_with_fallback(
     photo_url: Optional[str] = None,
     video_url: Optional[str] = None,
     reply_markup: Optional[InlineKeyboardMarkup] = None,
+    has_spoiler: bool = False,   # <-- новый параметр
 ) -> Optional[Message]:
     from aiogram.types import BufferedInputFile
 
@@ -60,6 +61,7 @@ async def publish_post_with_fallback(
                     caption=caption,
                     parse_mode="HTML",
                     reply_markup=reply_markup,
+                    has_spoiler=has_spoiler,   # <-- размытие
                 )
             except TelegramAPIError as e:
                 logger.warning(f"Ошибка отправки фото: {e}")
@@ -72,6 +74,7 @@ async def publish_post_with_fallback(
                 caption=caption,
                 parse_mode="HTML",
                 reply_markup=reply_markup,
+                has_spoiler=has_spoiler,      # <-- размытие
             )
         except TelegramAPIError as e:
             logger.warning(f"Ошибка отправки видео: {e}")
@@ -87,7 +90,6 @@ async def publish_post_with_fallback(
     except TelegramAPIError as e:
         logger.error(f"Ошибка отправки текста: {e}")
         return None
-
 
 # ---------------------------------------------------------------------------
 # Очереди SaaS и публикация
@@ -306,6 +308,14 @@ async def flush_saas_queue_for_user(bot: Bot, user_id: int):
         photo_url = row["photo_url"]
 
         try:
+                    await publish_post_with_fallback(
+                    bot=bot,
+                    channel_id=ch["channel_id"],
+                    caption=caption,
+                    photo_url=photo_url,
+                    has_spoiler=(source == "Розовый кролик")   # <-- если товар из Розового кролика, размываем
+            )
+            
             msg = await publish_post_with_fallback(
                 bot=bot,
                 channel_id=channel_id,
