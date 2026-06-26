@@ -154,7 +154,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         ).fetchone()
         if not product:
             # Попробуем быстро пополнить каталог из Admitad
-            await fetch_admitad_catalog(user_id, max_items=20)
+            await fetch_admitad_catalog(user_id, max_items_per_store=50)
             product = conn.execute(
                 "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
                 (user_id,)
