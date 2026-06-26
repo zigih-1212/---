@@ -1087,7 +1087,7 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
     @app.post("/admin/refill-catalog/{user_id}/run")
     async def refill_catalog_run(request: Request, user_id: int):
         is_authenticated(request)
-        from services.admitad import fetch_admitad_catalog
+        from services.admitad import fetch_admitad_catalog_for_user
         import html as html_mod
 
         conn = get_db()
@@ -1099,7 +1099,7 @@ button{{padding:10px 20px;background:#3498db;border:none;color:#fff;border-radiu
             conn.close()
 
         try:
-            saved = await fetch_admitad_catalog(user_id, max_items=50)
+            saved = await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)
         except Exception as e:
             return HTMLResponse(f"<h3>Ошибка при пополнении</h3><pre>{html_mod.escape(str(e))}</pre>", status_code=500)
 
