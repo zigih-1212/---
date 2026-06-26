@@ -63,6 +63,7 @@ def load_tariffs():
                 "max_categories": r["max_categories"] if "max_categories" in r.keys() else 3,
                 "min_cashback": r["min_cashback"] if "min_cashback" in r.keys() else 0,
                 "max_cashback": r["max_cashback"] if "max_cashback" in r.keys() else 0,
+                "max_stores": r["max_stores"] if "max_stores" in r.keys() else 3,  # ← добавлено
             }
             for r in rows
         ]
