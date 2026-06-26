@@ -38,11 +38,11 @@ def extract_erid_from_url(url: str) -> str:
 async def fetch_admitad_catalog(user_id: int, max_items_per_store: int = 50) -> int:
     saved = 0
     conn = get_db()
-    parser = XMLPullParser(['end'])
 
     for store_name, store_cfg in STORES.items():
         feed_url = store_cfg["feed_url"]
         store_saved = 0
+        parser = XMLPullParser(['end'])   # новый парсер для каждого магазина
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 async with client.stream("GET", feed_url) as resp:
@@ -51,7 +51,13 @@ async def fetch_admitad_catalog(user_id: int, max_items_per_store: int = 50) -> 
                         continue
 
                     async for chunk in resp.aiter_bytes():
-                        parser.feed(chunk)
+                        try:
+                            parser.feed(chunk)
+                        except Exception as parse_error:
+                            # Пропускаем битый кусок и продолжаем
+                            logger.warning(f"Ошибка парсинга XML в {store_name}: {parse_error}")
+                            continue
+
                         for event, elem in parser.read_events():
                             if elem.tag == 'offer':
                                 name = elem.findtext('name', '')
