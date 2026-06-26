@@ -13,7 +13,6 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.types import InlineKeyboardMarkup, Message
 
 from services.db import get_db
-from parser import rewrite_text_with_ai, find_product_links, process_new_video
 from config import is_night_time
 
 logger = logging.getLogger("autopost_bot")
