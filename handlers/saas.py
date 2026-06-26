@@ -29,14 +29,19 @@ async def cb_stores(callback: CallbackQuery):
     finally:
         conn.close()
 
-    stores = [
+        stores = [
         {"id": 1, "name": "AliExpress (пока недоступен)"},
         {"id": 2, "name": "Читай-город"},
         {"id": 3, "name": "Аквафор"},
         {"id": 4, "name": "Розовый кролик (18+)"},
         {"id": 5, "name": "Love Republic (пока недоступен)"},
+        {"id": 6, "name": "Hi Store RU"},
+        {"id": 7, "name": "KANZLER"},
+        {"id": 8, "name": "KIKO MILANO"},
+        {"id": 9, "name": "Moulinex"},
+        {"id": 10, "name": "Playtoday"},
+        {"id": 11, "name": "SELA"},
     ]
-
     text = "🏪 <b>Выберите магазины для постинга:</b>\n\n"
     kb_rows = []
     for store in stores:
