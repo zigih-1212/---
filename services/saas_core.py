@@ -430,10 +430,14 @@ async def publish_from_catalog(bot: Bot):
 
         conn = get_db()
         try:
+                    if allowed_sources:
             product = conn.execute(
-                "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
-                (user_id,)
+                f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND source IN ({','.join('?'*len(allowed_sources))}) ORDER BY RANDOM() LIMIT 1",
+                (user_id, *allowed_sources)
             ).fetchone()
+        else:
+            # Если ни одного магазина не выбрано, не публикуем
+            product = None
             if not product:
                 conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
                 conn.commit()
