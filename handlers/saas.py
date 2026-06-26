@@ -29,7 +29,7 @@ async def cb_stores(callback: CallbackQuery):
     finally:
         conn.close()
 
-       stores = [
+    stores = [
         {"id": 1, "name": "AliExpress (пока недоступен)"},
         {"id": 2, "name": "Читай-город"},
         {"id": 3, "name": "Аквафор"},
@@ -51,19 +51,16 @@ async def cb_stores(callback: CallbackQuery):
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
 
-
 @router.callback_query(F.data.startswith("store_toggle:"))
 async def cb_toggle_store(callback: CallbackQuery):
     store_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
 
-    if store_id == 5:   # Love Republic
-        await callback.answer("❌ Love Republic временно недоступен (отсутствует маркировка ERID).", show_alert=True)
-        return
-
-    # AliExpress пока не доступен
-    if store_id == 1:
+    if store_id == 1:  # AliExpress
         await callback.answer("❌ AliExpress временно недоступен (отсутствует маркировка ERID).", show_alert=True)
+        return
+    if store_id == 5:  # Love Republic
+        await callback.answer("❌ Love Republic временно недоступен (отсутствует маркировка ERID).", show_alert=True)
         return
 
     conn = get_db()
