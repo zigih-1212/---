@@ -391,6 +391,17 @@ async def publish_from_catalog(bot: Bot):
         user_id = user["user_id"]
         tariff_id = user["tariff_id"]
 
+        # Загружаем выбранные пользователем магазины
+        conn = get_db()
+        try:
+            user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)).fetchall()
+            store_ids = [r["category_id"] for r in user_stores]
+        finally:
+            conn.close()
+
+        from services.admitad import STORE_ID_MAP
+        allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
+        
         max_posts_per_hour = 1
         if tariff_id:
             conn = get_db()
