@@ -386,11 +386,12 @@ async def publish_from_catalog(bot: Bot):
     finally:
         conn.close()
 
+    logger.info(f"[DEBUG] Найдено активных SaaS-пользователей: {len(users)}")
+
     for user in users:
         user_id = user["user_id"]
         tariff_id = user["tariff_id"]
 
-        # Лимит постов в час
         max_posts_per_hour = 1
         if tariff_id:
             conn = get_db()
@@ -411,10 +412,12 @@ async def publish_from_catalog(bot: Bot):
         finally:
             conn.close()
 
+        logger.info(f"[DEBUG] User {user_id}: max_posts_per_hour={max_posts_per_hour}, posts_last_hour={posts_last_hour}")
+
         if posts_last_hour >= max_posts_per_hour:
+            logger.info(f"[DEBUG] User {user_id}: лимит превышен, пропускаем")
             continue
 
-        # Выбор товара
         conn = get_db()
         try:
             product = conn.execute(
@@ -422,7 +425,6 @@ async def publish_from_catalog(bot: Bot):
                 (user_id,)
             ).fetchone()
             if not product:
-                # Сбрасываем used, если нет доступных
                 conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
                 conn.commit()
                 product = conn.execute(
@@ -436,7 +438,10 @@ async def publish_from_catalog(bot: Bot):
             conn.close()
 
         if not product:
+            logger.info(f"[DEBUG] User {user_id}: нет доступных товаров с ERID")
             continue
+
+        logger.info(f"[DEBUG] User {user_id}: выбран товар id={product['id']}, erid={product['erid']}")
 
         partner_url = product['partner_url'] or ''
         title = product['title'] or ''
@@ -446,11 +451,11 @@ async def publish_from_catalog(bot: Bot):
         erid = product['erid'] or ''
 
         if not partner_url or not erid:
+            logger.info(f"[DEBUG] User {user_id}: товар пропущен (нет partner_url или erid)")
             continue
 
         photo_url = product["image_url"]
 
-        # Получаем каналы пользователя
         conn = get_db()
         try:
             channels = conn.execute(
@@ -460,7 +465,11 @@ async def publish_from_catalog(bot: Bot):
         finally:
             conn.close()
 
-        # Публикуем в каждый канал с уникальным sub_id
+        if not channels:
+            logger.info(f"[DEBUG] User {user_id}: нет активных каналов")
+            continue
+
+        logger.info(f"[DEBUG] User {user_id}: публикуем в {len(channels)} каналов")
         for ch in channels:
             final_url = partner_url
             if ch["sub_id"]:
@@ -468,25 +477,27 @@ async def publish_from_catalog(bot: Bot):
                     final_url += '&subid=' + ch["sub_id"]
                 else:
                     final_url += '?subid=' + ch["sub_id"]
-            
+
             adult_warning = ""
             if product.get("source") == "Розовый кролик":
                 adult_warning = "🔞 18+\n"
-            
+
             caption = adult_warning + f"{title}\n\n"
-            
-            caption = f"{title}\n\n"
             if price > 0:
                 caption += f"💰 Цена: {price} {currency}\n\n"
             caption += f"👉 <a href='{final_url}'>Посмотреть и заказать</a>\n\n"
             caption += f"Реклама. {advertiser}. Erid: {erid}"
 
-            await publish_post_with_fallback(
-                bot=bot,
-                channel_id=ch["channel_id"],
-                caption=caption,
-                photo_url=photo_url
-            )
+            try:
+                await publish_post_with_fallback(
+                    bot=bot,
+                    channel_id=ch["channel_id"],
+                    caption=caption,
+                    photo_url=photo_url
+                )
+                logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}")
+            except Exception as e:
+                logger.error(f"[DEBUG] Ошибка публикации в {ch['channel_id']}: {e}")
             await asyncio.sleep(1)
 
 async def add_to_night_queue(
