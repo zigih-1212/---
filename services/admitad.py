@@ -48,6 +48,19 @@ STORES = {
         "adult": False
     },
 }
+
+# Маппинг id (из интерфейса) → название магазина (ключ в STORES)
+STORE_ID_MAP = {
+    2: "Читай-город",
+    3: "Аквафор",
+    4: "Розовый кролик",
+    6: "Hi Store RU",
+    7: "KANZLER",
+    8: "KIKO MILANO",
+    9: "Moulinex",
+    10: "Playtoday",
+    11: "SELA",
+}
 def extract_erid_from_url(url: str) -> str:
     if not url:
         return ""
