@@ -562,48 +562,50 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext):
 # ---------------------------------------------------------------------------
 # Показ личного кабинета
 # ---------------------------------------------------------------------------
-async def show_user_cabinet(message: Message, user_id: int = None):
-    if user_id is None:
-        user_id = message.from_user.id
-    conn = get_db()
+async def show_user_cabinet(message: Message, user_id: int):
     try:
-        user = conn.execute(
-            "SELECT role, subscription_until, username FROM users WHERE user_id=?",
-            (user_id,)
-        ).fetchone()
-    finally:
-        conn.close()
-
-    if not user:
-        await message.answer("Пожалуйста, начните с команды /start")
-        return
-
-    role = user["role"]
-    sub_until = user["subscription_until"]
-    if sub_until:
+        conn = get_db()
         try:
-            end_dt = datetime.fromisoformat(sub_until.replace("Z", "+00:00"))
-            now_dt = datetime.now(timezone.utc)
-            if now_dt < end_dt:
-                diff = end_dt - now_dt
-                days = diff.days
-                hours = diff.seconds // 3600
-                status_text = f"✅ Активна • <b>{days} дн. {hours} ч.</b>"
-            else:
-                status_text = "❌ Подписка истекла"
-        except Exception:
-            status_text = "⚠️ Ошибка чтения даты"
-    else:
-        status_text = "♾️ Бессрочный доступ" if role == "blogger" else "❌ Подписка не активирована"
+            user = conn.execute(
+                "SELECT * FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
 
-    text = (
-        f"💼 <b>Личный кабинет</b>\n\n"
-        f"👤 Роль: <b>{role.upper()}</b>\n"
-        f"📅 Статус подписки: {status_text}\n"
-        f"🆔 ID: <code>{user_id}</code>"
-    )
-    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_cabinet_menu(role))
+            if not user:
+                await message.answer("❌ Пользователь не найден.")
+                return
 
+            role = user["role"]
+            channels = conn.execute(
+                "SELECT * FROM channels WHERE user_id = ? AND is_active = 1", 
+                (user_id,)
+            ).fetchall()
+
+        finally:
+            conn.close()
+
+        if role == "saas":
+            text = (
+                f"👤 <b>Личный кабинет SaaS</b>\n\n"
+                f"Роль: SaaS-клиент\n"
+                f"Каналов: {len(channels)}\n"
+                f"Подписка до: {user['subscription_until'] or 'Не активна'}\n"
+            )
+            # клавиатура для saas
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏪 Магазины", callback_data="menu:categories")],
+                [InlineKeyboardButton(text="🎁 Промокоды", callback_data="promo:activate")],
+                [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
+                [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
+            ])
+        else:
+            text = "👤 Личный кабинет Блогера"
+            kb = InlineKeyboardMarkup(inline_keyboard=[])  # временно
+
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+    except Exception as e:
+        logger.error(f"[CABINET ERROR] {e}", exc_info=True)
+        await message.answer("❌ Ошибка при открытии кабинета. Напишите администратору.")
 # ---------------------------------------------------------------------------
 # Главное меню
 # ---------------------------------------------------------------------------
@@ -1345,11 +1347,12 @@ async def cmd_start_deeplink(message: Message, state: FSMContext, command: Comma
     await cmd_start(message, state) 
 
 @router.callback_query(F.data == "cabinet:open")
-async def cb_open_cabinet(callback: CallbackQuery) -> None:
+async def cb_open_cabinet(callback: CallbackQuery):
     try:
         await callback.message.delete()
     except:
         pass
+
     await show_user_cabinet(callback.message, user_id=callback.from_user.id)
     await callback.answer()
 
