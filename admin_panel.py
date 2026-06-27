@@ -1141,5 +1141,22 @@ th{{background:#1a1d27;}}a{{color:#3498db;}}</style></head>
         if not _os.path.exists(path):
             raise HTTPException(status_code=404)
         return FileResponse(path, filename=fname, media_type="text/csv")
-        
+
+            # Уведомление пользователю
+            if payment_status == "approved" and subid1:
+                try:
+                    user_row = conn.execute(
+                        "SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?",
+                        (subid1,)
+                    ).fetchone()
+                    if user_row:
+                        await bot.send_message(
+                            user_row["user_id"],
+                            f"💰 Поступило вознаграждение: <b>{float(payment_sum)*0.95:.2f} {currency}</b> (заказ #{order_id or admitad_id}).\n"
+                            f"Теперь доступно к выводу.",
+                            parse_mode="HTML"
+                        )
+                except:
+                    pass
+                    
     return app
