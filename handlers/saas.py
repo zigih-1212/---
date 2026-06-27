@@ -71,7 +71,7 @@ async def cb_stores(callback: CallbackQuery):
         )])
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        await callback.message.edit_text(full_text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("store_toggle:"))
