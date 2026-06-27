@@ -1109,34 +1109,6 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
         reply_markup=kb_cabinet_menu(role)
     )
 
-# =============================================================================
-# === РЕЖИМ ПУБЛИКАЦИИ (БЛОГЕР) ===============================================
-# =============================================================================
-
-
-# =============================================================================
-# === ПАРТНЁРСКАЯ ПРОГРАММА ===================================================
-# =============================================================================
-@router.callback_query(F.data == "menu:partner")
-async def cb_partner_program(callback: CallbackQuery) -> None:
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT sub_id FROM users WHERE user_id=?", (callback.from_user.id,)).fetchone()
-    finally:
-        conn.close()
-    sub_id = row["sub_id"] if row else "—"
-    bot_info = await callback.bot.get_me()
-    ref_link = f"https://t.me/{bot_info.username}?start=aff_{sub_id}"
-    await callback.message.edit_text(
-        "🤝 <b>Партнёрская программа</b>\n\n"
-        "Приводи других блогеров и получай повышенный % с их продаж!\n\n"
-        f"🔗 Твоя реферальная ссылка:\n<code>{ref_link}</code>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
-        ]),
-    )
-    await callback.answer()
 
 # =============================================================================
 # === НАСТРОЙКИ (ФИЛЬТРЫ WB/OZON) =============================================
