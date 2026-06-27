@@ -1771,6 +1771,91 @@ async def show_saas_instruction(callback: CallbackQuery):
         ])
     )
 
+async def daily_report(bot: Bot):
+    """Ежедневный отчёт администратору о работе бота."""
+    conn = get_db()
+    try:
+        # За последние 24 часа
+        since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+        # Активные каналы (хотя бы 1 пост за сутки)
+        active_channels = conn.execute(
+            "SELECT COUNT(DISTINCT channel_id) FROM posts WHERE status='published' AND published_at >= ?",
+            (since,)
+        ).fetchone()[0] or 0
+
+        # Всего постов за сутки
+        total_posts = conn.execute(
+            "SELECT COUNT(*) FROM posts WHERE status='published' AND published_at >= ?",
+            (since,)
+        ).fetchone()[0] or 0
+
+        # Топ-3 канала по количеству постов
+        top_channels = conn.execute(
+            """SELECT c.channel_title, c.channel_id, COUNT(p.id) as cnt
+               FROM posts p
+               JOIN channels c ON p.channel_id = c.channel_id AND p.user_id = c.user_id
+               WHERE p.status='published' AND p.published_at >= ?
+               GROUP BY c.channel_id
+               ORDER BY cnt DESC
+               LIMIT 3""",
+            (since,)
+        ).fetchall()
+
+        # Новые транзакции за сутки
+        new_tx = conn.execute(
+            "SELECT COUNT(*) FROM admitad_transactions WHERE created_at >= ?",
+            (since,)
+        ).fetchone()[0] or 0
+        approved_tx = conn.execute(
+            "SELECT COUNT(*) FROM admitad_transactions WHERE created_at >= ? AND payment_status='approved'",
+            (since,)
+        ).fetchone()[0] or 0
+        pending_tx = conn.execute(
+            "SELECT COUNT(*) FROM admitad_transactions WHERE created_at >= ? AND payment_status='pending'",
+            (since,)
+        ).fetchone()[0] or 0
+        declined_tx = conn.execute(
+            "SELECT COUNT(*) FROM admitad_transactions WHERE created_at >= ? AND payment_status='declined'",
+            (since,)
+        ).fetchone()[0] or 0
+
+        # Ошибки публикации за сутки
+        errors_count = conn.execute(
+            "SELECT COUNT(*) FROM posts WHERE status='error' AND created_at >= ?",
+            (since,)
+        ).fetchone()[0] or 0
+    finally:
+        conn.close()
+
+    # Формируем сообщение
+    report_text = (
+        f"📊 <b>Ежедневный отчёт</b>\n"
+        f"📅 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC\n\n"
+        f"🟢 Активных каналов: <b>{active_channels}</b>\n"
+        f"📬 Всего постов: <b>{total_posts}</b>\n\n"
+    )
+
+    if top_channels:
+        report_text += "<b>Топ-3 канала:</b>\n"
+        for i, ch in enumerate(top_channels, 1):
+            report_text += f"  {i}. {ch['channel_title'] or ch['channel_id']} — {ch['cnt']} пост.\n"
+        report_text += "\n"
+
+    report_text += (
+        f"💰 Новых транзакций: <b>{new_tx}</b> (pending: {pending_tx}, approved: {approved_tx}, declined: {declined_tx})\n"
+        f"⚠️ Ошибок публикации: <b>{errors_count}</b>\n"
+    )
+
+    # Отправляем первому админу
+    admin_id = ADMIN_IDS[0] if ADMIN_IDS else None
+    if admin_id:
+        try:
+            await bot.send_message(admin_id, report_text, parse_mode="HTML")
+            logger.info("Ежедневный отчёт отправлен администратору.")
+        except Exception as e:
+            logger.error(f"Не удалось отправить ежедневный отчёт: {e}")
+
 # =============================================================================
 # === ОБРАБОТЧИКИ ТАРИФОВ И ОПЛАТЫ ===========================================
 # =============================================================================
@@ -1782,6 +1867,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(backup_database_to_telegram, trigger="cron", hour=3, minute=0, kwargs={"bot": bot}, id="backup_database", replace_existing=True)
     scheduler.add_job(publish_from_catalog, trigger="interval", minutes=10, jitter=30, kwargs={"bot": bot}, id="publish_catalog", replace_existing=True)
     scheduler.add_job(refill_admitad_catalogs, trigger="interval", minutes=15, id="refill_admitad", replace_existing=True)
+    scheduler.add_job(daily_report, trigger="cron", hour=9, minute=0, kwargs={"bot": bot}, id="daily_report", replace_existing=True)
     return scheduler
 
 # =============================================================================
