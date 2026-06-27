@@ -63,10 +63,7 @@ from config import (
 )
 from services.saas_core import (
     publish_post_with_fallback,
-    add_to_night_queue,
-    prepare_post_content, process_saas_core, add_to_saas_queue,
-    publish_from_catalog,
-    scan_donor_channels
+    publish_from_catalog
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request, HTTPException
