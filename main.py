@@ -559,6 +559,9 @@ async def show_user_cabinet(message: Message, user_id: int):
         logger.error(f"[CABINET ERROR] {e}", exc_info=True)
         await message.answer("❌ Ошибка при открытии кабинета. Напишите администратору.")
 
+@router.message(Command("cabinet"))
+async def cmd_cabinet(message: Message):
+    await show_user_cabinet(message, user_id=message.from_user.id)
 # ---------------------------------------------------------------------------
 # Обработка роли
 # ---------------------------------------------------------------------------
