@@ -637,6 +637,11 @@ async def cmd_start(message: Message, state: FSMContext):
             ])
             await message.answer("👋 Добро пожаловать! Выберите вашу роль:", reply_markup=kb)
             await state.set_state(OnboardingStates.waiting_role)
+        if user:
+            # Проверяем, принял ли пользователь оферту
+            if user["oferta_accepted"] == 0:
+                await show_user_cabinet(message, user_id=message.from_user.id)
+                return          
         elif user["role"] == "blogger" and not user["channel_id"]:
             await message.answer(
                 "⚠️ Вы ещё не привязали свой канал.\nПерешлите сообщение из канала или отправьте @username.",
