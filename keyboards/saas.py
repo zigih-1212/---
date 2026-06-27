@@ -14,7 +14,6 @@ def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            [InlineKeyboardButton(text="🎁 Активировать промокод", callback_data="promo:activate")],
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ])
     else:
