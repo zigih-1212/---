@@ -751,26 +751,6 @@ async def show_user_cabinet(message: Message, user_id: int = None):
 @router.message(Command("cabinet"))
 async def cmd_cabinet(message: Message):
     await show_user_cabinet(message, user_id=message.from_user.id)
-# ---------------------------------------------------------------------------
-# Обработка роли
-# ---------------------------------------------------------------------------
-@router.callback_query(F.data.startswith("set_role:"))
-async def cb_set_role(callback: CallbackQuery, state: FSMContext):
-    # Всегда назначаем SaaS
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET role=? WHERE user_id=?", ("saas", user_id))
-        conn.commit()
-    finally:
-        conn.close()
-    await state.set_state(OnboardingStates.waiting_saas_tg_channel)
-    await callback.message.edit_text(
-        "✅ Выбрана роль: <b>SaaS-клиент</b>.\n\nПришлите @username вашего Telegram-канала.",
-        parse_mode=ParseMode.HTML
-    )
-    await callback.answer()
-
 
 # ---------------------------------------------------------------------------
 # Главное меню
@@ -1590,17 +1570,46 @@ async def cb_filter_toggle(callback: CallbackQuery) -> None:
 # =============================================================================
 # === ГЛУБОКАЯ ССЫЛКА (РЕФЕРАЛЬНАЯ СИСТЕМА) ===================================
 # =============================================================================
-@router.message(CommandStart(deep_link=True))
-async def cmd_start_deeplink(message: Message, state: FSMContext, command: CommandStart):
-    """Обработка /start с параметром (например, aff_XXXX)."""
+@router.message(CommandStart())
+async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    args = command.args
-    if args and args.startswith("aff_"):
-        # Реферальная ссылка: просто регистрируем как обычно, но сохраняем реферера
-        # При необходимости можно записать в поле пригласившего (в БД нет такого поля, упростим)
-        await message.answer("🤝 Вы перешли по реферальной ссылке. Добро пожаловать!")
-    # Далее стандартная логика
-    await cmd_start(message, state) 
+    if is_admin(message.from_user.id):
+        await message.answer("👋 Добро пожаловать в Панель администратора.", reply_markup=kb_admin_panel())
+        return
+
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role, channel_id FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
+        if not user:
+            # Новый пользователь — сразу назначаем SaaS и просим канал
+            sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
+            conn.execute(
+                "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'saas')",
+                (message.from_user.id, message.from_user.username, sub_id)
+            )
+            conn.commit()
+            await message.answer(
+                "👋 Добро пожаловать! Для начала работы добавьте ваш Telegram-канал.\n"
+                "Отправьте его @username.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📢 Привязать канал", callback_data="menu:channel")]
+                ])
+            )
+            await state.set_state(OnboardingStates.waiting_saas_tg_channel)
+        elif user["role"] == "blogger" and not user["channel_id"]:
+            # Старый блогер без канала — переводим в SaaS
+            conn.execute("UPDATE users SET role='saas' WHERE user_id=?", (message.from_user.id,))
+            conn.commit()
+            await message.answer(
+                "⚠️ Ваш аккаунт переведён в режим SaaS.\n"
+                "Отправьте @username вашего Telegram-канала для начала работы.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📢 Привязать канал", callback_data="menu:channel")]
+                ])
+            )
+            await state.set_state(OnboardingStates.waiting_saas_tg_channel)
+    finally:
+        conn.close()
 
 @router.callback_query(F.data == "cabinet:open")
 async def cb_open_cabinet(callback: CallbackQuery):
