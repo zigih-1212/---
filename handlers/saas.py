@@ -311,33 +311,35 @@ async def promo_code_entered(message: Message, state: FSMContext):
             conn.close()
 
         if not channels:
-            await message.answer("❌ У вас нет подключённых каналов. Сначала добавьте канал в разделе «Мои каналы».")
+            await message.answer("❌ У вас нет подключённых каналов.")
             await state.clear()
             return
 
-        # Исправленный способ сохранения данных в состояние
-        await state.update_data({
+        # Новый безопасный способ сохранения данных
+        data = await state.get_data()
+        data.update({
             "promocode": code,
-            "promo_days": promo["days"]
+            "promo_days": int(promo["days"])
         })
+        await state.set_data(data)
 
         kb_rows = []
         for ch in channels:
             kb_rows.append([InlineKeyboardButton(
-                text=ch["channel_title"] or ch["channel_id"],
+                text=ch["channel_title"] or str(ch["channel_id"]),
                 callback_data=f"promo_channel:{ch['channel_id']}"
             )])
         kb_rows.append([InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")])
 
         await message.answer(
-            "🎯 Выберите канал, для которого хотите активировать промокод:",
+            "🎯 Выберите канал для активации промокода:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
         )
         await state.set_state(SaasStates.choosing_channel_for_promo)
 
     except Exception as e:
-        logger.error(f"[PROMO ERROR] Ошибка при обработке промокода: {e}", exc_info=True)
-        await message.answer("❌ Произошла ошибка. Попробуйте ещё раз.")
+        logger.error(f"[PROMO ERROR] {e}", exc_info=True)
+        await message.answer("❌ Ошибка при обработке промокода.")
         await state.clear()
 @router.callback_query(SaasStates.choosing_channel_for_promo, F.data.startswith("promo_channel:"))
 async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
