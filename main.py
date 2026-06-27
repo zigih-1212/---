@@ -544,26 +544,19 @@ async def show_cabinet(message: Message):
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data.startswith("set_role:"))
 async def cb_set_role(callback: CallbackQuery, state: FSMContext):
-    role = callback.data.split(":")[1]
+    # Всегда назначаем SaaS
     user_id = callback.from_user.id
     conn = get_db()
     try:
-        conn.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
+        conn.execute("UPDATE users SET role=? WHERE user_id=?", ("saas", user_id))
         conn.commit()
     finally:
         conn.close()
-    if role == "blogger":
-        await state.set_state(OnboardingStates.waiting_source_channel)
-        await callback.message.edit_text(
-            "✅ Выбрана роль: <b>БЛОГЕР</b>.\n\nПришлите ссылку на ваш основной канал (YouTube, TikTok или Instagram).",
-            parse_mode=ParseMode.HTML
-        )
-    else:
-        await state.set_state(OnboardingStates.waiting_saas_tg_channel)
-        await callback.message.edit_text(
-            "✅ Выбрана роль: <b>SaaS-клиент</b>.\n\nПришлите @username вашего Telegram-канала.",
-            parse_mode=ParseMode.HTML
-        )
+    await state.set_state(OnboardingStates.waiting_saas_tg_channel)
+    await callback.message.edit_text(
+        "✅ Выбрана роль: <b>SaaS-клиент</b>.\n\nПришлите @username вашего Telegram-канала.",
+        parse_mode=ParseMode.HTML
+    )
     await callback.answer()
 
 # ---------------------------------------------------------------------------
@@ -1191,49 +1184,6 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
     else:
         await call.answer("Неизвестная команда", show_alert=True)
 
-     # =============================================================================
-# === ОНБОРДИНГ: БЛОГЕР – ПРИВЯЗКА ИСТОЧНИКА =================================
-# =============================================================================
-@router.message(OnboardingStates.waiting_source_channel)
-async def handle_blogger_source(message: Message, state: FSMContext) -> None:
-    source_link = message.text.strip()
-    user_id = message.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET source_link=? WHERE user_id=?", (source_link, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-    await state.set_state(OnboardingStates.waiting_target_choice)
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Публиковать в свой канал", callback_data="target:own")],
-        [InlineKeyboardButton(text="⭐ VIP-канал (24ч закреп)", callback_data="target:vip")],
-    ])
-    await message.answer(
-        "✅ Источник привязан!\n\nВыберите режим публикации:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb
-    )
-
-@router.callback_query(F.data.startswith("target:"))
-async def cb_select_target(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
-    target_type = callback.data.split(":")[1]
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET target_mode=? WHERE user_id=?", (target_type, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-    if target_type == "own":
-        await state.set_state(OnboardingStates.waiting_channel)
-        await callback.message.edit_text("📝 Пришлите @username вашего канала:")
-    else:  # vip
-        await state.clear()
-        await callback.message.edit_text("✅ Регистрация завершена! Подписка на VIP-канал активна.")
-        await callback.message.answer("🏠 Главное меню", reply_markup=kb_main_menu("blogger"))
 
 # =============================================================================
 # === ОНБОРДИНГ: SAAS – ДОБАВЛЕНИЕ КАНАЛА =====================================
