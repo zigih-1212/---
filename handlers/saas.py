@@ -285,49 +285,58 @@ async def cb_promo_activate(callback: CallbackQuery, state: FSMContext):
 
 @router.message(SaasStates.waiting_promocode)
 async def promo_code_entered(message: Message, state: FSMContext):
-    code = message.text.strip().upper()
-    conn = get_db()
     try:
-        promo = conn.execute("SELECT * FROM promocodes WHERE code = ?", (code,)).fetchone()
-        if not promo:
-            await message.answer("❌ Неверный или несуществующий промокод.")
+        code = message.text.strip().upper()
+        logger.info(f"[PROMO] Пользователь {message.from_user.id} ввёл код: {code}")
+
+        conn = get_db()
+        try:
+            promo = conn.execute("SELECT * FROM promocodes WHERE code = ?", (code,)).fetchone()
+            if not promo:
+                await message.answer("❌ Неверный или несуществующий промокод.")
+                await state.clear()
+                return
+
+            activation = conn.execute(
+                "SELECT * FROM promocode_activations WHERE code = ?", (code,)
+            ).fetchone()
+            if activation:
+                await message.answer("❌ Этот промокод уже использован.")
+                await state.clear()
+                return
+
+            channels = conn.execute(
+                "SELECT channel_id, channel_title FROM channels WHERE user_id = ? AND is_active = 1",
+                (message.from_user.id,)
+            ).fetchall()
+        finally:
+            conn.close()
+
+        if not channels:
+            await message.answer("❌ У вас нет подключённых каналов. Сначала добавьте канал в разделе «Мои каналы».")
             await state.clear()
             return
 
-        activation = conn.execute("SELECT * FROM promocode_activations WHERE code = ?", (code,)).fetchone()
-        if activation:
-            await message.answer("❌ Этот промокод уже использован.")
-            await state.clear()
-            return
+        await state.update_data(promocode=code, promo_days=promo["days"])
 
-        channels = conn.execute(
-            "SELECT channel_id, channel_title FROM channels WHERE user_id = ? AND is_active = 1",
-            (message.from_user.id,)
-        ).fetchall()
-    finally:
-        conn.close()
+        kb_rows = []
+        for ch in channels:
+            kb_rows.append([InlineKeyboardButton(
+                text=ch["channel_title"] or ch["channel_id"],
+                callback_data=f"promo_channel:{ch['channel_id']}"
+            )])
+        kb_rows.append([InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")])
 
-    if not channels:
-        await message.answer("❌ У вас нет подключённых каналов. Сначала добавьте канал в разделе «Мои каналы».")
+        await message.answer(
+            "🎯 Выберите канал, для которого хотите активировать промокод:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
+        )
+        await state.set_state(SaasStates.choosing_channel_for_promo)
+
+    except Exception as e:
+        logger.error(f"[PROMO ERROR] Ошибка при обработке промокода от {message.from_user.id}: {e}", exc_info=True)
+        await message.answer("❌ Произошла ошибка при обработке промокода. Попробуйте ещё раз или напишите администратору.")
         await state.clear()
-        return
-
-    await state.update_data(promocode=code, promo_days=promo["days"])
-
-    kb_rows = []
-    for ch in channels:
-        kb_rows.append([InlineKeyboardButton(
-            text=ch["channel_title"] or ch["channel_id"],
-            callback_data=f"promo_channel:{ch['channel_id']}"
-        )])
-    kb_rows.append([InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")])
-
-    await message.answer(
-        "🎯 Выберите канал, для которого хотите активировать промокод:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    )
-    await state.set_state(SaasStates.choosing_channel_for_promo)
-
 @router.callback_query(SaasStates.choosing_channel_for_promo, F.data.startswith("promo_channel:"))
 async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
     channel_id = callback.data.split(":")[1]
