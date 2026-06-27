@@ -1341,14 +1341,23 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
                 return
 
         # Генерируем уникальный sub_id (на основе user_id и channel_username)
-        import hashlib
-        sub_id = f"ch_{hashlib.md5(channel_username.encode()).hexdigest()[:12]}"
+        # Получаем числовой ID канала Telegram (неизменяемый)
+        try:
+            chat_info = await message.bot.get_chat(channel_username)
+            tg_chat_id = str(chat_info.id)          # например, "-1001234567890"
+            tg_title = chat_info.title or channel_username
+        except Exception:
+            await message.answer("❌ Не удалось получить информацию о канале. Проверьте правильность @username.")
+            return
+
+        # sub_id теперь числовой ID канала
+        sub_id = tg_chat_id
 
         conn.execute(
             """INSERT INTO channels (user_id, channel_id, channel_title, sub_id)
                VALUES (?, ?, ?, ?)
                ON CONFLICT(user_id, channel_id) DO UPDATE SET channel_title = excluded.channel_title""",
-            (user_id, channel_username, channel_username, sub_id)
+            (user_id, channel_username, tg_title, sub_id)
         )
         conn.commit()
     except sqlite3.Error as e:
