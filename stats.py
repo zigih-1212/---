@@ -198,15 +198,39 @@ def get_saas_overview(user_id: int) -> Dict:
         "by_store": {row[0]: row[1] for row in store_stats}
     }
 
-def get_saas_channel_stats(user_id: int, channel_id: str, period: str = "30d") -> Dict:
-    """Статистика по одному каналу с разбивкой по магазинам."""
+def get_saas_overview(user_id: int) -> Dict:
+    conn = get_db()
+    try:
+        total_posts = conn.execute(
+            "SELECT COUNT(*) FROM posts WHERE user_id=? AND status='published'",
+            (user_id,)
+        ).fetchone()[0]
+        posts_30d = conn.execute(
+            "SELECT COUNT(*) FROM posts WHERE user_id=? AND status='published' AND published_at >= datetime('now', '-30 days')",
+            (user_id,)
+        ).fetchone()[0]
+        store_stats = conn.execute("""
+            SELECT g.source, COUNT(*) as cnt
+            FROM posts p
+            JOIN gdeslon_catalog g ON g.partner_url = p.donor_post_id
+            WHERE p.user_id=? AND p.status='published'
+            GROUP BY g.source
+            ORDER BY cnt DESC
+        """, (user_id,)).fetchall()
+    finally:
+        conn.close()
+    return {
+        "total_posts": total_posts or 0,
+        "posts_30d": posts_30d or 0,
+        "by_store": {row[0]: row[1] for row in store_stats}
+    }
+
+def get_saas_channel_stats_new(user_id: int, channel_id: str, period: str = "30d") -> Dict:
     conn = get_db()
     try:
         cfg = STAT_PERIODS.get(period, STAT_PERIODS["30d"])
         days = cfg["days"]
         date_filter = f"AND p.published_at >= datetime('now', '-{days} days')" if days else ""
-
-        # Общие показатели
         post_stats = conn.execute(f"""
             SELECT
                 COUNT(*) as total,
@@ -217,8 +241,6 @@ def get_saas_channel_stats(user_id: int, channel_id: str, period: str = "30d") -
             WHERE p.user_id=? AND p.channel_id=?
             {date_filter}
         """, (user_id, channel_id)).fetchone()
-
-        # Разбивка по магазинам
         store_stats = conn.execute(f"""
             SELECT g.source, COUNT(*) as cnt
             FROM posts p
@@ -228,15 +250,13 @@ def get_saas_channel_stats(user_id: int, channel_id: str, period: str = "30d") -
             GROUP BY g.source
             ORDER BY cnt DESC
         """, (user_id, channel_id)).fetchall()
-
-        channel_title = channel_id  # fallback
+        channel_title = channel_id
         channel_row = conn.execute(
             "SELECT channel_title FROM channels WHERE user_id=? AND channel_id=?",
             (user_id, channel_id)
         ).fetchone()
         if channel_row:
             channel_title = channel_row[0]
-
         last_pub = post_stats["last_published_at"]
         if last_pub:
             try:
@@ -248,7 +268,6 @@ def get_saas_channel_stats(user_id: int, channel_id: str, period: str = "30d") -
             last_pub_fmt = "—"
     finally:
         conn.close()
-
     return {
         "channel_id": channel_id,
         "channel_title": channel_title,
