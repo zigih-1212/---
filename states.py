@@ -1,6 +1,7 @@
 from aiogram.fsm.state import State, StatesGroup
 
 class OnboardingStates(StatesGroup):
+    waiting_role = State()
     waiting_channel = State()
     waiting_saas_tg_channel = State()
 
