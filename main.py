@@ -1609,6 +1609,7 @@ async def main() -> None:
         commands=[
             BotCommand(command="start", description="Главное меню"),
             BotCommand(command="cabinet", description="Личный кабинет"),
+            BotCommand(command="promo", description="Активировать промокод"),
         ],
         scope=BotCommandScopeDefault(),
     )
