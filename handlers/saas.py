@@ -315,11 +315,8 @@ async def promo_code_entered(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        # Безопасный способ работы с состоянием
-        current_data = await state.get_data()
-        current_data["promocode"] = code
-        current_data["promo_days"] = int(promo["days"])
-        await state.set_data(current_data)
+        # Простой способ без моделей
+        await state.update_data(promocode=code, promo_days=int(promo.get("days", 2)))
 
         kb_rows = []
         for ch in channels:
