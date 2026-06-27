@@ -57,9 +57,8 @@ from aiogram.types import (
 from config import (
     settings, MIN_PAYOUT, PAYOUT_FIXED_FEE, PAYOUT_BANK_PCT, MAX_ACTIVE_PAYOUTS,
     is_night_time, load_tariffs,
-    BOT_TOKEN, ADMIN_IDS, WEBAPP_ADMIN_URL, QUARANTINE_CHAT_ID, ADMIN_VIP_CHANNEL_ID,
+    BOT_TOKEN, ADMIN_IDS, WEBAPP_ADMIN_URL, QUARANTINE_CHAT_ID,
     DEEPINFRA_API_KEY, STARS_PROVIDER_TOKEN, WEBAPP_HOST, WEBAPP_PORT,
-    SAAS_DONOR_CHANNELS, TAKPRODAM_MASTER_TOKEN,
     CARD_SBER, CARD_TBANK, CARD_TON, CARD_VISA_KG, DB_PATH
 )
 from services.saas_core import (
@@ -1572,15 +1571,10 @@ async def show_saas_instruction(callback: CallbackQuery):
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(run_billing_check, trigger="interval", hours=1, kwargs={"bot": bot}, id="billing_check", replace_existing=True)
-    #scheduler.add_job(flush_night_queue, trigger="cron", hour=8, minute=0, kwargs={"bot": bot}, id="flush_night_queue", replace_existing=True)
-    #scheduler.add_job(flush_all_saas_queues, trigger="cron", hour=8, minute=0, kwargs={"bot": bot}, id="flush_saas_queues", replace_existing=True)
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
     scheduler.add_job(cleanup_old_posts, trigger="cron", hour=3, minute=0, id="cleanup_old_posts", replace_existing=True)
     scheduler.add_job(backup_database_to_telegram, trigger="cron", hour=3, minute=0, kwargs={"bot": bot}, id="backup_database", replace_existing=True)
-    #scheduler.add_job(scan_donor_channels, trigger="interval", minutes=15, kwargs={"bot": bot}, id="scan_donors", replace_existing=True)
-    #scheduler.add_job(refill_all_catalogs, trigger="interval", minutes=10, kwargs={"bot": bot}, id="refill_catalogs", replace_existing=True)
     scheduler.add_job(publish_from_catalog, trigger="interval", minutes=10, kwargs={"bot": bot}, id="publish_catalog", replace_existing=True)
-    #scheduler.add_job(refill_takprodam_catalogs,trigger="interval",minutes=30,kwargs={"bot": bot},id="refill_takprodam_catalogs",replace_existing=True)
     scheduler.add_job(refill_admitad_catalogs, trigger="interval", minutes=15, id="refill_admitad", replace_existing=True)
     return scheduler
 
