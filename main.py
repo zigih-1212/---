@@ -592,53 +592,7 @@ async def cb_set_role(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-# ---------------------------------------------------------------------------
-# Показ личного кабинета
-# ---------------------------------------------------------------------------
-async def show_user_cabinet(message: Message, user_id: int):
-    try:
-        conn = get_db()
-        try:
-            user = conn.execute(
-                "SELECT * FROM users WHERE user_id = ?", (user_id,)
-            ).fetchone()
 
-            if not user:
-                await message.answer("❌ Пользователь не найден.")
-                return
-
-            role = user["role"]
-            channels = conn.execute(
-                "SELECT * FROM channels WHERE user_id = ? AND is_active = 1", 
-                (user_id,)
-            ).fetchall()
-
-        finally:
-            conn.close()
-
-        if role == "saas":
-            text = (
-                f"👤 <b>Личный кабинет SaaS</b>\n\n"
-                f"Роль: SaaS-клиент\n"
-                f"Каналов: {len(channels)}\n"
-                f"Подписка до: {user['subscription_until'] or 'Не активна'}\n"
-            )
-            # клавиатура для saas
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🏪 Магазины", callback_data="menu:categories")],
-                [InlineKeyboardButton(text="🎁 Промокоды", callback_data="promo:activate")],
-                [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
-                [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            ])
-        else:
-            text = "👤 Личный кабинет Блогера"
-            kb = InlineKeyboardMarkup(inline_keyboard=[])  # временно
-
-        await message.answer(text, reply_markup=kb, parse_mode="HTML")
-
-    except Exception as e:
-        logger.error(f"[CABINET ERROR] {e}", exc_info=True)
-        await message.answer("❌ Ошибка при открытии кабинета. Напишите администратору.")
 # ---------------------------------------------------------------------------
 # Главное меню
 # ---------------------------------------------------------------------------
