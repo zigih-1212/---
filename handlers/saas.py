@@ -273,15 +273,15 @@ async def msg_saas_text_input(message: Message, state: FSMContext) -> None:
 # Промокоды (упрощённая версия без FSM)
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "promo:activate")
-async def cb_promo_activate(callback: CallbackQuery):
+async def cb_promo_activate(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "🎁 Введите промокод прямо сейчас в чат:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
         ])
     )
+    await state.set_state(SaasStates.waiting_promocode)  # ← добавить эту строку
     await callback.answer()
-
 
 @router.message(SaasStates.waiting_promocode)
 async def promo_code_entered(message: Message, state: FSMContext):
