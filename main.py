@@ -391,6 +391,10 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE users ADD COLUMN balance_available REAL DEFAULT 0.0")
     except sqlite3.OperationalError:
         pass
+    try:
+        cursor.execute("ALTER TABLE admitad_transactions ADD COLUMN payment_status TEXT DEFAULT 'pending'")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
