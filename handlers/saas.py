@@ -269,26 +269,21 @@ async def msg_saas_text_input(message: Message, state: FSMContext) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Промокоды
+# Промокоды (активация командой /promo КОД)
 # ---------------------------------------------------------------------------
 @router.message(Command("promo"))
-async def cmd_promo(message: Message, state: FSMContext):
-    await state.update_data(waiting_promo=True)
-    await message.answer(
-        "🎁 Введите промокод прямо сейчас в чат:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
-        ])
-    )
-
-
-@router.message(F.text)
-async def handle_all_text(message: Message, state: FSMContext):
-    data = await state.get_data()
-    if not data.get("waiting_promo"):
+async def cmd_promo_with_code(message: Message, state: FSMContext):
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(
+            "🎁 Введите команду в формате: /promo КОД\nНапример: /promo D2075RPD",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
+            ])
+        )
         return
 
-    code = message.text.strip().upper()
+    code = args[1].strip().upper()
     logger.info(f"[PROMO] Пользователь {message.from_user.id} ввёл код: {code}")
 
     conn = get_db()
@@ -296,13 +291,11 @@ async def handle_all_text(message: Message, state: FSMContext):
         promo = conn.execute("SELECT * FROM promocodes WHERE code = ?", (code,)).fetchone()
         if not promo:
             await message.answer("❌ Неверный или несуществующий промокод.")
-            await state.update_data(waiting_promo=False)
             return
 
         activation = conn.execute("SELECT * FROM promocode_activations WHERE code = ?", (code,)).fetchone()
         if activation:
             await message.answer("❌ Этот промокод уже использован.")
-            await state.update_data(waiting_promo=False)
             return
 
         channels = conn.execute(
@@ -314,7 +307,6 @@ async def handle_all_text(message: Message, state: FSMContext):
 
     if not channels:
         await message.answer("❌ У вас нет подключённых каналов.")
-        await state.update_data(waiting_promo=False)
         return
 
     days = int(promo["days"])
@@ -337,10 +329,10 @@ async def handle_all_text(message: Message, state: FSMContext):
             conn.close()
 
         await message.answer(f"✅ Промокод активирован!\nПодписка продлена на {days} дней.")
-        await state.update_data(waiting_promo=False)
         return
 
-    await state.update_data(promocode=code, promo_days=days, waiting_promo=False)
+    # Несколько каналов – показываем выбор
+    await state.update_data(promocode=code, promo_days=days)
     kb_rows = []
     for ch in channels:
         kb_rows.append([InlineKeyboardButton(
