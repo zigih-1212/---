@@ -887,6 +887,10 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
     channel_id: Optional[str] = None
     channel_title: Optional[str] = None
 
+    # Пропускаем команды
+    if message.text and message.text.startswith("/"):
+        return
+
     if message.forward_origin and message.forward_origin.chat:
         chat = message.forward_origin.chat
         channel_id = str(chat.id)
@@ -1233,9 +1237,15 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
 @router.message(OnboardingStates.waiting_saas_tg_channel)
 async def handle_saas_channel_addition(message: Message, state: FSMContext) -> None:
     channel_username = message.text.strip()
+
+    # Пропускаем команды
+    if channel_username.startswith("/"):
+        return
+
     if not channel_username.startswith("@"):
         await message.answer("⚠️ Для добавления канала отправьте @username.")
         return
+
     user_id = message.from_user.id
 
     is_admin_ok = await check_bot_admin(message.bot, channel_username)
@@ -1274,7 +1284,7 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
     await message.answer(
         f"✅ Канал <b>{html.escape(channel_username)}</b> успешно добавлен!",
         parse_mode=ParseMode.HTML,
-        reply_markup=kb_main_menu("saas")
+        reply_markup=kb_cabinet_menu("saas")
     )
     await state.clear()
 
@@ -1674,4 +1684,3 @@ async def backup_database_to_telegram(bot: Bot):
 
 if __name__ == "__main__":
     asyncio.run(main())
-  
