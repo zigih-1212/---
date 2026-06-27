@@ -652,7 +652,7 @@ async def show_user_cabinet(message: Message, user_id: int = None):
     conn = get_db()
     try:
         user = conn.execute(
-            "SELECT role, subscription_until, username FROM users WHERE user_id=?",
+            "SELECT role, subscription_until, username, balance_pending, balance_available FROM users WHERE user_id=?",
             (user_id,)
         ).fetchone()
     finally:
@@ -680,11 +680,23 @@ async def show_user_cabinet(message: Message, user_id: int = None):
     else:
         status_text = "♾️ Бессрочный доступ" if role == "blogger" else "❌ Подписка не активирована"
 
+    # Добавляем блок с балансом для SaaS
+    finance_text = ""
+    if role == "saas":
+        pending = user["balance_pending"] or 0.0
+        available = user["balance_available"] or 0.0
+        finance_text = (
+            f"\n\n💰 <b>Баланс</b>\n"
+            f"⏳ В ожидании: <b>{pending:.2f} ₽</b>\n"
+            f"💳 Доступно к выводу: <b>{available:.2f} ₽</b>"
+        )
+
     text = (
         f"💼 <b>Личный кабинет</b>\n\n"
         f"👤 Роль: <b>{role.upper()}</b>\n"
         f"📅 Статус подписки: {status_text}\n"
         f"🆔 ID: <code>{user_id}</code>"
+        f"{finance_text}"
     )
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_cabinet_menu(role))
 @router.message(Command("cabinet"))
