@@ -201,6 +201,22 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         )
         await asyncio.sleep(1)
 
+                    if msg:
+                        direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
+                        donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
+                        conn_rec = get_db()
+                        try:
+                            conn_rec.execute(
+                                """INSERT INTO posts 
+                                (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
+                                VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
+                                (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
+                                 datetime.now(timezone.utc).isoformat())
+                            )
+                            conn_rec.commit()
+                        finally:
+                            conn_rec.close()
+    
     await callback.message.answer("✅ Пост опубликован!")
 
 
