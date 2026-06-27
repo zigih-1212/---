@@ -13,6 +13,7 @@ from services.saas_core import publish_post_with_fallback
 from services.admitad import fetch_admitad_catalog_for_user  # обновлённая функция
 from keyboards.saas import kb_payment_methods
 from services.admitad import ADULT_STORES
+from aiogram.filters import Command
 
 router = Router(name="saas")
 # handlers/saas.py
@@ -300,17 +301,16 @@ async def msg_saas_text_input(message: Message, state: FSMContext) -> None:
 # ---------------------------------------------------------------------------
 # Промокоды (надёжный способ без FSM-фильтра)
 # ---------------------------------------------------------------------------
-@router.callback_query(F.data == "promo:activate")
-async def cb_promo_activate(callback: CallbackQuery, state: FSMContext):
-    """Устанавливаем флаг ожидания промокода."""
+
+@router.message(Command("promo"))
+async def cmd_promo(message: Message, state: FSMContext):
     await state.update_data(waiting_promo=True)
-    await callback.message.edit_text(
+    await message.answer(
         "🎁 Введите промокод прямо сейчас в чат:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
         ])
     )
-    await callback.answer()
 
 
 @router.message(F.text)   # ловим любой текст
