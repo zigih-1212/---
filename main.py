@@ -1772,89 +1772,63 @@ async def show_saas_instruction(callback: CallbackQuery):
     )
 
 async def daily_report(bot: Bot):
-    """Ежедневный отчёт администратору о работе бота."""
+    """Ежедневный отчёт: CSV-файл с постами за 24 часа + краткая сводка."""
+    import csv, tempfile, os as _os
     conn = get_db()
     try:
-        # За последние 24 часа
         since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
 
-        # Активные каналы (хотя бы 1 пост за сутки)
+        # Данные для CSV
+        rows = conn.execute("""
+            SELECT c.channel_id, p.subid1, p.direct_link, p.published_at, c.channel_title
+            FROM posts p
+            JOIN channels c ON p.channel_id = c.channel_id AND p.user_id = c.user_id
+            WHERE p.status = 'published' AND p.published_at >= ?
+            ORDER BY p.published_at ASC
+        """, (since,)).fetchall()
+
+        # Общая статистика для сопроводительного текста
         active_channels = conn.execute(
             "SELECT COUNT(DISTINCT channel_id) FROM posts WHERE status='published' AND published_at >= ?",
             (since,)
         ).fetchone()[0] or 0
-
-        # Всего постов за сутки
-        total_posts = conn.execute(
-            "SELECT COUNT(*) FROM posts WHERE status='published' AND published_at >= ?",
-            (since,)
-        ).fetchone()[0] or 0
-
-        # Топ-3 канала по количеству постов
-        top_channels = conn.execute(
-            """SELECT c.channel_title, c.channel_id, COUNT(p.id) as cnt
-               FROM posts p
-               JOIN channels c ON p.channel_id = c.channel_id AND p.user_id = c.user_id
-               WHERE p.status='published' AND p.published_at >= ?
-               GROUP BY c.channel_id
-               ORDER BY cnt DESC
-               LIMIT 3""",
-            (since,)
-        ).fetchall()
-
-        # Новые транзакции за сутки
+        total_posts = len(rows) if rows else 0
         new_tx = conn.execute(
             "SELECT COUNT(*) FROM admitad_transactions WHERE created_at >= ?",
-            (since,)
-        ).fetchone()[0] or 0
-        approved_tx = conn.execute(
-            "SELECT COUNT(*) FROM admitad_transactions WHERE created_at >= ? AND payment_status='approved'",
-            (since,)
-        ).fetchone()[0] or 0
-        pending_tx = conn.execute(
-            "SELECT COUNT(*) FROM admitad_transactions WHERE created_at >= ? AND payment_status='pending'",
-            (since,)
-        ).fetchone()[0] or 0
-        declined_tx = conn.execute(
-            "SELECT COUNT(*) FROM admitad_transactions WHERE created_at >= ? AND payment_status='declined'",
-            (since,)
-        ).fetchone()[0] or 0
-
-        # Ошибки публикации за сутки
-        errors_count = conn.execute(
-            "SELECT COUNT(*) FROM posts WHERE status='error' AND created_at >= ?",
             (since,)
         ).fetchone()[0] or 0
     finally:
         conn.close()
 
-    # Формируем сообщение
-    report_text = (
+    # Формируем CSV во временный файл
+    tmp_path = "/tmp/daily_report.csv"
+    with open(tmp_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Канал (ID)", "SubID", "Прямая ссылка на пост", "Время (UTC)", "Название канала"])
+        for ch_id, subid, link, ts, title in rows:
+            writer.writerow([ch_id, subid or "", link or "", ts or "", title or ""])
+
+    # Сопроводительный текст
+    caption = (
         f"📊 <b>Ежедневный отчёт</b>\n"
         f"📅 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC\n\n"
         f"🟢 Активных каналов: <b>{active_channels}</b>\n"
-        f"📬 Всего постов: <b>{total_posts}</b>\n\n"
+        f"📬 Всего постов: <b>{total_posts}</b>\n"
+        f"💰 Новых транзакций: <b>{new_tx}</b>\n\n"
+        f"📎 Файл со списком постов прикреплён ниже."
     )
 
-    if top_channels:
-        report_text += "<b>Топ-3 канала:</b>\n"
-        for i, ch in enumerate(top_channels, 1):
-            report_text += f"  {i}. {ch['channel_title'] or ch['channel_id']} — {ch['cnt']} пост.\n"
-        report_text += "\n"
-
-    report_text += (
-        f"💰 Новых транзакций: <b>{new_tx}</b> (pending: {pending_tx}, approved: {approved_tx}, declined: {declined_tx})\n"
-        f"⚠️ Ошибок публикации: <b>{errors_count}</b>\n"
-    )
-
-    # Отправляем первому админу
     admin_id = ADMIN_IDS[0] if ADMIN_IDS else None
     if admin_id:
         try:
-            await bot.send_message(admin_id, report_text, parse_mode="HTML")
-            logger.info("Ежедневный отчёт отправлен администратору.")
+            # Отправляем CSV как документ
+            from aiogram.types import FSInputFile
+            doc = FSInputFile(tmp_path, filename=f"daily_posts_{datetime.now().strftime('%Y%m%d')}.csv")
+            await bot.send_document(admin_id, document=doc, caption=caption, parse_mode="HTML")
+            _os.remove(tmp_path)
+            logger.info("Ежедневный отчёт отправлен.")
         except Exception as e:
-            logger.error(f"Не удалось отправить ежедневный отчёт: {e}")
+            logger.error(f"Ошибка отправки ежедневного отчёта: {e}")
 
 # =============================================================================
 # === ОБРАБОТЧИКИ ТАРИФОВ И ОПЛАТЫ ===========================================
