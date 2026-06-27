@@ -297,6 +297,29 @@ def init_db() -> None:
             used INTEGER DEFAULT 0
         )
     """)
+    # Таблица для хранения транзакций из Admitad (вебхуки)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admitad_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admitad_id INTEGER UNIQUE,
+            user_id INTEGER,
+            channel_id TEXT,
+            action TEXT,
+            action_id INTEGER,
+            payment_sum REAL,
+            currency TEXT DEFAULT 'RUB',
+            payment_status TEXT,
+            order_id INTEGER,
+            click_time INTEGER,
+            time INTEGER,
+            subid1 TEXT,
+            subid2 TEXT,
+            subid3 TEXT,
+            subid4 TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)  
 # Уникальный индекс для предотвращения дубликатов
     cursor.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_gdeslon_unique 
