@@ -95,19 +95,6 @@ async def publish_post_with_fallback(
 # ---------------------------------------------------------------------------
 # Очереди SaaS и публикация
 # ---------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-
 async def publish_from_catalog(bot: Bot):
     if is_night_time():
         logger.info("🌙 Ночной режим активен, автоматическая публикация приостановлена")
@@ -237,6 +224,7 @@ async def publish_from_catalog(bot: Bot):
         logger.info(f"[DEBUG] User {user_id}: публикуем в {len(channels)} каналов")
         for ch in channels:
             final_url = partner_url
+            # Используем числовой sub_id (Telegram ID канала), который уже сохранён в базе
             if ch["sub_id"]:
                 if '?' in final_url:
                     final_url += '&subid=' + ch["sub_id"]
@@ -255,14 +243,32 @@ async def publish_from_catalog(bot: Bot):
             caption += f"Реклама. {advertiser}. Erid: {erid}"
 
             try:
-                await publish_post_with_fallback(
+                msg = await publish_post_with_fallback(
                     bot=bot,
                     channel_id=ch["channel_id"],
                     caption=caption,
                     photo_url=photo_url,
                     has_spoiler=(source in ADULT_STORES)
                 )
-                logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}")
+                if msg:
+                    # Логирование: сохраняем subid1 и direct_link
+                    direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
+                    donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
+                    conn_rec = get_db()
+                    try:
+                        conn_rec.execute(
+                            """INSERT INTO posts 
+                            (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
+                            VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
+                            (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
+                             datetime.now(timezone.utc).isoformat())
+                        )
+                        conn_rec.commit()
+                    finally:
+                        conn_rec.close()
+                    logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}, post_id={msg.message_id}")
+                else:
+                    logger.warning(f"[DEBUG] Не удалось опубликовать в {ch['channel_id']}")
             except Exception as e:
                 logger.error(f"[DEBUG] Ошибка публикации в {ch['channel_id']}: {e}")
             await asyncio.sleep(1)
