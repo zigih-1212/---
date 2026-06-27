@@ -1772,13 +1772,17 @@ async def show_saas_instruction(callback: CallbackQuery):
     )
 
 async def daily_report(bot: Bot):
-    """Ежедневный отчёт: CSV-файл с постами за 24 часа + краткая сводка."""
-    import csv, tempfile, os as _os
+    """Ежедневный отчёт: CSV-файл с постами за 24 часа + сохранение копии."""
+    import csv, os as _os, pathlib
+
+    # Папка для хранения отчётов
+    reports_dir = "/app/data/reports"
+    pathlib.Path(reports_dir).mkdir(parents=True, exist_ok=True)
+
     conn = get_db()
     try:
         since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
 
-        # Данные для CSV
         rows = conn.execute("""
             SELECT c.channel_id, p.subid1, p.direct_link, p.published_at, c.channel_title
             FROM posts p
@@ -1787,7 +1791,6 @@ async def daily_report(bot: Bot):
             ORDER BY p.published_at ASC
         """, (since,)).fetchall()
 
-        # Общая статистика для сопроводительного текста
         active_channels = conn.execute(
             "SELECT COUNT(DISTINCT channel_id) FROM posts WHERE status='published' AND published_at >= ?",
             (since,)
@@ -1800,9 +1803,13 @@ async def daily_report(bot: Bot):
     finally:
         conn.close()
 
-    # Формируем CSV во временный файл
-    tmp_path = "/tmp/daily_report.csv"
-    with open(tmp_path, "w", newline="", encoding="utf-8-sig") as f:
+    # Имя файла с датой
+    date_str = datetime.now().strftime('%Y%m%d')
+    filename = f"daily_posts_{date_str}.csv"
+    filepath = _os.path.join(reports_dir, filename)
+
+    # Запись CSV
+    with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(["Канал (ID)", "SubID", "Прямая ссылка на пост", "Время (UTC)", "Название канала"])
         for ch_id, subid, link, ts, title in rows:
@@ -1815,21 +1822,18 @@ async def daily_report(bot: Bot):
         f"🟢 Активных каналов: <b>{active_channels}</b>\n"
         f"📬 Всего постов: <b>{total_posts}</b>\n"
         f"💰 Новых транзакций: <b>{new_tx}</b>\n\n"
-        f"📎 Файл со списком постов прикреплён ниже."
+        f"📎 Файл сохранён на сервере: <code>{filepath}</code>"
     )
 
     admin_id = ADMIN_IDS[0] if ADMIN_IDS else None
     if admin_id:
         try:
-            # Отправляем CSV как документ
             from aiogram.types import FSInputFile
-            doc = FSInputFile(tmp_path, filename=f"daily_posts_{datetime.now().strftime('%Y%m%d')}.csv")
+            doc = FSInputFile(filepath, filename=filename)
             await bot.send_document(admin_id, document=doc, caption=caption, parse_mode="HTML")
-            _os.remove(tmp_path)
-            logger.info("Ежедневный отчёт отправлен.")
+            logger.info(f"Ежедневный отчёт отправлен и сохранён как {filepath}")
         except Exception as e:
             logger.error(f"Ошибка отправки ежедневного отчёта: {e}")
-
 # =============================================================================
 # === ОБРАБОТЧИКИ ТАРИФОВ И ОПЛАТЫ ===========================================
 # =============================================================================
