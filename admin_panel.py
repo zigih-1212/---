@@ -1004,71 +1004,93 @@ h2{{color:{color};}} a{{color:#3498db;}}</style></head>
                                user_agent: str = None,
                                user_referer: str = None,
                                reward_ready: str = None):
-        # Принимаем как GET, так и POST (Admitad шлёт выбранным методом)
-        # Параметры приходят в query string или в теле POST form-data
+        # Принимаем как GET, так и POST
         if request.method == "POST":
             form = await request.form()
             admitad_id = admitad_id or form.get("admitad_id")
             subid1 = subid1 or form.get("subid1")
-            # ... аналогично для остальных параметров
+            payment_sum = payment_sum or form.get("payment_sum")
+            payment_status = payment_status or form.get("payment_status")
+            # ... при необходимости можно добавить остальные поля
 
         if not admitad_id or not subid1:
             return {"status": "error", "message": "Missing required parameters"}
 
         conn = get_db()
         try:
-            # Проверяем дубликат
+            # Проверяем существующую транзакцию
             existing = conn.execute(
-                "SELECT id FROM admitad_transactions WHERE admitad_id=?",
+                "SELECT id, payment_status FROM admitad_transactions WHERE admitad_id=?",
                 (admitad_id,)
             ).fetchone()
+
             if existing:
-                # Уже есть такой платёж – игнорируем или обновляем статус
+                # Защита от дублирования
+                if existing["payment_status"] == payment_status:
+                    return {"status": "ok", "message": "duplicate ignored"}
+
+                # Обновляем статус и сумму (на случай корректировки)
                 conn.execute(
-                    "UPDATE admitad_transactions SET payment_status=?, updated_at=CURRENT_TIMESTAMP WHERE admitad_id=?",
-                    (payment_status, admitad_id)
+                    "UPDATE admitad_transactions SET payment_status=?, payment_sum=?, updated_at=CURRENT_TIMESTAMP WHERE admitad_id=?",
+                    (payment_status, payment_sum, admitad_id)
                 )
-                conn.commit()
-                return {"status": "ok", "message": "duplicate updated"}
+            else:
+                # Новая транзакция — вставляем
+                conn.execute("""
+                    INSERT INTO admitad_transactions
+                    (admitad_id, user_id, channel_id, action, action_id, payment_sum, currency,
+                     payment_status, order_id, click_time, time, subid1, subid2, subid3, subid4)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    admitad_id, 0, subid1, action, action_id, payment_sum, currency,
+                    payment_status, order_id, click_time, time, subid1, subid2, subid3, subid4
+                ))
 
-            # Находим пользователя по subid1 (числовой ID канала)
-            user_row = conn.execute(
-                "SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?",
-                (subid1,)
-            ).fetchone()
-            if not user_row:
-                return {"status": "error", "message": "channel not found"}
-
-            user_id = user_row[0]
-
-            # Вставляем транзакцию
-            conn.execute("""
-                INSERT INTO admitad_transactions
-                (admitad_id, user_id, channel_id, action, action_id, payment_sum, currency,
-                 payment_status, order_id, click_time, time, subid1, subid2, subid3, subid4)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                admitad_id, user_id, subid1, action, action_id, payment_sum, currency,
-                payment_status, order_id, click_time, time, subid1, subid2, subid3, subid4
-            ))
-
-            # Обновляем баланс пользователя
-            if payment_status == "approved" and payment_sum is not None:
-                # 5% комиссия платформе, 95% пользователю
+            # --- Логика обновления баланса ---
+            if payment_status == "pending" and payment_sum is not None:
+                # Начисляем в ожидающие
                 user_earnings = round(float(payment_sum) * 0.95, 2)
                 conn.execute(
-                    "UPDATE users SET balance_available = balance_available + ? WHERE user_id=?",
-                    (user_earnings, user_id)
+                    "UPDATE users SET balance_pending = balance_pending + ? WHERE user_id = (SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?)",
+                    (user_earnings, subid1)
                 )
-            elif payment_status in ("declined", "pending"):
-                # Если пришло уведомление об отмене или переносе в холд,
-                # можно вычесть из доступных (если ранее было начислено)
-                # Здесь лучше вести отдельный лог, пока оставим как есть.
-                pass
+
+            elif payment_status == "approved" and payment_sum is not None:
+                # Если до этого был pending, переносим из pending в available
+                if existing and existing["payment_status"] == "pending":
+                    prev_sum = conn.execute(
+                        "SELECT payment_sum FROM admitad_transactions WHERE admitad_id=?",
+                        (admitad_id,)
+                    ).fetchone()["payment_sum"]
+                    prev_earnings = round(float(prev_sum) * 0.95, 2)
+                    # Вычитаем старую pending сумму
+                    conn.execute(
+                        "UPDATE users SET balance_pending = balance_pending - ? WHERE user_id = (SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?)",
+                        (prev_earnings, subid1)
+                    )
+                # Начисляем в доступные
+                new_earnings = round(float(payment_sum) * 0.95, 2)
+                conn.execute(
+                    "UPDATE users SET balance_available = balance_available + ? WHERE user_id = (SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?)",
+                    (new_earnings, subid1)
+                )
+
+            elif payment_status == "declined":
+                # Если был pending, вычитаем из ожидающих
+                if existing and existing["payment_status"] == "pending":
+                    prev_sum = conn.execute(
+                        "SELECT payment_sum FROM admitad_transactions WHERE admitad_id=?",
+                        (admitad_id,)
+                    ).fetchone()["payment_sum"]
+                    prev_earnings = round(float(prev_sum) * 0.95, 2)
+                    conn.execute(
+                        "UPDATE users SET balance_pending = balance_pending - ? WHERE user_id = (SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?)",
+                        (prev_earnings, subid1)
+                    )
 
             conn.commit()
         finally:
             conn.close()
 
-        return {"status": "ok", "message": "processed"}        
+        return {"status": "ok", "message": "processed"}
     return app
