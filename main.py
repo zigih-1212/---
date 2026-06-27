@@ -541,7 +541,6 @@ async def show_user_cabinet(message: Message, user_id: int):
                 return
 
             role = user["role"]
-            # Убрали ручное формирование каналов – пусть будет просто кабинет
         finally:
             conn.close()
 
