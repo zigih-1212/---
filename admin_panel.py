@@ -1091,6 +1091,22 @@ h2{{color:{color};}} a{{color:#3498db;}}</style></head>
             conn.commit()
         finally:
             conn.close()
+            # Уведомление пользователю о подтверждении
+            if payment_status == "approved" and subid1:
+                try:
+                    user_row = conn.execute(
+                        "SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?",
+                        (subid1,)
+                    ).fetchone()
+                    if user_row:
+                        await bot.send_message(
+                            user_row["user_id"],
+                            f"💰 Поступило вознаграждение: <b>{float(payment_sum)*0.95:.2f} {currency}</b> (заказ #{order_id or admitad_id}).\n"
+                            f"Теперь доступно к выводу.",
+                            parse_mode="HTML"
+                        )
+                except:
+                    pass
 
         return {"status": "ok", "message": "processed"}
 
@@ -1129,12 +1145,7 @@ th{{background:#1a1d27;}}a{{color:#3498db;}}</style></head>
         return HTMLResponse(html)
 
     @app.get("/admin/reports/download/{fname}")
-    async def download_report(fname: str):
-        is_authenticated(request)  # нужно передать request, но внутри sub‑function не получится. Обернём в отдельную функцию.
-        return _download_report(request, fname)
-
-    # Вспомогательная функция скачивания
-    async def _download_report(request: Request, fname: str):
+    async def download_report(request: Request, fname: str):
         from fastapi.responses import FileResponse
         import os as _os
         path = _os.path.join("/app/data/reports", fname)
@@ -1142,20 +1153,5 @@ th{{background:#1a1d27;}}a{{color:#3498db;}}</style></head>
             raise HTTPException(status_code=404)
         return FileResponse(path, filename=fname, media_type="text/csv")
 
-            # Уведомление пользователю о подтверждении
-            if payment_status == "approved" and subid1:
-                try:
-                    user_row = conn.execute(
-                        "SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?",
-                        (subid1,)
-                    ).fetchone()
-                    if user_row:
-                        await bot.send_message(
-                            user_row["user_id"],
-                            f"💰 Поступило вознаграждение: <b>{float(payment_sum)*0.95:.2f} {currency}</b> (заказ #{order_id or admitad_id}).\n"
-                            f"Теперь доступно к выводу.",
-                            parse_mode="HTML"
-                        )
-                except:
-                    pass
+
     return app
