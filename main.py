@@ -351,7 +351,15 @@ def init_db() -> None:
     try:
         cursor.execute("ALTER TABLE channels ADD COLUMN sub_id TEXT")
     except sqlite3.OperationalError:
-        pass      
+        pass 
+    try:
+        cursor.execute("ALTER TABLE posts ADD COLUMN subid1 TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE posts ADD COLUMN direct_link TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
