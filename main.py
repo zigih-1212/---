@@ -395,6 +395,10 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE admitad_transactions ADD COLUMN payment_status TEXT DEFAULT 'pending'")
     except sqlite3.OperationalError:
         pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN oferta_accepted INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
@@ -649,10 +653,12 @@ async def cmd_start(message: Message, state: FSMContext):
 async def show_user_cabinet(message: Message, user_id: int = None):
     if user_id is None:
         user_id = message.from_user.id
+
     conn = get_db()
     try:
         user = conn.execute(
-            "SELECT role, subscription_until, username, balance_pending, balance_available FROM users WHERE user_id=?",
+            "SELECT role, subscription_until, username, balance_pending, balance_available, oferta_accepted "
+            "FROM users WHERE user_id=?",
             (user_id,)
         ).fetchone()
     finally:
@@ -660,6 +666,49 @@ async def show_user_cabinet(message: Message, user_id: int = None):
 
     if not user:
         await message.answer("Пожалуйста, начните с команды /start")
+        return
+
+    # Если оферта не принята – показываем только оферту
+    if not user["oferta_accepted"]:
+        text = (
+            "📜 <b>Публичная оферта</b>\n\n"
+            "Для использования бота необходимо принять условия Пользовательского соглашения.\n\n"
+            "<i>Ознакомьтесь с полным текстом ниже и нажмите «Принимаю» для продолжения.</i>"
+        )
+        # Полный текст оферты (можно сократить, если нужно)
+        full_oferta = (
+            "<b>ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ (ПУБЛИЧНАЯ ОФЕРТА)</b>\n"
+            "<i>Последняя редакция: 28 июня 2026 года</i>\n\n"
+            "Нажимая «Принимаю», вы соглашаетесь с условиями.\n\n"
+            "<b>1. Термины</b>\n"
+            "• Сервис – данный Telegram-бот.\n"
+            "• CPA-сеть – партнёрская сеть Admitad.\n"
+            "• SubID – уникальный цифровой идентификатор вашего канала.\n"
+            "• Баланс – справочные данные о вознаграждении, не электронные деньги.\n\n"
+            "<b>2. Предмет</b>\n"
+            "Вы получаете доступ к автопостингу товаров с партнёрскими ссылками. "
+            "Сервис удерживает комиссию 5% от подтверждённого вознаграждения.\n\n"
+            "<b>3. Учёт и выплаты</b>\n"
+            "• Единственный источник данных о заказах – CPA-сеть.\n"
+            "• В ожидании – заказы на проверке у рекламодателя (30–90 дней).\n"
+            "• Доступно к выводу – подтверждённые заказы, готовые к выплате.\n"
+            "• Выплата производится по запросу, за вычетом 5%.\n\n"
+            "<b>4. Запрещено</b>\n"
+            "Спам, накрутка, самовыкупы, мотивированный трафик, брендовая реклама. "
+            "Публикация ссылок разрешена только в добавленных каналах.\n\n"
+            "<b>5. Ответственность</b>\n"
+            "• Выплаты ограничены суммами, реально полученными от CPA-сети.\n"
+            "• При фроде или блокировке аккаунта баланс аннулируется.\n"
+            "• Администрация может заморозить выплаты на время проверки (до 90 дней).\n\n"
+            "<b>6. Изменения</b>\n"
+            "Администрация может менять условия. Продолжение использования – согласие с новой редакцией."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Принимаю", callback_data="oferta:accept")],
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="start")]   # вернуться к /start
+        ])
+        await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        # Отдельно отправим полный текст, если нужно; можно объединить
         return
 
     role = user["role"]
@@ -680,7 +729,7 @@ async def show_user_cabinet(message: Message, user_id: int = None):
     else:
         status_text = "♾️ Бессрочный доступ" if role == "blogger" else "❌ Подписка не активирована"
 
-    # Добавляем блок с балансом для SaaS
+    # Финансовый блок
     finance_text = ""
     if role == "saas":
         pending = user["balance_pending"] or 0.0
