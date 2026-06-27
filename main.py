@@ -1233,6 +1233,16 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
 @router.message(OnboardingStates.waiting_saas_tg_channel)
 async def handle_saas_channel_addition(message: Message, state: FSMContext) -> None:
     channel_username = message.text.strip()
+        # Если сообщение не является каналом, возможно, это промокод
+    if not channel_username.startswith("@"):
+        # Проверим, похоже ли на промокод (коды обычно 6-10 заглавных букв/цифр)
+        if re.fullmatch(r'[A-Z0-9]{6,10}', channel_username.upper()):
+            # Имитируем вызов обработчика промокода
+            await state.set_state(SaasStates.waiting_promocode)
+            # Вызываем promo_code_entered (из handlers.saas)
+            from handlers.saas import promo_code_entered
+            await promo_code_entered(message, state)
+            return
     user_id = message.from_user.id
 
     is_admin_ok = await check_bot_admin(message.bot, channel_username)
