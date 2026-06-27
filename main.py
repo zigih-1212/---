@@ -814,36 +814,52 @@ async def cb_menu_stats(callback: CallbackQuery) -> None:
         await _show_saas_stats(callback, user_id, channel_idx=0, period="30d")
     await callback.answer()
 
-async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: int, period: str) -> None:
+async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: int = 0, period: str = "30d") -> None:
     channels = get_saas_channels(user_id)
     if not channels:
-        await callback.message.edit_text(
-            "📊 <b>Статистика</b>\n\nУ вас ещё нет подключённых каналов.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
-            ])
+        # Показываем общую статистику без каналов
+        overview = get_saas_overview(user_id)
+        text = (
+            f"📊 <b>Общая статистика</b>\n\n"
+            f"📬 Всего постов: <b>{overview['total_posts']}</b>\n"
+            f"📅 За 30 дней: <b>{overview['posts_30d']}</b>\n\n"
+            f"🏪 <b>По магазинам (все время):</b>\n"
         )
+        if overview['by_store']:
+            for store, count in overview['by_store'].items():
+                text += f"  {store}: {count}\n"
+        else:
+            text += "  Нет данных\n"
+        text += f"\n<i>Подключите каналы для детальной статистики.</i>"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
+        ])
+        await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        await callback.answer()
         return
 
     channel_idx = max(0, min(channel_idx, len(channels) - 1))
     ch = channels[channel_idx]
     s = get_saas_channel_stats(user_id, ch["channel_id"], period)
     total_ch = len(channels)
-    title = ch["channel_title"] or ch["channel_id"]
 
     text = (
         f"📊 <b>Статистика канала</b>\n"
-        f"📢 <b>{title}</b>  <i>({channel_idx + 1}/{total_ch})</i>\n"
+        f"📢 <b>{ch['channel_title'] or ch['channel_id']}</b>  <i>({channel_idx + 1}/{total_ch})</i>\n"
         f"🗓 Период: <b>{s['period_label']}</b>\n\n"
-        f"📬 Постов отправлено:  <b>{s['total']}</b>\n"
-        f"✅ Опубликовано:       <b>{s['published']}</b>\n"
-        f"⚠️ В карантине:        <b>{s['quarantine']}</b>\n"
-        f"❌ Ошибок:             <b>{s['errors']}</b>\n\n"
-        f"🕐 Последний пост: <b>{s['last_published_at']}</b>\n\n"
-        f"<i>Данные обновляются в реальном времени.</i>"
+        f"📬 Всего постов: <b>{s['total']}</b>\n"
+        f"✅ Опубликовано: <b>{s['published']}</b>\n"
+        f"❌ Ошибок: <b>{s['errors']}</b>\n"
+        f"🕐 Последний: <b>{s['last_published_at']}</b>\n\n"
+        f"🏪 <b>По магазинам:</b>\n"
     )
+    if s['by_store']:
+        for store, count in s['by_store'].items():
+            text += f"  {store}: {count}\n"
+    else:
+        text += "  Нет данных\n"
 
+    # Кнопки навигации
     nav_row = []
     if channel_idx > 0:
         nav_row.append(InlineKeyboardButton(text="◀️ Канал", callback_data=f"saas_stats:{channel_idx - 1}:{period}"))
@@ -859,10 +875,11 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
     if nav_row:
         kb.append(nav_row)
     kb.append(period_row)
-    kb.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")])
 
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML,
                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await callback.answer()
 
 @router.callback_query(F.data.startswith("saas_stats:"))
 async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
