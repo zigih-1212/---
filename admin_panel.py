@@ -11,7 +11,6 @@ import string
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from config import load_settings, load_tariffs, settings
-from services.saas_core import flush_saas_queue_for_user
 
 from fastapi import FastAPI, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -562,89 +561,7 @@ th{{background:#1a1d27;}}a{{color:#3498db;text-decoration:none;}}</style></head>
             conn.close()
         return RedirectResponse("/admin/promocodes", status_code=302)
 
-    # =============================================================================
-    # === НОЧНАЯ ОЧЕРЕДЬ ===========================================================
-    # =============================================================================
-    @app.get("/admin/night-queue", response_class=HTMLResponse)
-    async def night_queue_page(request: Request):
-        is_authenticated(request)
-        conn = get_db()
-        try:
-            rows = conn.execute("SELECT nq.*, u.username FROM night_queue nq LEFT JOIN users u ON nq.user_id = u.user_id ORDER BY nq.created_at DESC LIMIT 200").fetchall()
-        finally:
-            conn.close()
-        items = "".join(
-            f"""<tr><td>{r['id']}</td><td>@{r['username'] or r['user_id']}</td><td>{r['video_id'][:30]}</td><td>{r['sku'] or '—'}</td><td>{str(r['created_at'])[:16]}</td>
-            <td><form action="/admin/night-queue/publish/{r['id']}" method="post" style="display:inline"><button style="background:#2ecc71;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">▶</button></form>
-            <form action="/admin/night-queue/delete/{r['id']}" method="post" style="display:inline" onsubmit="return confirm('Удалить?')"><button style="background:#e74c3c;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">🗑</button></form></td></tr>"""
-            for r in rows
-        )
-        return HTMLResponse(f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Ночная очередь</title>
-<style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}h1{{color:#fff;}}
-table{{width:100%;border-collapse:collapse;margin-top:15px;}}th,td{{padding:8px;border:1px solid #333;text-align:left;}}th{{background:#1a1d27;}}</style></head>
-<body><a href="/admin/dashboard">← Дашборд</a><h1>🌙 Ночная очередь</h1>
-<table><tr><th>ID</th><th>Пользователь</th><th>Видео</th><th>SKU</th><th>Дата</th><th>Действия</th></tr>
-{items if items else "<tr><td colspan='6'>Очередь пуста</td></tr>"}</table></body></html>""")
 
-    @app.post("/admin/night-queue/publish/{item_id}")
-    async def night_queue_publish(request: Request, item_id: int):
-        is_authenticated(request)
-        conn = get_db()
-        try:
-            row = conn.execute("SELECT * FROM night_queue WHERE id = ?", (item_id,)).fetchone()
-            if row:
-                from parser import process_new_video
-                await process_new_video(bot=bot, user_id=row["user_id"], video_id=row["video_id"],
-                                        description=row["description"] or "", sku=row["sku"],
-                                        photo_url=row["photo_url"], marketplace=row["marketplace"] or "wb")
-                conn.execute("DELETE FROM night_queue WHERE id = ?", (item_id,))
-                conn.commit()
-        finally:
-            conn.close()
-        return RedirectResponse("/admin/night-queue", status_code=302)
-
-    @app.post("/admin/night-queue/delete/{item_id}")
-    async def night_queue_delete(request: Request, item_id: int):
-        is_authenticated(request)
-        conn = get_db()
-        try:
-            conn.execute("DELETE FROM night_queue WHERE id = ?", (item_id,))
-            conn.commit()
-        finally:
-            conn.close()
-        return RedirectResponse("/admin/night-queue", status_code=302)
-
-    # =============================================================================
-    # === SAAS-ОЧЕРЕДЬ =============================================================
-    # =============================================================================
-    @app.get("/admin/saas-queue", response_class=HTMLResponse)
-    async def saas_queue_page(request: Request):
-        is_authenticated(request)
-        conn = get_db()
-        try:
-            rows = conn.execute("SELECT sq.*, u.username FROM saas_queue sq LEFT JOIN users u ON sq.user_id = u.user_id ORDER BY sq.created_at DESC LIMIT 200").fetchall()
-        finally:
-            conn.close()
-        items = "".join(
-            f"""<tr><td>{r['id']}</td><td>@{r['username'] or r['user_id']}</td><td>{r['channel_id']}</td><td>{r['donor_post_id'][:30]}</td>
-            <td>{r['sku'] or '—'}</td><td>{str(r['created_at'])[:16]}</td>
-            <td><form action="/admin/saas-queue/flush/{r['user_id']}" method="post" style="display:inline"><button style="background:#3498db;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">Опубликовать все</button></form></td></tr>"""
-            for r in rows
-        )
-        return HTMLResponse(f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>SaaS-очередь</title>
-<style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}h1{{color:#fff;}}
-table{{width:100%;border-collapse:collapse;margin-top:15px;}}th,td{{padding:8px;border:1px solid #333;text-align:left;}}th{{background:#1a1d27;}}</style></head>
-<body><a href="/admin/dashboard">← Дашборд</a><h1>🅰️ SaaS-очередь</h1>
-<table><tr><th>ID</th><th>Пользователь</th><th>Канал</th><th>Пост</th><th>SKU</th><th>Дата</th><th>Действия</th></tr>
-{items if items else "<tr><td colspan='7'>Очередь пуста</td></tr>"}</table></body></html>""")
-
-    @app.post("/admin/saas-queue/flush/{user_id}")
-    async def saas_queue_flush(request: Request, user_id: int):
-        is_authenticated(request)
-        await flush_saas_queue_for_user(bot, user_id)
-        return RedirectResponse("/admin/saas-queue", status_code=302)
 
     # =============================================================================
     # === КАРАНТИН ================================================================
