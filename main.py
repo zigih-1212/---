@@ -528,16 +528,37 @@ async def cmd_start(message: Message, state: FSMContext):
 # ---------------------------------------------------------------------------
 # /cabinet, "💻 Личный кабинет"
 # ---------------------------------------------------------------------------
-@router.message(Command("cabinet"))
-async def cmd_cabinet(message: Message):
-    if is_admin(message.from_user.id):
-        await message.answer("🛠 Панель администратора:", reply_markup=kb_admin_panel())
-    else:
-        await show_user_cabinet(message, user_id=message.from_user.id)
+async def show_user_cabinet(message: Message, user_id: int):
+    try:
+        conn = get_db()
+        try:
+            user = conn.execute(
+                "SELECT * FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
 
-@router.message(F.text.in_(["💻 Личный кабинет", "/cabinet"]))
-async def show_cabinet(message: Message):
-    await show_user_cabinet(message, user_id=message.from_user.id)
+            if not user:
+                await message.answer("❌ Пользователь не найден.")
+                return
+
+            role = user["role"]
+            # Убрали ручное формирование каналов – пусть будет просто кабинет
+        finally:
+            conn.close()
+
+        if role == "saas":
+            text = (
+                f"👤 <b>Личный кабинет SaaS</b>\n\n"
+                f"Роль: SaaS-клиент\n"
+                f"Подписка до: {user['subscription_until'] or 'Не активна'}\n"
+            )
+        else:
+            text = "👤 Личный кабинет Блогера"
+
+        await message.answer(text, reply_markup=kb_cabinet_menu(role), parse_mode="HTML")
+
+    except Exception as e:
+        logger.error(f"[CABINET ERROR] {e}", exc_info=True)
+        await message.answer("❌ Ошибка при открытии кабинета. Напишите администратору.")
 
 # ---------------------------------------------------------------------------
 # Обработка роли
