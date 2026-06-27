@@ -840,7 +840,6 @@ async def cb_menu_stats(callback: CallbackQuery) -> None:
 async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: int = 0, period: str = "30d") -> None:
     channels = get_saas_channels(user_id)
     if not channels:
-        # Показываем общую статистику без каналов
         overview = get_saas_overview(user_id)
         text = (
             f"📊 <b>Общая статистика</b>\n\n"
@@ -863,7 +862,7 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
 
     channel_idx = max(0, min(channel_idx, len(channels) - 1))
     ch = channels[channel_idx]
-    s = get_saas_channel_stats(user_id, ch["channel_id"], period)
+    s = get_saas_channel_stats_new(user_id, ch["channel_id"], period)
     total_ch = len(channels)
 
     text = (
@@ -882,7 +881,6 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
     else:
         text += "  Нет данных\n"
 
-    # Кнопки навигации
     nav_row = []
     if channel_idx > 0:
         nav_row.append(InlineKeyboardButton(text="◀️ Канал", callback_data=f"saas_stats:{channel_idx - 1}:{period}"))
@@ -903,7 +901,7 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML,
                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
     await callback.answer()
-
+  
 @router.callback_query(F.data.startswith("saas_stats:"))
 async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
