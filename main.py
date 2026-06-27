@@ -928,7 +928,7 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
         f"✅ <b>Канал успешно привязан:</b> {html.escape(channel_title or channel_id)}\n\n"
         "Теперь вы можете полноценно пользоваться ботом.",
         parse_mode=ParseMode.HTML,
-        reply_markup=kb_main_menu(role)
+        reply_markup=kb_cabinet_menu(role)
     )
 
 # =============================================================================
