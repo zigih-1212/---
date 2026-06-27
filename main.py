@@ -1233,9 +1233,10 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
 @router.message(OnboardingStates.waiting_saas_tg_channel)
 async def handle_saas_channel_addition(message: Message, state: FSMContext) -> None:
     channel_username = message.text.strip()
+    # Пропускаем команды
     if channel_username.startswith("/"):
-        return  # пропускаем команду, её обработает другой роутер  
-        # Если сообщение не является каналом, возможно, это промокод
+        return
+    # ... остальная логика
     if not channel_username.startswith("@"):
         # Проверим, похоже ли на промокод (коды обычно 6-10 заглавных букв/цифр)
         if re.fullmatch(r'[A-Z0-9]{6,10}', channel_username.upper()):
