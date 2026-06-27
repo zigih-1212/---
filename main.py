@@ -70,7 +70,7 @@ from fastapi import FastAPI, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, PayoutStates
-from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats, get_saas_overview, STAT_PERIODS
+from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats_new, get_saas_overview, STAT_PERIODS
 print("DEBUG: all imports done", flush=True, file=sys.stderr)
 
 from services.db import get_db
