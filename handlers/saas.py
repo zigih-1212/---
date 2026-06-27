@@ -283,11 +283,60 @@ async def cb_promo_activate(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
+@router.message(SaasStates.waiting_promocode)
+async def promo_code_entered(message: Message, state: FSMContext):
+    code = message.text.strip().upper()
 
+    conn = get_db()
+    try:
+        promo = conn.execute("SELECT * FROM promocodes WHERE code = ?", (code,)).fetchone()
+        if not promo:
+            await message.answer("❌ Неверный или несуществующий промокод.")
+            await state.clear()
+            return
 
+        activation = conn.execute("SELECT * FROM promocode_activations WHERE code = ?", (code,)).fetchone()
+        if activation:
+            await message.answer("❌ Этот промокод уже использован.")
+            await state.clear()
+            return
 
-    # Несколько каналов — показываем выбор
-    await state.update_data(promocode=code, promo_days=days, waiting_promo=False)
+        channels = conn.execute(
+            "SELECT channel_id, channel_title FROM channels WHERE user_id = ? AND is_active = 1",
+            (message.from_user.id,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not channels:
+        await message.answer("❌ У вас нет подключённых каналов.")
+        await state.clear()
+        return
+
+    days = int(promo["days"])
+
+    if len(channels) == 1:
+        channel_id = channels[0]["channel_id"]
+        conn = get_db()
+        try:
+            conn.execute(
+                "INSERT INTO promocode_activations (code, user_id, channel_id) VALUES (?, ?, ?)",
+                (code, message.from_user.id, channel_id)
+            )
+            new_until = datetime.now(timezone.utc) + timedelta(days=days)
+            conn.execute(
+                "UPDATE users SET subscription_until = ?, is_active = 1 WHERE user_id = ?",
+                (new_until.isoformat(), message.from_user.id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        await message.answer(f"✅ Промокод активирован!\nПодписка продлена на {days} дней.")
+        await state.clear()
+        return
+
+    await state.update_data(promocode=code, promo_days=days)
     kb_rows = []
     for ch in channels:
         kb_rows.append([InlineKeyboardButton(
@@ -300,7 +349,6 @@ async def cb_promo_activate(callback: CallbackQuery, state: FSMContext):
         "🎯 Выберите канал для активации промокода:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
     )
-
 
 @router.callback_query(F.data.startswith("promo_channel:"))
 async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
