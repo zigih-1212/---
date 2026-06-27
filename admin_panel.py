@@ -1142,7 +1142,7 @@ th{{background:#1a1d27;}}a{{color:#3498db;}}</style></head>
             raise HTTPException(status_code=404)
         return FileResponse(path, filename=fname, media_type="text/csv")
 
-            # Уведомление пользователю
+            # Уведомление пользователю о подтверждении
             if payment_status == "approved" and subid1:
                 try:
                     user_row = conn.execute(
@@ -1158,5 +1158,4 @@ th{{background:#1a1d27;}}a{{color:#3498db;}}</style></head>
                         )
                 except:
                     pass
-                    
     return app
