@@ -422,23 +422,7 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
 # =============================================================================
 # === КЛАВИАТУРЫ ==============================================================
 # =============================================================================
-def kb_main_menu(role: str) -> InlineKeyboardMarkup:
-    if role == "blogger":
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")]
-        ])
-    else:
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")],
-            [InlineKeyboardButton(text="📢 Мой канал", callback_data="menu:channel")],
-            [InlineKeyboardButton(text="⚙️ Режим публикации", callback_data="menu:pub_mode")],
-            [InlineKeyboardButton(text="🤝 Партнёрская программа", callback_data="menu:partner")],
-            [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
-            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
-            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            [InlineKeyboardButton(text="🎥 Отправить видео", callback_data="blogger:send_video")],
-            [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
-        ])
+
 
 def kb_admin_panel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -461,18 +445,7 @@ def kb_filter_settings(wb: int, ozon: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")],
     ])
 
-def kb_blogger_mode(mode: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{'✅' if mode == 'direct' else '☐'} Напрямую в мой канал",
-            callback_data="blogger_mode:direct",
-        )],
-        [InlineKeyboardButton(
-            text=f"{'✅' if mode == 'vip_pin' else '☐'} VIP-закреп в главном канале (24ч)",
-            callback_data="blogger_mode:vip_pin",
-        )],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
-    ])
+
 
 # =============================================================================
 # === НОВЫЕ SAAS-ФУНКЦИИ ======================================================
@@ -930,24 +903,7 @@ async def handle_channel_input(message: Message, state: FSMContext) -> None:
 # =============================================================================
 # === РЕЖИМ ПУБЛИКАЦИИ (БЛОГЕР) ===============================================
 # =============================================================================
-@router.callback_query(F.data == "menu:pub_mode")
-async def cb_menu_pub_mode(callback: CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT blogger_mode FROM users WHERE user_id=?", (user_id,)).fetchone()
-    finally:
-        conn.close()
-    mode = user["blogger_mode"] if user else "direct"
-    try:
-        await callback.message.edit_text(
-            "⚙️ <b>Режим публикации</b>\n\nВыберите как публиковать посты:",
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb_blogger_mode(mode)
-        )
-    except TelegramBadRequest:
-        pass
-    await callback.answer()
+
 
 # =============================================================================
 # === ПАРТНЁРСКАЯ ПРОГРАММА ===================================================
