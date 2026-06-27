@@ -297,9 +297,7 @@ async def promo_code_entered(message: Message, state: FSMContext):
                 await state.clear()
                 return
 
-            activation = conn.execute(
-                "SELECT * FROM promocode_activations WHERE code = ?", (code,)
-            ).fetchone()
+            activation = conn.execute("SELECT * FROM promocode_activations WHERE code = ?", (code,)).fetchone()
             if activation:
                 await message.answer("❌ Этот промокод уже использован.")
                 await state.clear()
@@ -317,7 +315,11 @@ async def promo_code_entered(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        await state.update_data(promocode=code, promo_days=promo["days"])
+        # Исправленный способ сохранения данных в состояние
+        await state.update_data({
+            "promocode": code,
+            "promo_days": promo["days"]
+        })
 
         kb_rows = []
         for ch in channels:
@@ -334,8 +336,8 @@ async def promo_code_entered(message: Message, state: FSMContext):
         await state.set_state(SaasStates.choosing_channel_for_promo)
 
     except Exception as e:
-        logger.error(f"[PROMO ERROR] Ошибка при обработке промокода от {message.from_user.id}: {e}", exc_info=True)
-        await message.answer("❌ Произошла ошибка при обработке промокода. Попробуйте ещё раз или напишите администратору.")
+        logger.error(f"[PROMO ERROR] Ошибка при обработке промокода: {e}", exc_info=True)
+        await message.answer("❌ Произошла ошибка. Попробуйте ещё раз.")
         await state.clear()
 @router.callback_query(SaasStates.choosing_channel_for_promo, F.data.startswith("promo_channel:"))
 async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
