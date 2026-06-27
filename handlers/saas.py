@@ -128,7 +128,17 @@ async def cb_toggle_store(callback: CallbackQuery):
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
     user_id = callback.from_user.id
-
+    # Проверка кулдауна (1 минута)
+    data = await state.get_data()
+    last_force = data.get("last_force_post")
+    if last_force:
+        elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(last_force.replace("Z", "+00:00"))).total_seconds()
+        if elapsed < 60:
+            await callback.answer(f"⏳ Пожалуйста, подождите {int(60 - elapsed)} сек.", show_alert=True)
+            return
+    # Сохраняем время нажатия
+    await state.update_data(last_force_post=datetime.now(timezone.utc).isoformat())
+    
     conn = get_db()
     try:
         product = conn.execute(
