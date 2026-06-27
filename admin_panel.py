@@ -1093,4 +1093,53 @@ h2{{color:{color};}} a{{color:#3498db;}}</style></head>
             conn.close()
 
         return {"status": "ok", "message": "processed"}
+
+    # =====================================================================
+    # === ЕЖЕДНЕВНЫЕ ОТЧЁТЫ ===============================================
+    # =====================================================================
+    @app.get("/admin/reports", response_class=HTMLResponse)
+    async def reports_list(request: Request):
+        is_authenticated(request)
+        import os as _os
+        reports_dir = "/app/data/reports"
+        files = []
+        if _os.path.exists(reports_dir):
+            for fname in sorted(_os.listdir(reports_dir), reverse=True):
+                if fname.endswith(".csv"):
+                    fpath = _os.path.join(reports_dir, fname)
+                    size = _os.path.getsize(fpath)
+                    files.append((fname, size))
+        rows = ""
+        for fname, size in files:
+            rows += f"""
+            <tr>
+                <td>{fname}</td>
+                <td>{size:,} байт</td>
+                <td><a href="/admin/reports/download/{fname}">Скачать</a></td>
+            </tr>"""
+        if not rows:
+            rows = "<tr><td colspan='3'>Отчётов пока нет.</td></tr>"
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Ежедневные отчёты</title>
+<style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}
+table{{width:100%;border-collapse:collapse;margin-top:15px;}}th,td{{padding:8px;border:1px solid #333;text-align:left;}}
+th{{background:#1a1d27;}}a{{color:#3498db;}}</style></head>
+<body><a href="/admin/dashboard">← Дашборд</a><h1>📁 Ежедневные отчёты</h1>
+<table><tr><th>Имя файла</th><th>Размер</th><th></th></tr>{rows}</table></body></html>"""
+        return HTMLResponse(html)
+
+    @app.get("/admin/reports/download/{fname}")
+    async def download_report(fname: str):
+        is_authenticated(request)  # нужно передать request, но внутри sub‑function не получится. Обернём в отдельную функцию.
+        return _download_report(request, fname)
+
+    # Вспомогательная функция скачивания
+    async def _download_report(request: Request, fname: str):
+        from fastapi.responses import FileResponse
+        import os as _os
+        path = _os.path.join("/app/data/reports", fname)
+        if not _os.path.exists(path):
+            raise HTTPException(status_code=404)
+        return FileResponse(path, filename=fname, media_type="text/csv")
+        
     return app
