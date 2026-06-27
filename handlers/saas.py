@@ -313,12 +313,11 @@ async def cmd_promo(message: Message, state: FSMContext):
     )
 
 
-@router.message(F.text)   # ловим любой текст
+@router.message(F.text)
 async def handle_all_text(message: Message, state: FSMContext):
-    """Обрабатывает ввод промокода, если установлен флаг waiting_promo."""
     data = await state.get_data()
     if not data.get("waiting_promo"):
-        return  # не ждём промокод, выходим
+        return
 
     code = message.text.strip().upper()
     logger.info(f"[PROMO] Пользователь {message.from_user.id} ввёл код: {code}")
