@@ -645,7 +645,8 @@ async def cb_menu_main(callback: CallbackQuery):
     if role == "saas":
         await show_user_cabinet(callback.message, user_id=callback.from_user.id)
     else:
-        await callback.message.answer("Главное меню:", reply_markup=kb_main_menu(role))
+        # Для блогера показываем хотя бы какую-то клавиатуру
+        await callback.message.answer("Главное меню:", reply_markup=kb_cabinet_menu(role))
 
 # ---------------------------------------------------------------------------
 # Обработчики подписок / оплат и выплат (все остальные хендлеры из исходника
