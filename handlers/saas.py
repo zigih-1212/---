@@ -315,13 +315,8 @@ async def promo_code_entered(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        # Новый безопасный способ сохранения данных
-        data = await state.get_data()
-        data.update({
-            "promocode": code,
-            "promo_days": int(promo["days"])
-        })
-        await state.set_data(data)
+        # Самый безопасный способ сохранения данных
+        await state.update_data(promocode=code, promo_days=int(promo["days"]))
 
         kb_rows = []
         for ch in channels:
@@ -339,8 +334,9 @@ async def promo_code_entered(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"[PROMO ERROR] {e}", exc_info=True)
-        await message.answer("❌ Ошибка при обработке промокода.")
+        await message.answer("❌ Ошибка при обработке промокода. Попробуйте ещё раз.")
         await state.clear()
+        
 @router.callback_query(SaasStates.choosing_channel_for_promo, F.data.startswith("promo_channel:"))
 async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
     channel_id = callback.data.split(":")[1]
