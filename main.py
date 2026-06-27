@@ -528,37 +528,47 @@ async def cmd_start(message: Message, state: FSMContext):
 # ---------------------------------------------------------------------------
 # /cabinet, "💻 Личный кабинет"
 # ---------------------------------------------------------------------------
-async def show_user_cabinet(message: Message, user_id: int):
+async def show_user_cabinet(message: Message, user_id: int = None):
+    if user_id is None:
+        user_id = message.from_user.id
+    conn = get_db()
     try:
-        conn = get_db()
+        user = conn.execute(
+            "SELECT role, subscription_until, username FROM users WHERE user_id=?",
+            (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not user:
+        await message.answer("Пожалуйста, начните с команды /start")
+        return
+
+    role = user["role"]
+    sub_until = user["subscription_until"]
+    if sub_until:
         try:
-            user = conn.execute(
-                "SELECT * FROM users WHERE user_id = ?", (user_id,)
-            ).fetchone()
+            end_dt = datetime.fromisoformat(sub_until.replace("Z", "+00:00"))
+            now_dt = datetime.now(timezone.utc)
+            if now_dt < end_dt:
+                diff = end_dt - now_dt
+                days = diff.days
+                hours = diff.seconds // 3600
+                status_text = f"✅ Активна • <b>{days} дн. {hours} ч.</b>"
+            else:
+                status_text = "❌ Подписка истекла"
+        except Exception:
+            status_text = "⚠️ Ошибка чтения даты"
+    else:
+        status_text = "♾️ Бессрочный доступ" if role == "blogger" else "❌ Подписка не активирована"
 
-            if not user:
-                await message.answer("❌ Пользователь не найден.")
-                return
-
-            role = user["role"]
-        finally:
-            conn.close()
-
-        if role == "saas":
-            text = (
-                f"👤 <b>Личный кабинет SaaS</b>\n\n"
-                f"Роль: SaaS-клиент\n"
-                f"Подписка до: {user['subscription_until'] or 'Не активна'}\n"
-            )
-        else:
-            text = "👤 Личный кабинет Блогера"
-
-        await message.answer(text, reply_markup=kb_cabinet_menu(role), parse_mode="HTML")
-
-    except Exception as e:
-        logger.error(f"[CABINET ERROR] {e}", exc_info=True)
-        await message.answer("❌ Ошибка при открытии кабинета. Напишите администратору.")
-
+    text = (
+        f"💼 <b>Личный кабинет</b>\n\n"
+        f"👤 Роль: <b>{role.upper()}</b>\n"
+        f"📅 Статус подписки: {status_text}\n"
+        f"🆔 ID: <code>{user_id}</code>"
+    )
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_cabinet_menu(role))
 @router.message(Command("cabinet"))
 async def cmd_cabinet(message: Message):
     await show_user_cabinet(message, user_id=message.from_user.id)
