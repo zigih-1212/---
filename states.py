@@ -5,8 +5,6 @@ class OnboardingStates(StatesGroup):
     waiting_channel = State()
     waiting_source_channel = State()
     waiting_saas_tg_channel = State()
-    waiting_target_choice = State()
-    waiting_video_link = State()
 
 class AdminStates(StatesGroup):
     broadcast_text = State()
