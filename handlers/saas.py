@@ -77,7 +77,7 @@ async def cb_stores(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("store_toggle:"))
 async def cb_toggle_store(callback: CallbackQuery):
     store_id = int(callback.data.split(":")[1])
-    user_id = callback.from_user.id
+    
 
     if store_id == 1:
         await callback.answer("❌ AliExpress временно недоступен (отсутствует маркировка ERID).", show_alert=True)
@@ -458,7 +458,6 @@ async def cb_finance(callback: CallbackQuery):
     finally:
         conn.close()
 
-    # Дисклеймер (показывается всегда)
     disclaimer = (
         "⚠️ <b>Важная информация о начислениях:</b>\n"
         "• Деньги за заказы сначала попадают в <b>«В ожидании»</b>. "
@@ -503,7 +502,6 @@ async def cb_finance(callback: CallbackQuery):
                 f"   Дата: {date_str}\n\n"
             )
 
-    # Собираем итоговый текст: сначала дисклеймер, потом основное содержимое
     full_text = disclaimer + text
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -511,9 +509,9 @@ async def cb_finance(callback: CallbackQuery):
     ])
 
     try:
-        await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        await callback.message.edit_text(full_text, parse_mode=ParseMode.HTML, reply_markup=kb)
     except Exception:
-        await callback.message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        await callback.message.answer(full_text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
 
 @router.callback_query(F.data == "pay:card")
