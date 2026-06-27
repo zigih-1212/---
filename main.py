@@ -649,6 +649,23 @@ async def cb_my_channels(callback: CallbackQuery) -> None:
     except Exception:
         pass
     await callback.answer()
+
+@router.callback_query(F.data.startswith("channel_delete:"))
+async def cb_delete_channel(callback: CallbackQuery) -> None:
+    channel_id = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+
+    conn = get_db()
+    try:
+        # Удаляем канал из БД по его внутреннему id и user_id
+        conn.execute("DELETE FROM channels WHERE id=? AND user_id=?", (channel_id, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    await callback.answer("🗑 Канал удалён.", show_alert=True)
+    # Перерисовываем список каналов
+    await cb_my_channels(callback)
 # ---------------------------------------------------------------------------
 # Обработчики подписок / оплат и выплат (все остальные хендлеры из исходника
 # оставляем идентичными, так как они не затрагивают новую логику SaaS)
