@@ -497,6 +497,190 @@ async def cb_pay_card(callback: CallbackQuery, state: FSMContext) -> None:
     )
     await callback.answer()
 
+
+# ---------------------------------------------------------------------------
+# Запрос вывода средств (SaaS)
+# ---------------------------------------------------------------------------
+@router.callback_query(F.data == "payout:request")
+async def cb_payout_request_start(callback: CallbackQuery, state: FSMContext):
+    """Проверяет баланс и запрашивает номер карты."""
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT balance_available, payout_card FROM users WHERE user_id=?",
+            (user_id,)
+        ).fetchone()
+        available = user["balance_available"] if user else 0.0
+        card = user["payout_card"] if user else None
+    finally:
+        conn.close()
+
+    if available < 3000:
+        await callback.answer(f"❌ Минимальная сумма для вывода – 3000 ₽. Ваш баланс: {available:.2f} ₽", show_alert=True)
+        return
+
+    # Если карта уже сохранена, показываем её и предлагаем сменить или сразу вывести
+    if card:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Сменить карту", callback_data="payout:change_card_saas")],
+            [InlineKeyboardButton(text="✅ Вывести на эту карту", callback_data="payout:confirm_saas")],
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:finance")]
+        ])
+        await callback.message.edit_text(
+            f"💳 <b>Запрос вывода</b>\n\n"
+            f"Текущая карта: <code>{card}</code>\n"
+            f"Доступно к выводу: <b>{available:.2f} ₽</b>\n\n"
+            f"Выберите действие:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb
+        )
+        await state.update_data(payout_amount=available)
+    else:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:finance")]
+        ])
+        await callback.message.edit_text(
+            f"💳 <b>Запрос вывода</b>\n\n"
+            f"Доступно к выводу: <b>{available:.2f} ₽</b>\n\n"
+            f"Введите номер карты (16 цифр без пробелов) для получения выплаты:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb
+        )
+        await state.set_state(SaasStates.waiting_apikey)   # временно используем это состояние
+        await state.update_data(payout_amount=available, waiting_payout_card=True)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "payout:change_card_saas")
+async def cb_payout_change_card_saas(callback: CallbackQuery, state: FSMContext):
+    """Запрашивает новую карту."""
+    await callback.message.edit_text(
+        "💳 Введите новый номер карты (16 цифр без пробелов):",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:finance")]
+        ])
+    )
+    await state.set_state(SaasStates.waiting_apikey)
+    await state.update_data(waiting_payout_card=True)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "payout:confirm_saas")
+async def cb_payout_confirm_saas(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    """Подтверждает вывод на существующую карту."""
+    data = await state.get_data()
+    amount = data.get("payout_amount", 0)
+    user_id = callback.from_user.id
+
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT balance_available, payout_card FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user or user["balance_available"] < amount:
+            await callback.answer("❌ Недостаточно средств или сумма изменилась.", show_alert=True)
+            return
+
+        card = user["payout_card"]
+        # Списываем сумму и создаём заявку
+        conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (amount, user_id))
+        conn.execute(
+            "INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) "
+            "VALUES (?, ?, ?, ?, ?, 'pending')",
+            (user_id, amount, amount, amount, card)
+        )
+        payout_id = conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Уведомление админам
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"💸 <b>Новая заявка на вывод #{payout_id}</b>\n\n"
+                f"👤 User ID: <code>{user_id}</code>\n"
+                f"💳 Карта: <code>{card}</code>\n"
+                f"💰 Сумма: <b>{amount:.2f} ₽</b>\n\n"
+                f"<i>Переведите средства и нажмите кнопку ниже.</i>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Отправлено", callback_data=f"payout:done:{payout_id}:{user_id}")]
+                ])
+            )
+        except:
+            pass
+
+    await callback.message.edit_text(
+        f"✅ <b>Заявка создана!</b>\n\n"
+        f"Сумма: <b>{amount:.2f} ₽</b> будет переведена на карту <code>{card}</code>.\n"
+        f"Ожидайте уведомления о выполнении.",
+        parse_mode=ParseMode.HTML
+    )
+    await state.clear()
+    await callback.answer()
+
+
+@router.message(SaasStates.waiting_apikey)
+async def handle_payout_card_input(message: Message, state: FSMContext):
+    """Обрабатывает ввод номера карты для вывода."""
+    data = await state.get_data()
+    if not data.get("waiting_payout_card"):
+        # Это не наш запрос, возможно, ввод API-ключа, передаём дальше
+        return
+
+    card_raw = message.text.strip().replace(" ", "")
+    if not card_raw.isdigit() or len(card_raw) != 16:
+        await message.answer("❌ Некорректный номер карты. Введите ровно 16 цифр без пробелов.")
+        return
+
+    # Форматируем
+    formatted = f"{card_raw[:4]} {card_raw[4:8]} {card_raw[8:12]} {card_raw[12:]}"
+    user_id = message.from_user.id
+    amount = data.get("payout_amount", 0)
+
+    conn = get_db()
+    try:
+        # Сохраняем карту
+        conn.execute("UPDATE users SET payout_card=? WHERE user_id=?", (formatted, user_id))
+        # Списываем сумму и создаём заявку
+        conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (amount, user_id))
+        conn.execute(
+            "INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) "
+            "VALUES (?, ?, ?, ?, ?, 'pending')",
+            (user_id, amount, amount, amount, formatted)
+        )
+        payout_id = conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Уведомление админам
+    for admin_id in ADMIN_IDS:
+        try:
+            await message.bot.send_message(
+                admin_id,
+                f"💸 <b>Новая заявка на вывод #{payout_id}</b>\n\n"
+                f"👤 User ID: <code>{user_id}</code>\n"
+                f"💳 Карта: <code>{formatted}</code>\n"
+                f"💰 Сумма: <b>{amount:.2f} ₽</b>\n\n"
+                f"<i>Переведите средства и нажмите кнопку ниже.</i>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Отправлено", callback_data=f"payout:done:{payout_id}:{user_id}")]
+                ])
+            )
+        except:
+            pass
+
+    await message.answer(
+        f"✅ <b>Заявка создана!</b>\n\n"
+        f"Сумма: <b>{amount:.2f} ₽</b> будет переведена на карту <code>{formatted}</code>.\n"
+        f"Ожидайте уведомления о выполнении.",
+        parse_mode=ParseMode.HTML
+    )
+    await state.clear()
 # ---------------------------------------------------------------------------
 # Финансы (история транзакций Admitad) с дисклеймером
 # ---------------------------------------------------------------------------
