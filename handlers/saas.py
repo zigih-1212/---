@@ -71,13 +71,13 @@ async def cb_stores(callback: CallbackQuery):
         )])
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-        await callback.message.edit_text(full_text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("store_toggle:"))
 async def cb_toggle_store(callback: CallbackQuery):
     store_id = int(callback.data.split(":")[1])
-    
+    user_id = callback.from_user.id
 
     if store_id == 1:
         await callback.answer("❌ AliExpress временно недоступен (отсутствует маркировка ERID).", show_alert=True)
@@ -287,7 +287,6 @@ async def msg_saas_text_input(message: Message, state: FSMContext) -> None:
 # Промокоды (активация командой /promo КОД)
 # ---------------------------------------------------------------------------
 
-
 @router.callback_query(F.data.startswith("promo_channel:"))
 async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
     channel_id = callback.data.split(":")[1]
@@ -440,8 +439,65 @@ async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
     )
     await callback.answer()
 
+@router.callback_query(F.data == "pay:card")
+async def cb_pay_card(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    tariff_id = data.get("chosen_tariff_id")
+    days = data.get("chosen_days")
+    if not tariff_id:
+        await callback.answer("❌ Сначала выберите тариф", show_alert=True)
+        return
+
+    conn = get_db()
+    try:
+        tariff = conn.execute("SELECT name, price_rub FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
+        if not tariff:
+            await callback.answer("Тариф не найден", show_alert=True)
+            return
+        rub = tariff["price_rub"]
+        name = tariff["name"]
+    finally:
+        conn.close()
+
+    order_code = f"T{tariff_id}-U{callback.from_user.id}"
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) "
+        "VALUES (?, ?, ?, ?, ?, 'pending')",
+        (callback.from_user.id, rub, rub, 0, order_code)
+    )
+    conn.commit()
+    conn.close()
+
+    import os
+    CARD_SBER = os.getenv("PAY_SBER", "2202 2081 0829 0025")
+    CARD_TBANK = os.getenv("PAY_TBANK", "2200 7013 7009 3863")
+    CARD_VISA_KG = os.getenv("PAY_VISA_KG", "4196720087839790")
+    CARD_TON = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBray_FJRJoWZa1OOLnq-geGIbGT")
+
+    text = (
+        f"💳 <b>Оплата картой</b>\n\n"
+        f"Тариф: <b>{name}</b> ({days} дн.)\n"
+        f"Сумма: <b>{rub:.0f} ₽</b>\n\n"
+        f"💬 <b>Ваш код заказа:</b> <code>{order_code}</code>\n"
+        f"<i>Обязательно укажите этот код в комментарии к платежу!</i>\n\n"
+        f"Сбер: <code>{CARD_SBER}</code>\n"
+        f"Т-Банк: <code>{CARD_TBANK}</code>\n"
+        f"Visa KG: <code>{CARD_VISA_KG}</code>\n\n"
+        f"TON: <code>{CARD_TON}</code>\n\n"
+        "После оплаты пришлите чек администратору.\n"
+    )
+    await callback.message.edit_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:tariffs")]
+        ])
+    )
+    await callback.answer()
+
 # ---------------------------------------------------------------------------
-# Финансы (история транзакций Admitad)
+# Финансы (история транзакций Admitad) с дисклеймером
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:finance")
 async def cb_finance(callback: CallbackQuery):
@@ -514,59 +570,55 @@ async def cb_finance(callback: CallbackQuery):
         await callback.message.answer(full_text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
 
-@router.callback_query(F.data == "pay:card")
-async def cb_pay_card(callback: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    tariff_id = data.get("chosen_tariff_id")
-    days = data.get("chosen_days")
-    if not tariff_id:
-        await callback.answer("❌ Сначала выберите тариф", show_alert=True)
-        return
+# ---------------------------------------------------------------------------
+# Оферта (публичная)
+# ---------------------------------------------------------------------------
+@router.callback_query(F.data == "menu:oferta")
+async def cb_oferta(callback: CallbackQuery):
+    text = (
+        "<b>📜 ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ (ПУБЛИЧНАЯ ОФЕРТА)</b>\n"
+        "<i>Последняя редакция: 28 июня 2026 года</i>\n\n"
+        "Нажимая «Принимаю», вы соглашаетесь с условиями.\n\n"
+        "<b>1. Термины</b>\n"
+        "• <b>Сервис</b> – данный Telegram-бот.\n"
+        "• <b>CPA-сеть</b> – партнёрская сеть Admitad.\n"
+        "• <b>SubID</b> – уникальный цифровой идентификатор вашего канала.\n"
+        "• <b>Баланс</b> – справочные данные о вознаграждении, не электронные деньги.\n\n"
+        "<b>2. Предмет</b>\n"
+        "Вы получаете доступ к автопостингу товаров с партнёрскими ссылками. "
+        "Сервис удерживает комиссию <b>5%</b> от подтверждённого вознаграждения.\n\n"
+        "<b>3. Учёт и выплаты</b>\n"
+        "• Единственный источник данных о заказах – CPA-сеть.\n"
+        "• <b>В ожидании</b> – заказы на проверке у рекламодателя (30–90 дней).\n"
+        "• <b>Доступно к выводу</b> – подтверждённые заказы, готовые к выплате.\n"
+        "• Выплата производится по запросу, за вычетом 5%.\n\n"
+        "<b>4. Запрещено</b>\n"
+        "Спам, накрутка, самовыкупы, мотивированный трафик, брендовая реклама. "
+        "Публикация ссылок разрешена только в добавленных каналах.\n\n"
+        "<b>5. Ответственность</b>\n"
+        "• Выплаты ограничены суммами, реально полученными от CPA-сети.\n"
+        "• При фроде или блокировке аккаунта баланс аннулируется.\n"
+        "• Администрация может заморозить выплаты на время проверки (до 90 дней).\n\n"
+        "<b>6. Изменения</b>\n"
+        "Администрация может менять условия. Продолжение использования – согласие с новой редакцией."
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Принимаю", callback_data="oferta:accept")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+    ])
+    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await callback.answer()
 
+@router.callback_query(F.data == "oferta:accept")
+async def cb_oferta_accept(callback: CallbackQuery):
+    user_id = callback.from_user.id
     conn = get_db()
     try:
-        tariff = conn.execute("SELECT name, price_rub FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
-        if not tariff:
-            await callback.answer("Тариф не найден", show_alert=True)
-            return
-        rub = tariff["price_rub"]
-        name = tariff["name"]
+        conn.execute("UPDATE users SET oferta_accepted=1 WHERE user_id=?", (user_id,))
+        conn.commit()
     finally:
         conn.close()
-
-    order_code = f"T{tariff_id}-U{callback.from_user.id}"
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) "
-        "VALUES (?, ?, ?, ?, ?, 'pending')",
-        (callback.from_user.id, rub, rub, 0, order_code)
-    )
-    conn.commit()
-    conn.close()
-
-    import os
-    CARD_SBER = os.getenv("PAY_SBER", "2202 2081 0829 0025")
-    CARD_TBANK = os.getenv("PAY_TBANK", "2200 7013 7009 3863")
-    CARD_VISA_KG = os.getenv("PAY_VISA_KG", "4196720087839790")
-    CARD_TON = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBray_FJRJoWZa1OOLnq-geGIbGT")
-
-    text = (
-        f"💳 <b>Оплата картой</b>\n\n"
-        f"Тариф: <b>{name}</b> ({days} дн.)\n"
-        f"Сумма: <b>{rub:.0f} ₽</b>\n\n"
-        f"💬 <b>Ваш код заказа:</b> <code>{order_code}</code>\n"
-        f"<i>Обязательно укажите этот код в комментарии к платежу!</i>\n\n"
-        f"Сбер: <code>{CARD_SBER}</code>\n"
-        f"Т-Банк: <code>{CARD_TBANK}</code>\n"
-        f"Visa KG: <code>{CARD_VISA_KG}</code>\n\n"
-        f"TON: <code>{CARD_TON}</code>\n\n"
-        "После оплаты пришлите чек администратору.\n"
-    )
-    await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:tariffs")]
-        ])
-    )
-    await callback.answer()
+    await callback.answer("✅ Вы приняли условия Оферты.", show_alert=True)
+    # Возвращаем в кабинет
+    from main import show_user_cabinet
+    await show_user_cabinet(callback.message, user_id=user_id)
