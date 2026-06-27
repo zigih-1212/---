@@ -192,31 +192,30 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         caption += f"👉 <a href='{final_url}'>Посмотреть и заказать</a>\n\n"
         caption += f"Реклама. {advertiser}. Erid: {erid}"
 
-        await publish_post_with_fallback(
+        msg = await publish_post_with_fallback(
             bot=bot,
             channel_id=ch["channel_id"],
             caption=caption,
             photo_url=photo_url,
             has_spoiler=(source in ADULT_STORES)
         )
+        if msg:
+            direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
+            donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
+            conn_rec = get_db()
+            try:
+                conn_rec.execute(
+                    """INSERT INTO posts 
+                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
+                    (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
+                     datetime.now(timezone.utc).isoformat())
+                )
+                conn_rec.commit()
+            finally:
+                conn_rec.close()
         await asyncio.sleep(1)
 
-                    if msg:
-                        direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
-                        donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
-                        conn_rec = get_db()
-                        try:
-                            conn_rec.execute(
-                                """INSERT INTO posts 
-                                (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
-                                VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
-                                (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
-                                 datetime.now(timezone.utc).isoformat())
-                            )
-                            conn_rec.commit()
-                        finally:
-                            conn_rec.close()
-    
     await callback.message.answer("✅ Пост опубликован!")
 
 
