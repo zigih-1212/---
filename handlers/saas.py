@@ -440,6 +440,66 @@ async def cb_pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
     )
     await callback.answer()
 
+# ---------------------------------------------------------------------------
+# Финансы (история транзакций Admitad)
+# ---------------------------------------------------------------------------
+@router.callback_query(F.data == "menu:finance")
+async def cb_finance(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        transactions = conn.execute("""
+            SELECT admitad_id, payment_sum, currency, payment_status, order_id, action, time
+            FROM admitad_transactions
+            WHERE user_id = ?
+            ORDER BY time DESC
+            LIMIT 20
+        """, (user_id,)).fetchall()
+    finally:
+        conn.close()
+
+    if not transactions:
+        text = (
+            "💰 <b>Финансы</b>\n\n"
+            "У вас пока нет заказов. Как только по партнёрской ссылке совершат покупку, "
+            "вы увидите её здесь.\n\n"
+            "<i>Баланс можно посмотреть в Личном кабинете.</i>"
+        )
+    else:
+        text = "💰 <b>Последние 20 транзакций</b>\n\n"
+        for t in transactions:
+            status_emoji = {
+                "pending": "⏳",
+                "approved": "✅",
+                "declined": "❌",
+                "new": "🆕",
+                "waiting": "⏳",
+                "paid": "💳"
+            }.get(t["payment_status"], "❓")
+            date_str = ""
+            if t["time"]:
+                try:
+                    dt = datetime.fromtimestamp(int(t["time"]), tz=timezone.utc)
+                    date_str = dt.strftime("%d.%m.%Y %H:%M")
+                except:
+                    date_str = str(t["time"])
+            text += (
+                f"{status_emoji} <b>{t['payment_sum']} {t['currency']}</b> "
+                f"(статус: {t['payment_status']})\n"
+                f"   Заказ #{t['order_id'] or '—'}, действие: {t['action'] or '—'}, "
+                f"ID: {t['admitad_id']}\n"
+                f"   Дата: {date_str}\n\n"
+            )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
+    ])
+
+    try:
+        await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await callback.answer()
 
 @router.callback_query(F.data == "pay:card")
 async def cb_pay_card(callback: CallbackQuery, state: FSMContext) -> None:
