@@ -484,68 +484,6 @@ th{{background:#1a1d27;}}a{{color:#3498db;text-decoration:none;}}</style></head>
 <table><tr><th>ID</th><th>Пользователь</th><th>Донор</th><th>Статус</th><th>Причина</th><th>Дата</th><th></th></tr>
 {rows if rows else "<tr><td colspan='7'>Нет постов</td></tr>"}</table></body></html>""")
 
-    # =============================================================================
-    # === УПРАВЛЕНИЕ ДОНОРСКИМИ КАНАЛАМИ ============================================
-    # =============================================================================
-    @app.get("/admin/donors", response_class=HTMLResponse)
-    async def donors_page(request: Request):
-        is_authenticated(request)
-        channels_raw = os.getenv("SAAS_DONOR_CHANNELS", "")
-        donor_list = [c.strip() for c in channels_raw.split(",") if c.strip()]
-        rows = "".join(
-            f"""<tr><td>@{ch}</td><td><a href="/admin/donors/preview?channel={ch}" style="color:#3498db">🔍 Просмотреть</a></td>
-            <td><form action="/admin/donors/remove" method="post" style="display:inline"><input type="hidden" name="channel" value="{ch}">
-            <button style="padding:4px 8px;background:#e74c3c;border:none;color:#fff;border-radius:4px;cursor:pointer">Удалить</button></form></td></tr>"""
-            for ch in donor_list
-        )
-        return HTMLResponse(f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Каналы-доноры</title>
-<style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}h1{{color:#fff;}}
-table{{width:100%;border-collapse:collapse;margin-top:15px;}}th,td{{padding:8px;border:1px solid #333;text-align:left;}}
-th{{background:#1a1d27;}}a{{color:#3498db;text-decoration:none;}}</style></head>
-<body><a href="/admin/dashboard">← Дашборд</a><h1>📡 Каналы-доноры</h1>
-<form action="/admin/donors/add" method="post" style="margin-bottom:15px"><input type="text" name="channel" placeholder="@username канала" required><button>Добавить</button></form>
-<table><tr><th>Канал</th><th>Действие</th><th></th></tr>{rows if rows else "<tr><td colspan='3'>Нет каналов</td></tr>"}</table></body></html>""")
-
-    @app.post("/admin/donors/add")
-    async def add_donor(request: Request, channel: str = Form(...)):
-        is_authenticated(request)
-        channel = channel.strip().lstrip("@")
-        current = os.getenv("SAAS_DONOR_CHANNELS", "")
-        donors = [c.strip() for c in current.split(",") if c.strip()]
-        if channel not in donors:
-            donors.append(channel)
-        os.environ["SAAS_DONOR_CHANNELS"] = ",".join(donors)
-        return RedirectResponse("/admin/donors", status_code=302)
-
-    @app.post("/admin/donors/remove")
-    async def remove_donor(request: Request, channel: str = Form(...)):
-        is_authenticated(request)
-        channel = channel.strip().lstrip("@")
-        current = os.getenv("SAAS_DONOR_CHANNELS", "")
-        donors = [c.strip() for c in current.split(",") if c.strip() if c.strip() != channel]
-        os.environ["SAAS_DONOR_CHANNELS"] = ",".join(donors)
-        return RedirectResponse("/admin/donors", status_code=302)
-
-    @app.get("/admin/donors/preview", response_class=HTMLResponse)
-    async def preview_donor(request: Request, channel: str = ""):
-        is_authenticated(request)
-        from parser import fetch_telegram_channel_posts
-        try:
-            posts = await fetch_telegram_channel_posts(channel)
-        except Exception as e:
-            return HTMLResponse(f"<p>Ошибка: {e}</p>")
-        rows = "".join(
-            f"<tr><td>{p['id']}</td><td>{(p.get('text', '') or '')[:80]}</td><td>{'📷' if p.get('image_url') else '—'}</td></tr>"
-            for p in posts[:10]
-        )
-        return HTMLResponse(f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Донор @{channel}</title>
-<style>body{{font-family:Arial;background:#0f1117;color:#e0e0e8;padding:20px;}}h1{{color:#fff;}}
-table{{width:100%;border-collapse:collapse;margin-top:15px;}}th,td{{padding:8px;border:1px solid #333;text-align:left;}}
-th{{background:#1a1d27;}}</style></head>
-<body><a href="/admin/donors">← Каналы-доноры</a><h1>📡 @{channel} — последние посты</h1>
-<table><tr><th>ID</th><th>Текст</th><th>Фото</th></tr>{rows if rows else "<tr><td colspan='3'>Нет постов</td></tr>"}</table></body></html>""")
 
     # =============================================================================
     # === ПРОМОКОДЫ ================================================================
