@@ -566,7 +566,7 @@ async def cmd_start(message: Message, state: FSMContext):
     try:
         user = conn.execute("SELECT role FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
         if not user:
-            # Новый пользователь – сразу SaaS, просим @username канала
+            # Новый пользователь – создаём запись и запускаем онбординг
             sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
             conn.execute(
                 "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'saas')",
@@ -578,11 +578,16 @@ async def cmd_start(message: Message, state: FSMContext):
             )
             await state.set_state(OnboardingStates.waiting_saas_tg_channel)
         else:
-            # Пользователь уже существует – сразу кабинет
-            await show_user_cabinet(message, user_id=message.from_user.id)
+            # Пользователь уже зарегистрирован – не показываем кабинет
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💼 Открыть кабинет", callback_data="cabinet:open")]
+            ])
+            await message.answer(
+                "✅ Вы уже зарегистрированы. Для управления ботом используйте команду /cabinet.",
+                reply_markup=kb
+            )
     finally:
         conn.close()
-
 # ---------------------------------------------------------------------------
 # /cabinet
 # ---------------------------------------------------------------------------
