@@ -64,7 +64,6 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             resp = RedirectResponse("/admin/dashboard", status_code=302)
             resp.set_cookie(key="admin_token", value=token, httponly=True,
                             secure=True, samesite="strict", max_age=3600*12)
-            # Сохраняем ID первого админа для аудита (можно заменить на реальный механизм)
             admin_ids_str = os.getenv("ADMIN_IDS", "")
             first_admin = admin_ids_str.split(",")[0].strip() if admin_ids_str else "0"
             resp.set_cookie(key="admin_user_id", value=first_admin)
@@ -115,10 +114,6 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
                 AND created_at >= datetime('now', 'start of day')
             """).fetchone()["cnt"]
 
-            night_q = conn.execute("SELECT COUNT(*) as cnt FROM night_queue").fetchone()["cnt"]
-            saas_q = conn.execute("SELECT COUNT(*) as cnt FROM saas_queue").fetchone()["cnt"]
-            quarantine = conn.execute("SELECT COUNT(*) as cnt FROM posts WHERE status='quarantine'").fetchone()["cnt"]
-
             last_users = conn.execute("""
                 SELECT user_id, username, role, subscription_until, is_active
                 FROM users ORDER BY created_at DESC LIMIT 5
@@ -159,7 +154,8 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
     <a href="/admin/top-channels">🏆 Топы</a> |
     <a href="/admin/bulk-actions" style="color:#f39c12;">👥 Массовые действия</a> |
     <a href="/admin/settings-edit">⚙️ Глобальные настройки</a> |
-    <a href="/admin/tariffs">💎 Тарифы</a>
+    <a href="/admin/tariffs">💎 Тарифы</a> |
+    <a href="/admin/reports">📁 Отчёты</a>
 
     <div class="card-grid">
         <div class="card ok"><div class="num">{saas_active}</div><div class="lbl">SaaS активных</div></div>
@@ -168,13 +164,6 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         <div class="card"><div class="num">{posts_week}</div><div class="lbl">Постов за 7 дней</div></div>
         <div class="card warn"><div class="num">{errors_today}</div><div class="lbl">Ошибок сегодня</div></div>
         <div class="card warn"><div class="num">{pending_payouts['cnt']}</div><div class="lbl">Выплат ожидает</div></div>
-    </div>
-
-    <div class="section">
-        <h2>📦 Очереди</h2>
-        <p>🌙 <a href="/admin/night-queue">Ночная очередь</a>: <b>{night_q}</b> | 
-        🅰️ <a href="/admin/saas-queue">SaaS-очередь</a>: <b>{saas_q}</b> | 
-        🚨 <a href="/admin/quarantine">Карантин</a>: <b>{quarantine}</b></p>
     </div>
 
     <div class="section">
@@ -261,7 +250,6 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             if not user:
                 return HTMLResponse("<h3>❌ Пользователь не найден</h3>", status_code=404)
 
-            # ЕДИНСТВЕННЫЙ запрос счётчика (неиспользованные товары)
             catalog_count = conn.execute(
                 "SELECT COUNT(*) as cnt FROM gdeslon_catalog WHERE user_id = ? AND used = 0",
                 (user_id,)
@@ -366,7 +354,7 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
         <button class="{'danger' if user['is_active'] else ''}">{'⛔ Забанить' if user['is_active'] else '✅ Разбанить'}</button>
     </form>
     <a href="/admin/refill-catalog/{user_id}"><button>🔄 Пополнить каталог Admitad</button></a>
-    <div class="row"><span class="lbl">Товаров в каталоге GdeSlon:</span> <span>{catalog_count}</span></div>
+    <div class="row"><span class="lbl">Товаров в каталоге:</span> <span>{catalog_count}</span></div>
     <form action="/admin/user/{user_id}/update_field" method="post">
         <input type="text" name="field" placeholder="Поле (api_key, client_erid_override)">
         <input type="text" name="value" placeholder="Новое значение">
@@ -398,7 +386,6 @@ def create_fastapi_app(bot: Bot) -> FastAPI:
             new_date = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
             conn.execute("UPDATE users SET subscription_until=?, is_active=1 WHERE user_id=?", (new_date, user_id))
             conn.commit()
-            # Аудит
             from utils import log_admin_action
             admin_id = int(request.cookies.get("admin_user_id", 0))
             log_admin_action(admin_id, "extend_subscription", f"user {user_id} +{days} days")
@@ -1011,7 +998,6 @@ h2{{color:{color};}} a{{color:#3498db;}}</style></head>
             subid1 = subid1 or form.get("subid1")
             payment_sum = payment_sum or form.get("payment_sum")
             payment_status = payment_status or form.get("payment_status")
-            # ... при необходимости можно добавить остальные поля
 
         if not admitad_id or not subid1:
             return {"status": "error", "message": "Missing required parameters"}
@@ -1025,17 +1011,13 @@ h2{{color:{color};}} a{{color:#3498db;}}</style></head>
             ).fetchone()
 
             if existing:
-                # Защита от дублирования
                 if existing["payment_status"] == payment_status:
                     return {"status": "ok", "message": "duplicate ignored"}
-
-                # Обновляем статус и сумму (на случай корректировки)
                 conn.execute(
                     "UPDATE admitad_transactions SET payment_status=?, payment_sum=?, updated_at=CURRENT_TIMESTAMP WHERE admitad_id=?",
                     (payment_status, payment_sum, admitad_id)
                 )
             else:
-                # Новая транзакция — вставляем
                 conn.execute("""
                     INSERT INTO admitad_transactions
                     (admitad_id, user_id, channel_id, action, action_id, payment_sum, currency,
@@ -1048,35 +1030,28 @@ h2{{color:{color};}} a{{color:#3498db;}}</style></head>
 
             # --- Логика обновления баланса ---
             if payment_status == "pending" and payment_sum is not None:
-                # Начисляем в ожидающие
                 user_earnings = round(float(payment_sum) * 0.95, 2)
                 conn.execute(
                     "UPDATE users SET balance_pending = balance_pending + ? WHERE user_id = (SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?)",
                     (user_earnings, subid1)
                 )
-
             elif payment_status == "approved" and payment_sum is not None:
-                # Если до этого был pending, переносим из pending в available
                 if existing and existing["payment_status"] == "pending":
                     prev_sum = conn.execute(
                         "SELECT payment_sum FROM admitad_transactions WHERE admitad_id=?",
                         (admitad_id,)
                     ).fetchone()["payment_sum"]
                     prev_earnings = round(float(prev_sum) * 0.95, 2)
-                    # Вычитаем старую pending сумму
                     conn.execute(
                         "UPDATE users SET balance_pending = balance_pending - ? WHERE user_id = (SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?)",
                         (prev_earnings, subid1)
                     )
-                # Начисляем в доступные
                 new_earnings = round(float(payment_sum) * 0.95, 2)
                 conn.execute(
                     "UPDATE users SET balance_available = balance_available + ? WHERE user_id = (SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?)",
                     (new_earnings, subid1)
                 )
-
             elif payment_status == "declined":
-                # Если был pending, вычитаем из ожидающих
                 if existing and existing["payment_status"] == "pending":
                     prev_sum = conn.execute(
                         "SELECT payment_sum FROM admitad_transactions WHERE admitad_id=?",
@@ -1152,6 +1127,5 @@ th{{background:#1a1d27;}}a{{color:#3498db;}}</style></head>
         if not _os.path.exists(path):
             raise HTTPException(status_code=404)
         return FileResponse(path, filename=fname, media_type="text/csv")
-
 
     return app
