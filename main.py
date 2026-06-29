@@ -944,69 +944,94 @@ async def process_successful_payment(message: Message):
     )
 
 # ---------------------------------------------------------------------------
-# ОНБОРДИНГ: SAAS – ДОБАВЛЕНИЕ КАНАЛА
+# ОНБОРДИНГ: SAAS – ДОБАВЛЕНИЕ КАНАЛА (ключевой обработчик)
 # ---------------------------------------------------------------------------
 @router.message(OnboardingStates.waiting_saas_tg_channel)
 async def handle_saas_channel_addition(message: Message, state: FSMContext) -> None:
-    channel_username = message.text.strip()
-
-    if channel_username.startswith("/"):
-        return
-
-    if not channel_username.startswith("@"):
-        await message.answer("⚠️ Для добавления канала отправьте @username.")
-        return
-
-    user_id = message.from_user.id
-
-    # Проверяем, является ли бот администратором
-    is_admin_ok = await check_bot_admin(message.bot, channel_username)
-    if not is_admin_ok:
-        await message.answer("❌ Бот не является администратором в этом канале. Добавьте бота в администраторы с правом публикации.")
-        return
-
-    conn = get_db()
+    """
+    Обработчик принимает сообщение пользователя в состоянии ожидания @username канала.
+    Весь код обёрнут в try/except для гарантированной реакции на любые ошибки.
+    """
     try:
-        # Получаем числовой ID канала Telegram
+        channel_username = message.text.strip()
+
+        # Пропускаем команды
+        if channel_username.startswith("/"):
+            await message.answer("Пожалуйста, отправьте @username вашего канала, а не команду.")
+            return
+
+        # Проверка, что это действительно начинается с @
+        if not channel_username.startswith("@"):
+            await message.answer("⚠️ Для добавления канала отправьте корректный @username (например, @mychannel).")
+            return
+
+        user_id = message.from_user.id
+        logger.info(f"Пользователь {user_id} пытается добавить канал {channel_username}")
+
+        # Проверяем, является ли бот администратором
+        is_admin_ok = await check_bot_admin(message.bot, channel_username)
+        if not is_admin_ok:
+            logger.warning(f"Бот не админ в канале {channel_username}")
+            await message.answer(
+                "❌ Бот не является администратором в этом канале. "
+                "Добавьте бота в администраторы канала с правом публикации сообщений и попробуйте снова."
+            )
+            return
+
+        # Получаем числовой ID и название канала
         try:
             chat_info = await message.bot.get_chat(channel_username)
             tg_chat_id = str(chat_info.id)
             tg_title = chat_info.title or channel_username
-        except Exception:
+        except Exception as e:
+            logger.error(f"Ошибка получения информации о канале {channel_username}: {e}")
             await message.answer("❌ Не удалось получить информацию о канале. Проверьте правильность @username.")
             return
 
-        # Проверка лимита каналов (если есть тариф)
-        user = conn.execute("SELECT tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        if user and user["tariff_id"]:
-            tariff = conn.execute("SELECT max_channels FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
-            max_channels = tariff["max_channels"] if tariff else 5
-            current_count = conn.execute("SELECT COUNT(*) as cnt FROM channels WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
-            if current_count >= max_channels:
-                await message.answer(f"❌ Ваш тариф позволяет подключить не более {max_channels} каналов.")
-                return
+        conn = get_db()
+        try:
+            # Проверка лимита каналов (если есть тариф)
+            user = conn.execute("SELECT tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if user and user["tariff_id"]:
+                tariff = conn.execute("SELECT max_channels FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
+                max_channels = tariff["max_channels"] if tariff else 5
+                current_count = conn.execute("SELECT COUNT(*) as cnt FROM channels WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
+                if current_count >= max_channels:
+                    await message.answer(f"❌ Ваш тариф позволяет подключить не более {max_channels} каналов.")
+                    return
 
-        conn.execute(
-            """INSERT INTO channels (user_id, channel_id, channel_title, sub_id)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(user_id, channel_id) DO UPDATE SET channel_title = excluded.channel_title""",
-            (user_id, channel_username, tg_title, tg_chat_id)
+            # Добавляем канал (или обновляем, если уже есть)
+            conn.execute(
+                """INSERT INTO channels (user_id, channel_id, channel_title, sub_id)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(user_id, channel_id) DO UPDATE SET channel_title = excluded.channel_title""",
+                (user_id, channel_username, tg_title, tg_chat_id)
+            )
+            conn.commit()
+            logger.info(f"Канал {channel_username} успешно добавлен для пользователя {user_id}")
+        except sqlite3.Error as e:
+            logger.error(f"Ошибка БД при добавлении канала: {e}")
+            await message.answer("❌ Ошибка при добавлении канала в базу данных. Попробуйте позже.")
+            return
+        finally:
+            conn.close()
+
+        # Успех
+        await message.answer(
+            f"✅ Канал <b>{html.escape(channel_username)}</b> успешно добавлен!",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb_cabinet_menu("saas")
         )
-        conn.commit()
-    except sqlite3.Error as e:
-        logger.error(f"Ошибка добавления канала: {e}")
-        await message.answer("Ошибка при добавлении канала.")
-        return
-    finally:
-        conn.close()
+        await state.clear()
+        await show_user_cabinet(message, user_id=user_id)
 
-    await message.answer(
-        f"✅ Канал <b>{html.escape(channel_username)}</b> успешно добавлен!",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_cabinet_menu("saas")
-    )
-    await state.clear()
-    await show_user_cabinet(message, user_id=user_id)
+    except Exception as e:
+        logger.exception(f"Критическая ошибка при обработке добавления канала: {e}")
+        await message.answer(
+            "❌ Произошла внутренняя ошибка. Администратор уже уведомлён. Попробуйте позже или свяжитесь с поддержкой."
+        )
+        await state.clear()
+
 
 # ---------------------------------------------------------------------------
 # Обработчики инструкций и поддержки
