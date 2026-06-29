@@ -763,7 +763,7 @@ async def cb_menu_main(callback: CallbackQuery):
         await callback.message.answer("Главное меню:", reply_markup=kb_cabinet_menu(role))
 
 @router.callback_query(F.data == "menu:my_channels")
-async def cb_my_channels(callback: CallbackQuery) -> None:
+async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
     conn = get_db()
     try:
