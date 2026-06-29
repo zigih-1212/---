@@ -35,6 +35,7 @@ import uvicorn
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.filters import StateFilter
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -908,7 +909,7 @@ async def cb_saas_toggles(callback: CallbackQuery) -> None:
 async def process_pre_checkout_query(query: PreCheckoutQuery):
     await query.answer(ok=True)
 
-@router.message(SuccessfulPayment)
+@router.message(F.successful_payment)
 async def process_successful_payment(message: Message):
     payload = message.successful_payment.invoice_payload
     if not payload.startswith("tariff_"):
@@ -946,7 +947,7 @@ async def process_successful_payment(message: Message):
 # ---------------------------------------------------------------------------
 # ОНБОРДИНГ: SAAS – ДОБАВЛЕНИЕ КАНАЛА (ключевой обработчик)
 # ---------------------------------------------------------------------------
-@router.message(OnboardingStates.waiting_saas_tg_channel)
+@router.message(StateFilter(OnboardingStates.waiting_saas_tg_channel))
 async def handle_saas_channel_addition(message: Message, state: FSMContext) -> None:
     """
     Обработчик принимает сообщение пользователя в состоянии ожидания @username канала.
