@@ -966,79 +966,83 @@ h2{{color:{color};}} a{{color:#3498db;}}</style></head>
         return HTMLResponse(html)
 
     # =====================================================================
-    # === POSTBACK ADMITAD (Код оптимизации) ==============================
+    # === POSTBACK ADMITAD (с уведомлениями о подтверждённых заказах) ======
     # =====================================================================
-    @app.get("/api/admitad/postback")
     @app.post("/api/admitad/postback")
-    async def admitad_postback(request: Request,
-                               admitad_id: int = None,
-                               subid1: str = None,
-                               subid2: str = None,
-                               subid3: str = None,
-                               subid4: str = None,
-                               payment_sum: float = None,
-                               payment_status: str = None,
-                               currency: str = "RUB",
-                               action: str = None,
-                               action_id: int = None,
-                               order_id: int = None,
-                               click_time: int = None,
-                               time: int = None,
-                               website_id: int = None,
-                               offer_id: int = None,
-                               offer_name: str = None,
-                               website_name: str = None,
-                               user_agent: str = None,
-                               user_referer: str = None,
-                               reward_ready: str = None):
-        # Принимаем как GET, так и POST
-        if request.method == "POST":
+    async def admitad_postback(request: Request):
+        # Принимаем данные как JSON (основной) или form-data (запасной)
+        data = {}
+        if request.headers.get("content-type", "").startswith("application/json"):
+            data = await request.json()
+        else:
             form = await request.form()
-            admitad_id = admitad_id or form.get("admitad_id")
-            subid1 = subid1 or form.get("subid1")
-            payment_sum = payment_sum or form.get("payment_sum")
-            payment_status = payment_status or form.get("payment_status")
+            data = dict(form)
+
+        admitad_id = data.get("admitad_id")
+        subid1 = data.get("subid1")
+        payment_sum = data.get("payment_sum")
+        payment_status = data.get("payment_status")
+        currency = data.get("currency", "RUB")
+        action = data.get("action")
+        action_id = data.get("action_id")
+        order_id = data.get("order_id")
+        click_time = data.get("click_time")
+        time_val = data.get("time")
+        subid2 = data.get("subid2")
+        subid3 = data.get("subid3")
+        subid4 = data.get("subid4")
 
         if not admitad_id or not subid1:
-            return {"status": "error", "message": "Missing required parameters"}
+            return {"status": "error", "message": "Missing admitad_id or subid1"}
+
+        # Конвертируем payment_sum в float, если оно передано
+        if payment_sum is not None:
+            payment_sum = float(payment_sum)
 
         conn = get_db()
+        bot = request.app.state.bot  # Получаем бота из состояния приложения
         try:
             # Проверяем существующую транзакцию
             existing = conn.execute(
-                "SELECT id, payment_status FROM admitad_transactions WHERE admitad_id=?",
+                "SELECT id, payment_status, user_id FROM admitad_transactions WHERE admitad_id = ?",
                 (admitad_id,)
             ).fetchone()
 
+            old_status = existing["payment_status"] if existing else None
+
             if existing:
-                if existing["payment_status"] == payment_status:
+                # Обновляем, если статус изменился
+                if old_status == payment_status:
                     return {"status": "ok", "message": "duplicate ignored"}
                 conn.execute(
-                    "UPDATE admitad_transactions SET payment_status=?, payment_sum=?, updated_at=CURRENT_TIMESTAMP WHERE admitad_id=?",
+                    "UPDATE admitad_transactions SET payment_status = ?, payment_sum = ?, updated_at = CURRENT_TIMESTAMP WHERE admitad_id = ?",
                     (payment_status, payment_sum, admitad_id)
                 )
             else:
+                # Вставляем новую транзакцию
                 conn.execute("""
                     INSERT INTO admitad_transactions
                     (admitad_id, user_id, channel_id, action, action_id, payment_sum, currency,
                      payment_status, order_id, click_time, time, subid1, subid2, subid3, subid4)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    admitad_id, 0, subid1, action, action_id, payment_sum, currency,
-                    payment_status, order_id, click_time, time, subid1, subid2, subid3, subid4
+                    admitad_id, subid1, action, action_id, payment_sum, currency,
+                    payment_status, order_id, click_time, time_val, subid1, subid2, subid3, subid4
                 ))
+                old_status = None  # для новой транзакции не было старого статуса
 
-            # --- Логика обновления баланса ---
+            # Логика обновления балансов пользователя
             if payment_status == "pending" and payment_sum is not None:
-                user_earnings = round(float(payment_sum) * 0.95, 2)
+                user_earnings = round(payment_sum * 0.95, 2)
                 conn.execute(
                     "UPDATE users SET balance_pending = balance_pending + ? WHERE user_id = (SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?)",
                     (user_earnings, subid1)
                 )
             elif payment_status == "approved" and payment_sum is not None:
-                if existing and existing["payment_status"] == "pending":
+                # Если статус меняется с pending на approved, сначала убираем из pending
+                if old_status == "pending":
                     prev_sum = conn.execute(
-                        "SELECT payment_sum FROM admitad_transactions WHERE admitad_id=?",
+                        "SELECT payment_sum FROM admitad_transactions WHERE admitad_id = ?",
                         (admitad_id,)
                     ).fetchone()["payment_sum"]
                     prev_earnings = round(float(prev_sum) * 0.95, 2)
@@ -1046,15 +1050,17 @@ h2{{color:{color};}} a{{color:#3498db;}}</style></head>
                         "UPDATE users SET balance_pending = balance_pending - ? WHERE user_id = (SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?)",
                         (prev_earnings, subid1)
                     )
-                new_earnings = round(float(payment_sum) * 0.95, 2)
+                # Добавляем в доступно к выводу
+                new_earnings = round(payment_sum * 0.95, 2)
                 conn.execute(
                     "UPDATE users SET balance_available = balance_available + ? WHERE user_id = (SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?)",
                     (new_earnings, subid1)
                 )
             elif payment_status == "declined":
-                if existing and existing["payment_status"] == "pending":
+                # Если ранее был pending, убираем из pending
+                if old_status == "pending":
                     prev_sum = conn.execute(
-                        "SELECT payment_sum FROM admitad_transactions WHERE admitad_id=?",
+                        "SELECT payment_sum FROM admitad_transactions WHERE admitad_id = ?",
                         (admitad_id,)
                     ).fetchone()["payment_sum"]
                     prev_earnings = round(float(prev_sum) * 0.95, 2)
@@ -1064,27 +1070,32 @@ h2{{color:{color};}} a{{color:#3498db;}}</style></head>
                     )
 
             conn.commit()
-        finally:
-            conn.close()
-            # Уведомление пользователю о подтверждении
+
+            # Уведомление пользователю только при подтверждении покупки
             if payment_status == "approved" and subid1:
-                try:
-                    user_row = conn.execute(
-                        "SELECT u.user_id FROM users u JOIN channels c ON u.user_id=c.user_id AND c.sub_id=?",
-                        (subid1,)
-                    ).fetchone()
-                    if user_row:
+                user_row = conn.execute(
+                    "SELECT u.user_id FROM users u JOIN channels c ON u.user_id = c.user_id AND c.sub_id = ?",
+                    (subid1,)
+                ).fetchone()
+                if user_row:
+                    try:
                         await bot.send_message(
-                            user_row["user_id"],
-                            f"💰 Поступило вознаграждение: <b>{float(payment_sum)*0.95:.2f} {currency}</b> (заказ #{order_id or admitad_id}).\n"
-                            f"Теперь доступно к выводу.",
+                            chat_id=user_row["user_id"],
+                            text=(
+                                f"✅ <b>Покупка подтверждена!</b>\n\n"
+                                f"Сумма: <b>{payment_sum * 0.95:.2f} {currency}</b>\n"
+                                f"Заказ №: {order_id or admitad_id}\n"
+                                f"<i>Теперь эти средства доступны к выводу.</i>"
+                            ),
                             parse_mode="HTML"
                         )
-                except:
-                    pass
+                    except Exception as e:
+                        logger.error(f"Не удалось отправить уведомление пользователю {user_row['user_id']}: {e}")
+
+        finally:
+            conn.close()
 
         return {"status": "ok", "message": "processed"}
-
     # =====================================================================
     # === ЕЖЕДНЕВНЫЕ ОТЧЁТЫ ===============================================
     # =====================================================================
