@@ -625,7 +625,7 @@ async def cmd_start(message: Message, state: FSMContext):
     try:
         user = conn.execute("SELECT role, channel_id FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
         if not user:
-            # Новый пользователь — сразу назначаем SaaS и просим канал
+            # Новый пользователь – сразу SaaS, просим @username канала
             sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
             conn.execute(
                 "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'saas')",
@@ -633,15 +633,11 @@ async def cmd_start(message: Message, state: FSMContext):
             )
             conn.commit()
             await message.answer(
-                "👋 Добро пожаловать!  Для начала работы добавьте ваш Telegram-канал.\n"
-                "Отправьте его @username.",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="📢 Привязать канал", callback_data="menu:channel")]
-                ])
+                "👋 Добро пожаловать! Для начала работы отправьте @username вашего Telegram-канала."
             )
             await state.set_state(OnboardingStates.waiting_saas_tg_channel)
         else:
-            # Пользователь уже существует – сразу показываем кабинет
+            # Пользователь уже существует – сразу кабинет
             await show_user_cabinet(message, user_id=message.from_user.id)
     finally:
         conn.close()
