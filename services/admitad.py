@@ -80,14 +80,8 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
     finally:
         conn.close()
 
-    store_id_map = {  # актуальный маппинг
-        2: "Читай-город", 3: "Аквафор", 4: "Розовый кролик",
-        6: "Hi Store RU", 7: "KANZLER", 8: "KIKO MILANO",
-        9: "Moulinex", 10: "Playtoday", 11: "SELA",
-    }
-
     saved = 0
-    for store_id, store_name in store_id_map.items():
+    for store_id, store_name in STORE_ID_MAP.items():
         if store_id not in selected_ids:
             continue
         if store_name not in STORES:
