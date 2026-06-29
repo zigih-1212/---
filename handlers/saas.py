@@ -9,7 +9,6 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton
 )
 from aiogram.enums import ParseMode
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
 from states import SaasStates, PaymentFSM
@@ -127,6 +126,7 @@ async def cb_toggle_store(callback: CallbackQuery):
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
     user_id = callback.from_user.id
+
     conn = get_db()
     try:
         product = conn.execute(
