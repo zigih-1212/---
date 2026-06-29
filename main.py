@@ -1430,7 +1430,9 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
         parse_mode=ParseMode.HTML,
         reply_markup=kb_cabinet_menu("saas")
     )
+    # Сразу переходим в кабинет (или показываем оферту)
     await state.clear()
+    await show_user_cabinet(message, user_id=user_id)
 
 
 # =============================================================================
@@ -1531,46 +1533,7 @@ async def cb_filter_toggle(callback: CallbackQuery) -> None:
 # =============================================================================
 # === ГЛУБОКАЯ ССЫЛКА (РЕФЕРАЛЬНАЯ СИСТЕМА) ===================================
 # =============================================================================
-@router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
-    await state.clear()
-    if is_admin(message.from_user.id):
-        await message.answer("👋 Добро пожаловать в Панель администратора.", reply_markup=kb_admin_panel())
-        return
 
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT role, channel_id FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
-        if not user:
-            # Новый пользователь — сразу назначаем SaaS и просим канал
-            sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
-            conn.execute(
-                "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'saas')",
-                (message.from_user.id, message.from_user.username, sub_id)
-            )
-            conn.commit()
-            await message.answer(
-                "👋 Добро пожаловать! Для начала работы добавьте ваш Telegram-канал.\n"
-                "Отправьте его @username.",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="📢 Привязать канал", callback_data="menu:channel")]
-                ])
-            )
-            await state.set_state(OnboardingStates.waiting_saas_tg_channel)
-        elif user["role"] == "blogger" and not user["channel_id"]:
-            # Старый блогер без канала — переводим в SaaS
-            conn.execute("UPDATE users SET role='saas' WHERE user_id=?", (message.from_user.id,))
-            conn.commit()
-            await message.answer(
-                "⚠️ Ваш аккаунт переведён в режим SaaS.\n"
-                "Отправьте @username вашего Telegram-канала для начала работы.",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="📢 Привязать канал", callback_data="menu:channel")]
-                ])
-            )
-            await state.set_state(OnboardingStates.waiting_saas_tg_channel)
-    finally:
-        conn.close()
 
 @router.callback_query(F.data == "cabinet:open")
 async def cb_open_cabinet(callback: CallbackQuery):
