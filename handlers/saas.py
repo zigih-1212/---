@@ -632,65 +632,7 @@ async def cb_payout_confirm_saas(callback: CallbackQuery, state: FSMContext, bot
     await callback.answer()
 
 
-@router.message(SaasStates.waiting_apikey)
-async def handle_payout_card_input(message: Message, state: FSMContext):
-    """Обрабатывает ввод номера карты для вывода."""
-    data = await state.get_data()
-    if not data.get("waiting_payout_card"):
-        # Это не наш запрос, возможно, ввод API-ключа, передаём дальше
-        return
 
-    card_raw = message.text.strip().replace(" ", "")
-    if not card_raw.isdigit() or len(card_raw) != 16:
-        await message.answer("❌ Некорректный номер карты. Введите ровно 16 цифр без пробелов.")
-        return
-
-    # Форматируем
-    formatted = f"{card_raw[:4]} {card_raw[4:8]} {card_raw[8:12]} {card_raw[12:]}"
-    user_id = message.from_user.id
-    amount = data.get("payout_amount", 0)
-
-    conn = get_db()
-    try:
-        # Сохраняем карту
-        conn.execute("UPDATE users SET payout_card=? WHERE user_id=?", (formatted, user_id))
-        # Списываем сумму и создаём заявку
-        conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (amount, user_id))
-        conn.execute(
-            "INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) "
-            "VALUES (?, ?, ?, ?, ?, 'pending')",
-            (user_id, amount, amount, amount, formatted)
-        )
-        payout_id = conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
-        conn.commit()
-    finally:
-        conn.close()
-
-    # Уведомление админам
-    for admin_id in ADMIN_IDS:
-        try:
-            await message.bot.send_message(
-                admin_id,
-                f"💸 <b>Новая заявка на вывод #{payout_id}</b>\n\n"
-                f"👤 User ID: <code>{user_id}</code>\n"
-                f"💳 Карта: <code>{formatted}</code>\n"
-                f"💰 Сумма: <b>{amount:.2f} ₽</b>\n\n"
-                f"<i>Переведите средства и нажмите кнопку ниже.</i>",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="✅ Отправлено", callback_data=f"payout:done:{payout_id}:{user_id}")]
-                ])
-            )
-        except:
-            pass
-
-    await message.answer(
-        f"✅ <b>Заявка создана!</b>\n\n"
-        f"Сумма: <b>{amount:.2f} ₽</b> будет переведена на карту <code>{formatted}</code>.\n"
-        f"Ожидайте уведомления о выполнении.",
-        parse_mode=ParseMode.HTML
-    )
-    await state.clear()
 # ---------------------------------------------------------------------------
 # Финансы (история транзакций Admitad) с дисклеймером
 # ---------------------------------------------------------------------------
