@@ -563,7 +563,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
     conn = get_db()
     try:
-        user = conn.execute("SELECT role, channel_id FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
         if not user:
             # Новый пользователь – сразу SaaS, просим @username канала
             sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
@@ -764,17 +764,6 @@ async def cb_delete_channel(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "menu:stats")
 async def cb_menu_stats(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
-    finally:
-        conn.close()
-
-    if not user:
-        await callback.answer("❌ Пользователь не найден", show_alert=True)
-        return
-
-    # Всегда показываем SaaS-статистику
     await _show_saas_stats(callback, user_id, channel_idx=0, period="30d")
     await callback.answer()
 
@@ -860,17 +849,6 @@ async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:settings")
 async def cb_menu_settings(callback: CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
-    finally:
-        conn.close()
-
-    if not user:
-        await callback.answer("❌ Пользователь не найден", show_alert=True)
-        return
-
     await open_saas_settings(callback)
     await callback.answer()
 
@@ -878,7 +856,7 @@ async def open_saas_settings(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     conn = get_db()
     try:
-        user = conn.execute("SELECT api_key, auto_pin, filter_wb, filter_ozon FROM users WHERE user_id=?", (user_id,)).fetchone()
+        user = conn.execute("SELECT api_key, auto_pin FROM users WHERE user_id=?", (user_id,)).fetchone()
     finally:
         conn.close()
     if not user:
@@ -906,11 +884,26 @@ async def open_saas_settings(callback: CallbackQuery) -> None:
     except TelegramBadRequest:
         pass
 
-# ---------------------------------------------------------------------------
-# Остальные колбэки (вынесены в saas.py, но некоторые оставлены здесь)
-# ---------------------------------------------------------------------------
+@router.callback_query(F.data.startswith("saas_toggle:"))
+async def cb_saas_toggles(callback: CallbackQuery) -> None:
+    action = callback.data.split(":")[1]
+    if action != "autopin":
+        return
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT auto_pin FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if user:
+            new_val = 0 if user["auto_pin"] else 1
+            conn.execute("UPDATE users SET auto_pin=? WHERE user_id=?", (new_val, user_id))
+            conn.commit()
+    finally:
+        conn.close()
+    await open_saas_settings(callback)
 
-# Обработчик успешной оплаты (звёзды)
+# ---------------------------------------------------------------------------
+# Успешная оплата (звёзды)
+# ---------------------------------------------------------------------------
 @router.pre_checkout_query()
 async def process_pre_checkout_query(query: PreCheckoutQuery):
     await query.answer(ok=True)
@@ -966,22 +959,14 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
 
     user_id = message.from_user.id
 
+    # Проверяем, является ли бот администратором
     is_admin_ok = await check_bot_admin(message.bot, channel_username)
     if not is_admin_ok:
-        await message.answer("❌ Бот не является администратором в этом канале.")
+        await message.answer("❌ Бот не является администратором в этом канале. Добавьте бота в администраторы с правом публикации.")
         return
 
     conn = get_db()
     try:
-        user = conn.execute("SELECT tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        if user and user["tariff_id"]:
-            tariff = conn.execute("SELECT max_channels FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
-            max_channels = tariff["max_channels"] if tariff else 5
-            current_count = conn.execute("SELECT COUNT(*) as cnt FROM channels WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
-            if current_count >= max_channels:
-                await message.answer(f"❌ Ваш тариф позволяет подключить не более {max_channels} каналов.")
-                return
-
         # Получаем числовой ID канала Telegram
         try:
             chat_info = await message.bot.get_chat(channel_username)
@@ -991,17 +976,27 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
             await message.answer("❌ Не удалось получить информацию о канале. Проверьте правильность @username.")
             return
 
-        sub_id = tg_chat_id
+        # Проверка лимита каналов (если есть тариф)
+        user = conn.execute("SELECT tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        if user and user["tariff_id"]:
+            tariff = conn.execute("SELECT max_channels FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
+            max_channels = tariff["max_channels"] if tariff else 5
+            current_count = conn.execute("SELECT COUNT(*) as cnt FROM channels WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
+            if current_count >= max_channels:
+                await message.answer(f"❌ Ваш тариф позволяет подключить не более {max_channels} каналов.")
+                return
 
         conn.execute(
             """INSERT INTO channels (user_id, channel_id, channel_title, sub_id)
                VALUES (?, ?, ?, ?)
                ON CONFLICT(user_id, channel_id) DO UPDATE SET channel_title = excluded.channel_title""",
-            (user_id, channel_username, tg_title, sub_id)
+            (user_id, channel_username, tg_title, tg_chat_id)
         )
         conn.commit()
     except sqlite3.Error as e:
         logger.error(f"Ошибка добавления канала: {e}")
+        await message.answer("Ошибка при добавлении канала.")
+        return
     finally:
         conn.close()
 
