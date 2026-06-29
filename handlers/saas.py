@@ -556,8 +556,7 @@ async def cb_payout_request_start(callback: CallbackQuery, state: FSMContext):
             f"Введите номер карты (16 цифр без пробелов) для получения выплаты:",
             parse_mode=ParseMode.HTML,
             reply_markup=kb
-        )
-        await state.set_state(SaasStates.waiting_apikey)   # временно используем это состояние
+        )   
         await state.update_data(payout_amount=available, waiting_payout_card=True)
     await callback.answer()
 
@@ -572,7 +571,6 @@ async def cb_payout_change_card_saas(callback: CallbackQuery, state: FSMContext)
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:finance")]
         ])
     )
-    await state.set_state(SaasStates.waiting_apikey)
     await state.update_data(waiting_payout_card=True)
     await callback.answer()
 
