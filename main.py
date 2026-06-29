@@ -1280,6 +1280,37 @@ async def daily_report(bot: Bot):
         except Exception as e:
             logger.error(f"Ошибка отправки ежедневного отчёта: {e}")
 
+async def send_subscription_reminders(bot: Bot):
+    """Напоминает пользователям, у которых подписка истекает ровно через 3 дня."""
+    now_utc = datetime.now(timezone.utc)
+    target_date = now_utc + timedelta(days=3)
+    target_iso = target_date.strftime("%Y-%m-%d")
+    conn = get_db()
+    try:
+        # Ищем активных SaaS-пользователей, у которых дата подписки попадает в целевой день
+        rows = conn.execute("""
+            SELECT user_id FROM users
+            WHERE role='saas'
+            AND is_active=1
+            AND subscription_until IS NOT NULL
+            AND DATE(subscription_until) = ?
+        """, (target_iso,)).fetchall()
+        for row in rows:
+            user_id = row["user_id"]
+            try:
+                await bot.send_message(
+                    chat_id=user_id,
+                    text="⏰ <b>Напоминание</b>\n\n"
+                         "Ваша подписка истекает <b>через 3 дня</b>. "
+                         "Чтобы не потерять доступ к авто-постингу, продлите подписку в /cabinet.",
+                    parse_mode="HTML"
+                )
+                logger.info(f"Отправлено напоминание пользователю {user_id}")
+            except Exception as e:
+                logger.error(f"Не удалось отправить напоминание {user_id}: {e}")
+    finally:
+        conn.close()
+
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(run_billing_check, trigger="interval", hours=1, kwargs={"bot": bot}, id="billing_check", replace_existing=True)
@@ -1289,6 +1320,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(publish_from_catalog, trigger="interval", minutes=10, jitter=30, kwargs={"bot": bot}, id="publish_catalog", replace_existing=True)
     scheduler.add_job(refill_admitad_catalogs, trigger="interval", minutes=15, id="refill_admitad", replace_existing=True)
     scheduler.add_job(daily_report, trigger="cron", hour=9, minute=0, kwargs={"bot": bot}, id="daily_report", replace_existing=True)
+    scheduler.add_job(send_subscription_reminders, trigger="cron", hour=10, minute=0, kwargs={"bot": bot}, id="subscription_reminders", replace_existing=True)
     return scheduler
 
 # ---------------------------------------------------------------------------
