@@ -625,31 +625,24 @@ async def cmd_start(message: Message, state: FSMContext):
     try:
         user = conn.execute("SELECT role, channel_id FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
         if not user:
+            # Новый пользователь — сразу назначаем SaaS и просим канал
             sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
             conn.execute(
-                "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'blogger')",
+                "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'saas')",
                 (message.from_user.id, message.from_user.username, sub_id)
             )
             conn.commit()
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="👤 Я блогер", callback_data="role:blogger")],
-                [InlineKeyboardButton(text="🏢 Я SaaS-клиент", callback_data="role:saas")]
-            ])
-            await message.answer("👋 Добро пожаловать! Выберите вашу роль:", reply_markup=kb)
-            await state.set_state(OnboardingStates.waiting_role)
-        if user:
-            # Проверяем, принял ли пользователь оферту
-            if user["oferta_accepted"] == 0:
-                await show_user_cabinet(message, user_id=message.from_user.id)
-                return          
-        elif user["role"] == "blogger" and not user["channel_id"]:
             await message.answer(
-                "⚠️ Вы ещё не привязали свой канал.\nПерешлите сообщение из канала или отправьте @username.",
+                "👋 Добро пожаловать!  Для начала работы добавьте ваш Telegram-канал.\n"
+                "Отправьте его @username.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="📢 Привязать канал", callback_data="menu:channel")]
                 ])
             )
-            await state.set_state(OnboardingStates.waiting_channel)
+            await state.set_state(OnboardingStates.waiting_saas_tg_channel)
+        else:
+            # Пользователь уже существует – сразу показываем кабинет
+            await show_user_cabinet(message, user_id=message.from_user.id)
     finally:
         conn.close()
 # ---------------------------------------------------------------------------
