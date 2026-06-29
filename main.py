@@ -794,6 +794,7 @@ async def cb_my_channels(callback: CallbackQuery) -> None:
 
     try:
         await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        await state.set_state(OnboardingStates.waiting_saas_tg_channel)
     except Exception:
         pass
     await callback.answer()
