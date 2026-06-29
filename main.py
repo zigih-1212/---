@@ -70,7 +70,7 @@ from fastapi import FastAPI, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, PayoutStates
-from stats import get_blogger_stats, get_saas_channels, get_saas_channel_stats_new, get_saas_overview, STAT_PERIODS
+from stats import get_saas_channels, get_saas_channel_stats_new, get_saas_overview, STAT_PERIODS
 print("DEBUG: all imports done", flush=True, file=sys.stderr)
 
 from services.db import get_db
@@ -404,11 +404,8 @@ def init_db() -> None:
     logger.info("База данных инициализирована")
 
 
-
-  # =============================================================================
+# =============================================================================
 # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =================================================
-
-
 def log_admin_action(admin_id: int, action: str, details: str = ""):
     conn = get_db()
     try:
@@ -419,7 +416,6 @@ def log_admin_action(admin_id: int, action: str, details: str = ""):
         conn.commit()
     finally:
         conn.close()
-
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
@@ -464,9 +460,6 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
 
 # =============================================================================
 # === КЛАВИАТУРЫ ==============================================================
-# =============================================================================
-
-
 def kb_admin_panel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌐 Открыть Web-админку", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))],
@@ -475,69 +468,13 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔧 Продлить подписку", callback_data="admin:extend_sub")],
     ])
 
-
-
-def kb_filter_settings(wb: int, ozon: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{'✅' if wb else '❌'} Wildberries", callback_data="filter:toggle:wb"
-        )],
-        [InlineKeyboardButton(
-            text=f"{'✅' if ozon else '❌'} Ozon", callback_data="filter:toggle:ozon"
-        )],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")],
-    ])
-
-
-
-# =============================================================================
-# === НОВЫЕ SAAS-ФУНКЦИИ ======================================================
-# =============================================================================
-
-
-async def _send_to_quarantine(
-    bot: Bot, user_id: int, donor_post_id: str, channel_id: str, reason: str
-) -> None:
-    """Блокирует публикацию и уведомляет карантинный чат."""
-    conn = get_db()
-    try:
-        conn.execute(
-            "INSERT INTO posts (user_id, donor_post_id, channel_id, status, quarantine_reason) "
-            "VALUES (?, ?, ?, 'quarantine', ?)",
-            (user_id, donor_post_id, channel_id, reason)
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    msg = (
-        f"🚨 <b>КАРАНТИН — пост заблокирован</b>\n\n"
-        f"👤 User ID: <code>{user_id}</code>\n"
-        f"📢 Канал: <code>{channel_id}</code>\n"
-        f"🆔 Пост донора: <code>{donor_post_id}</code>\n"
-        f"❌ Причина: {html.escape(reason)}\n\n"
-        f"<i>Для публикации вручную добавьте ERID и одобрите пост.</i>"
-    )
-    try:
-        await bot.send_message(QUARANTINE_CHAT_ID, msg, parse_mode=ParseMode.HTML)
-    except TelegramAPIError as e:
-        logger.error(f"Не удалось отправить в карантин: {e}")
-
-
-# =============================================================================
-# === SAAS-ФУНКЦИИ (НОВЫЕ) ====================================================
-# =============================================================================
-
-
-
 # =============================================================================
 # === ROUTER & HANDLERS =======================================================
-# =============================================================================
 print("DEBUG: creating router", flush=True, file=sys.stderr)
 router = Router()
 
 # ---------------------------------------------------------------------------
-# /start
+# /promo
 # ---------------------------------------------------------------------------
 @router.message(Command("promo"))
 async def promo_handler(message: Message, state: FSMContext):
@@ -614,6 +551,9 @@ async def promo_handler(message: Message, state: FSMContext):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
     )
 
+# ---------------------------------------------------------------------------
+# /start
+# ---------------------------------------------------------------------------
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
@@ -641,8 +581,16 @@ async def cmd_start(message: Message, state: FSMContext):
             await show_user_cabinet(message, user_id=message.from_user.id)
     finally:
         conn.close()
+
 # ---------------------------------------------------------------------------
-# /cabinet, "💻 Личный кабинет"
+# /cabinet
+# ---------------------------------------------------------------------------
+@router.message(Command("cabinet"))
+async def cmd_cabinet(message: Message):
+    await show_user_cabinet(message, user_id=message.from_user.id)
+
+# ---------------------------------------------------------------------------
+# Личный кабинет (общая функция)
 # ---------------------------------------------------------------------------
 async def show_user_cabinet(message: Message, user_id: int = None):
     if user_id is None:
@@ -737,12 +685,9 @@ async def show_user_cabinet(message: Message, user_id: int = None):
         f"{finance_text}"
     )
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_cabinet_menu(role))
-@router.message(Command("cabinet"))
-async def cmd_cabinet(message: Message):
-    await show_user_cabinet(message, user_id=message.from_user.id)
 
 # ---------------------------------------------------------------------------
-# Главное меню
+# Главное меню (колбэк)
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:main")
 async def cb_menu_main(callback: CallbackQuery):
@@ -756,12 +701,11 @@ async def cb_menu_main(callback: CallbackQuery):
         role = user["role"] if user else "blogger"
     finally:
         conn.close()
-    if role == "saas":
-        await show_user_cabinet(callback.message, user_id=callback.from_user.id)
-    else:
-        # Для блогера показываем хотя бы какую-то клавиатуру
-        await callback.message.answer("Главное меню:", reply_markup=kb_cabinet_menu(role))
+    await show_user_cabinet(callback.message, user_id=callback.from_user.id)
 
+# ---------------------------------------------------------------------------
+# Мои каналы (SaaS)
+# ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:my_channels")
 async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
@@ -806,36 +750,17 @@ async def cb_delete_channel(callback: CallbackQuery) -> None:
 
     conn = get_db()
     try:
-        # Удаляем канал из БД по его внутреннему id и user_id
         conn.execute("DELETE FROM channels WHERE id=? AND user_id=?", (channel_id, user_id))
         conn.commit()
     finally:
         conn.close()
 
     await callback.answer("🗑 Канал удалён.", show_alert=True)
-    # Перерисовываем список каналов
     await cb_my_channels(callback)
-# ---------------------------------------------------------------------------
-# Обработчики подписок / оплат и выплат (все остальные хендлеры из исходника
-# оставляем идентичными, так как они не затрагивают новую логику SaaS)
-# ---------------------------------------------------------------------------
-# Здесь должны быть:
-#   - обработчики для /debug_scan, /force_trial, /fix_channels
-#   - все коллбэки кабинета: menu:stats, menu:channel, menu:tariffs и т.д.
-#   - настройки SaaS: saas_toggle, saas_set:apikey, saas_force_post
-#   - выплаты и расчёт выплат
-#   - обработка ролей и добавление каналов
-#   - админские коллбэки
-#   - FastAPI админка и шедулер (будут добавлены отдельными шагами)
 
 # ---------------------------------------------------------------------------
-# Скелет обработчиков для переноса (вставь свои старые функции сюда)
+# Статистика SaaS
 # ---------------------------------------------------------------------------
-# ... (перенеси их из твоего исходного main.py, они не менялись)
-
-# =============================================================================
-# === ОБРАБОТЧИКИ: СТАТИСТИКА =================================================
-# =============================================================================
 @router.callback_query(F.data == "menu:stats")
 async def cb_menu_stats(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
@@ -849,27 +774,8 @@ async def cb_menu_stats(callback: CallbackQuery) -> None:
         await callback.answer("❌ Пользователь не найден", show_alert=True)
         return
 
-    if user["role"] == "blogger":
-        stats = get_blogger_stats(user_id)
-        text = (
-            f"📊 <b>Ваша статистика</b>\n\n"
-            f"📍 Всего постов: <b>{stats['total_posts']}</b>\n"
-            f"✅ Опубликовано: <b>{stats['published_posts']}</b>\n"
-            f"🕒 За последние 30 дней: <b>{stats['published_last_30d']}</b>\n\n"
-            f"💰 <b>Заработок</b>\n"
-            f"├ Всего: <b>{stats['total_earned']} ₽</b>\n"
-            f"└ За 30 дней: <b>{stats['earned_last_30d']} ₽</b>\n\n"
-            f"🛍 Продаж: <b>{stats['total_sales']}</b>\n\n"
-            f"<i>Данные обновляются автоматически.</i>"
-        )
-        kb = []
-        if stats["total_earned"] >= MIN_PAYOUT:
-            kb.append([InlineKeyboardButton(text="💳 Запросить выплату", callback_data="payout:request")])
-        kb.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
-        await callback.message.edit_text(text, parse_mode=ParseMode.HTML,
-                                         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
-    else:
-        await _show_saas_stats(callback, user_id, channel_idx=0, period="30d")
+    # Всегда показываем SaaS-статистику
+    await _show_saas_stats(callback, user_id, channel_idx=0, period="30d")
     await callback.answer()
 
 async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: int = 0, period: str = "30d") -> None:
@@ -892,7 +798,6 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
             [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
         ])
         await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        await callback.answer()
         return
 
     channel_idx = max(0, min(channel_idx, len(channels) - 1))
@@ -935,8 +840,7 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
 
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML,
                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
-    await callback.answer()
-  
+
 @router.callback_query(F.data.startswith("saas_stats:"))
 async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
@@ -951,14 +855,68 @@ async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
     await _show_saas_stats(callback, callback.from_user.id, channel_idx, period)
     await callback.answer()
 
+# ---------------------------------------------------------------------------
+# Настройки
+# ---------------------------------------------------------------------------
+@router.callback_query(F.data == "menu:settings")
+async def cb_menu_settings(callback: CallbackQuery) -> None:
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+    finally:
+        conn.close()
+
+    if not user:
+        await callback.answer("❌ Пользователь не найден", show_alert=True)
+        return
+
+    await open_saas_settings(callback)
+    await callback.answer()
+
+async def open_saas_settings(callback: CallbackQuery) -> None:
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT api_key, auto_pin, filter_wb, filter_ozon FROM users WHERE user_id=?", (user_id,)).fetchone()
+    finally:
+        conn.close()
+    if not user:
+        await callback.answer("❌ Ошибка загрузки настроек", show_alert=True)
+        return
+
+    auto_pin = bool(user["auto_pin"] if user["auto_pin"] is not None else 1)
+
+    text = (
+        "⚙️ <b>Настройки SaaS-аккаунта</b>\n\n"
+        "📦 <b>Товары поступают автоматически из магазинов-партнёров Admitad.</b>\n"
+        "Вы выбираете магазины в разделе «🏪 Магазины». Бот сам пополняет каталог и публикует посты с маркировкой ERID.\n\n"
+        "🔑 Ручной ввод API-ключей не требуется.\n\n"
+        "⚡ Дополнительные возможности:"
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="ℹ️ Об источнике товаров", callback_data="saas_set:gdeslon_apikey")],
+        [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
+        [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
+        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    except TelegramBadRequest:
+        pass
+
+# ---------------------------------------------------------------------------
+# Остальные колбэки (вынесены в saas.py, но некоторые оставлены здесь)
+# ---------------------------------------------------------------------------
+
+# Обработчик успешной оплаты (звёзды)
 @router.pre_checkout_query()
 async def process_pre_checkout_query(query: PreCheckoutQuery):
-    """Подтверждаем возможность оплаты."""
     await query.answer(ok=True)
 
 @router.message(SuccessfulPayment)
 async def process_successful_payment(message: Message):
-    """Активация подписки после успешной оплаты звёздами."""
     payload = message.successful_payment.invoice_payload
     if not payload.startswith("tariff_"):
         return
@@ -971,10 +929,9 @@ async def process_successful_payment(message: Message):
 
     conn = get_db()
     try:
-        # Проверяем тариф
         tariff = conn.execute("SELECT days FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
         if not tariff:
-            await message.answer("❌ Тариф не найден. Обратитесь к администратору.")
+            await message.answer("❌ Тариф не найден.")
             return
         days = tariff["days"]
 
@@ -989,335 +946,134 @@ async def process_successful_payment(message: Message):
 
     await message.answer(
         f"✅ <b>Подписка активирована!</b>\n\n"
-        f"Тариф: {tariff['name'] if tariff else '—'}\n"
-        f"Действует до: {new_until.strftime('%d.%m.%Y %H:%M')} (UTC)\n\n"
-        f"Спасибо за покупку!",
+        f"Действует до: {new_until.strftime('%d.%m.%Y %H:%M')} (UTC)",
         parse_mode=ParseMode.HTML
-    )  
-
-
-# =============================================================================
-# === ОБРАБОТЧИКИ КАНАЛОВ (БЛОГЕР) ============================================
-# =============================================================================
-@router.callback_query(F.data == "menu:channel")
-async def cb_menu_channel(callback: CallbackQuery, state: FSMContext) -> None:
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT channel_title, channel_id FROM users WHERE user_id=?", (user_id,)).fetchone()
-    finally:
-        conn.close()
-
-    if row and row["channel_id"]:
-        await callback.message.edit_text(
-            f"📢 <b>Управление каналом</b>\n\n"
-            f"Привязанный канал: <b>{html.escape(row['channel_title'] or 'Без названия')}</b>\n"
-            f"ID: <code>{row['channel_id']}</code>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔄 Изменить канал", callback_data="channel:change")],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
-            ])
-        )
-    else:
-        await callback.message.edit_text(
-            "📢 <b>Привязка канала</b>\n\n"
-            "Перешли сюда любое сообщение из твоего канала или отправь <code>@username</code>.\n\n"
-            "<i>Убедись, что бот добавлен в канал как администратор с правом публикации.</i>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")]
-            ])
-        )
-        await state.set_state(OnboardingStates.waiting_channel)
-    await callback.answer()
-
-@router.callback_query(F.data == "channel:change")
-async def cb_change_channel(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.message.edit_text(
-        "📢 <b>Смена канала</b>\n\n"
-        "Перешли сообщение из нового канала или отправь <code>@username</code>.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Отмена", callback_data="menu:main")]
-        ])
     )
-    await state.set_state(OnboardingStates.waiting_channel)
-    await callback.answer()
 
-@router.message(OnboardingStates.waiting_channel)
-async def handle_channel_input(message: Message, state: FSMContext) -> None:
+# ---------------------------------------------------------------------------
+# ОНБОРДИНГ: SAAS – ДОБАВЛЕНИЕ КАНАЛА
+# ---------------------------------------------------------------------------
+@router.message(OnboardingStates.waiting_saas_tg_channel)
+async def handle_saas_channel_addition(message: Message, state: FSMContext) -> None:
+    channel_username = message.text.strip()
+
+    if channel_username.startswith("/"):
+        return
+
+    if not channel_username.startswith("@"):
+        await message.answer("⚠️ Для добавления канала отправьте @username.")
+        return
+
     user_id = message.from_user.id
-    channel_id: Optional[str] = None
-    channel_title: Optional[str] = None
 
-    # Пропускаем команды
-    if message.text and message.text.startswith("/"):
-        return
-
-    if message.forward_origin and message.forward_origin.chat:
-        chat = message.forward_origin.chat
-        channel_id = str(chat.id)
-        channel_title = chat.title
-    elif message.text and message.text.startswith("@"):
-        channel_id = message.text.strip()
-        channel_title = channel_id
-
-    if not channel_id:
-        await message.answer("⚠️ Не удалось распознать канал. Пожалуйста, пришлите пересланное сообщение или @username.")
-        return
-
-    is_admin_ok = await check_bot_admin(message.bot, channel_id)
+    is_admin_ok = await check_bot_admin(message.bot, channel_username)
     if not is_admin_ok:
-        await message.answer(
-            "❌ Бот не имеет прав администратора в этом канале.\n"
-            "Добавьте бота в администраторы (с правом публикации) и попробуйте снова."
-        )
+        await message.answer("❌ Бот не является администратором в этом канале.")
         return
 
     conn = get_db()
     try:
+        user = conn.execute("SELECT tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        if user and user["tariff_id"]:
+            tariff = conn.execute("SELECT max_channels FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
+            max_channels = tariff["max_channels"] if tariff else 5
+            current_count = conn.execute("SELECT COUNT(*) as cnt FROM channels WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
+            if current_count >= max_channels:
+                await message.answer(f"❌ Ваш тариф позволяет подключить не более {max_channels} каналов.")
+                return
+
+        # Получаем числовой ID канала Telegram
+        try:
+            chat_info = await message.bot.get_chat(channel_username)
+            tg_chat_id = str(chat_info.id)
+            tg_title = chat_info.title or channel_username
+        except Exception:
+            await message.answer("❌ Не удалось получить информацию о канале. Проверьте правильность @username.")
+            return
+
+        sub_id = tg_chat_id
+
         conn.execute(
-            "UPDATE users SET channel_id=?, channel_title=? WHERE user_id=?", 
-            (channel_id, channel_title, user_id)
+            """INSERT INTO channels (user_id, channel_id, channel_title, sub_id)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(user_id, channel_id) DO UPDATE SET channel_title = excluded.channel_title""",
+            (user_id, channel_username, tg_title, sub_id)
         )
         conn.commit()
-        row = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
-        role = row["role"] if row else "blogger"
-    except Exception as e:
-        logger.error(f"Ошибка сохранения канала: {e}")
-        await message.answer("Ошибка при сохранении данных.")
-        return
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка добавления канала: {e}")
     finally:
         conn.close()
 
-    await state.clear()
     await message.answer(
-        f"✅ <b>Канал успешно привязан:</b> {html.escape(channel_title or channel_id)}\n\n"
-        "Теперь вы можете полноценно пользоваться ботом.",
+        f"✅ Канал <b>{html.escape(channel_username)}</b> успешно добавлен!",
         parse_mode=ParseMode.HTML,
-        reply_markup=kb_cabinet_menu(role)
+        reply_markup=kb_cabinet_menu("saas")
     )
+    await state.clear()
+    await show_user_cabinet(message, user_id=user_id)
 
-
-# =============================================================================
-# === НАСТРОЙКИ (ФИЛЬТРЫ WB/OZON) =============================================
-# =============================================================================
-
-@router.callback_query(F.data.startswith("saas_toggle:"))
-async def cb_saas_toggles(callback: CallbackQuery) -> None:
-    action = callback.data.split(":")[1]
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT auto_pin, filter_wb, filter_ozon FROM users WHERE user_id=?", (user_id,)).fetchone()
-        if action == "autopin":
-            new_val = 0 if user["auto_pin"] else 1
-            conn.execute("UPDATE users SET auto_pin=? WHERE user_id=?", (new_val, user_id))
-        elif action == "wb":
-            new_val = 0 if user["filter_wb"] else 1
-            conn.execute("UPDATE users SET filter_wb=? WHERE user_id=?", (new_val, user_id))
-        elif action == "ozon":
-            new_val = 0 if user["filter_ozon"] else 1
-            conn.execute("UPDATE users SET filter_ozon=? WHERE user_id=?", (new_val, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-    await open_saas_settings(callback)
-
-# =============================================================================
-# === ВЫПЛАТЫ =================================================================
-# =============================================================================
-def calc_payout(amount_blogger: float) -> dict:
-    amount_to_withdraw = (amount_blogger * 2 + PAYOUT_FIXED_FEE) / (1 - PAYOUT_BANK_PCT)
-    return {
-        "amount_requested": amount_blogger,
-        "amount_to_withdraw": round(amount_to_withdraw, 2),
-        "amount_blogger": round(amount_blogger, 2),
-    }
-
-
-@router.callback_query(F.data == "payout:request")
-async def cb_payout_request(callback: CallbackQuery, state: FSMContext) -> None:
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT payout_card FROM users WHERE user_id=?", (user_id,)).fetchone()
-        active = conn.execute("SELECT COUNT(*) as cnt FROM payouts WHERE user_id=? AND status='pending'", (user_id,)).fetchone()
-    finally:
-        conn.close()
-
-    if active["cnt"] >= MAX_ACTIVE_PAYOUTS:
-        await callback.answer(f"❌ У вас уже {MAX_ACTIVE_PAYOUTS} активные заявки.", show_alert=True)
-        return
-
-    card = user["payout_card"] if user else None
-    if card:
-        await callback.message.edit_text(
-            f"💳 <b>Запрос выплаты</b>\n\n"
-            f"Текущая карта: <code>{card}</code>\n\n"
-            f"Минимальная сумма: <b>{MIN_PAYOUT:.0f} ₽</b>\n"
-            f"Введите сумму или смените карту:",
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔄 Сменить карту", callback_data="payout:change_card")],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:stats")],
-            ])
-        )
-        await state.set_state(PayoutStates.waiting_for_amount)
-    else:
-        await callback.message.edit_text(
-            "💳 <b>Запрос выплаты</b>\n\n"
-            "Введите номер карты РФ для получения выплаты:",
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:stats")],
-            ])
-        )
-        await state.set_state(PayoutStates.waiting_for_card)
-    await callback.answer()
-
-
-@router.callback_query(F.data == "payout:change_card")
-async def cb_payout_change_card(callback: CallbackQuery, state: FSMContext) -> None:
+# ---------------------------------------------------------------------------
+# Обработчики инструкций и поддержки
+# ---------------------------------------------------------------------------
+@router.callback_query(F.data == "support:contact")
+async def cb_support_contact(callback: CallbackQuery):
+    text = (
+        "📞 <b>Связь с администратором</b>\n\n"
+        "По любым вопросам, ошибкам, багам, предложениям и для оплаты пишите:\n"
+        "👉 <a href='https://t.me/Zigih90'>@Zigih90</a>\n\n"
+        "<i>Стараюсь отвечать быстро 😊</i>"
+    )
     await callback.message.edit_text(
-        "💳 Введите новый номер карты РФ:",
+        text,
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="payout:request")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
         ])
     )
-    await state.set_state(PayoutStates.waiting_for_card)
     await callback.answer()
 
+@router.callback_query(F.data == "menu:instructions")
+async def cb_menu_instructions(callback: CallbackQuery) -> None:
+    await show_saas_instruction(callback)
+    await callback.answer()
 
-@router.message(PayoutStates.waiting_for_card)
-async def payout_got_card(message: Message, state: FSMContext) -> None:
-    card = message.text.strip().replace(" ", "")
-    if not card.isdigit() or len(card) != 16:
-        await message.answer("❌ Некорректный номер карты. Введите 16 цифр без пробелов:")
-        return
-    formatted = f"{card[:4]} {card[4:8]} {card[8:12]} {card[12:]}"
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET payout_card=? WHERE user_id=?", (formatted, message.from_user.id))
-        conn.commit()
-    finally:
-        conn.close()
-    await state.set_state(PayoutStates.waiting_for_amount)
-    await message.answer(
-        f"✅ Карта сохранена: <code>{formatted}</code>\n\n"
-        f"Теперь введите сумму для вывода (минимум {MIN_PAYOUT:.0f} ₽):",
-        parse_mode=ParseMode.HTML
+async def show_saas_instruction(callback: CallbackQuery):
+    text = (
+        "📖 <b>Инструкция для SaaS-клиентов</b>\n\n"
+        "<b>1. Подготовка</b>\n"
+        "─ Бот автоматически получает товары из проверенных магазинов (Admitad).\n"
+        "─ Вам не нужно вводить API-ключи.\n"
+        "─ Оплатите подписку или активируйте промокод.\n\n"
+        "<b>2. Подключение каналов</b>\n"
+        "─ Перейдите в «📢 Мои каналы» и отправьте @username вашего канала.\n"
+        "─ Для каждого канала автоматически создаётся уникальный идентификатор, который позволяет отслеживать продажи.\n\n"
+        "<b>3. Выбор магазинов</b>\n"
+        "─ Нажмите «🏪 Магазины» и отметьте интересующие вас магазины.\n"
+        "─ От выбранных магазинов зависит, какие товары будут публиковаться.\n\n"
+        "<b>4. Автоматический постинг и доход</b>\n"
+        "─ Бот самостоятельно наполняет каталог товарами с маркировкой ERID.\n"
+        "─ Посты выходят автоматически с партнёрскими ссылками, в которые встроен идентификатор вашего канала.\n"
+        "─ Доход от продаж поступает владельцу бота, который раз в месяц переводит вам заработанную сумму за вычетом 5% комиссии.\n\n"
+        "<b>5. Ночной режим и очередь</b>\n"
+        "─ С 23:00 до 08:00 (МСК) посты сохраняются в очередь и выходят утром.\n\n"
+        "<b>6. Авто-закреп</b>\n"
+        "─ В настройках можно включить автоматическое закрепление постов.\n\n"
+        "<b>7. Промокоды</b>\n"
+        "─ Нажмите «🎁 Активировать промокод» и введите код.\n\n"
+        "<i>По всем вопросам обращайтесь к администратору.</i>"
+    )
+    await callback.message.edit_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+        ])
     )
 
-
-@router.message(PayoutStates.waiting_for_amount)
-async def payout_got_amount(message: Message, state: FSMContext) -> None:
-    user_id = message.from_user.id
-    try:
-        amount = float(message.text.strip().replace(",", "."))
-    except ValueError:
-        await message.answer("❌ Введите число, например: 2000")
-        return
-    if amount < MIN_PAYOUT:
-        await message.answer(f"❌ Минимальная сумма вывода — {MIN_PAYOUT:.0f} ₽")
-        return
-
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT payout_card, sub_id FROM users WHERE user_id=?", (user_id,)).fetchone()
-        balance_row = conn.execute("""
-            SELECT COALESCE(SUM(payout), 0.0) as total
-            FROM transactions
-            WHERE sub_id=? AND status IN ('approved', 'paid')
-        """, (user["sub_id"],)).fetchone()
-        withdrawn_row = conn.execute("""
-            SELECT COALESCE(SUM(amount_blogger), 0.0) as total
-            FROM payouts
-            WHERE user_id=? AND status IN ('pending', 'completed')
-        """, (user_id,)).fetchone()
-        available = (float(balance_row["total"]) - float(withdrawn_row["total"])) / 2
-    finally:
-        conn.close()
-
-    if amount > available:
-        await message.answer(f"❌ Недостаточно средств.\nДоступно: <b>{available:.2f} ₽</b>", parse_mode=ParseMode.HTML)
-        return
-
-    calc = calc_payout(amount)
-    card = user["payout_card"]
-    conn = get_db()
-    try:
-        conn.execute("""
-            INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status)
-            VALUES (?, ?, ?, ?, ?, 'pending')
-        """, (user_id, calc["amount_requested"], calc["amount_to_withdraw"], calc["amount_blogger"], card))
-        payout_id = conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
-        conn.commit()
-    finally:
-        conn.close()
-
-    await state.clear()
-    await message.answer(
-        f"✅ <b>Заявка принята, ожидайте!</b>\n\n"
-        f"💰 Сумма к получению: <b>{calc['amount_blogger']:.2f} ₽</b>\n"
-        f"💳 На карту: <code>{card}</code>\n\n"
-        f"<i>Выплата производится в течение суток.</i>",
-        parse_mode=ParseMode.HTML
-    )
-    for admin_id in ADMIN_IDS:
-        try:
-            await message.bot.send_message(
-                admin_id,
-                f"💸 <b>Новая заявка на выплату #{payout_id}</b>\n\n"
-                f"👤 User ID: <code>{user_id}</code>\n"
-                f"💳 Карта: <code>{card}</code>\n\n"
-                f"📤 Вывести из Такпродам: <b>{calc['amount_to_withdraw']:.2f} ₽</b>\n"
-                f"💰 Отправить блогеру: <b>{calc['amount_blogger']:.2f} ₽</b>\n"
-                f"💰 Ваша доля: <b>{calc['amount_blogger']:.2f} ₽</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="✅ Отправлено", callback_data=f"payout:done:{payout_id}:{user_id}")]
-                ])
-            )
-        except TelegramAPIError as e:
-            logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
-
-
-@router.callback_query(F.data.startswith("payout:done:"))
-async def cb_payout_done(callback: CallbackQuery) -> None:
-    if not is_admin(callback.from_user.id):
-        await callback.answer("❌ Нет доступа", show_alert=True)
-        return
-    parts = callback.data.split(":")
-    payout_id = int(parts[2])
-    blogger_id = int(parts[3])
-    conn = get_db()
-    try:
-        conn.execute("UPDATE payouts SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'", (payout_id,))
-        conn.commit()
-        payout = conn.execute("SELECT amount_blogger, card FROM payouts WHERE id=?", (payout_id,)).fetchone()
-    finally:
-        conn.close()
-    try:
-        await callback.bot.send_message(
-            blogger_id,
-            f"✅ <b>Выплата отправлена!</b>\n\n"
-            f"💰 Сумма: <b>{payout['amount_blogger']:.2f} ₽</b>\n"
-            f"💳 На карту: <code>{payout['card']}</code>\n\n"
-            f"<i>Если деньги не пришли в течение суток — напишите в поддержку.</i>",
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        logger.error(f"Не удалось уведомить блогера {blogger_id}: {e}")
-    await callback.message.edit_text(callback.message.text + f"\n\n✅ <b>Выплачено</b>", parse_mode=ParseMode.HTML)
-    await callback.answer("✅ Выплата подтверждена")
-
-  # =============================================================================
-# === АДМИНСКИЕ КОЛЛБЭКИ ======================================================
-# =============================================================================
-
+# ---------------------------------------------------------------------------
+# Административные команды
+# ---------------------------------------------------------------------------
 @router.message(Command("force_trial"))
 async def force_trial(message: Message):
     new_date = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
@@ -1366,192 +1122,22 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
     else:
         await call.answer("Неизвестная команда", show_alert=True)
 
-
-# =============================================================================
-# === ОНБОРДИНГ: SAAS – ДОБАВЛЕНИЕ КАНАЛА =====================================
-# =============================================================================
-@router.message(OnboardingStates.waiting_saas_tg_channel)
-async def handle_saas_channel_addition(message: Message, state: FSMContext) -> None:
-    channel_username = message.text.strip()
-
-    # Пропускаем команды
-    if channel_username.startswith("/"):
-        return
-
-    if not channel_username.startswith("@"):
-        await message.answer("⚠️ Для добавления канала отправьте @username.")
-        return
-
-    user_id = message.from_user.id
-
-    is_admin_ok = await check_bot_admin(message.bot, channel_username)
-    if not is_admin_ok:
-        await message.answer("❌ Бот не является администратором в этом канале.")
-        return
-
-    conn = get_db()
-    try:
-        # Проверка лимита каналов
-        user = conn.execute("SELECT tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        if user and user["tariff_id"]:
-            tariff = conn.execute("SELECT max_channels FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
-            max_channels = tariff["max_channels"] if tariff else 5
-            current_count = conn.execute("SELECT COUNT(*) as cnt FROM channels WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
-            if current_count >= max_channels:
-                await message.answer(f"❌ Ваш тариф позволяет подключить не более {max_channels} каналов.")
-                return
-
-        # Генерируем уникальный sub_id (на основе user_id и channel_username)
-        # Получаем числовой ID канала Telegram (неизменяемый)
-        try:
-            chat_info = await message.bot.get_chat(channel_username)
-            tg_chat_id = str(chat_info.id)          # например, "-1001234567890"
-            tg_title = chat_info.title or channel_username
-        except Exception:
-            await message.answer("❌ Не удалось получить информацию о канале. Проверьте правильность @username.")
-            return
-
-        # sub_id теперь числовой ID канала
-        sub_id = tg_chat_id
-
-        conn.execute(
-            """INSERT INTO channels (user_id, channel_id, channel_title, sub_id)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(user_id, channel_id) DO UPDATE SET channel_title = excluded.channel_title""",
-            (user_id, channel_username, tg_title, sub_id)
-        )
-        conn.commit()
-    except sqlite3.Error as e:
-        logger.error(f"Ошибка добавления канала: {e}")
-    finally:
-        conn.close()
-
-    await message.answer(
-        f"✅ Канал <b>{html.escape(channel_username)}</b> успешно добавлен!",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_cabinet_menu("saas")
-    )
-    # Сразу переходим в кабинет (или показываем оферту)
-    await state.clear()
-    await show_user_cabinet(message, user_id=user_id)
-
-
-# =============================================================================
-# === НАСТРОЙКИ ДЛЯ БЛОГЕРА (ФИЛЬТРЫ WB/OZON) =================================
-# =============================================================================
-@router.callback_query(F.data == "menu:settings")
-async def cb_menu_settings(callback: CallbackQuery) -> None:
-    """Обработчик кнопки 'Настройки' – определяет роль и показывает нужное меню."""
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT role, filter_wb, filter_ozon FROM users WHERE user_id=?", (user_id,)).fetchone()
-    finally:
-        conn.close()
-
-    if not user:
-        await callback.answer("❌ Пользователь не найден", show_alert=True)
-        return
-
-    if user["role"] == "saas":
-        await open_saas_settings(callback)
-    else:
-        # Блогерские настройки – фильтры
-        wb = user["filter_wb"]
-        ozon = user["filter_ozon"]
-        try:
-            await callback.message.edit_text(
-                "⚙️ <b>Настройки</b>\n\nВыберите какие магазины включить в автопостинг:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_filter_settings(wb, ozon)
-            )
-        except TelegramBadRequest:
-            pass
-        await callback.answer()
-
-async def open_saas_settings(callback: CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT api_key, auto_pin, filter_wb, filter_ozon FROM users WHERE user_id=?", (user_id,)).fetchone()
-    finally:
-        conn.close()
-    if not user:
-        await callback.answer("❌ Ошибка загрузки настроек", show_alert=True)
-        return
-
-    auto_pin = bool(user["auto_pin"] if user["auto_pin"] is not None else 1)
-
-    text = (
-        "⚙️ <b>Настройки SaaS-аккаунта</b>\n\n"
-        "📦 <b>Товары поступают автоматически из магазинов-партнёров Admitad.</b>\n"
-        "Вы выбираете магазины в разделе «🏪 Магазины». Бот сам пополняет каталог и публикует посты с маркировкой ERID.\n\n"
-        "🔑 Ручной ввод API-ключей не требуется.\n\n"
-        "⚡ Дополнительные возможности:"
-    )
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="ℹ️ Об источнике товаров", callback_data="saas_set:gdeslon_apikey")],
-        [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
-        [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
-        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
-    ])
-    try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
-    except TelegramBadRequest:
-        pass
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("filter:toggle:"))
-async def cb_filter_toggle(callback: CallbackQuery) -> None:
-    """Переключение фильтра WB/Ozon (для блогера)."""
-    shop = callback.data.split(":")[2]  # wb или ozon
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute(
-            "SELECT filter_wb, filter_ozon FROM users WHERE user_id=?", (user_id,)
-        ).fetchone()
-        wb = user["filter_wb"]
-        ozon = user["filter_ozon"]
-        if shop == "wb":
-            wb = 0 if wb else 1
-        elif shop == "ozon":
-            ozon = 0 if ozon else 1
-        conn.execute(
-            "UPDATE users SET filter_wb=?, filter_ozon=? WHERE user_id=?",
-            (wb, ozon, user_id)
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    await callback.answer()
-    await callback.message.edit_reply_markup(
-        reply_markup=kb_filter_settings(wb, ozon)
-    )
-
-# =============================================================================
-# === ГЛУБОКАЯ ССЫЛКА (РЕФЕРАЛЬНАЯ СИСТЕМА) ===================================
-# =============================================================================
-
-
+# ---------------------------------------------------------------------------
+# Колбэк "cabinet:open" (из интерфейса)
+# ---------------------------------------------------------------------------
 @router.callback_query(F.data == "cabinet:open")
 async def cb_open_cabinet(callback: CallbackQuery):
     try:
         await callback.message.delete()
     except:
         pass
-
     await show_user_cabinet(callback.message, user_id=callback.from_user.id)
     await callback.answer()
 
-# =============================================================================
-# === ПЛАНИРОВЩИК И ВСПОМОГАТЕЛЬНЫЕ ПЕРИОДИЧЕСКИЕ ФУНКЦИИ =====================
-# =============================================================================
-
+# ---------------------------------------------------------------------------
+# Планировщик и периодические задачи
+# ---------------------------------------------------------------------------
 async def run_billing_check(bot: Bot):
-    """Ежечасная проверка истекших подписок SaaS-пользователей."""
     conn = get_db()
     try:
         now = datetime.now(timezone.utc).isoformat()
@@ -1601,122 +1187,14 @@ async def cleanup_old_posts() -> None:
     finally:
         conn.close()
 
-      # =============================================================================
-# === ОБРАБОТЧИКИ ИНСТРУКЦИЙ ==================================================
-# =============================================================================
-@router.callback_query(F.data == "support:contact")
-async def cb_support_contact(callback: CallbackQuery):
-    text = (
-        "📞 <b>Связь с администратором</b>\n\n"
-        "По любым вопросам, ошибкам, багам, предложениям и для оплаты пишите:\n"
-        "👉 <a href='https://t.me/Zigih90'>@Zigih90</a>\n\n"
-        "<i>Стараюсь отвечать быстро 😊</i>"
-    )
-    await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
-        ])
-    )
-    await callback.answer()
-
-@router.callback_query(F.data == "menu:instructions")
-async def cb_menu_instructions(callback: CallbackQuery) -> None:
-    """Показывает инструкцию в зависимости от роли пользователя."""
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
-        role = user["role"] if user else "blogger"
-    finally:
-        conn.close()
-
-    if role == "saas":
-        await show_saas_instruction(callback)
-    else:
-        await show_blogger_instruction(callback)
-    await callback.answer()
-
-async def show_blogger_instruction(callback: CallbackQuery):
-    text = (
-        "📖 <b>Инструкция для блогеров</b>\n\n"
-        "<b>1. Привязка канала</b>\n"
-        "─ Перейди в «📢 Мой канал» и отправь @username своего Telegram-канала или перешли любое сообщение из него.\n"
-        "─ Бот проверит права и запомнит канал.\n\n"
-        "<b>2. Отправка видео</b>\n"
-        "─ Нажми «🎥 Отправить видео» в главном меню.\n"
-        "─ Пришли ссылку на видео из YouTube, TikTok или Instagram.\n"
-        "─ Бот найдёт в описании артикулы товаров (SKU) Wildberries и Ozon.\n"
-        "─ Если точный товар найден в партнёрской программе — ты получишь готовый пост с маркировкой (ERID), ценой и ссылкой.\n"
-        "─ Если точного товара нет — бот подберёт <b>похожий товар</b> по ключевым словам из видео, чтобы ты не остался без заработка.\n\n"
-        "<b>3. Режимы публикации</b>\n"
-        "─ В разделе «⚙️ Режим публикации» можно выбрать:\n"
-        "   • «Напрямую в мой канал» — пост придёт в твой Telegram-канал.\n"
-        "   • «VIP-закреп в главном канале (24ч)» — пост отправится в VIP-канал и будет закреплён на 24 часа.\n\n"
-        "<b>4. Ночной режим</b>\n"
-        "─ С 23:00 до 08:00 (МСК) посты не публикуются сразу, а попадают в очередь. Они будут автоматически отправлены утром в 08:00.\n\n"
-        "<b>5. Заработок и выплаты</b>\n"
-        "─ Заработок отображается в «📊 Статистика».\n"
-        "─ Когда накопится минимум 2000 ₽, появится кнопка «Запросить выплату».\n"
-        "─ Выплаты обрабатываются администратором вручную.\n\n"
-        "<b>6. Настройки</b>\n"
-        "─ В «⚙️ Настройки» можно включить/отключить фильтры по Wildberries и Ozon.\n\n"
-        "<i>По всем вопросам обращайся к администратору.</i>"
-    )
-    await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
-        ])
-    )
-
-async def show_saas_instruction(callback: CallbackQuery):
-    text = (
-        "📖 <b>Инструкция для SaaS-клиентов</b>\n\n"
-        "<b>1. Подготовка</b>\n"
-        "─ Бот автоматически получает товары из проверенных магазинов (Admitad).\n"
-        "─ Вам не нужно вводить API-ключи.\n"
-        "─ Оплатите подписку или активируйте промокод.\n\n"
-        "<b>2. Подключение каналов</b>\n"
-        "─ Перейдите в «📢 Мои каналы» и отправьте @username вашего канала.\n"
-        "─ Для каждого канала автоматически создаётся уникальный идентификатор, который позволяет отслеживать продажи.\n\n"
-        "<b>3. Выбор магазинов</b>\n"
-        "─ Нажмите «🏪 Магазины» и отметьте интересующие вас магазины.\n"
-        "─ От выбранных магазинов зависит, какие товары будут публиковаться.\n\n"
-        "<b>4. Автоматический постинг и доход</b>\n"
-        "─ Бот самостоятельно наполняет каталог товарами с маркировкой ERID.\n"
-        "─ Посты выходят автоматически с партнёрскими ссылками, в которые встроен идентификатор вашего канала.\n"
-        "─ Доход от продаж поступает владельцу бота, который раз в месяц переводит вам заработанную сумму за вычетом 5% комиссии.\n\n"
-        "<b>5. Ночной режим и очередь</b>\n"
-        "─ С 23:00 до 08:00 (МСК) посты сохраняются в очередь и выходят утром.\n\n"
-        "<b>6. Авто-закреп</b>\n"
-        "─ В настройках можно включить автоматическое закрепление постов.\n\n"
-        "<b>7. Промокоды</b>\n"
-        "─ Нажмите «🎁 Активировать промокод» и введите код.\n\n"
-        "<i>По всем вопросам обращайтесь к администратору.</i>"
-    )
-    await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
-        ])
-    )
-
 async def daily_report(bot: Bot):
-    """Ежедневный отчёт: CSV-файл с постами за 24 часа + сохранение копии."""
     import csv, os as _os, pathlib
-
-    # Папка для хранения отчётов
     reports_dir = "/app/data/reports"
     pathlib.Path(reports_dir).mkdir(parents=True, exist_ok=True)
 
     conn = get_db()
     try:
         since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-
         rows = conn.execute("""
             SELECT c.channel_id, p.subid1, p.direct_link, p.published_at, c.channel_title
             FROM posts p
@@ -1724,7 +1202,6 @@ async def daily_report(bot: Bot):
             WHERE p.status = 'published' AND p.published_at >= ?
             ORDER BY p.published_at ASC
         """, (since,)).fetchall()
-
         active_channels = conn.execute(
             "SELECT COUNT(DISTINCT channel_id) FROM posts WHERE status='published' AND published_at >= ?",
             (since,)
@@ -1737,19 +1214,16 @@ async def daily_report(bot: Bot):
     finally:
         conn.close()
 
-    # Имя файла с датой
     date_str = datetime.now().strftime('%Y%m%d')
     filename = f"daily_posts_{date_str}.csv"
     filepath = _os.path.join(reports_dir, filename)
 
-    # Запись CSV
     with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(["Канал (ID)", "SubID", "Прямая ссылка на пост", "Время (UTC)", "Название канала"])
         for ch_id, subid, link, ts, title in rows:
             writer.writerow([ch_id, subid or "", link or "", ts or "", title or ""])
 
-    # Сопроводительный текст
     caption = (
         f"📊 <b>Ежедневный отчёт</b>\n"
         f"📅 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC\n\n"
@@ -1768,9 +1242,7 @@ async def daily_report(bot: Bot):
             logger.info(f"Ежедневный отчёт отправлен и сохранён как {filepath}")
         except Exception as e:
             logger.error(f"Ошибка отправки ежедневного отчёта: {e}")
-# =============================================================================
-# === ОБРАБОТЧИКИ ТАРИФОВ И ОПЛАТЫ ===========================================
-# =============================================================================
+
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(run_billing_check, trigger="interval", hours=1, kwargs={"bot": bot}, id="billing_check", replace_existing=True)
@@ -1782,10 +1254,9 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(daily_report, trigger="cron", hour=9, minute=0, kwargs={"bot": bot}, id="daily_report", replace_existing=True)
     return scheduler
 
-# =============================================================================
-# === MAIN ====================================================================
-# =============================================================================
-
+# ---------------------------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------------------------
 async def main() -> None:
     logger.info("=== AutoPost Bot + Web Admin Panel запускается ===")
     init_db()
@@ -1799,7 +1270,6 @@ async def main() -> None:
     dp = Dispatcher(storage=storage)
     dp.update.middleware(ErrorLoggingMiddleware())
 
-# Сначала общий, потом специализированный
     dp.include_router(router)           # основной
     dp.include_router(saas_router)      # саас (промокоды, магазины и т.д.)
 
@@ -1807,8 +1277,7 @@ async def main() -> None:
     scheduler.start()
     logger.info("Планировщик (APScheduler) запущен")
 
-    # ---------- Установка команд ----------
-    # Обычные пользователи
+    # Установка команд
     await bot.set_my_commands(
         commands=[
             BotCommand(command="start", description="Главное меню"),
@@ -1818,7 +1287,6 @@ async def main() -> None:
         scope=BotCommandScopeDefault(),
     )
 
-    # Администраторы (каждого отдельно, с защитой)
     for admin_id in ADMIN_IDS:
         try:
             await bot.set_my_commands(
@@ -1833,7 +1301,6 @@ async def main() -> None:
             )
         except TelegramBadRequest as e:
             logger.warning(f"Не удалось установить команды для админа {admin_id}: {e}")
-    # ---------- Конец команд ----------
 
     fastapi_app = create_fastapi_app(bot)
 
@@ -1859,8 +1326,7 @@ async def main() -> None:
         logger.info("Бот и планировщик остановлены")
 
 async def backup_database_to_telegram(bot: Bot):
-    """Отправляет копию базы данных администратору (первому из списка)."""
-    db_path = DB_PATH  # "/app/data/autopost.db"
+    db_path = DB_PATH
     if not os.path.exists(db_path):
         logger.error("Бэкап: файл базы данных не найден")
         return
