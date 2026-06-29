@@ -1801,7 +1801,7 @@ async def main() -> None:
 
 # Сначала общий, потом специализированный
     dp.include_router(router)           # основной
-    dp.include_router(saas_router)      # саас (промокоды, магазины и т.д.)
+    #dp.include_router(saas_router)      # саас (промокоды, магазины и т.д.)
 
     scheduler = setup_scheduler(bot)
     scheduler.start()
