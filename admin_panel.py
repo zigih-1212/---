@@ -29,6 +29,7 @@ def get_db():
 
 def create_fastapi_app(bot: Bot) -> FastAPI:
     app = FastAPI(title="AutoPost Admin Panel", docs_url=None, redoc_url=None)
+    app.state.bot = bot
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
     active_sessions = {}
 
