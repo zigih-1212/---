@@ -16,6 +16,7 @@ from services.db import get_db
 from services.saas_core import publish_post_with_fallback
 from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES
 from keyboards.saas import kb_payment_methods
+from catalog import CITY_DATA, get_city_name, fetch_products
 
 logger = logging.getLogger("autopost_bot.saas")
 
