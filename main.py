@@ -417,7 +417,24 @@ def log_admin_action(admin_id: int, action: str, details: str = ""):
         conn.commit()
     finally:
         conn.close()
-
+      
+def run_migrations():
+    conn = get_db()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_category_preferences (
+                user_id INTEGER,
+                category_id INTEGER,
+                UNIQUE(user_id, category_id)
+            )
+        """)
+        cols = conn.execute("PRAGMA table_info(user_category_preferences)").fetchall()
+        if 'city' not in [c[1] for c in cols]:
+            conn.execute("ALTER TABLE user_category_preferences ADD COLUMN city TEXT")
+            conn.commit()
+    finally:
+        conn.close()
+      
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
