@@ -59,7 +59,7 @@ async def cb_stores(callback: CallbackQuery):
         {"id": 9, "name": "Moulinex"},
         {"id": 10, "name": "Playtoday"},
         {"id": 11, "name": "SELA"},
-        {"id": 12, "name": "Galaxy Store"},
+        {"id": 12, "name": "Galaxy Store (Pro/VIP)"},
     ]
 
     text = f"🏪 <b>Выберите магазины для постинга:</b> (выбрано {selected_count}/{max_stores})\n\n"
