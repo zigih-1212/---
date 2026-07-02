@@ -83,6 +83,24 @@ async def cb_toggle_store(callback: CallbackQuery):
     user_id = callback.from_user.id
 
     if store_id == 12:
+        # Проверяем тариф пользователя
+        conn = get_db()
+        try:
+            user_row = conn.execute(
+                "SELECT tariff_id FROM users WHERE user_id=?", (user_id,)
+            ).fetchone()
+            if not user_row or not user_row["tariff_id"]:
+                await callback.answer("❌ Galaxy Store доступен только на тарифе Pro и VIP.", show_alert=True)
+                return
+            tariff = conn.execute(
+                "SELECT name FROM tariffs WHERE id=?", (user_row["tariff_id"],)
+            ).fetchone()
+            if not tariff or tariff["name"] not in ["Профи", "VIP"]:
+                await callback.answer("❌ Galaxy Store доступен только на тарифе Pro и VIP.", show_alert=True)
+                return
+        finally:
+            conn.close()
+        
         # Проверим, включён ли уже Galaxy Store
         conn = get_db()
         try:
