@@ -1343,9 +1343,36 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
 # ---------------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------------
+def run_migrations():
+    import sqlite3
+    # Подключаемся к autopost.db — основная база SaaS
+    conn = sqlite3.connect("data/autopost.db")
+    try:
+        # Создаём таблицу, если её нет (уже с колонкой city)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_category_preferences (
+                user_id INTEGER,
+                category_id INTEGER,
+                city TEXT,
+                UNIQUE(user_id, category_id)
+            )
+        """)
+        # Проверяем, есть ли колонка city
+        cols = conn.execute("PRAGMA table_info(user_category_preferences)").fetchall()
+        col_names = [c[1] for c in cols]
+        if 'city' not in col_names:
+            conn.execute("ALTER TABLE user_category_preferences ADD COLUMN city TEXT")
+            conn.commit()
+            print("✅ Колонка city добавлена")
+        else:
+            print("✅ Колонка city уже существует")
+    finally:
+        conn.close()
+
 async def main() -> None:
     logger.info("=== AutoPost Bot + Web Admin Panel запускается ===")
     init_db()
+    run_migrations()
 
     bot = Bot(
         token=BOT_TOKEN,
