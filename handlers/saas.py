@@ -18,6 +18,7 @@ from services.saas_core import publish_post_with_fallback
 from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES
 from keyboards.saas import kb_payment_methods
 from catalog import CITY_DATA, get_city_name, fetch_products
+from services.text_rewriter import generate_post_text
 
 logger = logging.getLogger("autopost_bot.saas")
 
@@ -309,15 +310,16 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
                     else:
                         final_url += '?subid=' + ch["sub_id"]
 
-                adult_warning = ""
-                if source in ADULT_STORES:
-                    adult_warning = "🔞 18+\n"
-
-                caption = adult_warning + f"{title}\n\n"
-                if price > 0:
-                    caption += f"💰 Цена: {price} {currency}\n\n"
-                caption += f"👉 <a href='{final_url}'>Посмотреть и заказать</a>\n\n"
-                caption += f"Реклама. {advertiser}. Erid: {erid}"
+adult = product["source"] in ADULT_STORES
+caption = generate_post_text(
+    title=product["title"],
+    price=product["price"],
+    currency=product["currency"],
+    advertiser=product["advertiser"],
+    erid=product["erid"],
+    partner_url=final_url,
+    adult=adult
+)
 
                 msg = await publish_post_with_fallback(
                     bot=bot,
