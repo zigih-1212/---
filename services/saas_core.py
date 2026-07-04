@@ -233,15 +233,18 @@ async def publish_from_catalog(bot: Bot):
                     final_url += '?subid=' + ch["sub_id"]
 
             source = product["source"] if "source" in product.keys() else ""
-            adult_warning = ""
-            if source in ADULT_STORES:
-                adult_warning = "🔞 18+\n"
+            adult = source in ADULT_STORES
 
-            caption = adult_warning + f"{title}\n\n"
-            if price > 0:
-                caption += f"💰 Цена: {price} {currency}\n\n"
-            caption += f"👉 <a href='{final_url}'>Посмотреть и заказать</a>\n\n"
-            caption += f"Реклама. {advertiser}. Erid: {erid}"
+            # Генерируем уникальный текст поста с помощью рерайтера
+            caption = generate_post_text(
+                title=title,
+                price=price,
+                currency=currency,
+                advertiser=advertiser,
+                erid=erid,
+                partner_url=final_url,
+                adult=adult
+            )
 
             try:
                 msg = await publish_post_with_fallback(
