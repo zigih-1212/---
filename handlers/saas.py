@@ -243,112 +243,103 @@ async def cb_cancel_galaxy_city(callback: CallbackQuery):
 
 
 # ---------------------------------------------------------------------------
-# Force Post (публикация одного поста)
+# Force Post
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
     user_id = callback.from_user.id
 
-    # --- Если у пользователя выбран Galaxy Store с городом, берём товар напрямую ---
     conn = get_db()
     try:
-        galaxy = conn.execute(
-            "SELECT city FROM user_category_preferences WHERE user_id = ? AND category_id = 12",
+        product = conn.execute(
+            "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
             (user_id,)
         ).fetchone()
+        if not product:
+            await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)
+            product = conn.execute(
+                "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
+                (user_id,)
+            ).fetchone()
+        if product:
+            conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
+            conn.commit()
     finally:
         conn.close()
 
-    if galaxy and galaxy["city"]:
-        # Пытаемся загрузить товар из фида нужного города
-        products = await fetch_products(galaxy["city"], limit=1)
-        if products:
-            product = products[0]
-            # Формируем структуру, аналогичную gdeslon_catalog
-            product = {
-                "id": None,  # временный id
-                "partner_url": product["url"],
-                "title": product["name"],
-                "price": product["price"],
-                "currency": "₽",
-                "advertiser": "Galaxy Store",
-                "erid": product["erid"],
-                "image_url": "",   # если фид даёт картинку, добавьте сюда
-                "source": ""
-            }
-            # Используем обычную логику публикации (минуя gdeslon_catalog)
-            # Дублируем завершающую часть функции для этого товара
-            # (можно вынести в отдельную функцию, но для простоты продублируем)
-            partner_url = product['partner_url'] or ''
-            title = product['title'] or ''
-            price = product['price'] or 0
-            currency = product['currency'] or '₽'
-            advertiser = product['advertiser'] or 'Рекламодатель'
-            erid = product['erid'] or ''
-            photo_url = product.get("image_url", "")
-            source = product.get("source", "")
+    if not product:
+        await callback.message.answer(
+            "❌ В каталоге пока нет товаров с маркировкой ERID. Попробуйте позже или выберите больше магазинов."
+        )
+        return
 
-            conn2 = get_db()
+    partner_url = product['partner_url'] or ''
+    title = product['title'] or ''
+    price = product['price'] or 0
+    currency = product['currency'] or '₽'
+    advertiser = product['advertiser'] or 'Рекламодатель'
+    erid = product['erid'] or ''
+    photo_url = product["image_url"]
+    source = product["source"] if "source" in product.keys() else ""
+
+    conn = get_db()
+    try:
+        channels = conn.execute(
+            "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not channels:
+        await callback.message.answer("❌ У вас нет активных каналов. Добавьте канал в разделе «Мои каналы».")
+        return
+
+    for ch in channels:
+        final_url = partner_url
+        if ch["sub_id"]:
+            if '?' in final_url:
+                final_url += '&subid=' + ch["sub_id"]
+            else:
+                final_url += '?subid=' + ch["sub_id"]
+
+        adult = source in ADULT_STORES
+        caption = generate_post_text(
+            title=title,
+            price=price,
+            currency=currency,
+            advertiser=advertiser,
+            erid=erid,
+            partner_url=final_url,
+            adult=adult
+        )
+
+        msg = await publish_post_with_fallback(
+            bot=bot,
+            channel_id=ch["channel_id"],
+            caption=caption,
+            photo_url=photo_url,
+            has_spoiler=(source in ADULT_STORES)
+        )
+        if msg:
+            direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
+            donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
+            conn_rec = get_db()
             try:
-                channels = conn2.execute(
-                    "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
-                    (user_id,)
-                ).fetchall()
-            finally:
-                conn2.close()
-
-            if not channels:
-                await callback.message.answer("❌ У вас нет активных каналов. Добавьте канал в разделе «Мои каналы».")
-                return
-
-            for ch in channels:
-                final_url = partner_url
-                if ch["sub_id"]:
-                    if '?' in final_url:
-                        final_url += '&subid=' + ch["sub_id"]
-                    else:
-                        final_url += '?subid=' + ch["sub_id"]
-
-adult = product["source"] in ADULT_STORES
-caption = generate_post_text(
-    title=product["title"],
-    price=product["price"],
-    currency=product["currency"],
-    advertiser=product["advertiser"],
-    erid=product["erid"],
-    partner_url=final_url,
-    adult=adult
-)
-
-                msg = await publish_post_with_fallback(
-                    bot=bot,
-                    channel_id=ch["channel_id"],
-                    caption=caption,
-                    photo_url=photo_url,
-                    has_spoiler=(source in ADULT_STORES)
+                conn_rec.execute(
+                    """INSERT INTO posts 
+                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
+                    (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
+                     datetime.now(timezone.utc).isoformat())
                 )
-                if msg:
-                    direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
-                    donor_post_id = f"galaxy_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
-                    conn_rec = get_db()
-                    try:
-                        conn_rec.execute(
-                            """INSERT INTO posts 
-                            (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
-                            VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
-                            (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
-                             datetime.now(timezone.utc).isoformat())
-                        )
-                        conn_rec.commit()
-                    finally:
-                        conn_rec.close()
-                await asyncio.sleep(1)
+                conn_rec.commit()
+            finally:
+                conn_rec.close()
+        await asyncio.sleep(1)
 
-            await callback.message.answer("✅ Пост опубликован!")
-            return
-        # если товары не загрузились, падаем в обычную логику ниже
-
+    await callback.message.answer("✅ Пост опубликован!")
     # ---------- Обычная логика (из gdeslon_catalog) ----------
     conn = get_db()
     try:
