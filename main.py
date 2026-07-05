@@ -399,6 +399,14 @@ def init_db() -> None:
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN oferta_accepted INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE gdeslon_catalog ADD COLUMN old_price REAL")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE gdeslon_catalog ADD COLUMN discount_percent INTEGER")
+    except sqlite3.OperationalError:
         pass  
     conn.commit()
     conn.close()
