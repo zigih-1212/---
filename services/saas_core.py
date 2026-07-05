@@ -241,7 +241,7 @@ async def publish_from_catalog(bot: Bot):
                     final_url += '?subid=' + ch["sub_id"]
 
             adult = source in ADULT_STORES
-           from services.admitad import get_delivery_for_store
+        from services.admitad import get_delivery_for_store
            elivery_info = get_delivery_for_store(source)
            promocode = get_random_promocode(source)
         
