@@ -19,7 +19,7 @@ from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES
 from keyboards.saas import kb_payment_methods
 from catalog import CITY_DATA, get_city_name, fetch_products
 from services.text_rewriter import generate_post_text
-
+from config import STORE_DELIVERY_INFO
 logger = logging.getLogger("autopost_bot.saas")
 
 router = Router(name="saas")
@@ -101,6 +101,17 @@ async def cb_toggle_store(callback: CallbackQuery):
                 return
         finally:
             conn.close()
+
+STORE_DELIVERY_INFO = {
+    "Читай-город": "Бесплатная доставка от 3000 ₽",
+    "Аквафор": "Доставка 0 ₽ при заказе фильтра",
+    "Hi Store RU": "Доставка по всей России от 500 ₽",
+    "KANZLER": "Бесплатно от 2500 ₽",
+    "KIKO MILANO": "Доставка 300 ₽, бесплатно от 5000 ₽",
+    "Moulinex": "Бесплатная доставка",
+    "Playtoday": "Доставка от 400 ₽",
+    "SELA": "Бесплатная доставка в пункты выдачи",
+}
         
         # Проверим, включён ли уже Galaxy Store
         conn = get_db()
