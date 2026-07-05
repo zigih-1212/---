@@ -70,6 +70,16 @@ def load_tariffs():
     finally:
         conn.close()
 
+STORE_DELIVERY_INFO = {
+    "Читай-город": "Бесплатная доставка от 3000 ₽",
+    "Аквафор": "Доставка 0 ₽ при заказе фильтра",
+    "Hi Store RU": "Доставка по всей России от 500 ₽",
+    "KANZLER": "Бесплатно от 2500 ₽",
+    "KIKO MILANO": "Доставка 300 ₽, бесплатно от 5000 ₽",
+    "Moulinex": "Бесплатная доставка",
+    "Playtoday": "Доставка от 400 ₽",
+    "SELA": "Бесплатная доставка в пункты выдачи",
+}
 # --- Прочие константы ---
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 ADMIN_IDS: list[int] = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
