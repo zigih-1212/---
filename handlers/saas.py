@@ -261,7 +261,6 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
     user_id = callback.from_user.id
 
-    # Получаем выбранные пользователем магазины
     conn = get_db()
     try:
         user_stores = conn.execute(
