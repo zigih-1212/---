@@ -492,7 +492,44 @@ async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer("Готово!", show_alert=True)
 
+# ---------------------------------------------------------------------------
+# Фильтр минимальной скидки
+# ---------------------------------------------------------------------------
+@router.callback_query(F.data == "menu:discount_filter")
+async def cb_discount_filter(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT min_discount FROM users WHERE user_id=?", (user_id,)).fetchone()
+        min_discount = user["min_discount"] if user else 0
+    finally:
+        conn.close()
 
+    text = f"🎯 <b>Фильтр минимальной скидки</b>\n\nТекущее значение: <b>{min_discount}%</b>\n\nТовары со скидкой ниже этого значения не будут публиковаться."
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Выключить", callback_data="discount_set:0"),
+         InlineKeyboardButton(text="от 10%", callback_data="discount_set:10")],
+        [InlineKeyboardButton(text="от 20%", callback_data="discount_set:20"),
+         InlineKeyboardButton(text="от 30%", callback_data="discount_set:30")],
+        [InlineKeyboardButton(text="от 50%", callback_data="discount_set:50")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+    ])
+    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("discount_set:"))
+async def cb_discount_set(callback: CallbackQuery):
+    percent = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET min_discount=? WHERE user_id=?", (percent, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    await callback.answer(f"✅ Минимальная скидка установлена: {percent}%", show_alert=True)
+    await cb_discount_filter(callback)
 # ---------------------------------------------------------------------------
 # Тарифы и оплата (без изменений, оставлены из вашего кода)
 # ---------------------------------------------------------------------------
