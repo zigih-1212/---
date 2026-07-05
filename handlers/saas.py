@@ -15,11 +15,10 @@ from aiogram.fsm.context import FSMContext
 from states import SaasStates, PaymentFSM
 from services.db import get_db
 from services.saas_core import publish_post_with_fallback
-from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES
+from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES, get_delivery_for_store, STORE_ID_MAP
 from keyboards.saas import kb_payment_methods
-from catalog import CITY_DATA, get_city_name, fetch_products
 from services.text_rewriter import generate_post_text
-from services.admitad import get_delivery_for_store
+
 logger = logging.getLogger("autopost_bot.saas")
 
 router = Router(name="saas")
@@ -83,8 +82,8 @@ async def cb_toggle_store(callback: CallbackQuery):
     store_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
 
+    # Обработка Galaxy Store
     if store_id == 12:
-        # Проверяем тариф пользователя
         conn = get_db()
         try:
             user_row = conn.execute(
@@ -102,18 +101,7 @@ async def cb_toggle_store(callback: CallbackQuery):
         finally:
             conn.close()
 
-STORE_DELIVERY_INFO = {
-    "Читай-город": "Бесплатная доставка от 3000 ₽",
-    "Аквафор": "Доставка 0 ₽ при заказе фильтра",
-    "Hi Store RU": "Доставка по всей России от 500 ₽",
-    "KANZLER": "Бесплатно от 2500 ₽",
-    "KIKO MILANO": "Доставка 300 ₽, бесплатно от 5000 ₽",
-    "Moulinex": "Бесплатная доставка",
-    "Playtoday": "Доставка от 400 ₽",
-    "SELA": "Бесплатная доставка в пункты выдачи",
-}
-        
-        # Проверим, включён ли уже Galaxy Store
+        # Проверяем, включён ли уже Galaxy Store
         conn = get_db()
         try:
             exists = conn.execute(
@@ -137,12 +125,12 @@ STORE_DELIVERY_INFO = {
             await cb_stores(callback)
             return
         else:
-            # Не включён — показываем выбор города
+            # Показываем выбор города
             await show_city_selection(callback.message, user_id)
             await callback.answer()
             return
 
-    # Для остальных магазинов — стандартная логика
+    # Стандартная логика для остальных магазинов
     if store_id == 1:
         await callback.answer("❌ AliExpress временно недоступен (отсутствует маркировка ERID).", show_alert=True)
         return
@@ -184,7 +172,22 @@ STORE_DELIVERY_INFO = {
     await callback.answer()
 
 
+# ---------------------------------------------------------------------------
+# Galaxy Store – выбор города
+# ---------------------------------------------------------------------------
+# Заглушка для CITY_DATA, если модуль catalog отсутствует
+try:
+    from catalog import CITY_DATA, get_city_name
+except ImportError:
+    # Если модуля нет, используем пустые данные, чтобы бот не падал
+    CITY_DATA = {}
+    def get_city_name(key):
+        return key
+
 async def show_city_selection(message: Message, user_id: int):
+    if not CITY_DATA:
+        await message.answer("Модуль выбора города временно недоступен.")
+        return
     buttons = []
     for key, (rus_name, _) in CITY_DATA.items():
         buttons.append(InlineKeyboardButton(
@@ -209,19 +212,16 @@ async def cb_galaxy_city_selected(callback: CallbackQuery):
 
     conn = get_db()
     try:
-        # Проверяем, не включён ли уже Galaxy Store у пользователя
         existing = conn.execute(
             "SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = 12",
             (user_id,)
         ).fetchone()
         if existing:
-            # Обновляем город
             conn.execute(
                 "UPDATE user_category_preferences SET city = ? WHERE user_id = ? AND category_id = 12",
                 (city_key, user_id)
             )
         else:
-            # Проверяем лимит магазинов
             user_row = conn.execute("SELECT tariff_id FROM users WHERE user_id=?", (user_id,)).fetchone()
             max_stores = 3
             if user_row and user_row["tariff_id"]:
@@ -254,13 +254,14 @@ async def cb_cancel_galaxy_city(callback: CallbackQuery):
 
 
 # ---------------------------------------------------------------------------
-# Force Post
+# Force Post (единая логика)
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
     user_id = callback.from_user.id
 
+    # Получаем выбранные пользователем магазины
     conn = get_db()
     try:
         user_stores = conn.execute(
@@ -271,7 +272,6 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     finally:
         conn.close()
 
-    from services.admitad import STORE_ID_MAP, ADULT_STORES, get_delivery_for_store
     allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
 
     conn = get_db()
@@ -395,96 +395,6 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         await asyncio.sleep(1)
 
     await callback.message.answer("✅ Пост опубликован!")
-    # ---------- Обычная логика (из gdeslon_catalog) ----------
-    conn = get_db()
-    try:
-        product = conn.execute(
-            "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
-            (user_id,)
-        ).fetchone()
-        if not product:
-            await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)
-            product = conn.execute(
-                "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
-                (user_id,)
-            ).fetchone()
-        if product:
-            conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
-            conn.commit()
-    finally:
-        conn.close()
-
-    if not product:
-        await callback.message.answer(
-            "❌ В каталоге пока нет товаров с маркировкой ERID. Попробуйте позже или выберите больше магазинов."
-        )
-        return
-
-    partner_url = product['partner_url'] or ''
-    title = product['title'] or ''
-    price = product['price'] or 0
-    currency = product['currency'] or '₽'
-    advertiser = product['advertiser'] or 'Рекламодатель'
-    erid = product['erid'] or ''
-    photo_url = product["image_url"]
-    source = product["source"] if "source" in product.keys() else ""
-
-    conn = get_db()
-    try:
-        channels = conn.execute(
-            "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
-            (user_id,)
-        ).fetchall()
-    finally:
-        conn.close()
-
-    if not channels:
-        await callback.message.answer("❌ У вас нет активных каналов. Добавьте канал в разделе «Мои каналы».")
-        return
-
-    for ch in channels:
-        final_url = partner_url
-        if ch["sub_id"]:
-            if '?' in final_url:
-                final_url += '&subid=' + ch["sub_id"]
-            else:
-                final_url += '?subid=' + ch["sub_id"]
-
-        adult_warning = ""
-        if source in ADULT_STORES:
-            adult_warning = "🔞 18+\n"
-
-        caption = adult_warning + f"{title}\n\n"
-        if price > 0:
-            caption += f"💰 Цена: {price} {currency}\n\n"
-        caption += f"👉 <a href='{final_url}'>Посмотреть и заказать</a>\n\n"
-        caption += f"Реклама. {advertiser}. Erid: {erid}"
-
-        msg = await publish_post_with_fallback(
-            bot=bot,
-            channel_id=ch["channel_id"],
-            caption=caption,
-            photo_url=photo_url,
-            has_spoiler=(source in ADULT_STORES)
-        )
-        if msg:
-            direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
-            donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
-            conn_rec = get_db()
-            try:
-                conn_rec.execute(
-                    """INSERT INTO posts 
-                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
-                    (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
-                     datetime.now(timezone.utc).isoformat())
-                )
-                conn_rec.commit()
-            finally:
-                conn_rec.close()
-        await asyncio.sleep(1)
-
-    await callback.message.answer("✅ Пост опубликован!")
 
 
 # ---------------------------------------------------------------------------
@@ -547,6 +457,7 @@ async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer("Готово!", show_alert=True)
 
+
 # ---------------------------------------------------------------------------
 # Фильтр минимальной скидки
 # ---------------------------------------------------------------------------
@@ -573,6 +484,7 @@ async def cb_discount_filter(callback: CallbackQuery):
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
 
+
 @router.callback_query(F.data.startswith("discount_set:"))
 async def cb_discount_set(callback: CallbackQuery):
     percent = int(callback.data.split(":")[1])
@@ -585,8 +497,10 @@ async def cb_discount_set(callback: CallbackQuery):
         conn.close()
     await callback.answer(f"✅ Минимальная скидка установлена: {percent}%", show_alert=True)
     await cb_discount_filter(callback)
+
+
 # ---------------------------------------------------------------------------
-# Тарифы и оплата (без изменений, оставлены из вашего кода)
+# Тарифы и оплата
 # ---------------------------------------------------------------------------
 def kb_tariffs() -> InlineKeyboardMarkup:
     from config import load_tariffs
