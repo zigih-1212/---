@@ -214,7 +214,7 @@ async def publish_from_catalog(bot: Bot):
             continue
 
         photo_url = product["image_url"]
-        source = product.get("source", "")
+        source = product["source"] if "source" in product.keys() else ""
 
         conn = get_db()
         try:
@@ -249,8 +249,8 @@ async def publish_from_catalog(bot: Bot):
                 erid=erid,
                 partner_url=final_url,
                 adult=adult,
-                old_price=product.get("old_price"),
-                discount_percent=product.get("discount_percent"),
+                old_price=product["old_price"] if "old_price" in product.keys() else None,
+                discount_percent=product["discount_percent"] if "discount_percent" in product.keys() else None,
                 delivery_info=delivery_info
             )
 
