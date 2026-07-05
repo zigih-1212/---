@@ -157,14 +157,19 @@ async def publish_from_catalog(bot: Bot):
 
         conn = get_db()
         try:
+            min_disc = conn.execute("SELECT min_discount FROM users WHERE user_id=?", (user_id,)).fetchone()
+            min_discount = min_disc["min_discount"] if min_disc else 0
+
             if allowed_sources:
                 placeholders = ','.join('?' * len(allowed_sources))
                 product = conn.execute(
-                    f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) ORDER BY RANDOM() LIMIT 1",
-                    (user_id, *allowed_sources)
+                    f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                    (user_id, *allowed_sources, min_discount)
                 ).fetchone()
             else:
                 product = None
+        finally:
+            conn.close()
 
             if not product:
                 # Сбрасываем used для разрешённых источников
