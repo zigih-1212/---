@@ -357,7 +357,8 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
 
         adult = source in ADULT_STORES
         delivery_info = get_delivery_for_store(source)
-
+        promocode = get_random_promocode(source)
+        
         caption = generate_post_text(
             title=title,
             price=price,
