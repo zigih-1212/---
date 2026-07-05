@@ -33,7 +33,8 @@ MIN_PAYOUT = float(settings["MIN_PAYOUT"])
 PAYOUT_FIXED_FEE = float(settings["PAYOUT_FIXED_FEE"])
 PAYOUT_BANK_PCT = float(settings["PAYOUT_BANK_PCT"])
 MAX_ACTIVE_PAYOUTS: int = 2
-
+ADMITAD_CLIENT_ID = os.getenv("ADMITAD_CLIENT_ID", "vQiCf6zVRa5E2MvG37HYWHHwb4uILL")
+ADMITAD_CLIENT_SECRET = os.getenv("ADMITAD_CLIENT_SECRET", "AsA0jCS7zq2O5k4ZAoMGKv7AokyXOE")
 # --- Ночной режим ---
 def is_night_time() -> bool:
     now = datetime.datetime.now(tz=timezone(timedelta(hours=3)))
