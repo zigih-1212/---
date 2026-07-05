@@ -15,17 +15,12 @@ TEMPLATES = [
 PRICE_LABELS = ["Цена", "Стоимость", "Ценник", "Всего"]
 
 def generate_post_text(title, price, currency, advertiser, erid, partner_url,
-                       adult=False, old_price=None, discount_percent=None, delivery_info=""):
+                       adult=False, old_price=None, discount_percent=None,
+                       delivery_info="", promocode=""):
     template = random.choice(TEMPLATES)
     price_label = random.choice(PRICE_LABELS)
+    price_str = f"{int(price)}" if price == int(price) else f"{price:.2f}"
 
-    # Форматируем цену
-    if price == int(price):
-        price_str = f"{int(price)}"
-    else:
-        price_str = f"{price:.2f}"
-
-    # Строка с информацией о скидке
     discount_line = ""
     if old_price and discount_percent:
         old_price_str = f"{int(old_price)}" if old_price == int(old_price) else f"{old_price:.2f}"
@@ -42,7 +37,9 @@ def generate_post_text(title, price, currency, advertiser, erid, partner_url,
         link=link_text
     )
 
-    # Доставка
+    if promocode:
+        caption += f"\n🎟 Промокод: <code>{promocode}</code>"
+
     if delivery_info:
         caption += f"\n🚚 {delivery_info}"
 
