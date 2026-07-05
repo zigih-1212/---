@@ -272,7 +272,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     finally:
         conn.close()
 
-    from services.admitad import STORE_ID_MAP, ADULT_STORES
+    from services.admitad import STORE_ID_MAP, ADULT_STORES, get_delivery_for_store
     allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
 
     conn = get_db()
@@ -289,7 +289,6 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         else:
             product = None
 
-        # Если ничего не нашли, пробуем загрузить новые товары
         if not product:
             if allowed_sources:
                 conn.execute(
@@ -302,7 +301,6 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
                     (user_id, *allowed_sources, min_discount)
                 ).fetchone()
             else:
-                # Если магазины вообще не выбраны, берём любой (без фильтра по скидке для совместимости)
                 product = conn.execute(
                     "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
                     (user_id, min_discount)
@@ -357,7 +355,6 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             else:
                 final_url += '?subid=' + ch["sub_id"]
 
-        source = product["source"] if "source" in product.keys() else ""
         adult = source in ADULT_STORES
         delivery_info = get_delivery_for_store(source)
 
