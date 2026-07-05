@@ -271,11 +271,11 @@ async def update_all_store_data_from_feed():
                 campaigns[cid] = name
 
         # Обрабатываем купоны
-        for coupon in root.findall('coupon'):
-            promo = (coupon.findtext('promocode') or '').strip()
-            # Пропускаем "пустышки"
-            if promo.lower() in ('not required', 'no code', 'none', '', 'none'):
-                promo = ''
+        coupons_container = root.find('coupons')
+        if coupons_container is None:
+            logger.warning("Контейнер <coupons> не найден в фиде")
+            return
+        for coupon in coupons_container.findall('coupon'):
 
             campaign_id = coupon.findtext('advcampaign_id', '')
             if not campaign_id:
