@@ -1350,6 +1350,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(refill_admitad_catalogs, trigger="interval", minutes=15, id="refill_admitad", replace_existing=True)
     scheduler.add_job(daily_report, trigger="cron", hour=9, minute=0, kwargs={"bot": bot}, id="daily_report", replace_existing=True)
     scheduler.add_job(send_subscription_reminders, trigger="cron", hour=10, minute=0, kwargs={"bot": bot}, id="subscription_reminders", replace_existing=True)
+    scheduler.add_job(update_store_delivery_info,trigger="cron",hour=3,minute=0,id="update_delivery_info",replace_existing=True)
     return scheduler
 
 # ---------------------------------------------------------------------------
