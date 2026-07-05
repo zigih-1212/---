@@ -18,6 +18,7 @@ from services.saas_core import publish_post_with_fallback
 from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES, get_delivery_for_store, STORE_ID_MAP
 from keyboards.saas import kb_payment_methods
 from services.text_rewriter import generate_post_text
+from services.admitad import get_random_promocode
 
 logger = logging.getLogger("autopost_bot.saas")
 
