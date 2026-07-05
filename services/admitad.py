@@ -190,10 +190,14 @@ async def refill_admitad_catalogs(bot=None):
 
 async def get_admitad_token() -> str:
     url = "https://api.admitad.com/token/"
-    auth = httpx.BasicAuth(ADMITAD_CLIENT_ID, ADMITAD_CLIENT_SECRET)
-    data = {"grant_type": "client_credentials", "scope": "coupons"}
+    data = {
+        "grant_type": "client_credentials",
+        "scope": "coupons",
+        "client_id": ADMITAD_CLIENT_ID,
+        "client_secret": ADMITAD_CLIENT_SECRET,
+    }
     async with httpx.AsyncClient() as client:
-        resp = await client.post(url, auth=auth, data=data)
+        resp = await client.post(url, data=data)
         resp.raise_for_status()
         token_data = resp.json()
         return token_data["access_token"]
