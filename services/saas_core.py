@@ -239,7 +239,8 @@ async def publish_from_catalog(bot: Bot):
                     final_url += '?subid=' + ch["sub_id"]
 
             adult = source in ADULT_STORES
-            delivery_info = STORE_DELIVERY_INFO.get(source, "")
+           from services.admitad import get_delivery_for_store
+           elivery_info = get_delivery_for_store(source)
 
             caption = generate_post_text(
                 title=title,
