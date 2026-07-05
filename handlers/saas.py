@@ -359,7 +359,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
 
         source = product["source"] if "source" in product.keys() else ""
         adult = source in ADULT_STORES
-        delivery_info = STORE_DELIVERY_INFO.get(source, "")
+        delivery_info = get_delivery_for_store(source)
 
         caption = generate_post_text(
             title=title,
