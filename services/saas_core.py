@@ -15,9 +15,8 @@ from aiogram.types import InlineKeyboardMarkup, Message
 from services.db import get_db
 from config import is_night_time
 from services.text_rewriter import generate_post_text
-from config import STORE_DELIVERY_INFO
-from services.admitad import get_delivery_for_store
-from services.admitad import get_random_promocode
+from services.admitad import get_delivery_for_store, get_random_promocode, STORE_ID_MAP, ADULT_STORES
+
 logger = logging.getLogger("autopost_bot")
 
 # ---------------------------------------------------------------------------
@@ -154,7 +153,6 @@ async def publish_from_catalog(bot: Bot):
         finally:
             conn.close()
 
-        from services.admitad import STORE_ID_MAP, ADULT_STORES
         allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
 
         conn = get_db()
@@ -241,11 +239,10 @@ async def publish_from_catalog(bot: Bot):
                     final_url += '?subid=' + ch["sub_id"]
 
             adult = source in ADULT_STORES
-        from services.admitad import get_delivery_for_store
-           elivery_info = get_delivery_for_store(source)
-           promocode = get_random_promocode(source)
-        
-           caption = generate_post_text(
+            delivery_info = get_delivery_for_store(source)
+            promocode = get_random_promocode(source)
+
+            caption = generate_post_text(
                 title=title,
                 price=price,
                 currency=currency,
@@ -255,7 +252,8 @@ async def publish_from_catalog(bot: Bot):
                 adult=adult,
                 old_price=product["old_price"] if "old_price" in product.keys() else None,
                 discount_percent=product["discount_percent"] if "discount_percent" in product.keys() else None,
-                delivery_info=delivery_info
+                delivery_info=delivery_info,
+                promocode=promocode
             )
 
             try:
@@ -287,4 +285,3 @@ async def publish_from_catalog(bot: Bot):
             except Exception as e:
                 logger.error(f"[DEBUG] Ошибка публикации в {ch['channel_id']}: {e}")
             await asyncio.sleep(1)
-
