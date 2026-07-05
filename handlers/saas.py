@@ -51,7 +51,7 @@ async def cb_stores(callback: CallbackQuery):
     stores = [
         {"id": 1, "name": "AliExpress (пока недоступен)"},
         {"id": 2, "name": "Читай-город"},
-        {"id": 3, "name": "Аквафор"},
+        {"id": 3, "name": "Аквафор (пока недоступен)"},
         {"id": 4, "name": "Розовый кролик (18+)"},
         {"id": 5, "name": "Love Republic (пока недоступен)"},
         {"id": 6, "name": "Hi Store RU"},
@@ -82,7 +82,10 @@ async def cb_stores(callback: CallbackQuery):
 async def cb_toggle_store(callback: CallbackQuery):
     store_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
-
+    
+    if store_id == 3:
+        await callback.answer("❌ Аквафор временно недоступен (отсутствует техническая возможность).", show_alert=True)
+        return
     # Обработка Galaxy Store
     if store_id == 12:
         conn = get_db()
