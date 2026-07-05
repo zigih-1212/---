@@ -243,8 +243,9 @@ async def publish_from_catalog(bot: Bot):
             adult = source in ADULT_STORES
            from services.admitad import get_delivery_for_store
            elivery_info = get_delivery_for_store(source)
-
-            caption = generate_post_text(
+           promocode = get_random_promocode(source)
+        
+           caption = generate_post_text(
                 title=title,
                 price=price,
                 currency=currency,
