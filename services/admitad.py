@@ -4,68 +4,66 @@ import hashlib
 import logging
 import urllib.request
 from urllib.parse import urlparse, parse_qs
-from xml.etree.ElementTree import XMLPullParser, ElementTree
+from xml.etree import ElementTree as ET
+from xml.etree.ElementTree import XMLPullParser
 import httpx
 from services.db import get_db
-from config import ADMITAD_CLIENT_ID, ADMITAD_CLIENT_SECRET
 
 logger = logging.getLogger("autopost_bot.admitad")
 
 # ---------------------------------------------------------------------------
 # Магазины и маппинг
 # ---------------------------------------------------------------------------
-
 STORES = {
     "Читай-город": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=24883&last_import=",
         "adult": False,
-        "website_id": 15460,   # из XML-фида купонов
+        "website_id": "15460",   # строкой для совместимости с XML
     },
     "Аквафор": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=18482&last_import=",
         "adult": False,
-        "website_id": 0,  # Аквафор отключён, ставим 0 или убираем
+        "website_id": "0",       # отключён
     },
     "Розовый кролик": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=26654&last_import=",
         "adult": True,
-        "website_id": 181544,
+        "website_id": "181544",
     },
     "Hi Store RU": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=25803&last_import=",
         "adult": False,
-        "website_id": 109641,
+        "website_id": "109641",
     },
     "KANZLER": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=25851&last_import=",
         "adult": False,
-        "website_id": 14625,
+        "website_id": "14625",
     },
     "KIKO MILANO": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=15202&last_import=",
         "adult": False,
-        "website_id": 15735,
+        "website_id": "15735",
     },
     "Moulinex": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=25773&last_import=",
         "adult": False,
-        "website_id": 15488,
+        "website_id": "15488",
     },
     "Playtoday": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=26222&last_import=",
         "adult": False,
-        "website_id": 17006,
+        "website_id": "17006",
     },
     "SELA": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=24700&last_import=",
         "adult": False,
-        "website_id": 6476,
+        "website_id": "6476",
     },
-    # Galaxy Store добавлен позже, но без фида товаров (только купоны)
     "Galaxystore": {
         "feed_url": "",  # фида нет, только купоны
         "adult": False,
-        "website_id": 13423,
+        "website_id": "13423",
     },
 }
 
@@ -84,10 +82,15 @@ STORE_ID_MAP = {
     12: "Galaxystore",
 }
 
-# ---------------------------------------------------------------------------
-# Вспомогательные функции
-# ---------------------------------------------------------------------------
+XML_COUPONS_URL = (
+    "https://export.admitad.com/ru/webmaster/websites/2956090/coupons/export/"
+    "?website=2956090&region=00&language=&only_my=on&keyword="
+    "&code=emrdliwjzy&user=zigi_oh-by2ec9e&format=xml&v=1"
+)
 
+# ---------------------------------------------------------------------------
+# Утилиты
+# ---------------------------------------------------------------------------
 def extract_erid_from_url(url: str) -> str:
     if not url:
         return ""
@@ -224,20 +227,10 @@ async def refill_admitad_catalogs(bot=None):
 
 
 # ---------------------------------------------------------------------------
-# Работа с купонами через XML-фид (НЕ через API)
+# Обновление промокодов и доставки из XML-фида купонов
 # ---------------------------------------------------------------------------
-
-XML_COUPONS_URL = (
-    "https://export.admitad.com/ru/webmaster/websites/2956090/coupons/export/"
-    "?website=2956090&region=00&language=&only_my=on&keyword="
-    "&code=emrdliwjzy&user=zigi_oh-by2ec9e&format=xml&v=1"
-)
-
-
 async def update_all_store_data_from_feed():
-    """Загружает XML-фид купонов, обновляет таблицы store_promocodes и store_delivery."""
-    import xml.etree.ElementTree as ET
-    logger.info("🔄 Обновление промокодов и доставки из XML-фида...")
+    logger.info("🔄 Обновление промокодов и доставки из XML-фида купонов...")
     conn = get_db()
     try:
         # Убедимся, что таблицы существуют
@@ -264,11 +257,12 @@ async def update_all_store_data_from_feed():
         conn.execute("DELETE FROM store_delivery")
         conn.commit()
 
+        # Загружаем XML
         with urllib.request.urlopen(XML_COUPONS_URL) as response:
             tree = ET.parse(response)
         root = tree.getroot()
 
-        # Сопоставление campaign_id → название магазина
+        # Маппинг advcampaign_id → название магазина
         campaigns = {}
         for adv in root.findall('.//advcampaigns/advcampaign'):
             cid = adv.get('id')
@@ -276,12 +270,14 @@ async def update_all_store_data_from_feed():
             if cid and name:
                 campaigns[cid] = name
 
-        # Обработка купонов
+        # Обрабатываем купоны
         for coupon in root.findall('coupon'):
             promo = (coupon.findtext('promocode') or '').strip()
-            desc = (coupon.findtext('description') or '').strip()
-            short_name = (coupon.findtext('name') or '').strip() or desc
-            campaign_id = (coupon.findtext('advcampaign_id') or coupon.findtext('advcampaign') or '').strip()
+            # Пропускаем "пустышки"
+            if promo.lower() in ('not required', 'no code', 'none', '', 'none'):
+                promo = ''
+
+            campaign_id = coupon.findtext('advcampaign_id', '')
             if not campaign_id:
                 continue
 
@@ -289,29 +285,44 @@ async def update_all_store_data_from_feed():
             if not store_name:
                 continue
 
-            # Сохраняем промокод
+            desc = (coupon.findtext('description') or '').strip()
+            name = (coupon.findtext('name') or '').strip()
+
+            # Сохраняем промокод, если он реальный
             if promo:
                 conn.execute(
                     "INSERT INTO store_promocodes (store, promocode, description) VALUES (?, ?, ?)",
-                    (store_name, promo, short_name or desc)
+                    (store_name, promo, desc or name)
                 )
 
-            # Тип "Free delivery" (id=1) → в доставку
-            type_id = (coupon.findtext('type_id') or '').strip()
-            if type_id == '1':
+            # Проверяем тип: type_id=1 → бесплатная доставка
+            types_elem = coupon.find('types')
+            type_id = None
+            if types_elem is not None:
+                tid = types_elem.findtext('type_id', '')
+                if tid:
+                    type_id = tid.strip()
+
+            # Сохраняем в доставку, если type_id=1 или в описании есть слова «доставка»
+            if type_id == '1' or (desc and any(w in desc.lower() for w in ['доставк', 'delivery', 'бесплатн'])):
+                delivery_text = desc or name
                 conn.execute(
                     "INSERT OR REPLACE INTO store_delivery (store, delivery_text) VALUES (?, ?)",
-                    (store_name, desc or short_name)
+                    (store_name, delivery_text)
                 )
 
         conn.commit()
-        logger.info("✅ Данные из XML-фида обновлены")
+        logger.info("✅ Данные из XML-фида купонов обновлены")
+
     except Exception as e:
-        logger.error(f"Ошибка обновления из фида: {e}")
+        logger.error(f"Ошибка обновления из фида купонов: {e}")
     finally:
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Функции для получения сохранённых данных
+# ---------------------------------------------------------------------------
 def get_delivery_for_store(store_name: str) -> str:
     try:
         conn = get_db()
