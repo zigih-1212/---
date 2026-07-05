@@ -244,6 +244,9 @@ async def publish_from_catalog(bot: Bot):
                 erid=erid,
                 partner_url=final_url,
                 adult=adult
+                old_price=product.get("old_price"),          # <-- вот это
+                discount_percent=product.get("discount_percent"),  # <-- и это
+                delivery_info=STORE_DELIVERY_INFO.get(source, "")  # <-- и доставка
             )
 
             try:
