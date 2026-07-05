@@ -19,7 +19,6 @@ from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES
 from keyboards.saas import kb_payment_methods
 from catalog import CITY_DATA, get_city_name, fetch_products
 from services.text_rewriter import generate_post_text
-from config import STORE_DELIVERY_INFO
 logger = logging.getLogger("autopost_bot.saas")
 
 router = Router(name="saas")
