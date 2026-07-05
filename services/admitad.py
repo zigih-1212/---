@@ -270,14 +270,24 @@ async def update_all_store_data_from_feed():
             if cid and name:
                 campaigns[cid] = name
 
-        # Обрабатываем купоны
+        # Контейнер с купонами
         coupons_container = root.find('coupons')
         if coupons_container is None:
             logger.warning("Контейнер <coupons> не найден в фиде")
             return
-        for coupon in coupons_container.findall('coupon'):
 
-            campaign_id = coupon.findtext('advcampaign_id', '')
+        # Обрабатываем купоны
+        for coupon in coupons_container.findall('coupon'):
+            # Инициализация переменных
+            promo_code = (coupon.findtext('promocode') or '').strip()
+            campaign_id = coupon.findtext('advcampaign_id', '').strip()
+            desc = (coupon.findtext('description') or '').strip()
+            name = (coupon.findtext('name') or '').strip()
+
+            # Пропускаем «пустые» промокоды
+            if promo_code.lower() in ('not required', 'no code', 'none', ''):
+                promo_code = ''
+
             if not campaign_id:
                 continue
 
@@ -285,14 +295,11 @@ async def update_all_store_data_from_feed():
             if not store_name:
                 continue
 
-            desc = (coupon.findtext('description') or '').strip()
-            name = (coupon.findtext('name') or '').strip()
-
             # Сохраняем промокод, если он реальный
-            if promo:
+            if promo_code:
                 conn.execute(
                     "INSERT INTO store_promocodes (store, promocode, description) VALUES (?, ?, ?)",
-                    (store_name, promo, desc or name)
+                    (store_name, promo_code, desc or name)
                 )
 
             # Проверяем тип: type_id=1 → бесплатная доставка
@@ -303,7 +310,7 @@ async def update_all_store_data_from_feed():
                 if tid:
                     type_id = tid.strip()
 
-            # Сохраняем в доставку, если type_id=1 или в описании есть слова «доставка»
+            # Сохраняем в доставку, если type_id=1 или в описании есть ключевые слова
             if type_id == '1' or (desc and any(w in desc.lower() for w in ['доставк', 'delivery', 'бесплатн'])):
                 delivery_text = desc or name
                 conn.execute(
@@ -318,8 +325,6 @@ async def update_all_store_data_from_feed():
         logger.error(f"Ошибка обновления из фида купонов: {e}")
     finally:
         conn.close()
-
-
 # ---------------------------------------------------------------------------
 # Функции для получения сохранённых данных
 # ---------------------------------------------------------------------------
