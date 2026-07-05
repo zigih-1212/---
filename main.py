@@ -321,7 +321,16 @@ def init_db() -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """)  
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS store_promocodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            store TEXT NOT NULL,
+            promocode TEXT NOT NULL,
+            description TEXT,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
 # Уникальный индекс для предотвращения дубликатов
     cursor.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_gdeslon_unique 
