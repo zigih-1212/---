@@ -15,7 +15,7 @@ from aiogram.types import InlineKeyboardMarkup, Message
 from services.db import get_db
 from config import is_night_time
 from services.text_rewriter import generate_post_text
-
+from config import STORE_DELIVERY_INFO
 logger = logging.getLogger("autopost_bot")
 
 # ---------------------------------------------------------------------------
