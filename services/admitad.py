@@ -257,12 +257,17 @@ async def update_store_delivery_info():
 
 
 def get_delivery_for_store(store_name: str) -> str:
-    conn = get_db()
     try:
+        conn = get_db()
         row = conn.execute("SELECT delivery_text FROM store_delivery WHERE store = ?", (store_name,)).fetchone()
         return row["delivery_text"] if row else ""
+    except Exception:
+        return ""
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except:
+            pass
 
 
 async def update_store_promocodes():
@@ -311,12 +316,17 @@ async def update_store_promocodes():
 
 
 def get_random_promocode(store_name: str) -> str:
-    conn = get_db()
     try:
+        conn = get_db()
         row = conn.execute(
             "SELECT promocode FROM store_promocodes WHERE store = ? ORDER BY RANDOM() LIMIT 1",
             (store_name,)
         ).fetchone()
         return row["promocode"] if row else ""
+    except Exception:
+        return ""
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except:
+            pass
