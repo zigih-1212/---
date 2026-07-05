@@ -17,6 +17,7 @@ from config import is_night_time
 from services.text_rewriter import generate_post_text
 from config import STORE_DELIVERY_INFO
 from services.admitad import get_delivery_for_store
+from services.admitad import get_random_promocode
 logger = logging.getLogger("autopost_bot")
 
 # ---------------------------------------------------------------------------
