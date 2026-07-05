@@ -68,8 +68,7 @@ from services.saas_core import (
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
-from services.admitad import refill_admitad_catalogs, update_store_delivery_info
+from services.admitad import refill_admitad_catalogs, update_all_store_data_from_feed
 from services.admitad import update_store_promocodes, update_store_delivery_info, refill_admitad_catalogs
 
 from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, PayoutStates
