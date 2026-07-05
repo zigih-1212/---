@@ -152,6 +152,65 @@ async def update_store_delivery_info():
         conn.close()
     logger.info("✅ Информация о доставке обновлена")
 
+async def update_store_promocodes():
+    """Обновляет промокоды из API купонов Admitad."""
+    logger.info("🔄 Обновление промокодов из Admitad API...")
+    try:
+        token = await get_admitad_token()
+    except Exception as e:
+        logger.error(f"Не удалось получить токен Admitad: {e}")
+        return
+
+    headers = {"Authorization": f"Bearer {token}"}
+    conn = get_db()
+    try:
+        # Очищаем старые промокоды (или можно добавлять новые с проверкой уникальности)
+        conn.execute("DELETE FROM store_promocodes")
+        conn.commit()
+
+        for store_name, cfg in STORES.items():
+            params = {
+                "limit": 100,
+                "language": "ru",
+                "query": store_name,
+                "type": "promocode",  # или "coupon", зависит от API
+            }
+            async with httpx.AsyncClient() as client:
+                resp = await client.get("https://api.admitad.com/coupons/", headers=headers, params=params)
+                if resp.status_code != 200:
+                    logger.warning(f"Не удалось получить купоны для {store_name}: {resp.status_code}")
+                    continue
+                data = resp.json()
+                results = data.get("results", [])
+
+                for coup in results:
+                    promo = coup.get("promocode")
+                    if not promo:
+                        continue
+                    description = coup.get("description", "")
+                    conn.execute(
+                        "INSERT INTO store_promocodes (store, promocode, description) VALUES (?, ?, ?)",
+                        (store_name, promo, description)
+                    )
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Ошибка обновления промокодов: {e}")
+    finally:
+        conn.close()
+    logger.info("✅ Промокоды обновлены")
+
+def get_random_promocode(store_name: str) -> str:
+    """Возвращает случайный промокод для магазина или пустую строку."""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT promocode FROM store_promocodes WHERE store = ? ORDER BY RANDOM() LIMIT 1",
+            (store_name,)
+        ).fetchone()
+        return row["promocode"] if row else ""
+    finally:
+        conn.close()
+
 def get_delivery_for_store(store_name: str) -> str:
     """Возвращает сохранённую информацию о доставке для магазина."""
     conn = get_db()
