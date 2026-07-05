@@ -236,16 +236,36 @@ XML_COUPONS_URL = (
 
 async def update_all_store_data_from_feed():
     """Загружает XML-фид купонов, обновляет таблицы store_promocodes и store_delivery."""
+    import xml.etree.ElementTree as ET
     logger.info("🔄 Обновление промокодов и доставки из XML-фида...")
     conn = get_db()
     try:
+        # Убедимся, что таблицы существуют
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS store_promocodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                store TEXT NOT NULL,
+                promocode TEXT NOT NULL,
+                description TEXT,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS store_delivery (
+                store TEXT PRIMARY KEY,
+                delivery_text TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+
         # Очищаем старые данные
         conn.execute("DELETE FROM store_promocodes")
         conn.execute("DELETE FROM store_delivery")
         conn.commit()
 
         with urllib.request.urlopen(XML_COUPONS_URL) as response:
-            tree = ElementTree.parse(response)
+            tree = ET.parse(response)
         root = tree.getroot()
 
         # Сопоставление campaign_id → название магазина
