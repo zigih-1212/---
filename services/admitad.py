@@ -123,15 +123,27 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
                                     elem.clear()
                                     continue
 
+                                # --- парсинг старой цены ---
+                                old_price = None
+                                discount_percent = None
+                                old_price_elem = elem.find('oldprice')
+                                if old_price_elem is not None and old_price_elem.text:
+                                    try:
+                                        old_price = float(old_price_elem.text)
+                                        if old_price > 0 and price < old_price:
+                                            discount_percent = int(round((old_price - price) / old_price * 100))
+                                    except ValueError:
+                                        old_price = None
+
                                 sku = hashlib.md5(url.encode()).hexdigest()[:12]
 
                                 conn = get_db()
                                 try:
                                     conn.execute(
                                         """INSERT OR IGNORE INTO gdeslon_catalog
-                                        (sku, user_id, title, price, currency, partner_url, erid, advertiser, image_url, category_keyword, used, source)
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
-                                        (sku, user_id, name, price, currency, url, erid, store_name, picture, store_name, store_name)
+                                        (sku, user_id, title, price, old_price, discount_percent, currency, partner_url, erid, advertiser, image_url, category_keyword, used, source)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+                                        (sku, user_id, name, price, old_price, discount_percent, currency, url, erid, store_name, picture, store_name, store_name)
                                     )
                                     conn.commit()
                                 finally:
