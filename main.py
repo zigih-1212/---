@@ -407,7 +407,11 @@ def init_db() -> None:
     try:
         cursor.execute("ALTER TABLE gdeslon_catalog ADD COLUMN discount_percent INTEGER")
     except sqlite3.OperationalError:
-        pass  
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN min_discount INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
