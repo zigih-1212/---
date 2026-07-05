@@ -250,18 +250,60 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
     user_id = callback.from_user.id
 
+    # Получаем выбранные пользователем магазины
     conn = get_db()
     try:
-        product = conn.execute(
-            "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
+        user_stores = conn.execute(
+            "SELECT category_id FROM user_category_preferences WHERE user_id = ?",
             (user_id,)
-        ).fetchone()
-        if not product:
-            await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)
+        ).fetchall()
+        store_ids = [r["category_id"] for r in user_stores]
+    finally:
+        conn.close()
+
+    from services.admitad import STORE_ID_MAP, ADULT_STORES
+    allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
+
+    conn = get_db()
+    try:
+        min_disc = conn.execute("SELECT min_discount FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        min_discount = min_disc["min_discount"] if min_disc else 0
+
+        if allowed_sources:
+            placeholders = ','.join('?' * len(allowed_sources))
             product = conn.execute(
-                "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL ORDER BY RANDOM() LIMIT 1",
-                (user_id,)
+                f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                (user_id, *allowed_sources, min_discount)
             ).fetchone()
+        else:
+            product = None
+
+        # Если ничего не нашли, пробуем загрузить новые товары
+        if not product:
+            if allowed_sources:
+                conn.execute(
+                    f"UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ? AND source IN ({placeholders})",
+                    (user_id, *allowed_sources)
+                )
+                conn.commit()
+                product = conn.execute(
+                    f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                    (user_id, *allowed_sources, min_discount)
+                ).fetchone()
+            else:
+                # Если магазины вообще не выбраны, берём любой (без фильтра по скидке для совместимости)
+                product = conn.execute(
+                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                    (user_id, min_discount)
+                ).fetchone()
+                if not product:
+                    conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
+                    conn.commit()
+                    product = conn.execute(
+                        "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                        (user_id, min_discount)
+                    ).fetchone()
+
         if product:
             conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
             conn.commit()
@@ -304,7 +346,10 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             else:
                 final_url += '?subid=' + ch["sub_id"]
 
+        source = product["source"] if "source" in product.keys() else ""
         adult = source in ADULT_STORES
+        delivery_info = STORE_DELIVERY_INFO.get(source, "")
+
         caption = generate_post_text(
             title=title,
             price=price,
@@ -312,7 +357,10 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             advertiser=advertiser,
             erid=erid,
             partner_url=final_url,
-            adult=adult
+            adult=adult,
+            old_price=product.get("old_price"),
+            discount_percent=product.get("discount_percent"),
+            delivery_info=delivery_info
         )
 
         msg = await publish_post_with_fallback(
@@ -320,7 +368,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             channel_id=ch["channel_id"],
             caption=caption,
             photo_url=photo_url,
-            has_spoiler=(source in ADULT_STORES)
+            has_spoiler=adult
         )
         if msg:
             direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
