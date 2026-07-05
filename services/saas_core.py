@@ -168,8 +168,6 @@ async def publish_from_catalog(bot: Bot):
                 ).fetchone()
             else:
                 product = None
-        finally:
-            conn.close()
 
             if not product:
                 # Сбрасываем used для разрешённых источников
@@ -183,11 +181,14 @@ async def publish_from_catalog(bot: Bot):
                 conn.commit()
                 if allowed_sources:
                     product = conn.execute(
-                        f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) ORDER BY RANDOM() LIMIT 1",
-                        (user_id, *allowed_sources)
+                        f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                        (user_id, *allowed_sources, min_discount)
                     ).fetchone()
                 else:
-                    product = None
+                    product = conn.execute(
+                        "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                        (user_id, min_discount)
+                    ).fetchone()
 
             if product:
                 conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
@@ -213,6 +214,7 @@ async def publish_from_catalog(bot: Bot):
             continue
 
         photo_url = product["image_url"]
+        source = product.get("source", "")
 
         conn = get_db()
         try:
@@ -230,17 +232,15 @@ async def publish_from_catalog(bot: Bot):
         logger.info(f"[DEBUG] User {user_id}: публикуем в {len(channels)} каналов")
         for ch in channels:
             final_url = partner_url
-            # Используем числовой sub_id (Telegram ID канала), который уже сохранён в базе
             if ch["sub_id"]:
                 if '?' in final_url:
                     final_url += '&subid=' + ch["sub_id"]
                 else:
                     final_url += '?subid=' + ch["sub_id"]
 
-            source = product["source"] if "source" in product.keys() else ""
             adult = source in ADULT_STORES
+            delivery_info = STORE_DELIVERY_INFO.get(source, "")
 
-            # Генерируем уникальный текст поста с помощью рерайтера
             caption = generate_post_text(
                 title=title,
                 price=price,
@@ -249,9 +249,9 @@ async def publish_from_catalog(bot: Bot):
                 erid=erid,
                 partner_url=final_url,
                 adult=adult,
-                old_price=product.get("old_price"),          # <-- вот это
-                discount_percent=product.get("discount_percent"),  # <-- и это
-                delivery_info=STORE_DELIVERY_INFO.get(source, "")  # <-- и доставка
+                old_price=product.get("old_price"),
+                discount_percent=product.get("discount_percent"),
+                delivery_info=delivery_info
             )
 
             try:
@@ -260,10 +260,9 @@ async def publish_from_catalog(bot: Bot):
                     channel_id=ch["channel_id"],
                     caption=caption,
                     photo_url=photo_url,
-                    has_spoiler=(source in ADULT_STORES)
+                    has_spoiler=adult
                 )
                 if msg:
-                    # Логирование: сохраняем subid1 и direct_link
                     direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
                     donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
                     conn_rec = get_db()
