@@ -311,7 +311,7 @@ async def update_all_store_data_from_feed():
                     type_id = tid.strip()
 
             # Сохраняем в доставку, если type_id=1 или в описании есть ключевые слова
-            if type_id == '1' or (desc and any(w in desc.lower() for w in ['доставк', 'delivery', 'бесплатн'])):
+            if type_id == '1':
                 delivery_text = desc or name
                 conn.execute(
                     "INSERT OR REPLACE INTO store_delivery (store, delivery_text) VALUES (?, ?)",
