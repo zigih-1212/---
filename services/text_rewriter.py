@@ -41,7 +41,8 @@ def generate_post_text(title, price, currency, advertiser, erid, partner_url,
         caption += f"\n🎟 Промокод: <code>{promocode}</code>"
 
     if delivery_info:
-        caption += f"\n🚚 {delivery_info}"
+        short_delivery = delivery_info[:200] + ('...' if len(delivery_info) > 200 else '')
+        caption += f"\n🚚 {short_delivery}"
 
     caption += f"\n\nРеклама. {advertiser}. Erid: {erid}"
     if adult:
