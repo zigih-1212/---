@@ -22,9 +22,11 @@ def generate_post_text(title, price, currency, advertiser, erid, partner_url,
     price_str = f"{int(price)}" if price == int(price) else f"{price:.2f}"
 
     discount_line = ""
-    if old_price and discount_percent:
-        old_price_str = f"{int(old_price)}" if old_price == int(old_price) else f"{old_price:.2f}"
-        discount_line = f"\n🔥 Скидка {discount_percent}% (было {old_price_str} {currency})"
+        if delivery_info:
+            short_delivery = delivery_info[:150].rstrip()
+            if len(delivery_info) > 150:
+                short_delivery += '...'
+            caption += f"\n🚚 {short_delivery}"
 
     link_text = f"<a href='{partner_url}'>Посмотреть и заказать</a>"
 
