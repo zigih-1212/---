@@ -1,4 +1,5 @@
 # webapp/routes_user.py
+import os
 from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from services.db import get_db
@@ -7,7 +8,8 @@ from datetime import datetime, timedelta, timezone
 from jinja2 import Environment, FileSystemLoader
 
 router = APIRouter()
-env = Environment(loader=FileSystemLoader("webapp/templates"))
+TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), 'templates')
+env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
 
 @router.get("/", response_class=HTMLResponse)
 async def user_stats_page(token: str = Query(...)):
