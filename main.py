@@ -1437,7 +1437,7 @@ async def main() -> None:
         except TelegramBadRequest as e:
             logger.warning(f"Не удалось установить команды для админа {admin_id}: {e}")
 
-    fastapi_app = create_fastapi_app(bot)
+    fastapi_app = create_app(bot)
 
     config = uvicorn.Config(
         fastapi_app,
