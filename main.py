@@ -23,7 +23,7 @@ from xml.etree import ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Dict, Any, List
-from admin_panel import create_fastapi_app
+from webapp import create_app
 import sys
 from keyboards.saas import kb_cabinet_menu, kb_tariffs, kb_payment_methods
 from handlers.saas import router as saas_router
