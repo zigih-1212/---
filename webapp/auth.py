@@ -1,21 +1,69 @@
 # webapp/auth.py
 import secrets
 from datetime import datetime, timedelta, timezone
-from fastapi import Depends, HTTPException
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import Request, HTTPException, Depends
+from fastapi.responses import RedirectResponse
 from config import ADMIN_PASSWORD
 from services.db import get_db
 
-security = HTTPBasic()
+# Хранилище сессий – таблица admin_sessions
+def init_admin_sessions_table():
+    conn = get_db()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS admin_sessions (
+                token TEXT PRIMARY KEY,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
 
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    if credentials.username != "admin" or credentials.password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return credentials.username
+def create_admin_session() -> str:
+    """Создаёт новую сессию и возвращает токен."""
+    init_admin_sessions_table()
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(hours=24)
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO admin_sessions (token, expires_at) VALUES (?, ?)",
+                     (token, expires.isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+    return token
 
-def admin_required(username: str = Depends(verify_admin)):
-    """Зависимость: пускает только после ввода правильного логина/пароля."""
-    return username
+def verify_admin_session(token: str) -> bool:
+    """Проверяет, действителен ли токен сессии."""
+    if not token:
+        return False
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT expires_at FROM admin_sessions WHERE token = ?", (token,)).fetchone()
+        if not row:
+            return False
+        expires = datetime.fromisoformat(row["expires_at"].replace("Z", "+00:00"))
+        return datetime.now(timezone.utc) < expires
+    finally:
+        conn.close()
+
+def delete_admin_session(token: str):
+    """Удаляет сессию (выход)."""
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
+        conn.commit()
+    finally:
+        conn.close()
+
+async def admin_required(request: Request):
+    """Зависимость: если нет сессии – редирект на /admin/login."""
+    token = request.cookies.get("admin_session")
+    if not token or not verify_admin_session(token):
+        raise HTTPException(status_code=302, headers={"Location": "/admin/login"})
+    return True
 
 def generate_user_token(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
