@@ -28,6 +28,8 @@ import sys
 from keyboards.saas import kb_cabinet_menu, kb_tariffs, kb_payment_methods
 from handlers.saas import router as saas_router
 from services.admitad import refill_admitad_catalogs, update_all_store_data_from_feed
+from webapp.auth import generate_admin_token
+from config import WEBAPP_ADMIN_URL
 print("DEBUG: main.py started", flush=True, file=sys.stderr)
 
 import httpx
@@ -888,6 +890,18 @@ async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
     await _show_saas_stats(callback, callback.from_user.id, channel_idx, period)
     await callback.answer()
 
+
+@router.message(Command("admin"))
+async def cmd_admin(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    token = generate_admin_token(message.from_user.id)
+    login_url = f"{WEBAPP_ADMIN_URL}/login?token={token}"
+    await message.answer(
+        f"🔑 <a href='{login_url}'>Открыть админку</a>\n\n"
+        f"Или скопируйте ссылку:\n{login_url}",
+        disable_web_page_preview=True
+    )
 # ---------------------------------------------------------------------------
 # Настройки
 # ---------------------------------------------------------------------------
