@@ -1,12 +1,10 @@
 # webapp/auth.py
 import secrets
 from datetime import datetime, timedelta, timezone
-from fastapi import Request, HTTPException, Depends
-from fastapi.responses import RedirectResponse
+from fastapi import Request, HTTPException
 from config import ADMIN_PASSWORD
 from services.db import get_db
 
-# Хранилище сессий – таблица admin_sessions
 def init_admin_sessions_table():
     conn = get_db()
     try:
@@ -22,7 +20,6 @@ def init_admin_sessions_table():
         conn.close()
 
 def create_admin_session() -> str:
-    """Создаёт новую сессию и возвращает токен."""
     init_admin_sessions_table()
     token = secrets.token_urlsafe(32)
     expires = datetime.now(timezone.utc) + timedelta(hours=24)
@@ -36,7 +33,6 @@ def create_admin_session() -> str:
     return token
 
 def verify_admin_session(token: str) -> bool:
-    """Проверяет, действителен ли токен сессии."""
     if not token:
         return False
     conn = get_db()
@@ -50,7 +46,6 @@ def verify_admin_session(token: str) -> bool:
         conn.close()
 
 def delete_admin_session(token: str):
-    """Удаляет сессию (выход)."""
     conn = get_db()
     try:
         conn.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
@@ -59,7 +54,6 @@ def delete_admin_session(token: str):
         conn.close()
 
 async def admin_required(request: Request):
-    """Зависимость: если нет сессии – редирект на /admin/login."""
     token = request.cookies.get("admin_session")
     if not token or not verify_admin_session(token):
         raise HTTPException(status_code=302, headers={"Location": "/admin/login"})
