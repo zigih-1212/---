@@ -1,8 +1,7 @@
 # webapp/auth.py
 import secrets
-import hashlib
 from datetime import datetime, timedelta, timezone
-from fastapi import HTTPException, Depends
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from config import ADMIN_PASSWORD
 from services.db import get_db
@@ -14,8 +13,11 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return credentials.username
 
+def admin_required(username: str = Depends(verify_admin)):
+    """Зависимость: пускает только после ввода правильного логина/пароля."""
+    return username
+
 def generate_user_token(user_id: int) -> str:
-    """Создаёт временный токен для пользователя."""
     token = secrets.token_urlsafe(32)
     expires = datetime.now(timezone.utc) + timedelta(hours=24)
     conn = get_db()
@@ -30,7 +32,6 @@ def generate_user_token(user_id: int) -> str:
     return token
 
 def get_user_id_from_token(token: str) -> int:
-    """Возвращает user_id по токену или ошибку."""
     conn = get_db()
     try:
         row = conn.execute(
