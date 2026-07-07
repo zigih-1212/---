@@ -1,79 +1,34 @@
 # webapp/routes_admin.py
-import os
 from fastapi import APIRouter, Request, Form, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
-from jinja2 import Template
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from jinja2 import Environment, BaseLoader, TemplateNotFound
 from services.db import get_db
 from webapp.auth import admin_required, create_admin_session, delete_admin_session, verify_admin_session
 from webapp.dependencies import get_bot
 
 router = APIRouter()
 
+# ---------- Встроенный CSS ----------
 CSS_CONTENT = '''body.dark-theme {
-    background-color: #1a1a1a;
-    color: #ccc;
-    font-family: sans-serif;
-    margin: 0;
-    padding: 0;
+    background-color: #1a1a1a; color: #ccc; font-family: sans-serif; margin: 0; padding: 0;
 }
-nav {
-    background: #111;
-    padding: 10px;
-}
-nav a {
-    color: #ff4444;
-    margin-right: 15px;
-    text-decoration: none;
-}
-nav a:hover {
-    text-decoration: underline;
-}
-.container {
-    max-width: 1200px;
-    margin: auto;
-    padding: 20px;
-}
-button {
-    background: #ff4444;
-    color: #fff;
-    border: none;
-    padding: 8px 16px;
-    cursor: pointer;
-    border-radius: 4px;
-}
-input, textarea, select {
-    background: #333;
-    color: #ccc;
-    border: 1px solid #555;
-    padding: 5px;
-    margin: 5px 0;
-    border-radius: 3px;
-}
-.error {
-    color: #ff4444;
-}
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-}
-th, td {
-    padding: 5px;
-    border-bottom: 1px solid #333;
-    text-align: left;
-}
-th {
-    background: #222;
-}
+nav { background: #111; padding: 10px; }
+nav a { color: #ff4444; margin-right: 15px; text-decoration: none; }
+nav a:hover { text-decoration: underline; }
+.container { max-width: 1200px; margin: auto; padding: 20px; }
+button { background: #ff4444; color: #fff; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; }
+input, textarea, select { background: #333; color: #ccc; border: 1px solid #555; padding: 5px; margin: 5px 0; border-radius: 3px; }
+.error { color: #ff4444; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th, td { padding: 5px; border-bottom: 1px solid #333; text-align: left; }
+th { background: #222; }
 '''
-# ---------- шаблоны как строки ----------
+
+# ---------- Шаблоны ----------
 BASE_TEMPLATE = '''<!DOCTYPE html>
 <html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>{% block title %}AutoPost Bot{% endblock %}</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
+<head><meta charset="UTF-8"><title>{% block title %}AutoPost Bot{% endblock %}</title>
+<link rel="stylesheet" href="/admin/static/css/style.css"></head>
 <body class="dark-theme">
     <nav>
         <a href="/admin/dashboard">Админ-панель</a> |
@@ -82,29 +37,23 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
         <a href="/admin/store_delivery">Доставка</a> |
         <a href="/admin/logout" style="color: #ff4444;">Выйти</a>
     </nav>
-    <div class="container">
-        {% block content %}{% endblock %}
-    </div>
+    <div class="container">{% block content %}{% endblock %}</div>
 </body>
 </html>'''
 
 LOGIN_TEMPLATE = '''<!DOCTYPE html>
 <html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>Вход в админку</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
+<head><meta charset="UTF-8"><title>Вход в админку</title>
+<link rel="stylesheet" href="/admin/static/css/style.css"></head>
 <body class="dark-theme">
-    <div class="container">
-        <h1>Вход</h1>
-        {% if error %}<p class="error">{{ error }}</p>{% endif %}
-        <form method="post" action="/admin/login">
-            <input type="text" name="username" placeholder="Логин" required><br>
-            <input type="password" name="password" placeholder="Пароль" required><br>
-            <button type="submit">Войти</button>
-        </form>
-    </div>
+<div class="container">
+    <h1>Вход</h1>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <form method="post" action="/admin/login">
+        <input type="password" name="password" placeholder="Пароль" required><br>
+        <button type="submit">Войти</button>
+    </form>
+</div>
 </body>
 </html>'''
 
@@ -184,10 +133,15 @@ STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
 </table>
 {% endblock %}'''
 
-# ---------- рендеринг из строк ----------
-from jinja2 import Environment, BaseLoader, TemplateNotFound
+# ---------- Загрузчик шаблонов из словаря ----------
+class DictLoader(BaseLoader):
+    def __init__(self, mapping):
+        self.mapping = mapping
+    def get_source(self, environment, template):
+        if template not in self.mapping:
+            raise TemplateNotFound(template)
+        return self.mapping[template], None, lambda: True
 
-# Своё окружение, умеющее "загружать" шаблоны из нашего словаря
 TEMPLATES = {
     "base.html": BASE_TEMPLATE,
     "login.html": LOGIN_TEMPLATE,
@@ -197,21 +151,18 @@ TEMPLATES = {
     "admin_store_delivery.html": STORE_DELIVERY_TEMPLATE,
 }
 
-class DictLoader(BaseLoader):
-    def __init__(self, mapping):
-        self.mapping = mapping
-    def get_source(self, environment, template):
-        if template not in self.mapping:
-            raise TemplateNotFound(template)
-        return self.mapping[template], None, lambda: True
-
 env = Environment(loader=DictLoader(TEMPLATES))
 
 def render(template_name: str, **kwargs):
     template = env.get_template(template_name)
     return HTMLResponse(template.render(**kwargs))
 
-# ---------- эндпоинты ----------
+# ---------- Эндпоинт для CSS ----------
+@router.get("/static/css/style.css", include_in_schema=False)
+async def style_css():
+    return Response(content=CSS_CONTENT, media_type="text/css")
+
+# ---------- Аутентификация ----------
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     token = request.cookies.get("admin_session")
@@ -220,14 +171,14 @@ async def login_page(request: Request):
     return render("login.html")
 
 @router.post("/login")
-async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login(request: Request, password: str = Form(...)):
     from config import ADMIN_PASSWORD
-    if username == "admin" and password == ADMIN_PASSWORD:
+    if password == ADMIN_PASSWORD:
         token = create_admin_session()
         resp = RedirectResponse(url="/admin/dashboard", status_code=303)
         resp.set_cookie(key="admin_session", value=token, httponly=True, max_age=86400)
         return resp
-    return render("login.html", error="Неверный логин или пароль")
+    return render("login.html", error="Неверный пароль")
 
 @router.get("/logout")
 async def logout(request: Request):
@@ -238,6 +189,7 @@ async def logout(request: Request):
     resp.delete_cookie("admin_session")
     return resp
 
+# ---------- Защищённые страницы ----------
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: bool = Depends(admin_required)):
     conn = get_db()
@@ -315,11 +267,6 @@ async def store_delivery_list(request: Request, _: bool = Depends(admin_required
     finally:
         conn.close()
     return render("admin_store_delivery.html", deliveries=deliveries)
-
-@router.get("/static/css/style.css", include_in_schema=False)
-async def style_css():
-    from fastapi.responses import Response
-    return Response(content=CSS_CONTENT, media_type="text/css")
 
 @router.post("/store_delivery/update", response_class=HTMLResponse)
 async def store_delivery_update(store: str = Form(...), delivery_text: str = Form(...),
