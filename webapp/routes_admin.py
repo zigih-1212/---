@@ -176,7 +176,14 @@ async def login(request: Request, password: str = Form(...)):
     if password == ADMIN_PASSWORD:
         token = create_admin_session()
         resp = RedirectResponse(url="/admin/dashboard", status_code=303)
-        resp.set_cookie(key="admin_session", value=token, httponly=True, max_age=86400)
+        resp.set_cookie(
+            key="admin_session",
+            value=token,
+            httponly=True,
+            max_age=86400,
+            secure=True,          # важно для HTTPS
+            samesite='lax'
+        )
         return resp
     return render("login.html", error="Неверный пароль")
 
