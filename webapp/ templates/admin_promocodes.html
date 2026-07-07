@@ -1,1 +1,24 @@
-
+{% extends "base.html" %}
+{% block title %}Управление промокодами{% endblock %}
+{% block content %}
+<h1>🎟 Промокоды</h1>
+<h2>Добавить</h2>
+<form method="post" action="/admin/promocodes/add">
+    <input name="store" placeholder="Магазин (название)" required>
+    <input name="promocode" placeholder="Промокод" required>
+    <input name="description" placeholder="Описание (необязательно)">
+    <button type="submit">Добавить</button>
+</form>
+<h2>Список</h2>
+<table>
+    <tr><th>Магазин</th><th>Промокод</th><th>Описание</th><th></th></tr>
+    {% for p in promos %}
+    <tr>
+        <td>{{ p['store'] }}</td>
+        <td><code>{{ p['promocode'] }}</code></td>
+        <td>{{ p['description'] or '' }}</td>
+        <td><a href="/admin/promocodes/delete/{{ p['id'] }}" style="color:red;">Удалить</a></td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}
