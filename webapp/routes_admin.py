@@ -2,37 +2,175 @@
 import os
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Template
 from services.db import get_db
 from webapp.auth import admin_required, create_admin_session, delete_admin_session, verify_admin_session
 from webapp.dependencies import get_bot
 
 router = APIRouter()
-TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), 'templates')
-env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+
+# ---------- шаблоны как строки ----------
+BASE_TEMPLATE = '''<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}AutoPost Bot{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="dark-theme">
+    <nav>
+        <a href="/admin/dashboard">Админ-панель</a> |
+        <a href="/admin/broadcast">Рассылка</a> |
+        <a href="/admin/promocodes">Промокоды</a> |
+        <a href="/admin/store_delivery">Доставка</a> |
+        <a href="/admin/logout" style="color: #ff4444;">Выйти</a>
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>'''
+
+LOGIN_TEMPLATE = '''<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Вход в админку</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="dark-theme">
+    <div class="container">
+        <h1>Вход</h1>
+        {% if error %}<p class="error">{{ error }}</p>{% endif %}
+        <form method="post" action="/admin/login">
+            <input type="text" name="username" placeholder="Логин" required><br>
+            <input type="password" name="password" placeholder="Пароль" required><br>
+            <button type="submit">Войти</button>
+        </form>
+    </div>
+</body>
+</html>'''
+
+DASHBOARD_TEMPLATE = '''{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+{% block content %}
+<h1>Общая статистика</h1>
+<ul>
+    <li>SaaS клиентов: {{ saas }}</li>
+    <li>Блогеров: {{ bloggers }}</li>
+    <li>Постов опубликовано: {{ posts }}</li>
+    <li>Транзакций: {{ tx }}</li>
+    <li>Баланс пользователей: {{ balance }} ₽</li>
+</ul>
+{% endblock %}'''
+
+BROADCAST_TEMPLATE = '''{% extends "base.html" %}
+{% block title %}Рассылка{% endblock %}
+{% block content %}
+<h1>📣 Массовая рассылка</h1>
+{% if message %}<p style="color: lightgreen;">{{ message }}</p>{% endif %}
+<form method="post" action="/admin/broadcast">
+    <textarea name="text" rows="5" placeholder="Текст сообщения..." required></textarea><br>
+    <select name="role">
+        <option value="all">Всем пользователям</option>
+        <option value="saas">Только SaaS</option>
+        <option value="blogger">Только блогерам</option>
+    </select><br>
+    <button type="submit">Отправить</button>
+</form>
+{% endblock %}'''
+
+PROMOCODES_TEMPLATE = '''{% extends "base.html" %}
+{% block title %}Управление промокодами{% endblock %}
+{% block content %}
+<h1>🎟 Промокоды</h1>
+<h2>Добавить</h2>
+<form method="post" action="/admin/promocodes/add">
+    <input name="store" placeholder="Магазин (название)" required>
+    <input name="promocode" placeholder="Промокод" required>
+    <input name="description" placeholder="Описание (необязательно)">
+    <button type="submit">Добавить</button>
+</form>
+<h2>Список</h2>
+<table>
+    <tr><th>Магазин</th><th>Промокод</th><th>Описание</th><th></th></tr>
+    {% for p in promos %}
+    <tr>
+        <td>{{ p['store'] }}</td>
+        <td><code>{{ p['promocode'] }}</code></td>
+        <td>{{ p['description'] or '' }}</td>
+        <td><a href="/admin/promocodes/delete/{{ p['id'] }}" style="color:red;">Удалить</a></td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}'''
+
+STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
+{% block title %}Информация о доставке{% endblock %}
+{% block content %}
+<h1>🚚 Доставка</h1>
+<h2>Обновить данные</h2>
+<form method="post" action="/admin/store_delivery/update">
+    <input name="store" placeholder="Магазин" required>
+    <input name="delivery_text" placeholder="Условия доставки" required>
+    <button type="submit">Сохранить</button>
+</form>
+<h2>Текущие данные</h2>
+<table>
+    <tr><th>Магазин</th><th>Условия</th></tr>
+    {% for d in deliveries %}
+    <tr>
+        <td>{{ d['store'] }}</td>
+        <td>{{ d['delivery_text'] }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}'''
+
+# ---------- рендеринг из строк ----------
+from jinja2 import Environment, BaseLoader, TemplateNotFound
+
+# Своё окружение, умеющее "загружать" шаблоны из нашего словаря
+TEMPLATES = {
+    "base.html": BASE_TEMPLATE,
+    "login.html": LOGIN_TEMPLATE,
+    "admin_dashboard.html": DASHBOARD_TEMPLATE,
+    "admin_broadcast.html": BROADCAST_TEMPLATE,
+    "admin_promocodes.html": PROMOCODES_TEMPLATE,
+    "admin_store_delivery.html": STORE_DELIVERY_TEMPLATE,
+}
+
+class DictLoader(BaseLoader):
+    def __init__(self, mapping):
+        self.mapping = mapping
+    def get_source(self, environment, template):
+        if template not in self.mapping:
+            raise TemplateNotFound(template)
+        return self.mapping[template], None, lambda: True
+
+env = Environment(loader=DictLoader(TEMPLATES))
 
 def render(template_name: str, **kwargs):
     template = env.get_template(template_name)
     return HTMLResponse(template.render(**kwargs))
 
-# ---------- Логин (без меню) ----------
+# ---------- эндпоинты ----------
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    # Если уже залогинен – перекинуть на дашборд
     token = request.cookies.get("admin_session")
     if token and verify_admin_session(token):
         return RedirectResponse(url="/admin/dashboard", status_code=303)
     return render("login.html")
 
 @router.post("/login")
-async def login(response_class=HTMLResponse, request: Request = None, username: str = Form(...), password: str = Form(...)):
+async def login(request: Request, username: str = Form(...), password: str = Form(...)):
     from config import ADMIN_PASSWORD
     if username == "admin" and password == ADMIN_PASSWORD:
         token = create_admin_session()
         resp = RedirectResponse(url="/admin/dashboard", status_code=303)
         resp.set_cookie(key="admin_session", value=token, httponly=True, max_age=86400)
         return resp
-    return render("login.html", error="Invalid credentials")
+    return render("login.html", error="Неверный логин или пароль")
 
 @router.get("/logout")
 async def logout(request: Request):
@@ -43,20 +181,18 @@ async def logout(request: Request):
     resp.delete_cookie("admin_session")
     return resp
 
-# ---------- Защищённые страницы ----------
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: bool = Depends(admin_required)):
     conn = get_db()
     try:
-        saas_count = conn.execute("SELECT COUNT(*) FROM users WHERE role='saas'").fetchone()[0]
-        blogger_count = conn.execute("SELECT COUNT(*) FROM users WHERE role='blogger'").fetchone()[0]
-        total_posts = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published'").fetchone()[0]
-        total_tx = conn.execute("SELECT COUNT(*) FROM admitad_transactions").fetchone()[0]
-        total_balance = conn.execute("SELECT SUM(balance_available) FROM users").fetchone()[0] or 0
+        saas = conn.execute("SELECT COUNT(*) FROM users WHERE role='saas'").fetchone()[0]
+        bloggers = conn.execute("SELECT COUNT(*) FROM users WHERE role='blogger'").fetchone()[0]
+        posts = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published'").fetchone()[0]
+        tx = conn.execute("SELECT COUNT(*) FROM admitad_transactions").fetchone()[0]
+        balance = conn.execute("SELECT SUM(balance_available) FROM users").fetchone()[0] or 0
     finally:
         conn.close()
-    return render("admin_dashboard.html", saas=saas_count, bloggers=blogger_count,
-                  posts=total_posts, tx=total_tx, balance=total_balance)
+    return render("admin_dashboard.html", saas=saas, bloggers=bloggers, posts=posts, tx=tx, balance=balance)
 
 @router.get("/broadcast", response_class=HTMLResponse)
 async def broadcast_form(request: Request, _: bool = Depends(admin_required)):
