@@ -1,9 +1,12 @@
 # webapp/routes_admin.py
-from fastapi import APIRouter, Request, Form, Depends
+from fastapi import APIRouter, Request, Form, Depends, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from jinja2 import Environment, BaseLoader, TemplateNotFound
 from services.db import get_db
-from webapp.auth import admin_required, create_admin_session, delete_admin_session, verify_admin_session
+from webapp.auth import (
+    admin_required, create_admin_session, delete_admin_session,
+    verify_admin_session, verify_admin_token
+)
 from webapp.dependencies import get_bot
 
 router = APIRouter()
@@ -19,6 +22,7 @@ nav a:hover { text-decoration: underline; }
 button { background: #ff4444; color: #fff; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; }
 input, textarea, select { background: #333; color: #ccc; border: 1px solid #555; padding: 5px; margin: 5px 0; border-radius: 3px; }
 .error { color: #ff4444; }
+.success { color: lightgreen; }
 table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 th, td { padding: 5px; border-bottom: 1px solid #333; text-align: left; }
 th { background: #222; }
@@ -49,10 +53,7 @@ LOGIN_TEMPLATE = '''<!DOCTYPE html>
 <div class="container">
     <h1>Вход</h1>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
-    <form method="post" action="/admin/login">
-        <input type="password" name="password" placeholder="Пароль" required><br>
-        <button type="submit">Войти</button>
-    </form>
+    <p>Войдите по одноразовой ссылке из бота (команда /admin).</p>
 </div>
 </body>
 </html>'''
@@ -74,7 +75,7 @@ BROADCAST_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Рассылка{% endblock %}
 {% block content %}
 <h1>📣 Массовая рассылка</h1>
-{% if message %}<p style="color: lightgreen;">{{ message }}</p>{% endif %}
+{% if message %}<p class="success">{{ message }}</p>{% endif %}
 <form method="post" action="/admin/broadcast">
     <textarea name="text" rows="5" placeholder="Текст сообщения..." required></textarea><br>
     <select name="role">
@@ -133,7 +134,7 @@ STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
 </table>
 {% endblock %}'''
 
-# ---------- Загрузчик шаблонов из словаря ----------
+# ---------- Загрузчик шаблонов ----------
 class DictLoader(BaseLoader):
     def __init__(self, mapping):
         self.mapping = mapping
@@ -157,35 +158,40 @@ def render(template_name: str, **kwargs):
     template = env.get_template(template_name)
     return HTMLResponse(template.render(**kwargs))
 
-# ---------- Эндпоинт для CSS ----------
+# ---------- Эндпоинт CSS ----------
 @router.get("/static/css/style.css", include_in_schema=False)
 async def style_css():
     return Response(content=CSS_CONTENT, media_type="text/css")
 
-# ---------- Аутентификация ----------
+# ---------- Логин через токен ----------
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    token = request.cookies.get("admin_session")
-    if token and verify_admin_session(token):
+async def login_page(token: str = Query(None), request: Request = None):
+    # Если уже есть сессия — сразу в дашборд
+    session_token = request.cookies.get("admin_session")
+    if session_token and verify_admin_session(session_token):
         return RedirectResponse(url="/admin/dashboard", status_code=303)
-    return render("login.html")
 
-@router.post("/login")
-async def login(request: Request, password: str = Form(...)):
-    from config import ADMIN_PASSWORD
-    if password == ADMIN_PASSWORD:
-        token = create_admin_session()
-        resp = RedirectResponse(url="/admin/dashboard", status_code=303)
-        resp.set_cookie(
-            key="admin_session",
-            value=token,
-            httponly=True,
-            max_age=86400,
-            secure=True,          # важно для HTTPS
-            samesite='lax'
-        )
-        return resp
-    return render("login.html", error="Неверный пароль")
+    # Если передан токен входа
+    if token:
+        user_id = verify_admin_token(token)
+        if user_id:
+            # Создаём сессию и редиректим на дашборд
+            session = create_admin_session(user_id)
+            resp = RedirectResponse(url="/admin/dashboard", status_code=303)
+            resp.set_cookie(
+                key="admin_session",
+                value=session,
+                httponly=True,
+                max_age=86400,
+                secure=True,
+                samesite='lax'
+            )
+            return resp
+        else:
+            return render("login.html", error="Неверный или просроченный токен. Получите новую ссылку в боте.")
+
+    # Без токена и без сессии — показываем страницу входа
+    return render("login.html")
 
 @router.get("/logout")
 async def logout(request: Request):
@@ -198,7 +204,7 @@ async def logout(request: Request):
 
 # ---------- Защищённые страницы ----------
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, _: bool = Depends(admin_required)):
+async def dashboard(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
     try:
         saas = conn.execute("SELECT COUNT(*) FROM users WHERE role='saas'").fetchone()[0]
@@ -211,12 +217,12 @@ async def dashboard(request: Request, _: bool = Depends(admin_required)):
     return render("admin_dashboard.html", saas=saas, bloggers=bloggers, posts=posts, tx=tx, balance=balance)
 
 @router.get("/broadcast", response_class=HTMLResponse)
-async def broadcast_form(request: Request, _: bool = Depends(admin_required)):
+async def broadcast_form(request: Request, _: int = Depends(admin_required)):
     return render("admin_broadcast.html")
 
 @router.post("/broadcast", response_class=HTMLResponse)
 async def broadcast_send(request: Request, text: str = Form(...), role: str = Form("all"),
-                         _: bool = Depends(admin_required)):
+                         _: int = Depends(admin_required)):
     bot = request.app.state.bot
     conn = get_db()
     try:
@@ -236,7 +242,7 @@ async def broadcast_send(request: Request, text: str = Form(...), role: str = Fo
         conn.close()
 
 @router.get("/promocodes", response_class=HTMLResponse)
-async def promocodes_list(request: Request, _: bool = Depends(admin_required)):
+async def promocodes_list(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
     try:
         promos = conn.execute("SELECT * FROM store_promocodes ORDER BY store, promocode").fetchall()
@@ -246,7 +252,7 @@ async def promocodes_list(request: Request, _: bool = Depends(admin_required)):
 
 @router.post("/promocodes/add", response_class=HTMLResponse)
 async def promocode_add(store: str = Form(...), promocode: str = Form(...), description: str = Form(""),
-                        _: bool = Depends(admin_required)):
+                        _: int = Depends(admin_required)):
     conn = get_db()
     try:
         conn.execute("INSERT INTO store_promocodes (store, promocode, description) VALUES (?, ?, ?)",
@@ -257,7 +263,7 @@ async def promocode_add(store: str = Form(...), promocode: str = Form(...), desc
     return RedirectResponse(url="/admin/promocodes", status_code=303)
 
 @router.get("/promocodes/delete/{id}")
-async def promocode_delete(id: int, _: bool = Depends(admin_required)):
+async def promocode_delete(id: int, _: int = Depends(admin_required)):
     conn = get_db()
     try:
         conn.execute("DELETE FROM store_promocodes WHERE id=?", (id,))
@@ -267,7 +273,7 @@ async def promocode_delete(id: int, _: bool = Depends(admin_required)):
     return RedirectResponse(url="/admin/promocodes", status_code=303)
 
 @router.get("/store_delivery", response_class=HTMLResponse)
-async def store_delivery_list(request: Request, _: bool = Depends(admin_required)):
+async def store_delivery_list(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
     try:
         deliveries = conn.execute("SELECT * FROM store_delivery ORDER BY store").fetchall()
@@ -277,7 +283,7 @@ async def store_delivery_list(request: Request, _: bool = Depends(admin_required
 
 @router.post("/store_delivery/update", response_class=HTMLResponse)
 async def store_delivery_update(store: str = Form(...), delivery_text: str = Form(...),
-                                _: bool = Depends(admin_required)):
+                                _: int = Depends(admin_required)):
     conn = get_db()
     try:
         conn.execute("INSERT OR REPLACE INTO store_delivery (store, delivery_text) VALUES (?, ?)",
