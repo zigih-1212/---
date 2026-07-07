@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
 from services.db import get_db
-from webapp.auth import verify_admin
+from webapp.auth import admin_required
 from webapp.dependencies import get_bot
 
 router = APIRouter()
@@ -15,6 +15,7 @@ def render(template_name: str, **kwargs):
     template = env.get_template(template_name)
     return HTMLResponse(template.render(**kwargs))
 
+# Страница входа (без защиты)
 @router.get("/login", response_class=HTMLResponse)
 async def login_page():
     return render("login.html")
@@ -24,13 +25,12 @@ async def login(username: str = Form(...), password: str = Form(...)):
     from config import ADMIN_PASSWORD
     if username == "admin" and password == ADMIN_PASSWORD:
         resp = RedirectResponse(url="/admin/dashboard", status_code=303)
-        # Упрощённо: не используем сессии, только проверка
         return resp
     return render("login.html", error="Invalid credentials")
 
+# Все страницы ниже требуют авторизации
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard():
-    # Собираем общую статистику
+async def dashboard(username: str = Depends(admin_required)):
     conn = get_db()
     try:
         saas_count = conn.execute("SELECT COUNT(*) FROM users WHERE role='saas'").fetchone()[0]
@@ -44,11 +44,12 @@ async def dashboard():
                   posts=total_posts, tx=total_tx, balance=total_balance)
 
 @router.get("/broadcast", response_class=HTMLResponse)
-async def broadcast_form():
+async def broadcast_form(username: str = Depends(admin_required)):
     return render("admin_broadcast.html")
 
 @router.post("/broadcast", response_class=HTMLResponse)
-async def broadcast_send(request: Request, text: str = Form(...), role: str = Form("all")):
+async def broadcast_send(request: Request, text: str = Form(...), role: str = Form("all"),
+                         username: str = Depends(admin_required)):
     bot = request.app.state.bot
     conn = get_db()
     try:
@@ -68,17 +69,17 @@ async def broadcast_send(request: Request, text: str = Form(...), role: str = Fo
         conn.close()
 
 @router.get("/promocodes", response_class=HTMLResponse)
-async def promocodes_list():
+async def promocodes_list(username: str = Depends(admin_required)):
     conn = get_db()
     try:
         promos = conn.execute("SELECT * FROM store_promocodes ORDER BY store, promocode").fetchall()
-        stores = conn.execute("SELECT DISTINCT store FROM store_promocodes").fetchall()
     finally:
         conn.close()
-    return render("admin_promocodes.html", promos=promos, stores=stores)
+    return render("admin_promocodes.html", promos=promos)
 
 @router.post("/promocodes/add", response_class=HTMLResponse)
-async def promocode_add(store: str = Form(...), promocode: str = Form(...), description: str = Form("")):
+async def promocode_add(store: str = Form(...), promocode: str = Form(...), description: str = Form(""),
+                        username: str = Depends(admin_required)):
     conn = get_db()
     try:
         conn.execute("INSERT INTO store_promocodes (store, promocode, description) VALUES (?, ?, ?)",
@@ -89,7 +90,7 @@ async def promocode_add(store: str = Form(...), promocode: str = Form(...), desc
     return RedirectResponse(url="/admin/promocodes", status_code=303)
 
 @router.get("/promocodes/delete/{id}")
-async def promocode_delete(id: int):
+async def promocode_delete(id: int, username: str = Depends(admin_required)):
     conn = get_db()
     try:
         conn.execute("DELETE FROM store_promocodes WHERE id=?", (id,))
@@ -99,17 +100,17 @@ async def promocode_delete(id: int):
     return RedirectResponse(url="/admin/promocodes", status_code=303)
 
 @router.get("/store_delivery", response_class=HTMLResponse)
-async def store_delivery_list():
+async def store_delivery_list(username: str = Depends(admin_required)):
     conn = get_db()
     try:
         deliveries = conn.execute("SELECT * FROM store_delivery ORDER BY store").fetchall()
-        stores = conn.execute("SELECT DISTINCT store FROM STORE_DELIVERY").fetchall()
     finally:
         conn.close()
-    return render("admin_store_delivery.html", deliveries=deliveries, stores=stores)
+    return render("admin_store_delivery.html", deliveries=deliveries)
 
 @router.post("/store_delivery/update", response_class=HTMLResponse)
-async def store_delivery_update(store: str = Form(...), delivery_text: str = Form(...)):
+async def store_delivery_update(store: str = Form(...), delivery_text: str = Form(...),
+                                username: str = Depends(admin_required)):
     conn = get_db()
     try:
         conn.execute("INSERT OR REPLACE INTO store_delivery (store, delivery_text) VALUES (?, ?)",
