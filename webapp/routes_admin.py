@@ -316,6 +316,11 @@ async def store_delivery_list(request: Request, _: bool = Depends(admin_required
         conn.close()
     return render("admin_store_delivery.html", deliveries=deliveries)
 
+@router.get("/static/css/style.css", include_in_schema=False)
+async def style_css():
+    from fastapi.responses import Response
+    return Response(content=CSS_CONTENT, media_type="text/css")
+
 @router.post("/store_delivery/update", response_class=HTMLResponse)
 async def store_delivery_update(store: str = Form(...), delivery_text: str = Form(...),
                                 _: bool = Depends(admin_required)):
