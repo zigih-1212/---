@@ -1,1 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Моя статистика{% endblock %}
+{% block content %}
+<h1>📊 Статистика</h1>
+<div>
+    <canvas id="postsChart" width="400" height="200"></canvas>
+</div>
+<div id="balance-info">Загрузка...</div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(async function() {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (!token) { document.body.innerHTML = 'Токен не указан'; return; }
+
+    const resp = await fetch(`/my-stats/data?token=${token}`);
+    const data = await resp.json();
+
+    // График постов по дням
+    const ctx = document.getElementById('postsChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.labels,
+            datasets: [{
+                label: 'Постов за день',
+                data: data.counts,
+                borderColor: '#ff4444',
+                backgroundColor: 'rgba(255,68,68,0.1)',
+                fill: true,
+            }]
+        },
+        options: {
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+
+    document.getElementById('balance-info').innerHTML = `
+        <p>💰 Доступно к выводу: <b>${data.balance_available.toFixed(2)} ₽</b></p>
+        <p>⏳ В ожидании: <b>${data.balance_pending.toFixed(2)} ₽</b></p>
+    `;
+})();
+</script>
+{% endblock %}
