@@ -1,4 +1,5 @@
 # webapp/routes_admin.py
+import os
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
@@ -7,7 +8,8 @@ from webapp.auth import verify_admin
 from webapp.dependencies import get_bot
 
 router = APIRouter()
-env = Environment(loader=FileSystemLoader("webapp/templates"))
+TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), 'templates')
+env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
 
 def render(template_name: str, **kwargs):
     template = env.get_template(template_name)
