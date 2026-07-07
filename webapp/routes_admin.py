@@ -9,6 +9,63 @@ from webapp.dependencies import get_bot
 
 router = APIRouter()
 
+CSS_CONTENT = '''body.dark-theme {
+    background-color: #1a1a1a;
+    color: #ccc;
+    font-family: sans-serif;
+    margin: 0;
+    padding: 0;
+}
+nav {
+    background: #111;
+    padding: 10px;
+}
+nav a {
+    color: #ff4444;
+    margin-right: 15px;
+    text-decoration: none;
+}
+nav a:hover {
+    text-decoration: underline;
+}
+.container {
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px;
+}
+button {
+    background: #ff4444;
+    color: #fff;
+    border: none;
+    padding: 8px 16px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+input, textarea, select {
+    background: #333;
+    color: #ccc;
+    border: 1px solid #555;
+    padding: 5px;
+    margin: 5px 0;
+    border-radius: 3px;
+}
+.error {
+    color: #ff4444;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+th, td {
+    padding: 5px;
+    border-bottom: 1px solid #333;
+    text-align: left;
+}
+th {
+    background: #222;
+}
+'''
 # ---------- шаблоны как строки ----------
 BASE_TEMPLATE = '''<!DOCTYPE html>
 <html lang="ru">
