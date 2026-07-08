@@ -499,7 +499,20 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         logger.error(f"Ошибка проверки админки в {channel_id}: {e}")
         return False
 
-
+@router.callback_query(F.data == "menu:webstats")
+async def cb_webstats(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    token = generate_user_token(user_id)
+    link = f"{WEBAPP_BASE_URL}/my-stats?token={token}"
+    await callback.message.answer(
+        f"📊 <a href='{link}'>Открыть статистику</a>\n\n"
+        "Ссылка действительна 24 часа.\n"
+        "Если вы не можете перейти, скопируйте адрес:\n"
+        f"<code>{link}</code>",
+        disable_web_page_preview=True,
+        parse_mode=ParseMode.HTML
+    )
+    await callback.answer()
 # =============================================================================
 # === КЛАВИАТУРЫ ==============================================================
 def kb_admin_panel() -> InlineKeyboardMarkup:
