@@ -30,6 +30,7 @@ from handlers.saas import router as saas_router
 from services.admitad import refill_admitad_catalogs, update_all_store_data_from_feed
 from webapp.auth import generate_admin_token
 from config import WEBAPP_ADMIN_URL
+from webapp.auth import generate_user_token
 print("DEBUG: main.py started", flush=True, file=sys.stderr)
 
 import httpx
