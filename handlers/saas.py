@@ -176,16 +176,84 @@ async def cb_toggle_store(callback: CallbackQuery):
     await callback.answer()
 
 @router.callback_query(F.data == "promo:activate")
-async def cb_promo_activate(callback: CallbackQuery):
+async def cb_promo_activate(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
-        "🎁 Введите промокод командой /promo КОД\n"
-        "Например: /promo TEST3",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
-        ])
+        "🎁 Введите промокод (просто отправьте код, без команды /promo):"
     )
+    await state.set_state(SaasStates.waiting_promocode)
     await callback.answer()
 
+@router.message(SaasStates.waiting_promocode)
+async def process_promocode_input(message: Message, state: FSMContext):
+    code = message.text.strip().upper()
+    logger.info(f"[PROMO] Пользователь {message.from_user.id} ввёл код через кнопку: {code}")
+
+    conn = get_db()
+    try:
+        # Ищем промокод без учёта регистра (приводим оба к верхнему)
+        promo = conn.execute(
+            "SELECT * FROM promocodes WHERE UPPER(code) = ?", (code,)
+        ).fetchone()
+        if not promo:
+            await message.answer("❌ Неверный или несуществующий промокод.")
+            await state.clear()
+            return
+
+        activation = conn.execute(
+            "SELECT * FROM promocode_activations WHERE UPPER(code) = ?", (code,)
+        ).fetchone()
+        if activation:
+            await message.answer("❌ Этот промокод уже использован.")
+            await state.clear()
+            return
+
+        channels = conn.execute(
+            "SELECT channel_id, channel_title FROM channels WHERE user_id = ? AND is_active = 1",
+            (message.from_user.id,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not channels:
+        await message.answer("❌ У вас нет подключённых каналов.")
+        await state.clear()
+        return
+
+    days = int(promo["days"])
+
+    if len(channels) == 1:
+        channel_id = channels[0]["channel_id"]
+        conn = get_db()
+        try:
+            conn.execute(
+                "INSERT INTO promocode_activations (code, user_id, channel_id) VALUES (?, ?, ?)",
+                (promo["code"], message.from_user.id, channel_id)  # сохраняем оригинальный код
+            )
+            new_until = datetime.now(timezone.utc) + timedelta(days=days)
+            conn.execute(
+                "UPDATE users SET subscription_until = ?, is_active = 1 WHERE user_id = ?",
+                (new_until.isoformat(), message.from_user.id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        await message.answer(f"✅ Промокод активирован!\nПодписка продлена на {days} дней.")
+    else:
+        # Несколько каналов – выбор (аналогично /promo)
+        await state.update_data(promocode=promo["code"], promo_days=days)
+        kb_rows = []
+        for ch in channels:
+            kb_rows.append([InlineKeyboardButton(
+                text=ch["channel_title"] or ch["channel_id"],
+                callback_data=f"promo_channel:{ch['channel_id']}"
+            )])
+        kb_rows.append([InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")])
+        await message.answer(
+            "🎯 Выберите канал для активации промокода:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
+        )
+
+    await state.clear()
 # ---------------------------------------------------------------------------
 # Galaxy Store – выбор города
 # ---------------------------------------------------------------------------
