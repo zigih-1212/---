@@ -13,6 +13,7 @@ def kb_cabinet_menu(role: str = "saas"):
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
             [InlineKeyboardButton(text="💰 Финансы", callback_data="menu:finance")],
+            [InlineKeyboardButton(text="💎 Тарифы", callback_data="menu:tariffs")],
             [InlineKeyboardButton(text="🎁 Активировать промокод", callback_data="promo:activate")],
             [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
             [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
