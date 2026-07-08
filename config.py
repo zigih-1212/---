@@ -37,6 +37,7 @@ ADMITAD_CLIENT_ID = os.getenv("ADMITAD_CLIENT_ID", "vQiCf6zVRa5E2MvG37HYWHHwb4uI
 ADMITAD_CLIENT_SECRET = os.getenv("ADMITAD_CLIENT_SECRET", "AsA0jCS7zq2O5k4ZAoMGKv7AokyXOE")
 WEBAPP_ADMIN_URL = os.getenv("WEBAPP_ADMIN_URL", "https://main-production-8221.up.railway.app/admin")
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://main-production-8221.up.railway.app")
+WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", "8000"))
 # --- Ночной режим ---
 def is_night_time() -> bool:
     now = datetime.datetime.now(tz=timezone(timedelta(hours=3)))
