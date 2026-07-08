@@ -28,9 +28,24 @@ import sys
 from keyboards.saas import kb_cabinet_menu, kb_tariffs, kb_payment_methods
 from handlers.saas import router as saas_router
 from services.admitad import refill_admitad_catalogs, update_all_store_data_from_feed
-from webapp.auth import generate_admin_token
-from config import WEBAPP_ADMIN_URL
-from webapp.auth import generate_user_token
+from webapp.auth import generate_admin_token, generate_user_token
+from config import (
+    settings, MIN_PAYOUT, PAYOUT_FIXED_FEE, PAYOUT_BANK_PCT, MAX_ACTIVE_PAYOUTS,
+    is_night_time, load_tariffs,
+    BOT_TOKEN, ADMIN_IDS, WEBAPP_ADMIN_URL, WEBAPP_BASE_URL, QUARANTINE_CHAT_ID,
+    DEEPINFRA_API_KEY, STARS_PROVIDER_TOKEN, WEBAPP_HOST, WEBAPP_PORT,
+    CARD_SBER, CARD_TBANK, CARD_TON, CARD_VISA_KG, DB_PATH
+)
+from services.saas_core import (
+    publish_post_with_fallback,
+    publish_from_catalog
+)
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from fastapi import FastAPI, Form, Request, HTTPException
+from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, PayoutStates
+from stats import get_saas_channels, get_saas_channel_stats_new, get_saas_overview, STAT_PERIODS
+from services.db import get_db
+
 print("DEBUG: main.py started", flush=True, file=sys.stderr)
 
 import httpx
@@ -58,26 +73,6 @@ from aiogram.types import (
     BotCommandScopeDefault,
     BotCommandScopeChat,
 )
-from config import (
-    settings, MIN_PAYOUT, PAYOUT_FIXED_FEE, PAYOUT_BANK_PCT, MAX_ACTIVE_PAYOUTS,
-    is_night_time, load_tariffs,
-    BOT_TOKEN, ADMIN_IDS, WEBAPP_ADMIN_URL, QUARANTINE_CHAT_ID,
-    DEEPINFRA_API_KEY, STARS_PROVIDER_TOKEN, WEBAPP_HOST, WEBAPP_PORT,
-    CARD_SBER, CARD_TBANK, CARD_TON, CARD_VISA_KG, DB_PATH
-)
-from services.saas_core import (
-    publish_post_with_fallback,
-    publish_from_catalog
-)
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, Form, Request, HTTPException
-from services.admitad import refill_admitad_catalogs, update_all_store_data_from_feed
-
-from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, PayoutStates
-from stats import get_saas_channels, get_saas_channel_stats_new, get_saas_overview, STAT_PERIODS
-print("DEBUG: all imports done", flush=True, file=sys.stderr)
-
-from services.db import get_db
 
 # =============================================================================
 # === LOGGING =================================================================
@@ -284,7 +279,7 @@ def init_db() -> None:
             FOREIGN KEY(category_id) REFERENCES product_categories(id)
         )
     """)
-# Создание таблицы gdeslon_catalog, если её ещё нет
+    # Создание таблицы gdeslon_catalog, если её ещё нет
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS gdeslon_catalog (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -333,97 +328,44 @@ def init_db() -> None:
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-# Уникальный индекс для предотвращения дубликатов
+    # Уникальный индекс для предотвращения дубликатов
     cursor.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_gdeslon_unique 
             ON gdeslon_catalog(user_id, sku)
     """)
     # Миграции
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN payout_card TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE posts ADD COLUMN target_channel_id TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE posts ADD COLUMN channel_id TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE channels ADD COLUMN max_posts_per_day INTEGER DEFAULT 25")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE tariffs ADD COLUMN max_channels INTEGER DEFAULT 5")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE tariffs ADD COLUMN max_posts_per_day INTEGER DEFAULT 25")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE tariffs ADD COLUMN max_categories INTEGER DEFAULT 3")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE tariffs ADD COLUMN min_cashback REAL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE tariffs ADD COLUMN max_cashback REAL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN tariff_id INTEGER")
-    except sqlite3.OperationalError:
-        pass
-    # Миграция: добавляем колонку source для gdeslon_catalog
-    try:
-        cursor.execute("ALTER TABLE gdeslon_catalog ADD COLUMN source TEXT DEFAULT 'gdeslon'")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE channels ADD COLUMN sub_id TEXT")
-    except sqlite3.OperationalError:
-        pass 
-    try:
-        cursor.execute("ALTER TABLE posts ADD COLUMN subid1 TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE posts ADD COLUMN direct_link TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN balance_pending REAL DEFAULT 0.0")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN balance_available REAL DEFAULT 0.0")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE admitad_transactions ADD COLUMN payment_status TEXT DEFAULT 'pending'")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN oferta_accepted INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE gdeslon_catalog ADD COLUMN old_price REAL")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE gdeslon_catalog ADD COLUMN discount_percent INTEGER")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN min_discount INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+    migrations = [
+        "ALTER TABLE users ADD COLUMN payout_card TEXT",
+        "ALTER TABLE posts ADD COLUMN target_channel_id TEXT",
+        "ALTER TABLE posts ADD COLUMN channel_id TEXT",
+        "ALTER TABLE channels ADD COLUMN max_posts_per_day INTEGER DEFAULT 25",
+        "ALTER TABLE tariffs ADD COLUMN max_channels INTEGER DEFAULT 5",
+        "ALTER TABLE tariffs ADD COLUMN max_posts_per_day INTEGER DEFAULT 25",
+        "ALTER TABLE tariffs ADD COLUMN max_categories INTEGER DEFAULT 3",
+        "ALTER TABLE tariffs ADD COLUMN min_cashback REAL DEFAULT 0",
+        "ALTER TABLE tariffs ADD COLUMN max_cashback REAL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN tariff_id INTEGER",
+        "ALTER TABLE gdeslon_catalog ADD COLUMN source TEXT DEFAULT 'gdeslon'",
+        "ALTER TABLE channels ADD COLUMN sub_id TEXT",
+        "ALTER TABLE posts ADD COLUMN subid1 TEXT",
+        "ALTER TABLE posts ADD COLUMN direct_link TEXT",
+        "ALTER TABLE users ADD COLUMN balance_pending REAL DEFAULT 0.0",
+        "ALTER TABLE users ADD COLUMN balance_available REAL DEFAULT 0.0",
+        "ALTER TABLE admitad_transactions ADD COLUMN payment_status TEXT DEFAULT 'pending'",
+        "ALTER TABLE users ADD COLUMN oferta_accepted INTEGER DEFAULT 0",
+        "ALTER TABLE gdeslon_catalog ADD COLUMN old_price REAL",
+        "ALTER TABLE gdeslon_catalog ADD COLUMN discount_percent INTEGER",
+        "ALTER TABLE users ADD COLUMN min_discount INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN stats_token TEXT",
+        "ALTER TABLE users ADD COLUMN stats_token_expires TIMESTAMP",
+        # Миграция для города в user_category_preferences
+        "ALTER TABLE user_category_preferences ADD COLUMN city TEXT",
+    ]
+    for mig in migrations:
+        try:
+            cursor.execute(mig)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
@@ -441,24 +383,7 @@ def log_admin_action(admin_id: int, action: str, details: str = ""):
         conn.commit()
     finally:
         conn.close()
-      
-def run_migrations():
-    conn = get_db()
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_category_preferences (
-                user_id INTEGER,
-                category_id INTEGER,
-                UNIQUE(user_id, category_id)
-            )
-        """)
-        cols = conn.execute("PRAGMA table_info(user_category_preferences)").fetchall()
-        if 'city' not in [c[1] for c in cols]:
-            conn.execute("ALTER TABLE user_category_preferences ADD COLUMN city TEXT")
-            conn.commit()
-    finally:
-        conn.close()
-      
+
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
@@ -629,6 +554,7 @@ async def cmd_start(message: Message, state: FSMContext):
             )
     finally:
         conn.close()
+
 # ---------------------------------------------------------------------------
 # /cabinet
 # ---------------------------------------------------------------------------
@@ -919,6 +845,7 @@ async def cb_webstats(callback: CallbackQuery):
         parse_mode=ParseMode.HTML
     )
     await callback.answer()
+
 # ---------------------------------------------------------------------------
 # Настройки
 # ---------------------------------------------------------------------------
@@ -1030,9 +957,7 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
         tg_chat_id = None
         tg_title = None
 
-        # Проверяем, переслано ли сообщение из канала
         if message.forward_origin:
-            # В aiogram 3 forward_origin может быть разных типов, нас интересует чат
             origin = message.forward_origin
             if hasattr(origin, 'chat'):
                 chat = origin.chat
@@ -1041,7 +966,6 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
                 channel_username = f"@{chat.username}" if chat.username else tg_chat_id
                 logger.info(f"Пользователь {user_id} переслал сообщение из канала {tg_chat_id}")
         else:
-            # Обработка текстового @username
             channel_username = message.text.strip()
             if channel_username.startswith("/"):
                 await message.answer("Пожалуйста, отправьте @username канала или перешлите сообщение из него.")
@@ -1053,7 +977,6 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
                 return
 
             logger.info(f"Пользователь {user_id} пытается добавить канал {channel_username}")
-            # Для @username нужно получить chat_id через get_chat
             try:
                 chat_info = await message.bot.get_chat(channel_username)
                 tg_chat_id = str(chat_info.id)
@@ -1063,7 +986,6 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
                 await message.answer("❌ Не удалось получить информацию о канале. Проверьте правильность @username.")
                 return
 
-        # Проверяем права бота в канале
         chat_identifier = channel_username if channel_username else tg_chat_id
         is_admin_ok = await check_bot_admin(message.bot, tg_chat_id if tg_chat_id else chat_identifier)
         if not is_admin_ok:
@@ -1074,10 +996,8 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
             )
             return
 
-        # Сохраняем в БД
         conn = get_db()
         try:
-            # Проверка лимита каналов
             user = conn.execute("SELECT tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
             if user and user["tariff_id"]:
                 tariff = conn.execute("SELECT max_channels FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
@@ -1102,7 +1022,6 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
         finally:
             conn.close()
 
-        # Успех
         display_name = channel_username if channel_username else tg_title
         await message.answer(
             f"✅ Канал <b>{html.escape(display_name)}</b> успешно добавлен!",
@@ -1350,13 +1269,11 @@ async def daily_report(bot: Bot):
             logger.error(f"Ошибка отправки ежедневного отчёта: {e}")
 
 async def send_subscription_reminders(bot: Bot):
-    """Напоминает пользователям, у которых подписка истекает ровно через 3 дня."""
     now_utc = datetime.now(timezone.utc)
     target_date = now_utc + timedelta(days=3)
     target_iso = target_date.strftime("%Y-%m-%d")
     conn = get_db()
     try:
-        # Ищем активных SaaS-пользователей, у которых дата подписки попадает в целевой день
         rows = conn.execute("""
             SELECT user_id FROM users
             WHERE role='saas'
@@ -1396,36 +1313,9 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
 # ---------------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------------
-def run_migrations():
-    import sqlite3
-    # Подключаемся к autopost.db — основная база SaaS
-    conn = sqlite3.connect("data/autopost.db")
-    try:
-        # Создаём таблицу, если её нет (уже с колонкой city)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_category_preferences (
-                user_id INTEGER,
-                category_id INTEGER,
-                city TEXT,
-                UNIQUE(user_id, category_id)
-            )
-        """)
-        # Проверяем, есть ли колонка city
-        cols = conn.execute("PRAGMA table_info(user_category_preferences)").fetchall()
-        col_names = [c[1] for c in cols]
-        if 'city' not in col_names:
-            conn.execute("ALTER TABLE user_category_preferences ADD COLUMN city TEXT")
-            conn.commit()
-            print("✅ Колонка city добавлена")
-        else:
-            print("✅ Колонка city уже существует")
-    finally:
-        conn.close()
-
 async def main() -> None:
     logger.info("=== AutoPost Bot + Web Admin Panel запускается ===")
     init_db()
-    run_migrations()
 
     bot = Bot(
         token=BOT_TOKEN,
@@ -1513,7 +1403,7 @@ async def backup_database_to_telegram(bot: Bot):
         )
         logger.info("Бэкап базы данных отправлен администратору")
     except Exception as e:
-        logger.error(f"Ошибка при отправке бэкапа: {e}")   
+        logger.error(f"Ошибка при отправке бэкапа: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
