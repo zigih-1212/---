@@ -92,6 +92,11 @@ class DictLoader(BaseLoader):
 
 env = Environment(loader=DictLoader({"base.html": BASE_TEMPLATE, "user_stats.html": USER_STATS_TEMPLATE}))
 
+@router.get("/static/css/style.css", include_in_schema=False)
+async def style_css():
+    from fastapi.responses import Response
+    return Response(content=CSS_CONTENT, media_type="text/css")
+
 @router.get("/", response_class=HTMLResponse)
 async def user_stats_page(token: str = Query(...)):
     get_user_id_from_token(token)  # проверим токен
