@@ -1,6 +1,8 @@
 # webapp/routes_admin.py
+import os
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Request, Form, Depends, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse
 from jinja2 import Environment, BaseLoader, TemplateNotFound
 from services.db import get_db
 from webapp.auth import (
@@ -8,236 +10,17 @@ from webapp.auth import (
     verify_admin_session, verify_admin_token
 )
 from webapp.dependencies import get_bot
+from webapp.templates import (
+    BASE_TEMPLATE, LOGIN_TEMPLATE, DASHBOARD_TEMPLATE, USERS_TEMPLATE,
+    USER_EDIT_TEMPLATE, POSTS_TEMPLATE, QUARANTINE_TEMPLATE, TARIFFS_TEMPLATE,
+    TARIFF_EDIT_TEMPLATE, BROADCAST_TEMPLATE, PROMOCODES_TEMPLATE,
+    STORE_DELIVERY_TEMPLATE, TEST_PROMOCODES_TEMPLATE, BULK_ACTIONS_TEMPLATE,
+    SETTINGS_TEMPLATE, AUDIT_TEMPLATE, REPORTS_TEMPLATE
+)
 
 router = APIRouter()
 
-# ---------- Встроенный CSS (современный дизайн) ----------
-CSS_CONTENT = '''
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a1a; color: #e0e0e0; display: flex; min-height: 100vh; }
-.sidebar { width: 250px; background: #111; padding: 30px 20px; display: flex; flex-direction: column; gap: 8px; }
-.sidebar a { color: #bbb; text-decoration: none; padding: 12px 16px; border-radius: 8px; font-weight: 500; transition: all 0.2s; }
-.sidebar a:hover, .sidebar a.active { background: #ff4444; color: #fff; }
-.main-content { flex: 1; padding: 40px; }
-.card { background: #222; border-radius: 16px; padding: 30px; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-h1 { color: #ff4444; margin-bottom: 20px; font-size: 2em; }
-h2 { color: #ddd; margin: 20px 0 10px; font-size: 1.5em; }
-button { background: #ff4444; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1em; cursor: pointer; transition: background 0.2s; }
-button:hover { background: #e03333; }
-input, textarea, select { background: #333; border: 1px solid #555; color: #ddd; padding: 12px; border-radius: 8px; width: 100%; margin-bottom: 15px; font-size: 1em; }
-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-th, td { padding: 12px; border-bottom: 1px solid #333; text-align: left; }
-th { background: #2a2a2a; color: #ff4444; }
-tr:hover { background: #2a2a2a; }
-.error { color: #ff4444; margin-bottom: 15px; }
-.success { color: #4caf50; margin-bottom: 15px; }
-.top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-.logout { background: transparent; border: 1px solid #ff4444; color: #ff4444; padding: 8px 20px; }
-.logout:hover { background: #ff4444; color: #fff; }
-'''
-
-# ---------- Шаблоны ----------
-BASE_TEMPLATE = '''<!DOCTYPE html>
-<html lang="ru">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% block title %}AutoPost Bot{% endblock %}</title>
-<link rel="stylesheet" href="/admin/static/css/style.css"></head>
-<body>
-<div class="sidebar">
-    <h2 style="color:#ff4444; margin-bottom:20px;">⚡ AutoPost</h2>
-    <a href="/admin/dashboard" class="{{ 'active' if active_page == 'dashboard' }}">📊 Дашборд</a>
-    <a href="/admin/broadcast" class="{{ 'active' if active_page == 'broadcast' }}">📣 Рассылка</a>
-    <a href="/admin/users" class="{{ 'active' if active_page == 'users' }}">👥 Пользователи</a>
-    <a href="/admin/promocodes" class="{{ 'active' if active_page == 'promocodes' }}">🎟 Купоны</a>
-    <a href="/admin/store_delivery" class="{{ 'active' if active_page == 'delivery' }}">🚚 Доставка</a>
-    <a href="/admin/test_promocodes" class="{{ 'active' if active_page == 'test_promo' }}">🎁 Промокоды (тест)</a>
-</div>
-<div class="main-content">
-    {% block content %}{% endblock %}
-</div>
-</body>
-</html>'''
-
-LOGIN_TEMPLATE = '''<!DOCTYPE html>
-<html lang="ru">
-<head><meta charset="UTF-8"><title>Вход в админку</title>
-<link rel="stylesheet" href="/admin/static/css/style.css"></head>
-<body style="justify-content:center; align-items:center; background:#1a1a1a;">
-<div class="card" style="width:400px; text-align:center;">
-    <h1>⚡ AutoPost</h1>
-    {% if error %}<p class="error">{{ error }}</p>{% endif %}
-    <p style="margin-bottom:20px;">Войдите по одноразовой ссылке из бота (<code>/admin</code>)</p>
-</div>
-</body>
-</html>'''
-
-DASHBOARD_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Дашборд{% endblock %}
-{% block content %}
-<div class="top-bar"><h1>📊 Дашборд</h1></div>
-<div class="card">
-    <h2>Общая статистика</h2>
-    <table>
-        <tr><td>SaaS клиентов</td><td><strong>{{ saas }}</strong></td></tr>
-        <tr><td>Блогеров</td><td><strong>{{ bloggers }}</strong></td></tr>
-        <tr><td>Постов опубликовано</td><td><strong>{{ posts }}</strong></td></tr>
-        <tr><td>Транзакций</td><td><strong>{{ tx }}</strong></td></tr>
-        <tr><td>Баланс пользователей</td><td><strong>{{ balance }} ₽</strong></td></tr>
-    </table>
-</div>
-{% endblock %}'''
-
-BROADCAST_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Рассылка{% endblock %}
-{% block content %}
-<h1>📣 Массовая рассылка</h1>
-<div class="card">
-    {% if message %}<p class="success">{{ message }}</p>{% endif %}
-    <form method="post" action="/admin/broadcast">
-        <textarea name="text" rows="5" placeholder="Текст сообщения..." required></textarea>
-        <select name="role">
-            <option value="all">Всем пользователям</option>
-            <option value="saas">Только SaaS</option>
-            <option value="blogger">Только блогерам</option>
-        </select>
-        <button type="submit">Отправить</button>
-    </form>
-</div>
-{% endblock %}'''
-
-USERS_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Пользователи{% endblock %}
-{% block content %}
-<h1>👥 Пользователи</h1>
-<div class="card">
-    <table>
-        <tr><th>ID</th><th>Роль</th><th>Подписка до</th><th>Тариф</th><th>Баланс</th><th>Действия</th></tr>
-        {% for u in users %}
-        <tr>
-            <td>{{ u['user_id'] }}</td>
-            <td>{{ u['role'] }}</td>
-            <td>{{ u['subscription_until'] or '—' }}</td>
-            <td>{{ u['tariff_name'] or '—' }}</td>
-            <td>{{ u['balance_available'] or 0 }} ₽</td>
-            <td>
-                <a href="/admin/users/edit/{{ u['user_id'] }}" style="color:#ff4444;">Изменить</a>
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-</div>
-{% endblock %}'''
-
-USER_EDIT_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Редактирование пользователя{% endblock %}
-{% block content %}
-<h1>✏️ Пользователь #{{ user['user_id'] }}</h1>
-<div class="card">
-    <form method="post" action="/admin/users/edit/{{ user['user_id'] }}">
-        <label>Роль:</label>
-        <select name="role">
-            <option value="saas" {{ 'selected' if user['role'] == 'saas' }}>SaaS</option>
-            <option value="blogger" {{ 'selected' if user['role'] == 'blogger' }}>Блогер</option>
-        </select>
-        <label>Подписка до (UTC, в формате ГГГГ-ММ-ДД ЧЧ:ММ):</label>
-        <input name="subscription_until" value="{{ user['subscription_until'] or '' }}" placeholder="2026-12-31 23:59">
-        <label>Тариф:</label>
-        <select name="tariff_id">
-            <option value="0" {{ 'selected' if not user['tariff_id'] }}>Без тарифа</option>
-            {% for t in tariffs %}
-            <option value="{{ t['id'] }}" {{ 'selected' if user['tariff_id'] == t['id'] }}>{{ t['name'] }}</option>
-            {% endfor %}
-        </select>
-        <label>Баланс доступный:</label>
-        <input name="balance_available" value="{{ user['balance_available'] or 0 }}" type="number" step="0.01">
-        <label>Баланс ожидающий:</label>
-        <input name="balance_pending" value="{{ user['balance_pending'] or 0 }}" type="number" step="0.01">
-        <button type="submit">Сохранить</button>
-    </form>
-</div>
-{% endblock %}'''
-
-PROMOCODES_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Купоны магазинов{% endblock %}
-{% block content %}
-<h1>🎟 Купоны магазинов</h1>
-<div class="card">
-    <h2>Добавить</h2>
-    <form method="post" action="/admin/promocodes/add">
-        <input name="store" placeholder="Магазин (название)" required>
-        <input name="promocode" placeholder="Промокод" required>
-        <input name="description" placeholder="Описание (необязательно)">
-        <button type="submit">Добавить</button>
-    </form>
-</div>
-<div class="card">
-    <h2>Список</h2>
-    <table>
-        <tr><th>Магазин</th><th>Промокод</th><th>Описание</th><th></th></tr>
-        {% for p in promos %}
-        <tr>
-            <td>{{ p['store'] }}</td>
-            <td><code>{{ p['promocode'] }}</code></td>
-            <td>{{ p['description'] or '' }}</td>
-            <td><a href="/admin/promocodes/delete/{{ p['id'] }}" style="color:red;">Удалить</a></td>
-        </tr>
-        {% endfor %}
-    </table>
-</div>
-{% endblock %}'''
-
-STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Доставка{% endblock %}
-{% block content %}
-<h1>🚚 Доставка</h1>
-<div class="card">
-    <h2>Обновить данные</h2>
-    <form method="post" action="/admin/store_delivery/update">
-        <input name="store" placeholder="Магазин" required>
-        <input name="delivery_text" placeholder="Условия доставки" required>
-        <button type="submit">Сохранить</button>
-    </form>
-</div>
-<div class="card">
-    <h2>Текущие данные</h2>
-    <table>
-        <tr><th>Магазин</th><th>Условия</th></tr>
-        {% for d in deliveries %}
-        <tr><td>{{ d['store'] }}</td><td>{{ d['delivery_text'] }}</td></tr>
-        {% endfor %}
-    </table>
-</div>
-{% endblock %}'''
-
-TEST_PROMOCODES_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Промокоды (тест){% endblock %}
-{% block content %}
-<h1>🎁 Промокоды (тестовый период)</h1>
-<div class="card">
-    <h2>Добавить</h2>
-    <form method="post" action="/admin/test_promocodes/add">
-        <input name="code" placeholder="Код (напр. TEST3)" required>
-        <input name="days" placeholder="Дней (напр. 3)" required type="number">
-        <button type="submit">Создать</button>
-    </form>
-</div>
-<div class="card">
-    <h2>Список</h2>
-    <table>
-        <tr><th>Код</th><th>Дней</th><th>Использован?</th><th></th></tr>
-        {% for p in promos %}
-        <tr>
-            <td><code>{{ p['code'] }}</code></td>
-            <td>{{ p['days'] }}</td>
-            <td>{{ 'Да' if p['used'] else 'Нет' }}</td>
-            <td><a href="/admin/test_promocodes/delete/{{ p['id'] }}" style="color:red;">Удалить</a></td>
-        </tr>
-        {% endfor %}
-    </table>
-</div>
-{% endblock %}'''
-
-# ---------- Загрузчик шаблонов из словаря ----------
+# ---------- Загрузчик шаблонов ----------
 class DictLoader(BaseLoader):
     def __init__(self, mapping):
         self.mapping = mapping
@@ -250,12 +33,20 @@ TEMPLATES = {
     "base.html": BASE_TEMPLATE,
     "login.html": LOGIN_TEMPLATE,
     "admin_dashboard.html": DASHBOARD_TEMPLATE,
-    "admin_broadcast.html": BROADCAST_TEMPLATE,
     "admin_users.html": USERS_TEMPLATE,
     "admin_user_edit.html": USER_EDIT_TEMPLATE,
+    "admin_posts.html": POSTS_TEMPLATE,
+    "admin_quarantine.html": QUARANTINE_TEMPLATE,
+    "admin_tariffs.html": TARIFFS_TEMPLATE,
+    "admin_tariff_edit.html": TARIFF_EDIT_TEMPLATE,
+    "admin_broadcast.html": BROADCAST_TEMPLATE,
     "admin_promocodes.html": PROMOCODES_TEMPLATE,
     "admin_store_delivery.html": STORE_DELIVERY_TEMPLATE,
     "admin_test_promocodes.html": TEST_PROMOCODES_TEMPLATE,
+    "admin_bulk_actions.html": BULK_ACTIONS_TEMPLATE,
+    "admin_settings.html": SETTINGS_TEMPLATE,
+    "admin_audit.html": AUDIT_TEMPLATE,
+    "admin_reports.html": REPORTS_TEMPLATE,
 }
 
 env = Environment(loader=DictLoader(TEMPLATES))
@@ -264,11 +55,7 @@ def render(template_name: str, **kwargs):
     template = env.get_template(template_name)
     return HTMLResponse(template.render(**kwargs))
 
-# ---------- Эндпоинты ----------
-@router.get("/static/css/style.css", include_in_schema=False)
-async def style_css():
-    return Response(content=CSS_CONTENT, media_type="text/css")
-
+# ---------- Вход / Выход ----------
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, token: str = Query(None)):
     session_token = request.cookies.get("admin_session")
@@ -282,7 +69,7 @@ async def login_page(request: Request, token: str = Query(None)):
             resp.set_cookie(key="admin_session", value=session, httponly=True, max_age=86400, secure=True, samesite='lax')
             return resp
         else:
-            return render("login.html", error="Неверный или просроченный токен. Получите новую ссылку в боте.")
+            return render("login.html", error="Неверный или просроченный токен.")
     return render("login.html")
 
 @router.get("/logout")
@@ -294,51 +81,35 @@ async def logout(request: Request):
     resp.delete_cookie("admin_session")
     return resp
 
+# ---------- Дашборд ----------
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
     try:
-        saas = conn.execute("SELECT COUNT(*) FROM users WHERE role='saas'").fetchone()[0]
-        bloggers = conn.execute("SELECT COUNT(*) FROM users WHERE role='blogger'").fetchone()[0]
-        posts = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published'").fetchone()[0]
-        tx = conn.execute("SELECT COUNT(*) FROM admitad_transactions").fetchone()[0]
-        balance = conn.execute("SELECT SUM(balance_available) FROM users").fetchone()[0] or 0
+        active_saas = conn.execute("SELECT COUNT(*) FROM users WHERE role='saas' AND is_active=1").fetchone()[0]
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        posts_today = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published' AND DATE(published_at)=?", (today,)).fetchone()[0]
+        week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        posts_week = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published' AND published_at >= ?", (week_ago,)).fetchone()[0]
+        errors_today = conn.execute("SELECT COUNT(*) FROM posts WHERE status='error' AND DATE(created_at)=?", (today,)).fetchone()[0]
+        pending_payouts = conn.execute("SELECT COUNT(*) FROM payouts WHERE status='pending'").fetchone()[0]
+        last_users = conn.execute("SELECT user_id, role, created_at FROM users ORDER BY created_at DESC LIMIT 5").fetchall()
+        last_posts = conn.execute("SELECT id, channel_id, status, published_at, created_at FROM posts ORDER BY id DESC LIMIT 5").fetchall()
     finally:
         conn.close()
-    return render("admin_dashboard.html", saas=saas, bloggers=bloggers, posts=posts, tx=tx, balance=balance, active_page='dashboard')
+    return render("admin_dashboard.html",
+                  active_saas=active_saas, posts_today=posts_today, posts_week=posts_week,
+                  errors_today=errors_today, pending_payouts=pending_payouts,
+                  last_users=last_users, last_posts=last_posts, active_page='dashboard')
 
-@router.get("/broadcast", response_class=HTMLResponse)
-async def broadcast_form(request: Request, _: int = Depends(admin_required)):
-    return render("admin_broadcast.html", active_page='broadcast')
-
-@router.post("/broadcast", response_class=HTMLResponse)
-async def broadcast_send(request: Request, text: str = Form(...), role: str = Form("all"),
-                         _: int = Depends(admin_required)):
-    bot = request.app.state.bot
-    conn = get_db()
-    try:
-        users = conn.execute("SELECT user_id FROM users" if role == "all" else f"SELECT user_id FROM users WHERE role='{role}'").fetchall()
-        success = 0
-        for u in users:
-            try:
-                await bot.send_message(chat_id=u["user_id"], text=text)
-                success += 1
-            except:
-                pass
-        return render("admin_broadcast.html", message=f"Отправлено {success} из {len(users)}", active_page='broadcast')
-    finally:
-        conn.close()
-
-# ---------- Управление пользователями ----------
+# ---------- Пользователи ----------
 @router.get("/users", response_class=HTMLResponse)
 async def users_list(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
     try:
         users = conn.execute("""
             SELECT u.user_id, u.role, u.subscription_until, u.tariff_id, t.name as tariff_name, u.balance_available
-            FROM users u
-            LEFT JOIN tariffs t ON u.tariff_id = t.id
-            ORDER BY u.user_id
+            FROM users u LEFT JOIN tariffs t ON u.tariff_id = t.id ORDER BY u.user_id
         """).fetchall()
     finally:
         conn.close()
@@ -358,28 +129,141 @@ async def user_edit_form(user_id: int, request: Request, _: int = Depends(admin_
 
 @router.post("/users/edit/{user_id}", response_class=HTMLResponse)
 async def user_edit_save(user_id: int, request: Request,
-                         role: str = Form(...),
-                         subscription_until: str = Form(""),
-                         tariff_id: int = Form(0),
-                         balance_available: float = Form(0.0),
-                         balance_pending: float = Form(0.0),
-                         _: int = Depends(admin_required)):
+                         role: str = Form(...), subscription_until: str = Form(""),
+                         tariff_id: int = Form(0), balance_available: float = Form(0.0),
+                         balance_pending: float = Form(0.0), _: int = Depends(admin_required)):
     conn = get_db()
     try:
-        # Если дата пустая – ставим NULL
         sub_until = subscription_until if subscription_until else None
         conn.execute("""
-            UPDATE users
-            SET role = ?, subscription_until = ?, tariff_id = ?,
-                balance_available = ?, balance_pending = ?
-            WHERE user_id = ?
+            UPDATE users SET role=?, subscription_until=?, tariff_id=?,
+            balance_available=?, balance_pending=? WHERE user_id=?
         """, (role, sub_until, tariff_id, balance_available, balance_pending, user_id))
         conn.commit()
     finally:
         conn.close()
     return RedirectResponse(url="/admin/users", status_code=303)
 
-# ---------- Промокоды (магазинные) ----------
+# ---------- Посты ----------
+@router.get("/posts", response_class=HTMLResponse)
+async def posts_list(request: Request, status: str = "", user_id: str = "", _: int = Depends(admin_required)):
+    conn = get_db()
+    query = "SELECT id, user_id, channel_id, status, published_at, created_at FROM posts WHERE 1=1"
+    params = []
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    if user_id:
+        query += " AND user_id = ?"
+        params.append(user_id)
+    query += " ORDER BY id DESC LIMIT 100"
+    try:
+        posts = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+    return render("admin_posts.html", posts=posts, request=request, active_page='posts')
+
+# ---------- Карантин ----------
+@router.get("/quarantine", response_class=HTMLResponse)
+async def quarantine_list(request: Request, _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        posts = conn.execute("SELECT * FROM posts WHERE status='quarantine' ORDER BY id DESC").fetchall()
+    finally:
+        conn.close()
+    return render("admin_quarantine.html", posts=posts, active_page='quarantine')
+
+@router.post("/quarantine/approve/{post_id}", response_class=HTMLResponse)
+async def quarantine_approve(post_id: int, erid: str = Form(...), advertiser: str = Form(""), _: int = Depends(admin_required)):
+    conn = get_db()
+    conn.execute("UPDATE posts SET status='published', erid=?, advertiser=?, quarantine_reason=NULL WHERE id=?", (erid, advertiser, post_id))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/quarantine", status_code=303)
+
+@router.get("/quarantine/delete/{post_id}")
+async def quarantine_delete(post_id: int, _: int = Depends(admin_required)):
+    conn = get_db()
+    conn.execute("DELETE FROM posts WHERE id=?", (post_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/quarantine", status_code=303)
+
+# ---------- Тарифы ----------
+@router.get("/tariffs", response_class=HTMLResponse)
+async def tariffs_list(request: Request, _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        tariffs = conn.execute("SELECT * FROM tariffs ORDER BY id").fetchall()
+    finally:
+        conn.close()
+    return render("admin_tariffs.html", tariffs=tariffs, active_page='tariffs')
+
+@router.post("/tariffs/add", response_class=HTMLResponse)
+async def tariff_add(name: str = Form(...), days: int = Form(...), price_rub: float = Form(...),
+                     price_stars: int = Form(...), max_channels: int = Form(5),
+                     max_stores: int = Form(3), max_posts_per_day: int = Form(25),
+                     _: int = Depends(admin_required)):
+    conn = get_db()
+    conn.execute("INSERT INTO tariffs (name, days, price_rub, price_stars, max_channels, max_stores, max_posts_per_day, is_active) VALUES (?,?,?,?,?,?,?,1)",
+                 (name, days, price_rub, price_stars, max_channels, max_stores, max_posts_per_day))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/tariffs", status_code=303)
+
+@router.get("/tariffs/edit/{tariff_id}", response_class=HTMLResponse)
+async def tariff_edit_form(tariff_id: int, request: Request, _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        tariff = conn.execute("SELECT * FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
+        if not tariff:
+            return HTMLResponse("Тариф не найден", status_code=404)
+    finally:
+        conn.close()
+    return render("admin_tariff_edit.html", tariff=tariff, active_page='tariffs')
+
+@router.post("/tariffs/edit/{tariff_id}", response_class=HTMLResponse)
+async def tariff_edit_save(tariff_id: int, name: str = Form(...), days: int = Form(...),
+                           price_rub: float = Form(...), price_stars: int = Form(...),
+                           max_channels: int = Form(5), max_stores: int = Form(3),
+                           max_posts_per_day: int = Form(25), _: int = Depends(admin_required)):
+    conn = get_db()
+    conn.execute("UPDATE tariffs SET name=?, days=?, price_rub=?, price_stars=?, max_channels=?, max_stores=?, max_posts_per_day=? WHERE id=?",
+                 (name, days, price_rub, price_stars, max_channels, max_stores, max_posts_per_day, tariff_id))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/tariffs", status_code=303)
+
+@router.get("/tariffs/delete/{tariff_id}")
+async def tariff_delete(tariff_id: int, _: int = Depends(admin_required)):
+    conn = get_db()
+    conn.execute("DELETE FROM tariffs WHERE id=?", (tariff_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/tariffs", status_code=303)
+
+# ---------- Рассылка ----------
+@router.get("/broadcast", response_class=HTMLResponse)
+async def broadcast_form(request: Request, _: int = Depends(admin_required)):
+    return render("admin_broadcast.html", active_page='broadcast')
+
+@router.post("/broadcast", response_class=HTMLResponse)
+async def broadcast_send(request: Request, text: str = Form(...), role: str = Form("all"), _: int = Depends(admin_required)):
+    bot = request.app.state.bot
+    conn = get_db()
+    try:
+        users = conn.execute("SELECT user_id FROM users" if role == "all" else f"SELECT user_id FROM users WHERE role='{role}'").fetchall()
+        success = 0
+        for u in users:
+            try:
+                await bot.send_message(chat_id=u["user_id"], text=text)
+                success += 1
+            except: pass
+        return render("admin_broadcast.html", message=f"Отправлено {success} из {len(users)}", active_page='broadcast')
+    finally:
+        conn.close()
+
+# ---------- Купоны магазинов ----------
 @router.get("/promocodes", response_class=HTMLResponse)
 async def promocodes_list(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
@@ -390,10 +274,9 @@ async def promocodes_list(request: Request, _: int = Depends(admin_required)):
     return render("admin_promocodes.html", promos=promos, active_page='promocodes')
 
 @router.post("/promocodes/add", response_class=HTMLResponse)
-async def promocode_add(store: str = Form(...), promocode: str = Form(...), description: str = Form(""),
-                        _: int = Depends(admin_required)):
+async def promocode_add(store: str = Form(...), promocode: str = Form(...), description: str = Form(""), _: int = Depends(admin_required)):
     conn = get_db()
-    conn.execute("INSERT INTO store_promocodes (store, promocode, description) VALUES (?, ?, ?)", (store, promocode, description))
+    conn.execute("INSERT INTO store_promocodes (store, promocode, description) VALUES (?,?,?)", (store, promocode, description))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin/promocodes", status_code=303)
@@ -417,10 +300,9 @@ async def store_delivery_list(request: Request, _: int = Depends(admin_required)
     return render("admin_store_delivery.html", deliveries=deliveries, active_page='delivery')
 
 @router.post("/store_delivery/update", response_class=HTMLResponse)
-async def store_delivery_update(store: str = Form(...), delivery_text: str = Form(...),
-                                _: int = Depends(admin_required)):
+async def store_delivery_update(store: str = Form(...), delivery_text: str = Form(...), _: int = Depends(admin_required)):
     conn = get_db()
-    conn.execute("INSERT OR REPLACE INTO store_delivery (store, delivery_text) VALUES (?, ?)", (store, delivery_text))
+    conn.execute("INSERT OR REPLACE INTO store_delivery (store, delivery_text) VALUES (?,?)", (store, delivery_text))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin/store_delivery", status_code=303)
@@ -429,7 +311,7 @@ async def store_delivery_update(store: str = Form(...), delivery_text: str = For
 @router.get("/test_promocodes", response_class=HTMLResponse)
 async def test_promocodes_list(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
-    promos = conn.execute("SELECT id, code, days, (SELECT COUNT(*) FROM promocode_activations WHERE UPPER(code) = UPPER(p.code)) as used_count FROM promocodes p ORDER BY id").fetchall()
+    promos = conn.execute("SELECT id, code, days, (SELECT COUNT(*) FROM promocode_activations WHERE UPPER(code)=UPPER(p.code)) as used_count FROM promocodes p ORDER BY id").fetchall()
     formatted = [{"id": p["id"], "code": p["code"], "days": p["days"], "used": p["used_count"] > 0} for p in promos]
     conn.close()
     return render("admin_test_promocodes.html", promos=formatted, active_page='test_promo')
@@ -437,7 +319,7 @@ async def test_promocodes_list(request: Request, _: int = Depends(admin_required
 @router.post("/test_promocodes/add", response_class=HTMLResponse)
 async def test_promocode_add(code: str = Form(...), days: int = Form(...), _: int = Depends(admin_required)):
     conn = get_db()
-    conn.execute("INSERT INTO promocodes (code, days) VALUES (?, ?)", (code.upper(), days))
+    conn.execute("INSERT INTO promocodes (code, days) VALUES (?,?)", (code.upper(), days))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin/test_promocodes", status_code=303)
@@ -449,3 +331,74 @@ async def test_promocode_delete(id: int, _: int = Depends(admin_required)):
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin/test_promocodes", status_code=303)
+
+# ---------- Массовые действия ----------
+@router.get("/bulk-actions", response_class=HTMLResponse)
+async def bulk_actions_form(request: Request, _: int = Depends(admin_required)):
+    return render("admin_bulk_actions.html", active_page='bulk')
+
+@router.post("/bulk-actions/execute", response_class=HTMLResponse)
+async def bulk_actions_execute(request: Request, group: str = Form(...), action: str = Form(...),
+                               days: int = Form(7), _: int = Depends(admin_required)):
+    conn = get_db()
+    cond = ""
+    if group == "saas": cond = "WHERE role='saas'"
+    elif group == "blogger": cond = "WHERE role='blogger'"
+    elif group == "active": cond = "WHERE is_active=1"
+    elif group == "banned": cond = "WHERE is_active=0"
+    elif group == "expired": cond = "WHERE subscription_until < datetime('now')"
+    if action == "extend":
+        conn.execute(f"UPDATE users SET subscription_until = datetime(subscription_until, '+{days} days') {cond}")
+    elif action == "ban":
+        conn.execute(f"UPDATE users SET is_active=0 {cond}")
+    elif action == "unban":
+        conn.execute(f"UPDATE users SET is_active=1 {cond}")
+    elif action == "delete":
+        conn.execute(f"DELETE FROM users {cond}")
+    conn.commit()
+    count = conn.total_changes
+    conn.close()
+    return render("admin_bulk_actions.html", message=f"Выполнено. Затронуто строк: {count}", active_page='bulk')
+
+# ---------- Глобальные настройки ----------
+@router.get("/settings-edit", response_class=HTMLResponse)
+async def settings_edit_form(request: Request, _: int = Depends(admin_required)):
+    conn = get_db()
+    rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    settings = {r['key']: r['value'] for r in rows}
+    conn.close()
+    return render("admin_settings.html", settings=settings, active_page='settings')
+
+@router.post("/settings-edit/save", response_class=HTMLResponse)
+async def settings_edit_save(night_start: str = Form("23:00"), night_end: str = Form("08:00"),
+                             run_interval: str = Form("900"), min_payout: str = Form("2000"),
+                             payout_bank_pct: str = Form("0.043"), _: int = Depends(admin_required)):
+    conn = get_db()
+    for key, val in [("night_start", night_start), ("night_end", night_end), ("run_interval", run_interval),
+                     ("min_payout", min_payout), ("payout_bank_pct", payout_bank_pct)]:
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, val))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/settings-edit", status_code=303)
+
+# ---------- Аудит ----------
+@router.get("/audit", response_class=HTMLResponse)
+async def audit_list(request: Request, _: int = Depends(admin_required)):
+    conn = get_db()
+    audits = conn.execute("SELECT * FROM admin_audit ORDER BY id DESC LIMIT 200").fetchall()
+    conn.close()
+    return render("admin_audit.html", audits=audits, active_page='audit')
+
+# ---------- Отчёты ----------
+@router.get("/reports", response_class=HTMLResponse)
+async def reports_list(request: Request, _: int = Depends(admin_required)):
+    reports_dir = "/app/data/reports"
+    files = sorted(os.listdir(reports_dir), reverse=True) if os.path.exists(reports_dir) else []
+    return render("admin_reports.html", files=files, active_page='reports')
+
+@router.get("/reports/download/{fname}")
+async def reports_download(fname: str, _: int = Depends(admin_required)):
+    path = os.path.join("/app/data/reports", fname)
+    if os.path.isfile(path):
+        return FileResponse(path, media_type='text/csv', filename=fname)
+    return HTMLResponse("Файл не найден", status_code=404)
