@@ -5,21 +5,19 @@ from config import load_tariffs   # <-- уже не из main
 
 WEBAPP_ADMIN_URL: str = os.getenv("WEBAPP_ADMIN_URL", "")
 
-def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
-    if role == "saas":
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")],
-            [InlineKeyboardButton(text="🏪 Магазины", callback_data="menu:categories")],
-            [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")],
-            [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
-            [InlineKeyboardButton(text="📜 Оферта", callback_data="menu:oferta")],
-            [InlineKeyboardButton(text="💰 Финансы", callback_data="menu:finance")],
-            [InlineKeyboardButton(text="🎁 Активировать промокод", callback_data="promo:activate")],# ← новая кнопка
-            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
-            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
-            [InlineKeyboardButton(text="🎯 Фильтр скидок", callback_data="menu:discount_filter")]
-        ])
+def kb_cabinet_menu(role: str = "saas"):
+    buttons = [
+        [InlineKeyboardButton(text="🏪 Магазины", callback_data="menu:categories")],
+        [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
+        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
+        [InlineKeyboardButton(text="💰 Финансы", callback_data="menu:finance")],
+        [InlineKeyboardButton(text="🎁 Активировать промокод", callback_data="promo:activate")],
+        [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
+        [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
+        [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
     else:
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")],
@@ -28,6 +26,7 @@ def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
             [InlineKeyboardButton(text="💸 Вывод средств", callback_data="payout:request")],
         ])
+
 
 def kb_tariffs(traffic_source: str = "") -> InlineKeyboardMarkup:
     tariffs = load_tariffs()
