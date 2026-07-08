@@ -9,6 +9,10 @@ from datetime import datetime, timedelta, timezone
 
 router = APIRouter()
 
+CSS_CONTENT = '''body.dark-theme { background-color: #1a1a1a; color: #ccc; font-family: sans-serif; margin: 0; padding: 0; }
+.container { max-width: 1200px; margin: auto; padding: 20px; }
+h1 { color: #ff4444; }
+
 USER_STATS_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Моя статистика{% endblock %}
 {% block content %}
