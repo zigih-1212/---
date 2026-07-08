@@ -11,7 +11,7 @@ def kb_cabinet_menu(role: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")],
             [InlineKeyboardButton(text="🏪 Магазины", callback_data="menu:categories")],
             [InlineKeyboardButton(text="💎 Продлить подписку", callback_data="menu:tariffs")],
-            [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
+            [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
             [InlineKeyboardButton(text="📜 Оферта", callback_data="menu:oferta")],
             [InlineKeyboardButton(text="💰 Финансы", callback_data="menu:finance")],  # ← новая кнопка
             [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
