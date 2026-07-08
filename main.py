@@ -46,6 +46,24 @@ from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, Payout
 from stats import get_saas_channels, get_saas_channel_stats_new, get_saas_overview, STAT_PERIODS
 from services.db import get_db
 
+# ---------------------------------------------------------------------------
+# ВРЕМЕННЫЙ БЛОК АВТОЗАГРУЗКИ БАЗЫ С GOOGLE ДИСКА (если файла нет)
+# ---------------------------------------------------------------------------
+import urllib.request
+
+# Убедимся, что папка для базы существует
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+if not os.path.exists(DB_PATH):
+    FILE_ID = "1kSUBxay1h4IZoOn699ifcix7p021K8Wo"
+    url = f"https://drive.google.com/uc?export=download&id={FILE_ID}"
+    try:
+        urllib.request.urlretrieve(url, DB_PATH)
+        print("База данных загружена с Google Диска")
+    except Exception as e:
+        print("Ошибка загрузки базы:", e)
+# ---------------------------------------------------------------------------
+
 print("DEBUG: main.py started", flush=True, file=sys.stderr)
 
 import httpx
