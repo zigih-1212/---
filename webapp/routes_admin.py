@@ -11,37 +11,49 @@ from webapp.dependencies import get_bot
 
 router = APIRouter()
 
-# ---------- Встроенный CSS ----------
-CSS_CONTENT = '''body.dark-theme {
-    background-color: #1a1a1a; color: #ccc; font-family: sans-serif; margin: 0; padding: 0;
-}
-nav { background: #111; padding: 10px; }
-nav a { color: #ff4444; margin-right: 15px; text-decoration: none; }
-nav a:hover { text-decoration: underline; }
-.container { max-width: 1200px; margin: auto; padding: 20px; }
-button { background: #ff4444; color: #fff; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; }
-input, textarea, select { background: #333; color: #ccc; border: 1px solid #555; padding: 5px; margin: 5px 0; border-radius: 3px; }
-.error { color: #ff4444; }
-.success { color: lightgreen; }
-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-th, td { padding: 5px; border-bottom: 1px solid #333; text-align: left; }
-th { background: #222; }
+# ---------- Встроенный CSS (современный дизайн) ----------
+CSS_CONTENT = '''
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a1a; color: #e0e0e0; display: flex; min-height: 100vh; }
+.sidebar { width: 250px; background: #111; padding: 30px 20px; display: flex; flex-direction: column; gap: 8px; }
+.sidebar a { color: #bbb; text-decoration: none; padding: 12px 16px; border-radius: 8px; font-weight: 500; transition: all 0.2s; }
+.sidebar a:hover, .sidebar a.active { background: #ff4444; color: #fff; }
+.main-content { flex: 1; padding: 40px; }
+.card { background: #222; border-radius: 16px; padding: 30px; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+h1 { color: #ff4444; margin-bottom: 20px; font-size: 2em; }
+h2 { color: #ddd; margin: 20px 0 10px; font-size: 1.5em; }
+button { background: #ff4444; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1em; cursor: pointer; transition: background 0.2s; }
+button:hover { background: #e03333; }
+input, textarea, select { background: #333; border: 1px solid #555; color: #ddd; padding: 12px; border-radius: 8px; width: 100%; margin-bottom: 15px; font-size: 1em; }
+table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+th, td { padding: 12px; border-bottom: 1px solid #333; text-align: left; }
+th { background: #2a2a2a; color: #ff4444; }
+tr:hover { background: #2a2a2a; }
+.error { color: #ff4444; margin-bottom: 15px; }
+.success { color: #4caf50; margin-bottom: 15px; }
+.top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+.logout { background: transparent; border: 1px solid #ff4444; color: #ff4444; padding: 8px 20px; }
+.logout:hover { background: #ff4444; color: #fff; }
 '''
 
 # ---------- Шаблоны ----------
 BASE_TEMPLATE = '''<!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="UTF-8"><title>{% block title %}AutoPost Bot{% endblock %}</title>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}AutoPost Bot{% endblock %}</title>
 <link rel="stylesheet" href="/admin/static/css/style.css"></head>
-<body class="dark-theme">
-    <nav>
-        <a href="/admin/dashboard">Админ-панель</a> |
-        <a href="/admin/broadcast">Рассылка</a> |
-        <a href="/admin/promocodes">Промокоды</a> |
-        <a href="/admin/store_delivery">Доставка</a> |
-        <a href="/admin/logout" style="color: #ff4444;">Выйти</a>
-    </nav>
-    <div class="container">{% block content %}{% endblock %}</div>
+<body>
+<div class="sidebar">
+    <h2 style="color:#ff4444; margin-bottom:20px;">⚡ AutoPost</h2>
+    <a href="/admin/dashboard" class="{{ 'active' if active_page == 'dashboard' }}">📊 Дашборд</a>
+    <a href="/admin/broadcast" class="{{ 'active' if active_page == 'broadcast' }}">📣 Рассылка</a>
+    <a href="/admin/promocodes" class="{{ 'active' if active_page == 'promocodes' }}">🎟 Купоны</a>
+    <a href="/admin/store_delivery" class="{{ 'active' if active_page == 'delivery' }}">🚚 Доставка</a>
+    <a href="/admin/test_promocodes" class="{{ 'active' if active_page == 'test_promo' }}">🎁 Промокоды (тест)</a>
+</div>
+<div class="main-content">
+    {% block content %}{% endblock %}
+</div>
 </body>
 </html>'''
 
@@ -49,11 +61,11 @@ LOGIN_TEMPLATE = '''<!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="UTF-8"><title>Вход в админку</title>
 <link rel="stylesheet" href="/admin/static/css/style.css"></head>
-<body class="dark-theme">
-<div class="container">
-    <h1>Вход</h1>
+<body style="justify-content:center; align-items:center; background:#1a1a1a;">
+<div class="card" style="width:400px; text-align:center;">
+    <h1>⚡ AutoPost</h1>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
-    <p>Войдите по одноразовой ссылке из бота (команда /admin).</p>
+    <p style="margin-bottom:20px;">Войдите по одноразовой ссылке из бота (<code>/admin</code>)</p>
 </div>
 </body>
 </html>'''
@@ -61,77 +73,115 @@ LOGIN_TEMPLATE = '''<!DOCTYPE html>
 DASHBOARD_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Дашборд{% endblock %}
 {% block content %}
-<h1>Общая статистика</h1>
-<ul>
-    <li>SaaS клиентов: {{ saas }}</li>
-    <li>Блогеров: {{ bloggers }}</li>
-    <li>Постов опубликовано: {{ posts }}</li>
-    <li>Транзакций: {{ tx }}</li>
-    <li>Баланс пользователей: {{ balance }} ₽</li>
-</ul>
+<div class="top-bar"><h1>📊 Дашборд</h1></div>
+<div class="card">
+    <h2>Общая статистика</h2>
+    <table>
+        <tr><td>SaaS клиентов</td><td><strong>{{ saas }}</strong></td></tr>
+        <tr><td>Блогеров</td><td><strong>{{ bloggers }}</strong></td></tr>
+        <tr><td>Постов опубликовано</td><td><strong>{{ posts }}</strong></td></tr>
+        <tr><td>Транзакций</td><td><strong>{{ tx }}</strong></td></tr>
+        <tr><td>Баланс пользователей</td><td><strong>{{ balance }} ₽</strong></td></tr>
+    </table>
+</div>
 {% endblock %}'''
 
 BROADCAST_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Рассылка{% endblock %}
 {% block content %}
 <h1>📣 Массовая рассылка</h1>
-{% if message %}<p class="success">{{ message }}</p>{% endif %}
-<form method="post" action="/admin/broadcast">
-    <textarea name="text" rows="5" placeholder="Текст сообщения..." required></textarea><br>
-    <select name="role">
-        <option value="all">Всем пользователям</option>
-        <option value="saas">Только SaaS</option>
-        <option value="blogger">Только блогерам</option>
-    </select><br>
-    <button type="submit">Отправить</button>
-</form>
+<div class="card">
+    {% if message %}<p class="success">{{ message }}</p>{% endif %}
+    <form method="post" action="/admin/broadcast">
+        <textarea name="text" rows="5" placeholder="Текст сообщения..." required></textarea>
+        <select name="role">
+            <option value="all">Всем пользователям</option>
+            <option value="saas">Только SaaS</option>
+            <option value="blogger">Только блогерам</option>
+        </select>
+        <button type="submit">Отправить</button>
+    </form>
+</div>
 {% endblock %}'''
 
 PROMOCODES_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Управление промокодами{% endblock %}
+{% block title %}Купоны магазинов{% endblock %}
 {% block content %}
-<h1>🎟 Промокоды</h1>
-<h2>Добавить</h2>
-<form method="post" action="/admin/promocodes/add">
-    <input name="store" placeholder="Магазин (название)" required>
-    <input name="promocode" placeholder="Промокод" required>
-    <input name="description" placeholder="Описание (необязательно)">
-    <button type="submit">Добавить</button>
-</form>
-<h2>Список</h2>
-<table>
-    <tr><th>Магазин</th><th>Промокод</th><th>Описание</th><th></th></tr>
-    {% for p in promos %}
-    <tr>
-        <td>{{ p['store'] }}</td>
-        <td><code>{{ p['promocode'] }}</code></td>
-        <td>{{ p['description'] or '' }}</td>
-        <td><a href="/admin/promocodes/delete/{{ p['id'] }}" style="color:red;">Удалить</a></td>
-    </tr>
-    {% endfor %}
-</table>
+<h1>🎟 Купоны магазинов</h1>
+<div class="card">
+    <h2>Добавить</h2>
+    <form method="post" action="/admin/promocodes/add">
+        <input name="store" placeholder="Магазин (название)" required>
+        <input name="promocode" placeholder="Промокод" required>
+        <input name="description" placeholder="Описание (необязательно)">
+        <button type="submit">Добавить</button>
+    </form>
+</div>
+<div class="card">
+    <h2>Список</h2>
+    <table>
+        <tr><th>Магазин</th><th>Промокод</th><th>Описание</th><th></th></tr>
+        {% for p in promos %}
+        <tr>
+            <td>{{ p['store'] }}</td>
+            <td><code>{{ p['promocode'] }}</code></td>
+            <td>{{ p['description'] or '' }}</td>
+            <td><a href="/admin/promocodes/delete/{{ p['id'] }}" style="color:red;">Удалить</a></td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
 {% endblock %}'''
 
 STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Информация о доставке{% endblock %}
+{% block title %}Доставка{% endblock %}
 {% block content %}
 <h1>🚚 Доставка</h1>
-<h2>Обновить данные</h2>
-<form method="post" action="/admin/store_delivery/update">
-    <input name="store" placeholder="Магазин" required>
-    <input name="delivery_text" placeholder="Условия доставки" required>
-    <button type="submit">Сохранить</button>
-</form>
-<h2>Текущие данные</h2>
-<table>
-    <tr><th>Магазин</th><th>Условия</th></tr>
-    {% for d in deliveries %}
-    <tr>
-        <td>{{ d['store'] }}</td>
-        <td>{{ d['delivery_text'] }}</td>
-    </tr>
-    {% endfor %}
-</table>
+<div class="card">
+    <h2>Обновить данные</h2>
+    <form method="post" action="/admin/store_delivery/update">
+        <input name="store" placeholder="Магазин" required>
+        <input name="delivery_text" placeholder="Условия доставки" required>
+        <button type="submit">Сохранить</button>
+    </form>
+</div>
+<div class="card">
+    <h2>Текущие данные</h2>
+    <table>
+        <tr><th>Магазин</th><th>Условия</th></tr>
+        {% for d in deliveries %}
+        <tr><td>{{ d['store'] }}</td><td>{{ d['delivery_text'] }}</td></tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}'''
+
+TEST_PROMOCODES_TEMPLATE = '''{% extends "base.html" %}
+{% block title %}Промокоды (тест){% endblock %}
+{% block content %}
+<h1>🎁 Промокоды (тестовый период)</h1>
+<div class="card">
+    <h2>Добавить</h2>
+    <form method="post" action="/admin/test_promocodes/add">
+        <input name="code" placeholder="Код (напр. TEST3)" required>
+        <input name="days" placeholder="Дней (напр. 3)" required type="number">
+        <button type="submit">Создать</button>
+    </form>
+</div>
+<div class="card">
+    <h2>Список</h2>
+    <table>
+        <tr><th>Код</th><th>Дней</th><th>Использован?</th><th></th></tr>
+        {% for p in promos %}
+        <tr>
+            <td><code>{{ p['code'] }}</code></td>
+            <td>{{ p['days'] }}</td>
+            <td>{{ 'Да' if p['used'] else 'Нет' }}</td>
+            <td><a href="/admin/test_promocodes/delete/{{ p['id'] }}" style="color:red;">Удалить</a></td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
 {% endblock %}'''
 
 # ---------- Загрузчик шаблонов ----------
@@ -150,6 +200,7 @@ TEMPLATES = {
     "admin_broadcast.html": BROADCAST_TEMPLATE,
     "admin_promocodes.html": PROMOCODES_TEMPLATE,
     "admin_store_delivery.html": STORE_DELIVERY_TEMPLATE,
+    "admin_test_promocodes.html": TEST_PROMOCODES_TEMPLATE,
 }
 
 env = Environment(loader=DictLoader(TEMPLATES))
@@ -158,42 +209,26 @@ def render(template_name: str, **kwargs):
     template = env.get_template(template_name)
     return HTMLResponse(template.render(**kwargs))
 
-# ---------- Эндпоинт CSS ----------
+# ---------- Эндпоинты ----------
 @router.get("/static/css/style.css", include_in_schema=False)
 async def style_css():
     return Response(content=CSS_CONTENT, media_type="text/css")
 
-# ---------- Логин через токен ----------
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, token: str = Query(None)):
-    # Если уже есть сессия — сразу в дашборд
     session_token = request.cookies.get("admin_session")
     if session_token and verify_admin_session(session_token):
         return RedirectResponse(url="/admin/dashboard", status_code=303)
 
-    # Если передан токен входа
     if token:
         user_id = verify_admin_token(token)
         if user_id:
-            # Создаём сессию и редиректим на дашборд
             session = create_admin_session(user_id)
             resp = RedirectResponse(url="/admin/dashboard", status_code=303)
-            resp.set_cookie(
-                key="admin_session",
-                value=session,
-                httponly=True,
-                max_age=86400,
-                secure=True,
-                samesite='lax'
-            )
+            resp.set_cookie(key="admin_session", value=session, httponly=True, max_age=86400, secure=True, samesite='lax')
             return resp
         else:
             return render("login.html", error="Неверный или просроченный токен. Получите новую ссылку в боте.")
-
-    # Без токена и без сессии — показываем страницу входа
-    return render("login.html")
-
-    # Без токена и без сессии — показываем страницу входа
     return render("login.html")
 
 @router.get("/logout")
@@ -205,7 +240,6 @@ async def logout(request: Request):
     resp.delete_cookie("admin_session")
     return resp
 
-# ---------- Защищённые страницы ----------
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
@@ -217,22 +251,18 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
         balance = conn.execute("SELECT SUM(balance_available) FROM users").fetchone()[0] or 0
     finally:
         conn.close()
-    return render("admin_dashboard.html", saas=saas, bloggers=bloggers, posts=posts, tx=tx, balance=balance)
+    return render("admin_dashboard.html", saas=saas, bloggers=bloggers, posts=posts, tx=tx, balance=balance, active_page='dashboard')
 
 @router.get("/broadcast", response_class=HTMLResponse)
 async def broadcast_form(request: Request, _: int = Depends(admin_required)):
-    return render("admin_broadcast.html")
+    return render("admin_broadcast.html", active_page='broadcast')
 
 @router.post("/broadcast", response_class=HTMLResponse)
-async def broadcast_send(request: Request, text: str = Form(...), role: str = Form("all"),
-                         _: int = Depends(admin_required)):
+async def broadcast_send(request: Request, text: str = Form(...), role: str = Form("all"), _: int = Depends(admin_required)):
     bot = request.app.state.bot
     conn = get_db()
     try:
-        if role == "all":
-            users = conn.execute("SELECT user_id FROM users").fetchall()
-        else:
-            users = conn.execute("SELECT user_id FROM users WHERE role=?", (role,)).fetchall()
+        users = conn.execute("SELECT user_id FROM users" if role == "all" else f"SELECT user_id FROM users WHERE role='{role}'").fetchall()
         success = 0
         for u in users:
             try:
@@ -240,58 +270,70 @@ async def broadcast_send(request: Request, text: str = Form(...), role: str = Fo
                 success += 1
             except:
                 pass
-        return render("admin_broadcast.html", message=f"Отправлено {success} из {len(users)}")
+        return render("admin_broadcast.html", message=f"Отправлено {success} из {len(users)}", active_page='broadcast')
     finally:
         conn.close()
 
 @router.get("/promocodes", response_class=HTMLResponse)
 async def promocodes_list(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
-    try:
-        promos = conn.execute("SELECT * FROM store_promocodes ORDER BY store, promocode").fetchall()
-    finally:
-        conn.close()
-    return render("admin_promocodes.html", promos=promos)
+    promos = conn.execute("SELECT * FROM store_promocodes ORDER BY store, promocode").fetchall()
+    conn.close()
+    return render("admin_promocodes.html", promos=promos, active_page='promocodes')
 
 @router.post("/promocodes/add", response_class=HTMLResponse)
-async def promocode_add(store: str = Form(...), promocode: str = Form(...), description: str = Form(""),
-                        _: int = Depends(admin_required)):
+async def promocode_add(store: str = Form(...), promocode: str = Form(...), description: str = Form(""), _: int = Depends(admin_required)):
     conn = get_db()
-    try:
-        conn.execute("INSERT INTO store_promocodes (store, promocode, description) VALUES (?, ?, ?)",
-                     (store, promocode, description))
-        conn.commit()
-    finally:
-        conn.close()
+    conn.execute("INSERT INTO store_promocodes (store, promocode, description) VALUES (?, ?, ?)", (store, promocode, description))
+    conn.commit()
+    conn.close()
     return RedirectResponse(url="/admin/promocodes", status_code=303)
 
 @router.get("/promocodes/delete/{id}")
 async def promocode_delete(id: int, _: int = Depends(admin_required)):
     conn = get_db()
-    try:
-        conn.execute("DELETE FROM store_promocodes WHERE id=?", (id,))
-        conn.commit()
-    finally:
-        conn.close()
+    conn.execute("DELETE FROM store_promocodes WHERE id=?", (id,))
+    conn.commit()
+    conn.close()
     return RedirectResponse(url="/admin/promocodes", status_code=303)
 
 @router.get("/store_delivery", response_class=HTMLResponse)
 async def store_delivery_list(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
-    try:
-        deliveries = conn.execute("SELECT * FROM store_delivery ORDER BY store").fetchall()
-    finally:
-        conn.close()
-    return render("admin_store_delivery.html", deliveries=deliveries)
+    deliveries = conn.execute("SELECT * FROM store_delivery ORDER BY store").fetchall()
+    conn.close()
+    return render("admin_store_delivery.html", deliveries=deliveries, active_page='delivery')
 
 @router.post("/store_delivery/update", response_class=HTMLResponse)
-async def store_delivery_update(store: str = Form(...), delivery_text: str = Form(...),
-                                _: int = Depends(admin_required)):
+async def store_delivery_update(store: str = Form(...), delivery_text: str = Form(...), _: int = Depends(admin_required)):
     conn = get_db()
-    try:
-        conn.execute("INSERT OR REPLACE INTO store_delivery (store, delivery_text) VALUES (?, ?)",
-                     (store, delivery_text))
-        conn.commit()
-    finally:
-        conn.close()
+    conn.execute("INSERT OR REPLACE INTO store_delivery (store, delivery_text) VALUES (?, ?)", (store, delivery_text))
+    conn.commit()
+    conn.close()
     return RedirectResponse(url="/admin/store_delivery", status_code=303)
+
+# ---------- Управление тестовыми промокодами ----------
+@router.get("/test_promocodes", response_class=HTMLResponse)
+async def test_promocodes_list(request: Request, _: int = Depends(admin_required)):
+    conn = get_db()
+    promos = conn.execute("SELECT id, code, days, (SELECT COUNT(*) FROM promocode_activations WHERE code = p.code) as used_count FROM promocodes p ORDER BY id").fetchall()
+    # Преобразуем used_count в понятный флаг
+    formatted = [{"id": p["id"], "code": p["code"], "days": p["days"], "used": p["used_count"] > 0} for p in promos]
+    conn.close()
+    return render("admin_test_promocodes.html", promos=formatted, active_page='test_promo')
+
+@router.post("/test_promocodes/add", response_class=HTMLResponse)
+async def test_promocode_add(code: str = Form(...), days: int = Form(...), _: int = Depends(admin_required)):
+    conn = get_db()
+    conn.execute("INSERT INTO promocodes (code, days) VALUES (?, ?)", (code, days))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/test_promocodes", status_code=303)
+
+@router.get("/test_promocodes/delete/{id}")
+async def test_promocode_delete(id: int, _: int = Depends(admin_required)):
+    conn = get_db()
+    conn.execute("DELETE FROM promocodes WHERE id=?", (id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/test_promocodes", status_code=303)
