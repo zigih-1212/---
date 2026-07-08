@@ -346,9 +346,10 @@ async def user_edit_form(user_id: int, request: Request, _: int = Depends(admin_
         user = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
         if not user:
             return HTMLResponse("Пользователь не найден", status_code=404)
+        tariffs = conn.execute("SELECT id, name FROM tariffs WHERE is_active = 1").fetchall()
     finally:
         conn.close()
-    return render("admin_user_edit.html", user=user, active_page='users')
+    return render("admin_user_edit.html", user=user, tariffs=tariffs, active_page='users')
 
 @router.post("/users/edit/{user_id}", response_class=HTMLResponse)
 async def user_edit_save(user_id: int, request: Request,
