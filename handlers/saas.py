@@ -175,6 +175,16 @@ async def cb_toggle_store(callback: CallbackQuery):
     await cb_stores(callback)
     await callback.answer()
 
+@router.callback_query(F.data == "promo:activate")
+async def cb_promo_activate(callback: CallbackQuery):
+    await callback.message.answer(
+        "🎁 Введите промокод командой /promo КОД\n"
+        "Например: /promo TEST3",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+        ])
+    )
+    await callback.answer()
 
 # ---------------------------------------------------------------------------
 # Galaxy Store – выбор города
