@@ -463,12 +463,12 @@ async def promo_handler(message: Message, state: FSMContext):
 
     conn = get_db()
     try:
-        promo = conn.execute("SELECT * FROM promocodes WHERE code = ?", (code,)).fetchone()
+        promo = conn.execute("SELECT * FROM promocodes WHERE UPPER(code) = ?", (code,)).fetchone()
         if not promo:
             await message.answer("❌ Неверный или несуществующий промокод.")
             return
 
-        activation = conn.execute("SELECT * FROM promocode_activations WHERE code = ?", (code,)).fetchone()
+        activation = conn.execute("SELECT * FROM promocode_activations WHERE UPPER(code) = ?", (code,)).fetchone()
         if activation:
             await message.answer("❌ Этот промокод уже использован.")
             return
