@@ -141,8 +141,13 @@ USER_EDIT_TEMPLATE = '''{% extends "base.html" %}
         </select>
         <label>Подписка до (UTC, в формате ГГГГ-ММ-ДД ЧЧ:ММ):</label>
         <input name="subscription_until" value="{{ user['subscription_until'] or '' }}" placeholder="2026-12-31 23:59">
-        <label>ID тарифа (0 = нет):</label>
-        <input name="tariff_id" value="{{ user['tariff_id'] or 0 }}" type="number">
+        <label>Тариф:</label>
+        <select name="tariff_id">
+            <option value="0" {{ 'selected' if not user['tariff_id'] }}>Без тарифа</option>
+            {% for t in tariffs %}
+            <option value="{{ t['id'] }}" {{ 'selected' if user['tariff_id'] == t['id'] }}>{{ t['name'] }}</option>
+            {% endfor %}
+        </select>
         <label>Баланс доступный:</label>
         <input name="balance_available" value="{{ user['balance_available'] or 0 }}" type="number" step="0.01">
         <label>Баланс ожидающий:</label>
