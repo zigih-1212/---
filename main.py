@@ -896,7 +896,8 @@ async def cmd_admin(message: Message):
     if not is_admin(message.from_user.id):
         return
     token = generate_admin_token(message.from_user.id)
-    login_url = f"{WEBAPP_ADMIN_URL}/login?token={token}"
+    base = WEBAPP_ADMIN_URL.rstrip('/')
+    login_url = f"{base}/login?token={token}"
     await message.answer(
         f"🔑 <a href='{login_url}'>Открыть админку</a>\n\n"
         f"Или скопируйте ссылку:\n{login_url}",
