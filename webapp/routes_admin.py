@@ -165,7 +165,7 @@ async def style_css():
 
 # ---------- Логин через токен ----------
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(token: str = Query(None), request: Request = None):
+async def login_page(request: Request, token: str = Query(None)):
     # Если уже есть сессия — сразу в дашборд
     session_token = request.cookies.get("admin_session")
     if session_token and verify_admin_session(session_token):
@@ -189,6 +189,9 @@ async def login_page(token: str = Query(None), request: Request = None):
             return resp
         else:
             return render("login.html", error="Неверный или просроченный токен. Получите новую ссылку в боте.")
+
+    # Без токена и без сессии — показываем страницу входа
+    return render("login.html")
 
     # Без токена и без сессии — показываем страницу входа
     return render("login.html")
