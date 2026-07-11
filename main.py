@@ -529,29 +529,44 @@ async def promo_handler(message: Message, state: FSMContext):
 # /start
 # ---------------------------------------------------------------------------
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, state: FSMContext, command: Command = None):
     await state.clear()
     if is_admin(message.from_user.id):
         await message.answer("👋 Добро пожаловать в Панель администратора.", reply_markup=kb_admin_panel())
         return
 
+    # Проверяем реферальную ссылку (deep linking)
+    referrer_id = None
+    if command.args:
+        ref_sub_id = command.args.strip()
+        conn = get_db()
+        try:
+            referrer = conn.execute(
+                "SELECT user_id FROM users WHERE sub_id = ? AND role = 'blogger'",
+                (ref_sub_id,)
+            ).fetchone()
+            if referrer:
+                referrer_id = referrer["user_id"]
+        finally:
+            conn.close()
+        if referrer_id:
+            await state.update_data(referrer_id=referrer_id)
+
     conn = get_db()
     try:
         user = conn.execute("SELECT role FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
         if not user:
-            # Новый пользователь – создаём запись и запускаем онбординг
-            sub_id = generate_sub_id(message.from_user.username, message.from_user.id)
-            conn.execute(
-                "INSERT INTO users (user_id, username, sub_id, role) VALUES (?, ?, ?, 'saas')",
-                (message.from_user.id, message.from_user.username, sub_id)
-            )
-            conn.commit()
+            # Предлагаем выбрать роль
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💼 SaaS-клиент", callback_data="role:saas")],
+                [InlineKeyboardButton(text="👤 Блогер", callback_data="role:blogger")],
+            ])
             await message.answer(
-                "👋 Добро пожаловать! Для начала работы отправьте @username вашего Telegram-канала."
+                "👋 Добро пожаловать! Выберите вашу роль:",
+                reply_markup=kb
             )
-            await state.set_state(OnboardingStates.waiting_saas_tg_channel)
+            await state.set_state(OnboardingStates.waiting_role)
         else:
-            # Пользователь уже зарегистрирован – не показываем кабинет
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="💼 Открыть кабинет", callback_data="cabinet:open")]
             ])
