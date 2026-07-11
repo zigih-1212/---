@@ -399,6 +399,18 @@ def init_db() -> None:
             cursor.execute("ALTER TABLE users ADD COLUMN commission_rate REAL DEFAULT 0.95")
         except sqlite3.OperationalError:
             pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN product_template TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN video_template TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN template_preview_data TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass          
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
