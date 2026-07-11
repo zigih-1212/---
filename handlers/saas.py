@@ -993,6 +993,12 @@ async def cb_finance(callback: CallbackQuery):
             ORDER BY time DESC
             LIMIT 20
         """, (user_id,)).fetchall()
+
+        # Проверка активной заявки на выплату
+        active_request = conn.execute(
+            "SELECT id, status FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded') ORDER BY id DESC LIMIT 1",
+            (user_id,)
+        ).fetchone()
     finally:
         conn.close()
 
@@ -1038,12 +1044,23 @@ async def cb_finance(callback: CallbackQuery):
     full_text = disclaimer + text
 
     kb_buttons = []
-    # Если доступно к выводу >= MIN_PAYOUT, добавить кнопку запроса
-    if available >= MIN_PAYOUT:
-    kb_buttons.append([InlineKeyboardButton(text="💸 Запросить выплату", callback_data="payout:request")])
+    if active_request:
+        req_id, req_status = active_request["id"], active_request["status"]
+        if req_status == "awaiting_receipt":
+            kb_buttons.append([InlineKeyboardButton(text="📤 Отправить чек", callback_data=f"receipt:upload:{req_id}")])
+            kb_buttons.append([InlineKeyboardButton(text="ℹ️ Статус: ожидание чека", callback_data="none")])
+        elif req_status == "receipt_uploaded":
+            kb_buttons.append([InlineKeyboardButton(text="⏳ Чек отправлен, ожидайте подтверждения", callback_data="none")])
+        else:
+            kb_buttons.append([InlineKeyboardButton(text="⏳ Заявка обрабатывается", callback_data="none")])
+    else:
+        if available >= MIN_PAYOUT:
+            kb_buttons.append([InlineKeyboardButton(text="💸 Запросить выплату", callback_data="payout:request")])
+        else:
+            kb_buttons.append([InlineKeyboardButton(text="❌ Недостаточно средств для вывода", callback_data="none")])
     kb_buttons.append([InlineKeyboardButton(text="📢 Поделиться успехом", callback_data="share_success")])
     kb_buttons.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")])
-    
+
     try:
         await callback.message.edit_text(full_text, parse_mode=ParseMode.HTML,
                                           reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
@@ -1051,7 +1068,6 @@ async def cb_finance(callback: CallbackQuery):
         await callback.message.answer(full_text, parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
     await callback.answer()
-
 @router.callback_query(F.data.startswith("receipt:upload:"))
 async def cb_receipt_upload(callback: CallbackQuery, state: FSMContext):
     request_id = int(callback.data.split(":")[2])
