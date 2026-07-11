@@ -257,6 +257,18 @@ async def process_promocode_input(message: Message, state: FSMContext):
         )
 
     await state.clear()
+
+@router.callback_query(F.data == "share_success")
+async def cb_share_success(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        role = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()["role"]
+    finally:
+        conn.close()
+    text = await generate_success_text(user_id, role)
+    await callback.message.answer(text, parse_mode=ParseMode.HTML)
+    await callback.answer("✅ Текст скопирован в следующее сообщение. Можете переслать его!", show_alert=True)
 # ---------------------------------------------------------------------------
 # Galaxy Store – выбор города
 # ---------------------------------------------------------------------------
