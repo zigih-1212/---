@@ -48,7 +48,7 @@ async def admitad_postback(request: Request):
 
         conn.commit()
 
-        apply_referral_bonus(user_id, user_amount)
+        apply_referral_bonus(user_id, payment_sum, user_amount)
         from utils import check_payout_threshold
         bot = request.app.state.bot
         await check_payout_threshold(user_id, bot)
