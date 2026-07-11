@@ -378,7 +378,10 @@ def init_db() -> None:
             cursor.execute("ALTER TABLE users ADD COLUMN post_interval_minutes INTEGER DEFAULT 60")
         except sqlite3.OperationalError:
             pass
-  
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN commission_rate REAL DEFAULT 0.95")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
