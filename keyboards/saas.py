@@ -19,16 +19,18 @@ def kb_cabinet_menu(role: str = "saas"):
             [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ]
-    else:
+    else:  # blogger
         buttons = [
-            [InlineKeyboardButton(text="💼 Личный кабинет", callback_data="cabinet:open")],
+            [InlineKeyboardButton(text="📢 Мои Telegram-каналы", callback_data="menu:my_channels")],
+            [InlineKeyboardButton(text="⚙️ Периодичность постов", callback_data="blogger:post_interval")],
+            [InlineKeyboardButton(text="🌐 Мои соцсети", callback_data="blogger:social")],
+            [InlineKeyboardButton(text="🔗 Реферальная ссылка", callback_data="blogger:referral")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
-            [InlineKeyboardButton(text="📖 Инструкции", callback_data="menu:instructions")],
-            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            [InlineKeyboardButton(text="💸 Вывод средств", callback_data="payout:request")],
+            [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
+            [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
+            [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-
 
 def kb_tariffs(traffic_source: str = "") -> InlineKeyboardMarkup:
     tariffs = load_tariffs()
