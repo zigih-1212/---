@@ -82,10 +82,7 @@ async def cb_stores(callback: CallbackQuery):
 async def cb_toggle_store(callback: CallbackQuery):
     store_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
-    
-    if store_id == 3:
-        await callback.answer("❌ Аквафор временно недоступен (отсутствует техническая возможность).", show_alert=True)
-        return
+
     # Обработка Galaxy Store
     if store_id == 12:
         conn = get_db()
@@ -138,16 +135,21 @@ async def cb_toggle_store(callback: CallbackQuery):
     if store_id == 1:
         await callback.answer("❌ AliExpress временно недоступен (отсутствует маркировка ERID).", show_alert=True)
         return
+    if store_id == 3:
+        await callback.answer("❌ Аквафор временно недоступен.", show_alert=True)
+        return
     if store_id == 5:
         await callback.answer("❌ Love Republic временно недоступен (отсутствует маркировка ERID).", show_alert=True)
         return
 
     conn = get_db()
     try:
+        # Получаем роль и тариф пользователя
         user_row = conn.execute("SELECT role, tariff_id FROM users WHERE user_id=?", (user_id,)).fetchone()
-        if user_row and user_row["role"] != "blogger" and user_row["tariff_id"]:
         max_stores = 3
-        if user_row and user_row["tariff_id"]:
+
+        # Проверка лимита только для SaaS, не для блогеров
+        if user_row and user_row["role"] != "blogger" and user_row["tariff_id"]:
             tariff_row = conn.execute("SELECT max_stores FROM tariffs WHERE id=?", (user_row["tariff_id"],)).fetchone()
             if tariff_row and tariff_row["max_stores"]:
                 max_stores = tariff_row["max_stores"]
@@ -164,7 +166,7 @@ async def cb_toggle_store(callback: CallbackQuery):
                 "SELECT COUNT(*) as cnt FROM user_category_preferences WHERE user_id = ?",
                 (user_id,)
             ).fetchone()["cnt"]
-            if current_count >= max_stores:
+            if current_count >= max_stores and user_row["role"] != "blogger":
                 await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_stores} магазинов.", show_alert=True)
                 return
             conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
