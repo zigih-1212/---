@@ -1531,6 +1531,27 @@ async def main() -> None:
 
     fastapi_app = create_app(bot)
 
+    config = uvicorn.Config(
+        fastapi_app,
+        host=WEBAPP_HOST,
+        port=WEBAPP_PORT,
+        log_level="warning"
+    )
+    server = uvicorn.Server(config)
+
+    logger.info(f"🌐 Web Admin Panel доступен по адресу: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
+
+    try:
+        await asyncio.gather(
+            dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()),
+            server.serve(),
+            return_exceptions=True
+        )
+    finally:
+        await bot.session.close()
+        scheduler.shutdown()
+        logger.info("Бот и планировщик остановлены")
+
 
 async def backup_database_to_telegram(bot: Bot):
     db_path = DB_PATH
@@ -1555,6 +1576,7 @@ async def backup_database_to_telegram(bot: Bot):
         logger.info("Бэкап базы данных отправлен администратору")
     except Exception as e:
         logger.error(f"Ошибка при отправке бэкапа: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
