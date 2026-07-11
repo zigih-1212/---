@@ -35,3 +35,8 @@ class TemplateStates(StatesGroup):
     
 class TaxStates(StatesGroup):
     waiting_tax_status = State()
+
+class PayoutStates(StatesGroup):
+    waiting_for_card = State()
+    waiting_for_amount = State()
+    waiting_for_receipt_photo = State()
