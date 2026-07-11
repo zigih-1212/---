@@ -1061,6 +1061,36 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
         )
         await state.clear()
 
+@router.callback_query(OnboardingStates.waiting_role)
+async def process_role_selection(callback: CallbackQuery, state: FSMContext):
+    role = callback.data.split(":")[1]  # "saas" или "blogger"
+    user_id = callback.from_user.id
+    data = await state.get_data()
+    referrer_id = data.get("referrer_id")
+
+    conn = get_db()
+    try:
+        sub_id = generate_sub_id(callback.from_user.username, user_id)
+        conn.execute(
+            "INSERT INTO users (user_id, username, sub_id, role, referrer_id) VALUES (?, ?, ?, ?, ?)",
+            (user_id, callback.from_user.username, sub_id, role, referrer_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    if role == "saas":
+        await callback.message.edit_text(
+            "👋 Добро пожаловать! Для начала работы отправьте @username вашего Telegram-канала."
+        )
+        await state.set_state(OnboardingStates.waiting_saas_tg_channel)
+    else:  # blogger
+        await callback.message.edit_text(
+            "👋 Добро пожаловать, блогер! Для начала отправьте @username вашего Telegram-канала."
+        )
+        await state.set_state(OnboardingStates.waiting_saas_tg_channel)  # то же состояние, но без лимитов
+
+    await callback.answer()
 # ---------------------------------------------------------------------------
 # Обработчики инструкций и поддержки
 # ---------------------------------------------------------------------------
