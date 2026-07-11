@@ -4,7 +4,7 @@ import feedparser
 from aiogram import Bot
 from services.db import get_db
 from config import ADMIN_IDS
-
+from config import MIN_PAYOUT
 
 logger = logging.getLogger("autopost_bot.referral")
 
@@ -41,6 +41,38 @@ def apply_referral_bonus(user_id: int, action_amount: float):
     finally:
         conn.close()
 
+async def check_payout_threshold(user_id: int, bot: Bot):
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT balance_available, payout_notified FROM users WHERE user_id=?",
+            (user_id,)
+        ).fetchone()
+        if not user:
+            return
+        available = user["balance_available"] or 0.0
+        notified = user["payout_notified"]
+        if available >= MIN_PAYOUT and not notified:
+            try:
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        f"🎉 <b>Поздравляем!</b>\n\n"
+                        f"Ваш доступный баланс достиг <b>{available:.2f} ₽</b>.\n"
+                        f"Вы можете запросить выплату в разделе «💰 Финансы»."
+                    ),
+                    parse_mode=ParseMode.HTML
+                )
+                conn.execute("UPDATE users SET payout_notified=1 WHERE user_id=?", (user_id,))
+                conn.commit()
+                logger.info(f"Payout threshold notification sent to user {user_id}")
+            except Exception as e:
+                logger.error(f"Failed to send payout notification to {user_id}: {e}")
+        elif available < MIN_PAYOUT and notified:
+            conn.execute("UPDATE users SET payout_notified=0 WHERE user_id=?", (user_id,))
+            conn.commit()
+    finally:
+        conn.close()
 async def check_rss_and_publish(bot: Bot):
     """Проверяет RSS-ленты YouTube и Rutube и публикует новые видео."""
     conn = get_db()
