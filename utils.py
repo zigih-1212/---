@@ -5,6 +5,7 @@ from aiogram import Bot
 from services.db import get_db
 from config import ADMIN_IDS
 from config import MIN_PAYOUT
+from config import BOT_USERNAME
 
 logger = logging.getLogger("autopost_bot.referral")
 
