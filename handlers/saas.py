@@ -768,6 +768,13 @@ async def cb_finance(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
     try:
+        user = conn.execute("SELECT role, balance_available, balance_pending FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user:
+            await callback.answer("Пользователь не найден", show_alert=True)
+            return
+        available = user["balance_available"] or 0.0
+        pending = user["balance_pending"] or 0.0
+        role = user["role"]
         transactions = conn.execute("""
             SELECT admitad_id, payment_sum, currency, payment_status, order_id, action, time
             FROM admitad_transactions
@@ -789,23 +796,18 @@ async def cb_finance(callback: CallbackQuery):
         "• Вывод средств возможен при достижении порога <b>3000 ₽</b>.\n\n"
     )
 
+    text = f"💰 <b>Финансы</b>\n\n" \
+           f"💳 Доступно к выводу: <b>{available:.2f} ₽</b>\n" \
+           f"⏳ В ожидании: <b>{pending:.2f} ₽</b>\n\n"
+
     if not transactions:
-        text = (
-            "💰 <b>Финансы</b>\n\n"
-            "У вас пока нет заказов. Как только по партнёрской ссылке совершат покупку, "
-            "вы увидите её здесь.\n\n"
-            "<i>Баланс можно посмотреть в Личном кабинете.</i>"
-        )
+        text += "У вас пока нет заказов."
     else:
-        text = "💰 <b>Последние 20 транзакций</b>\n\n"
+        text += "<b>Последние 20 транзакций:</b>\n"
         for t in transactions:
             status_emoji = {
-                "pending": "⏳",
-                "approved": "✅",
-                "declined": "❌",
-                "new": "🆕",
-                "waiting": "⏳",
-                "paid": "💳"
+                "pending": "⏳", "approved": "✅", "declined": "❌",
+                "new": "🆕", "waiting": "⏳", "paid": "💳"
             }.get(t["payment_status"], "❓")
             date_str = ""
             if t["time"]:
@@ -824,16 +826,19 @@ async def cb_finance(callback: CallbackQuery):
 
     full_text = disclaimer + text
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
-    ])
+    kb_buttons = []
+    # Если доступно к выводу >= MIN_PAYOUT, добавить кнопку запроса
+    if available >= MIN_PAYOUT:
+        kb_buttons.append([InlineKeyboardButton(text="💸 Запросить выплату", callback_data="payout:request")])
+    kb_buttons.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")])
 
     try:
-        await callback.message.edit_text(full_text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        await callback.message.edit_text(full_text, parse_mode=ParseMode.HTML,
+                                          reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
     except Exception:
-        await callback.message.answer(full_text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        await callback.message.answer(full_text, parse_mode=ParseMode.HTML,
+                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
     await callback.answer()
-
 
 # ---------------------------------------------------------------------------
 # Оферта
