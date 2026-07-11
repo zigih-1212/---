@@ -353,7 +353,7 @@ def init_db() -> None:
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     """)
-        conn.commit()
+    conn.commit()
   
     # Миграции
     migrations = [
