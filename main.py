@@ -47,7 +47,9 @@ from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, Payout
 from stats import get_saas_channels, get_saas_channel_stats_new, get_saas_overview, STAT_PERIODS
 from services.db import get_db
 from config import BOT_USERNAME
+from services.db import get_db
 
+logger = logging.getLogger("autopost_bot.referral")
 # ---------------------------------------------------------------------------
 
 print("DEBUG: main.py started", flush=True, file=sys.stderr)
@@ -440,7 +442,40 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         logger.error(f"Ошибка проверки админки в {channel_id}: {e}")
         return False
 
+def apply_referral_bonus(user_id: int, action_amount: float):
+    """
+    Начисляет реферальное вознаграждение рефереру (если есть).
+    :param user_id: ID пользователя, совершившего целевое действие
+    :param action_amount: сумма, начисленная пользователю (после commission_rate)
+    """
+    REFERRAL_RATE = 0.10   # 10% от дохода реферала
 
+    if action_amount <= 0:
+        return
+
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT referrer_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        if not user or not user["referrer_id"]:
+            return
+
+        referrer_id = user["referrer_id"]
+        bonus = round(action_amount * REFERRAL_RATE, 2)
+
+        # Начисляем рефереру (в pending, как и обычные транзакции)
+        conn.execute(
+            "UPDATE users SET balance_pending = balance_pending + ? WHERE user_id = ?",
+            (bonus, referrer_id)
+        )
+        conn.commit()
+
+        logger.info(f"Referral bonus: +{bonus} to user {referrer_id} from user {user_id} (action {action_amount})")
+
+    except Exception as e:
+        logger.error(f"Failed to apply referral bonus for user {user_id}: {e}")
+    finally:
+        conn.close()
+      
 # =============================================================================
 # === КЛАВИАТУРЫ ==============================================================
 def kb_admin_panel() -> InlineKeyboardMarkup:
