@@ -48,6 +48,7 @@ from stats import get_saas_channels, get_saas_channel_stats_new, get_saas_overvi
 from services.db import get_db
 from config import BOT_USERNAME
 from utils import check_rss_and_publish
+from utils import generate_success_text
 
 logger = logging.getLogger("autopost_bot.referral")
 # ---------------------------------------------------------------------------
@@ -671,6 +672,17 @@ async def cb_blogger_referral(callback: CallbackQuery):
     )
     await callback.answer()
 
+@router.callback_query(F.data == "share_success")
+async def cb_share_success_main(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        role = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()["role"]
+    finally:
+        conn.close()
+    text = await generate_success_text(user_id, role)
+    await callback.message.answer(text, parse_mode=ParseMode.HTML)
+    await callback.answer()
 # ---------------------------------------------------------------------------
 # /start
 # ---------------------------------------------------------------------------
