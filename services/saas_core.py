@@ -117,33 +117,127 @@ async def publish_from_catalog(bot: Bot):
 
     for user in users:
         user_id = user["user_id"]
-        tariff_id = user["tariff_id"]
+        tariff_id = user.get("tariff_id")
+        role = conn.execute("SELECT role, post_interval_minutes, commission_rate FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not role:
+            continue
+        role = role["role"]
+        post_interval = role["post_interval_minutes"] or 60  # для SaaS не используется
+        commission_rate = role["commission_rate"] or 0.95
 
-        max_posts_per_hour = 1
-        if tariff_id:
-            conn = get_db()
+        # Проверка времени последнего поста для блогеров
+        if role == "blogger":
+            # Проверяем, прошло ли достаточно времени с последней публикации
+            last_post = conn.execute(
+                "SELECT MAX(published_at) FROM posts WHERE user_id=? AND status='published' AND donor_post_id LIKE 'admitad_%'",
+                (user_id,)
+            ).fetchone()[0]
+            if last_post:
+                last_dt = datetime.fromisoformat(last_post.replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - last_dt).total_seconds() < post_interval * 60:
+                    logger.info(f"[DEBUG] User {user_id}: интервал не вышел, пропускаем")
+                    continue
+
+        max_posts_per_hour = 1  # для SaaS будет переопределено ниже
+        if role == "saas" and tariff_id:
+            conn_tariff = get_db()
             try:
-                tariff = conn.execute("SELECT max_posts_per_day FROM tariffs WHERE id = ?", (tariff_id,)).fetchone()
+                tariff = conn_tariff.execute("SELECT max_posts_per_day FROM tariffs WHERE id = ?", (tariff_id,)).fetchone()
                 if tariff and tariff["max_posts_per_day"]:
                     max_posts_per_hour = max(1, tariff["max_posts_per_day"] // 24)
             finally:
-                conn.close()
+                conn_tariff.close()
 
-        conn = get_db()
-        try:
+            # Проверка лимита постов за час для SaaS
             hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
             posts_last_hour = conn.execute(
                 "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND status = 'published' AND published_at >= ? AND donor_post_id LIKE 'admitad_%'",
                 (user_id, hour_ago)
             ).fetchone()["cnt"]
-        finally:
-            conn.close()
+            if posts_last_hour >= max_posts_per_hour:
+                logger.info(f"[DEBUG] User {user_id}: лимит превышен, пропускаем")
+                continue
 
-        logger.info(f"[DEBUG] User {user_id}: max_posts_per_hour={max_posts_per_hour}, posts_last_hour={posts_last_hour}")
+        # Загружаем выбранные пользователем магазины
+        user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)).fetchall()
+        store_ids = [r["category_id"] for r in user_stores]
 
-        if posts_last_hour >= max_posts_per_hour:
-            logger.info(f"[DEBUG] User {user_id}: лимит превышен, пропускаем")
+        from services.admitad import STORE_ID_MAP, ADULT_STORES
+        allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
+
+        # Для блогеров нет ограничения по количеству магазинов, но если пусто – используем все доступные
+        if role == "blogger" and not allowed_sources:
+            allowed_sources = list(STORES.keys())  # все магазины из admitad
+
+        # Выбор товара (та же логика, что и раньше, но без фильтра по min_discount для блогеров)
+        if role == "saas":
+            min_disc = conn.execute("SELECT min_discount FROM users WHERE user_id=?", (user_id,)).fetchone()
+            min_discount = min_disc["min_discount"] if min_disc else 0
+        else:
+            min_discount = 0
+
+        product = None
+        # ... остальная логика выбора товара (используйте существующую, но с min_discount по условию)
+        if allowed_sources:
+            placeholders = ','.join('?' * len(allowed_sources))
+            product = conn.execute(
+                f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                (user_id, *allowed_sources, min_discount)
+            ).fetchone()
+        else:
+            product = None
+
+        if not product:
+            # Сброс used и повторная попытка (код уже есть, оставьте)
+            # ...
+            pass
+
+        if not product:
+            logger.info(f"[DEBUG] User {user_id}: нет доступных товаров")
             continue
+
+        # Проверяем, достаточно ли товаров в каталоге для блогера
+        if role == "blogger":
+            remaining = conn.execute("SELECT COUNT(*) FROM gdeslon_catalog WHERE user_id = ? AND used = 0", (user_id,)).fetchone()[0]
+            if remaining < 20:
+                # Докачиваем товары
+                logger.info(f"[DEBUG] User {user_id}: мало товаров, запускаем пополнение")
+                from services.admitad import fetch_admitad_catalog_for_user
+                await fetch_admitad_catalog_for_user(user_id, max_items_per_store=100)
+
+        # Публикация (как обычно, но caption формируется уже с учётом скидок, доставки и промокодов)
+        # Убедитесь, что в цикле по каналам используется commission_rate для subid? Не требуется, просто постим с обычной партнёрской ссылкой.
+        # Баланс будет начислен позже через postback.
+        # ...
+
+        logger.info(f"[DEBUG] User {user_id}: публикуем в {len(channels)} каналов")
+        for ch in channels:
+            final_url = partner_url
+            if ch["sub_id"]:
+                if '?' in final_url:
+                    final_url += '&subid=' + ch["sub_id"]
+                else:
+                    final_url += '?subid=' + ch["sub_id"]
+
+            adult = source in ADULT_STORES
+            delivery_info = get_delivery_for_store(source)
+            promocode = get_random_promocode(source)
+
+            caption = generate_post_text(
+                title=title,
+                price=price,
+                currency=currency,
+                advertiser=advertiser,
+                erid=erid,
+                partner_url=final_url,
+                adult=adult,
+                old_price=product["old_price"] if "old_price" in product.keys() else None,
+                discount_percent=product["discount_percent"] if "discount_percent" in product.keys() else None,
+                delivery_info=delivery_info,
+                promocode=promocode
+            )
+
+            # ... отправка и сохранение в БД
 
         # Загружаем выбранные пользователем магазины
         conn = get_db()
