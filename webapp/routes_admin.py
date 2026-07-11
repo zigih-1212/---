@@ -87,6 +87,7 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
     try:
         active_saas = conn.execute("SELECT COUNT(*) FROM users WHERE role='saas' AND is_active=1").fetchone()[0]
+        active_bloggers = conn.execute("SELECT COUNT(*) FROM users WHERE role='blogger' AND is_active=1").fetchone()[0]
         today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         posts_today = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published' AND DATE(published_at)=?", (today,)).fetchone()[0]
         week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -98,18 +99,20 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
     finally:
         conn.close()
     return render("admin_dashboard.html",
-                  active_saas=active_saas, posts_today=posts_today, posts_week=posts_week,
+                  active_saas=active_saas, active_bloggers=active_bloggers,
+                  posts_today=posts_today, posts_week=posts_week,
                   errors_today=errors_today, pending_payouts=pending_payouts,
                   last_users=last_users, last_posts=last_posts, active_page='dashboard')
-
 # ---------- Пользователи ----------
 @router.get("/users", response_class=HTMLResponse)
 async def users_list(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
     try:
         users = conn.execute("""
-            SELECT u.user_id, u.role, u.subscription_until, u.tariff_id, t.name as tariff_name, u.balance_available
-            FROM users u LEFT JOIN tariffs t ON u.tariff_id = t.id ORDER BY u.user_id
+            SELECT u.user_id, u.role, u.subscription_until, u.tariff_id, t.name as tariff_name,
+                   u.balance_available, u.balance_pending, u.commission_rate
+            FROM users u LEFT JOIN tariffs t ON u.tariff_id = t.id
+            ORDER BY u.user_id
         """).fetchall()
     finally:
         conn.close()
@@ -131,14 +134,17 @@ async def user_edit_form(user_id: int, request: Request, _: int = Depends(admin_
 async def user_edit_save(user_id: int, request: Request,
                          role: str = Form(...), subscription_until: str = Form(""),
                          tariff_id: int = Form(0), balance_available: float = Form(0.0),
-                         balance_pending: float = Form(0.0), _: int = Depends(admin_required)):
+                         balance_pending: float = Form(0.0),
+                         commission_rate: float = Form(0.95),
+                         _: int = Depends(admin_required)):
     conn = get_db()
     try:
         sub_until = subscription_until if subscription_until else None
         conn.execute("""
             UPDATE users SET role=?, subscription_until=?, tariff_id=?,
-            balance_available=?, balance_pending=? WHERE user_id=?
-        """, (role, sub_until, tariff_id, balance_available, balance_pending, user_id))
+            balance_available=?, balance_pending=?, commission_rate=?
+            WHERE user_id=?
+        """, (role, sub_until, tariff_id, balance_available, balance_pending, commission_rate, user_id))
         conn.commit()
     finally:
         conn.close()
