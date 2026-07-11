@@ -49,6 +49,7 @@ from services.db import get_db
 from config import BOT_USERNAME
 from utils import check_rss_and_publish
 from utils import generate_success_text
+from states import TaxStates 
 
 logger = logging.getLogger("autopost_bot.referral")
 # ---------------------------------------------------------------------------
@@ -686,6 +687,27 @@ async def cb_share_success_main(callback: CallbackQuery):
         conn.close()
     text = await generate_success_text(user_id, role)
     await callback.message.answer(text, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("tax:"), TaxStates.waiting_tax_status)
+async def process_tax_status(callback: CallbackQuery, state: FSMContext):
+    status = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET tax_status=? WHERE user_id=?", (status, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    if status == "individual":
+        await callback.message.answer(
+            "ℹ️ Вы можете использовать бота, но для заказа выплат от 3000₽ вам потребуется получить статус Самозанятого "
+            "(это бесплатно за 1 минуту в приложении «Мой налог»)."
+        )
+    else:
+        await callback.message.answer("✅ Статус сохранён. Теперь вам доступен вывод средств при достижении порога.")
+    await state.clear()
+    await show_user_cabinet(callback.message, user_id=user_id)
     await callback.answer()
 # ---------------------------------------------------------------------------
 # /start
