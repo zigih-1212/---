@@ -185,6 +185,7 @@ async def payouts_execute(request: Request, user_id: int = Form(...), amount: fl
         conn.execute("INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) VALUES (?, ?, ?, ?, ?, 'completed')",
                      (user_id, amount, amount, 0, 'manual'))
         conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (amount, user_id))
+        conn.execute("UPDATE users SET payout_notified=0 WHERE user_id=?", (user_id,))
         conn.commit()
         log_admin_action(admin_id, "manual_payout", f"user {user_id} payout {amount}")
     finally:
