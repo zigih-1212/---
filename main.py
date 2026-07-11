@@ -339,6 +339,21 @@ def init_db() -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS idx_gdeslon_unique 
             ON gdeslon_catalog(user_id, sku)
     """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS social_channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                platform TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                channel_url TEXT,
+                last_video_id TEXT,
+                is_active INTEGER DEFAULT 1,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+        """)
+        conn.commit()
+  
     # Миграции
     migrations = [
         "ALTER TABLE users ADD COLUMN payout_card TEXT",
