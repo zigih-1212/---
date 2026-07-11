@@ -1091,3 +1091,15 @@ async def cb_oferta_accept(callback: CallbackQuery):
     # Возвращаем в кабинет
     from main import show_user_cabinet
     await show_user_cabinet(callback.message, user_id=user_id)
+
+@router.callback_query(F.data == "saas_toggle:force_preview_reset")
+async def cb_force_preview_reset(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET force_preview_confirmed = 0 WHERE user_id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    await callback.answer("🔍 Предпросмотр снова будет показываться перед публикацией.", show_alert=True)
+    await open_saas_settings(callback)
