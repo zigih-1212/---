@@ -1027,9 +1027,10 @@ async def cb_finance(callback: CallbackQuery):
     kb_buttons = []
     # Если доступно к выводу >= MIN_PAYOUT, добавить кнопку запроса
     if available >= MIN_PAYOUT:
-        kb_buttons.append([InlineKeyboardButton(text="💸 Запросить выплату", callback_data="payout:request")])
+    kb_buttons.append([InlineKeyboardButton(text="💸 Запросить выплату", callback_data="payout:request")])
+    kb_buttons.append([InlineKeyboardButton(text="📢 Поделиться успехом", callback_data="share_success")])
     kb_buttons.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")])
-
+    
     try:
         await callback.message.edit_text(full_text, parse_mode=ParseMode.HTML,
                                           reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
