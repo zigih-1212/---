@@ -18,6 +18,7 @@ import random
 import hashlib
 import os
 from aiogram.types import FSInputFile
+from aiogram.filters import Command, CommandStart
 from datetime import datetime
 from xml.etree import ElementTree as ET
 from datetime import datetime, timedelta, timezone
