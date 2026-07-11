@@ -1482,6 +1482,8 @@ async def process_payout_message(message: Message, state: FSMContext):
                      (user_id, available, text))
         conn.commit()
         request_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute("UPDATE users SET payout_notified=0 WHERE user_id=?", (user_id,))
+        conn.commit()
     finally:
         conn.close()
 
