@@ -1495,6 +1495,8 @@ async def main() -> None:
 
     dp.include_router(router)           # основной
     dp.include_router(saas_router)      # саас (промокоды, магазины и т.д.)
+from handlers.social import router as social_router
+dp.include_router(social_router)
 
     scheduler = setup_scheduler(bot)
     scheduler.start()
