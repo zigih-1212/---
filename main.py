@@ -1197,7 +1197,7 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
 
     conn = get_db()
     try:
-        sub_id = generate_sub_id(callback.from_user.username, user_id)
+        sub_id = generate_sub_id(callback.from_user.username, user_id, role)
         conn.execute(
             "INSERT INTO users (user_id, username, sub_id, role, referrer_id) VALUES (?, ?, ?, ?, ?)",
             (user_id, callback.from_user.username, sub_id, role, referrer_id)
