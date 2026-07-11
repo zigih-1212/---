@@ -1385,19 +1385,24 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
     else:
         await call.answer("Неизвестная команда", show_alert=True)
 
+
 @router.callback_query(F.data == "payout:request")
 async def cb_payout_request(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     conn = get_db()
     try:
         available = conn.execute("SELECT balance_available FROM users WHERE user_id=?", (user_id,)).fetchone()["balance_available"]
+        existing = conn.execute("SELECT id FROM payout_requests WHERE user_id=? AND status='pending'", (user_id,)).fetchone()
     finally:
         conn.close()
+    if existing:
+        await callback.answer("❌ У вас уже есть активный запрос на выплату.", show_alert=True)
+        return
     if available < MIN_PAYOUT:
         await callback.answer("❌ Недостаточно средств для вывода.", show_alert=True)
         return
     await callback.message.answer(
-        f"💸 Укажите реквизиты для выплаты (номер карты, банк, TON-кошелёк или другие данные):\n"
+        f"💸 Укажите реквизиты для выплаты (номер карты,банк, TON-кошелёк или другие данные):\n"
         f"Доступно: <b>{available:.2f} ₽</b>\n\n"
         f"Пример: <i>Сбербанк 2202 2081 0829 0025</i>",
         parse_mode=ParseMode.HTML,
