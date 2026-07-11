@@ -208,6 +208,7 @@ async def complete_payout_request(request_id: int, admin_id: int = Depends(admin
         # Запись в payouts для истории
         conn.execute("INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) VALUES (?, ?, ?, ?, ?, 'completed')",
                      (user_id, amount, amount, 0, 'request'))
+        conn.execute("UPDATE users SET payout_notified=0 WHERE user_id=?", (user_id,))        
         conn.commit()
         log_admin_action(admin_id, "complete_payout_request", f"request #{request_id} user {user_id} amount {amount}")
     finally:
