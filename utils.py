@@ -23,9 +23,13 @@ def log_admin_action(admin_id: int, action: str, details: str = ""):
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
-def apply_referral_bonus(user_id: int, action_amount: float):
+def apply_referral_bonus(user_id: int, payment_sum: float, blogger_amount: float):
+    """
+    Вычисляет и начисляет реферальный бонус из доли сервиса (30%).
+    blogger_amount = payment_sum * 0.70
+    """
     REFERRAL_RATE = 0.10
-    if action_amount <= 0:
+    if blogger_amount <= 0:
         return
     conn = get_db()
     try:
@@ -33,10 +37,14 @@ def apply_referral_bonus(user_id: int, action_amount: float):
         if not user or not user["referrer_id"]:
             return
         referrer_id = user["referrer_id"]
-        bonus = round(action_amount * REFERRAL_RATE, 2)
+        bonus = round(blogger_amount * REFERRAL_RATE, 2)
+        service_share = round(payment_sum * 0.30, 2)
+        if bonus > service_share:
+            logger.warning(f"Referral bonus {bonus} exceeds service share {service_share}, skipping")
+            return
         conn.execute("UPDATE users SET balance_pending = balance_pending + ? WHERE user_id = ?", (bonus, referrer_id))
         conn.commit()
-        logger.info(f"Referral bonus: +{bonus} to user {referrer_id} from user {user_id}")
+        logger.info(f"Referral bonus: +{bonus} to user {referrer_id} from user {user_id} (service share {service_share})")
     except Exception as e:
         logger.error(f"Failed to apply referral bonus for user {user_id}: {e}")
     finally:
