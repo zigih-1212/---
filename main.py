@@ -912,7 +912,6 @@ async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
     else:
         text = "📢 <b>У вас пока нет подключенных каналов.</b>\n\nДля добавления канала отправьте его @username."
         kb = InlineKeyboardMarkup(inline_keyboard=[
-        kb.append([InlineKeyboardButton(text="📢 Поделиться успехом", callback_data="share_success")])
             [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
         ])
 
@@ -963,6 +962,7 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
         else:
             text += "  Нет данных\n"
         text += f"\n<i>Подключите каналы для детальной статистики.</i>"
+        kb.append([InlineKeyboardButton(text="📢 Поделиться успехом", callback_data="share_success")])
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
         ])
