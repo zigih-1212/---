@@ -57,21 +57,22 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
 </body>
 </html>'''
 
-ADMIN_PAYOUTS_TEMPLATE = '''{% extends "base.html" %}
+ADMIN_PAYOUTS_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}Выплаты{% endblock %}
 {% block content %}
-<h1>💰 Выплаты пользователям</h1>
+<h1>💰 Выплаты</h1>
+
+<!-- Секция пользователей с доступным балансом (быстрые выплаты) -->
 <div class="card">
     <h2>Доступно к выплате</h2>
     <table>
-        <tr><th>ID</th><th>Роль</th><th>Username</th><th>Доступно</th><th>В ожидании</th><th>SubID</th><th></th></tr>
+        <tr><th>ID</th><th>Роль</th><th>Username</th><th>Доступно</th><th>SubID</th><th></th></tr>
         {% for u in users %}
         <tr>
             <td>{{ u['user_id'] }}</td>
             <td>{{ u['role'] }}</td>
             <td>{{ u['username'] or '—' }}</td>
             <td><strong>{{ u['balance_available'] }}</strong> ₽</td>
-            <td>{{ u['balance_pending'] }} ₽</td>
             <td><code>{{ u['sub_id'] }}</code></td>
             <td>
                 <form method="post" action="/admin/payouts/pay" style="display:inline;">
@@ -79,6 +80,34 @@ ADMIN_PAYOUTS_TEMPLATE = '''{% extends "base.html" %}
                     <input type="number" name="amount" value="{{ u['balance_available'] }}" step="0.01" style="width:100px;">
                     <button type="submit">Выплатить</button>
                 </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+
+<!-- Секция запросов на выплату -->
+<div class="card" style="margin-top:30px;">
+    <h2>Запросы на выплату</h2>
+    <table>
+        <tr><th>ID</th><th>Пользователь</th><th>Сумма</th><th>Реквизиты</th><th>Статус</th><th>Дата</th><th></th></tr>
+        {% for r in requests %}
+        <tr style="{% if r['status'] == 'pending' %}background-color: #4a2020;{% endif %}">
+            <td>{{ r['id'] }}</td>
+            <td>{{ r['user_id'] }}</td>
+            <td>{{ r['amount'] }} ₽</td>
+            <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r['message'] }}</td>
+            <td>{{ r['status'] }}</td>
+            <td>{{ r['created_at'] }}</td>
+            <td>
+                {% if r['status'] == 'pending' %}
+                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/complete" style="display:inline;">
+                    <button type="submit" style="background:#4caf50;">✅ Выплатить</button>
+                </form>
+                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/decline" style="display:inline;">
+                    <button type="submit" style="background:#f44336;">❌ Отклонить</button>
+                </form>
+                {% endif %}
             </td>
         </tr>
         {% endfor %}
