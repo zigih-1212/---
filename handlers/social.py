@@ -207,6 +207,8 @@ async def process_manual_link(message: Message, state: FSMContext, bot: Bot):
             "SELECT channel_id FROM channels WHERE user_id=? AND is_active=1",
             (user_id,)
         ).fetchall()
+        user_template = conn.execute("SELECT video_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+        tmpl = user_template["video_template"] if user_template and user_template["video_template"] else DEFAULT_VIDEO_TEMPLATE
     finally:
         conn.close()
 
@@ -214,8 +216,8 @@ async def process_manual_link(message: Message, state: FSMContext, bot: Bot):
         await message.answer("❌ У вас нет активных Telegram-каналов.")
         return
 
-    # Формируем простой текст поста
-    caption = f"🔥 Новое видео!\n{url}"
+    # Формируем текст поста по шаблону
+    caption = tmpl.format(title=url, link=url, description="")
     for ch in channels:
         try:
             await bot.send_message(ch["channel_id"], caption, parse_mode=ParseMode.HTML)
