@@ -912,6 +912,7 @@ async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
     else:
         text = "📢 <b>У вас пока нет подключенных каналов.</b>\n\nДля добавления канала отправьте его @username."
         kb = InlineKeyboardMarkup(inline_keyboard=[
+        kb.append([InlineKeyboardButton(text="📢 Поделиться успехом", callback_data="share_success")])
             [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
         ])
 
