@@ -90,19 +90,31 @@ ADMIN_PAYOUTS_TEMPLATE = r'''{% extends "base.html" %}
 <div class="card" style="margin-top:30px;">
     <h2>Запросы на выплату</h2>
     <table>
-        <tr><th>ID</th><th>Пользователь</th><th>Сумма</th><th>Реквизиты</th><th>Статус</th><th>Дата</th><th></th></tr>
+        <tr><th>ID</th><th>Пользователь</th><th>Сумма</th><th>Реквизиты</th><th>Статус</th><th>Чек</th><th>Дата</th><th></th></tr>
         {% for r in requests %}
-        <tr style="{% if r['status'] == 'pending' %}background-color: #4a2020;{% endif %}">
+        <tr style="{% if r['status'] == 'processing' %}background-color: #4a2020;{% elif r['status'] == 'awaiting_receipt' %}background-color: #3a3a20;{% elif r['status'] == 'receipt_uploaded' %}background-color: #203a20;{% endif %}">
             <td>{{ r['id'] }}</td>
             <td>{{ r['user_id'] }}</td>
             <td>{{ r['amount'] }} ₽</td>
-            <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r['message'] }}</td>
+            <td style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r['message'] }}</td>
             <td>{{ r['status'] }}</td>
+            <td>{% if r['receipt_photo'] %}<a href="https://t.me/{{ bot_username }}?start=receipt_{{ r['id'] }}">Посмотреть</a>{% else %}—{% endif %}</td>
             <td>{{ r['created_at'] }}</td>
             <td>
-                {% if r['status'] == 'pending' %}
-                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/complete" style="display:inline;">
-                    <button type="submit" style="background:#4caf50;">✅ Выплатить</button>
+                {% if r['status'] == 'processing' %}
+                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/send-money" style="display:inline;">
+                    <button type="submit" style="background:#ff9800;">💸 Деньги отправлены</button>
+                </form>
+                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/decline" style="display:inline;">
+                    <button type="submit" style="background:#f44336;">❌ Отклонить</button>
+                </form>
+                {% elif r['status'] == 'awaiting_receipt' %}
+                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/decline" style="display:inline;">
+                    <button type="submit" style="background:#f44336;">❌ Отклонить</button>
+                </form>
+                {% elif r['status'] == 'receipt_uploaded' %}
+                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/confirm-receipt" style="display:inline;">
+                    <button type="submit" style="background:#4caf50;">✅ Чек получен, закрыть</button>
                 </form>
                 <form method="post" action="/admin/payouts/request/{{ r['id'] }}/decline" style="display:inline;">
                     <button type="submit" style="background:#f44336;">❌ Отклонить</button>
