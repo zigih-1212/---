@@ -1532,7 +1532,7 @@ async def main() -> None:
 
     fastapi_app = create_app(bot)
 
-  @fastapi_app.post("/api/admitad/postback")
+@fastapi_app.post("/api/admitad/postback")
 async def admitad_postback(request: Request):
     data = await request.json()
     # Admitad отправляет такие поля (пример): action, action_id, payment_sum, status, subid1 и т.д.
