@@ -369,6 +369,10 @@ def init_db() -> None:
             cursor.execute(mig)
         except sqlite3.OperationalError:
             pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
