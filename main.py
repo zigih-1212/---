@@ -48,6 +48,7 @@ from stats import get_saas_channels, get_saas_channel_stats_new, get_saas_overvi
 from services.db import get_db
 from config import BOT_USERNAME
 from utils import apply_referral_bonus
+from utils import check_rss_and_publish
 
 logger = logging.getLogger("autopost_bot.referral")
 # ---------------------------------------------------------------------------
@@ -1475,6 +1476,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(daily_report, trigger="cron", hour=9, minute=0, kwargs={"bot": bot}, id="daily_report", replace_existing=True)
     scheduler.add_job(send_subscription_reminders, trigger="cron", hour=10, minute=0, kwargs={"bot": bot}, id="subscription_reminders", replace_existing=True)
     scheduler.add_job(update_all_store_data_from_feed, trigger="cron", hour=4, minute=0, id="update_coupons_feed", replace_existing=True)
+    scheduler.add_job(check_rss_and_publish, trigger="interval", minutes=15, kwargs={"bot": bot}, id="check_rss", replace_existing=True)
     return scheduler
 
 # ---------------------------------------------------------------------------
