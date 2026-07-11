@@ -73,6 +73,74 @@ async def check_payout_threshold(user_id: int, bot: Bot):
             conn.commit()
     finally:
         conn.close()
+# utils.py
+
+async def generate_success_text(user_id: int, role: str = "blogger") -> str:
+    """Создаёт сообщение для кнопки «Поделиться успехом»."""
+    conn = get_db()
+    try:
+        # Общая статистика по постам
+        total_posts = conn.execute(
+            "SELECT COUNT(*) FROM posts WHERE user_id=? AND status='published'",
+            (user_id,)
+        ).fetchone()[0] or 0
+
+        # Топ-3 магазина за всё время
+        top_stores = conn.execute("""
+            SELECT g.source, COUNT(*) as cnt
+            FROM posts p
+            JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
+            WHERE p.user_id=? AND p.status='published'
+            GROUP BY g.source
+            ORDER BY cnt DESC
+            LIMIT 3
+        """, (user_id,)).fetchall()
+
+        # Баланс
+        balance = conn.execute(
+            "SELECT balance_available, balance_pending FROM users WHERE user_id=?",
+            (user_id,)
+        ).fetchone()
+        available = balance["balance_available"] or 0
+        pending = balance["balance_pending"] or 0
+        total_earned = available + pending
+
+        # Транзакции за 30 дней
+        recent_earn = conn.execute("""
+            SELECT SUM(payment_sum) FROM admitad_transactions
+            WHERE user_id=? AND time >= strftime('%s', 'now', '-30 days')
+        """, (user_id,)).fetchone()[0] or 0
+
+    finally:
+        conn.close()
+
+    if role == "saas":
+        role_text = "SaaS-клиент AutoPost"
+    else:
+        role_text = "Блогер AutoPost"
+
+    lines = [
+        f"🚀 Я зарабатываю с AutoPost Bot!",
+        f"👤 {role_text}",
+        f"📬 Опубликовано постов: {total_posts}",
+    ]
+
+    if top_stores:
+        stores_str = ", ".join([f"{s['source']} ({s['cnt']} пост.)" for s in top_stores])
+        lines.append(f"🏪 Топ магазинов: {stores_str}")
+
+    lines.append(f"💰 Заработано за 30 дней: {recent_earn:.0f} ₽")
+    lines.append(f"💳 Общий баланс: {total_earned:.0f} ₽ (доступно {available:.0f} ₽)")
+
+    if role == "blogger":
+        # Реферальная ссылка
+        sub_id = conn.execute("SELECT sub_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if sub_id:
+            ref_link = f"https://t.me/{BOT_USERNAME}?start={sub_id['sub_id']}"
+            lines.append(f"\n🔗 Присоединяйся: {ref_link}")
+
+    return "\n".join(lines)
+
 async def check_rss_and_publish(bot: Bot):
     """Проверяет RSS-ленты YouTube и Rutube и публикует новые видео."""
     conn = get_db()
