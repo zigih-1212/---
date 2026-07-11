@@ -163,14 +163,21 @@ async def payouts_list(request: Request, admin_id: int = Depends(admin_required)
             ORDER BY balance_available DESC
         """).fetchall()
         requests = conn.execute("""
-            SELECT pr.id, pr.user_id, pr.amount, pr.message, pr.status, pr.created_at
+            SELECT pr.id, pr.user_id, pr.amount, pr.message, pr.status, pr.receipt_photo, pr.created_at
             FROM payout_requests pr
-            ORDER BY pr.status = 'pending' DESC, pr.created_at DESC
+            ORDER BY 
+                CASE pr.status 
+                    WHEN 'processing' THEN 1 
+                    WHEN 'awaiting_receipt' THEN 2 
+                    WHEN 'receipt_uploaded' THEN 3 
+                    ELSE 4 
+                END,
+                pr.created_at DESC
             LIMIT 50
         """).fetchall()
     finally:
         conn.close()
-    return render("admin_payouts.html", users=users, requests=requests, active_page='payouts')
+    return render("admin_payouts.html", users=users, requests=requests, active_page='payouts', bot_username=BOT_USERNAME)
 
 @router.post("/payouts/request/{request_id}/send-money")
 async def send_money(request_id: int, admin_id: int = Depends(admin_required)):
