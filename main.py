@@ -46,7 +46,7 @@ from fastapi import FastAPI, Form, Request, HTTPException
 from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, PayoutStates
 from stats import get_saas_channels, get_saas_channel_stats_new, get_saas_overview, STAT_PERIODS
 from services.db import get_db
-
+from config import BOT_USERNAME
 
 # ---------------------------------------------------------------------------
 
@@ -374,6 +374,11 @@ def init_db() -> None:
             cursor.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER")
         except sqlite3.OperationalError:
             pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN post_interval_minutes INTEGER DEFAULT 60")
+        except sqlite3.OperationalError:
+            pass
+  
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
@@ -526,6 +531,104 @@ async def promo_handler(message: Message, state: FSMContext):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
     )
 
+@router.callback_query(F.data == "blogger:post_interval")
+async def cb_blogger_post_interval(callback: CallbackQuery, state: FSMContext):
+    # Показываем текущий интервал (или по умолчанию 60 минут)
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT post_interval_minutes FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        interval = user["post_interval_minutes"] if user and user["post_interval_minutes"] else 60
+    finally:
+        conn.close()
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🕐 1 пост в час", callback_data="blogger_set_interval:60")],
+        [InlineKeyboardButton(text="🕐 2 поста в час", callback_data="blogger_set_interval:30")],
+        [InlineKeyboardButton(text="🕐 4 поста в час", callback_data="blogger_set_interval:15")],
+        [InlineKeyboardButton(text="🕐 6 постов в час", callback_data="blogger_set_interval:10")],
+        [InlineKeyboardButton(text="✏️ Свой интервал", callback_data="blogger_custom_interval")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")],
+    ])
+    await callback.message.edit_text(
+        f"⚙️ <b>Периодичность постов</b>\n\n"
+        f"Сейчас: <b>{interval} минут</b>\n\n"
+        "Выберите частоту публикаций:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "blogger_custom_interval")
+async def cb_blogger_custom_interval(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("✏️ Введите интервал в минутах (например, 45):")
+    await state.set_state(BloggerStates.waiting_post_interval)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("blogger_set_interval:"))
+async def cb_blogger_set_interval(callback: CallbackQuery):
+    minutes = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET post_interval_minutes = ? WHERE user_id = ?", (minutes, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    await callback.answer(f"✅ Интервал установлен: {minutes} минут", show_alert=True)
+    await cb_blogger_post_interval(callback)
+
+@router.message(BloggerStates.waiting_post_interval)
+async def process_blogger_interval_input(message: Message, state: FSMContext):
+    try:
+        minutes = int(message.text.strip())
+        if minutes < 5:
+            await message.answer("❌ Минимальный интервал — 5 минут.")
+            return
+        user_id = message.from_user.id
+        conn = get_db()
+        try:
+            conn.execute("UPDATE users SET post_interval_minutes = ? WHERE user_id = ?", (minutes, user_id))
+            conn.commit()
+        finally:
+            conn.close()
+        await message.answer(f"✅ Интервал установлен: {minutes} минут")
+        await state.clear()
+        await show_user_cabinet(message, user_id=user_id)
+    except ValueError:
+        await message.answer("❌ Введите число (минут).")
+@router.callback_query(F.data == "blogger:referral")
+async def cb_blogger_referral(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        sub_id = conn.execute("SELECT sub_id FROM users WHERE user_id = ?", (user_id,)).fetchone()["sub_id"]
+    finally:
+        conn.close()
+    ref_link = f"https://t.me/{BOT_USERNAME}?start={sub_id}"
+    await callback.message.edit_text(
+        f"🔗 <b>Ваша реферальная ссылка:</b>\n\n"
+        f"<code>{ref_link}</code>\n\n"
+        "Если пользователь зарегистрируется по этой ссылке, вы будете получать 70% от его дохода.\n"
+        "Ссылка работает только для новых блогеров.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+        ])
+    )
+    await callback.answer()
+@router.callback_query(F.data == "blogger:social")
+async def cb_blogger_social(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "🌐 <b>Мои соцсети</b>\n\n"
+        "В этом разделе вы сможете добавить свои YouTube, Rutube и другие каналы для автоматического анонсирования новых видео.\n"
+        "Функция скоро появится.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+        ])
+    )
+    await callback.answer()
 # ---------------------------------------------------------------------------
 # /start
 # ---------------------------------------------------------------------------
