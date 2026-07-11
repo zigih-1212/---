@@ -129,10 +129,12 @@ LOGIN_TEMPLATE = '''<!DOCTYPE html>
 </html>'''
 
 # ---------- DASHBOARD ----------
-DASHBOARD_TEMPLATE = '''{% extends "base.html" %}
+DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}Дашборд{% endblock %}
 {% block content %}
 <div class="top-bar"><h1>📊 Дашборд</h1></div>
+
+<!-- Текстовые метрики (прежние) -->
 <div class="card">
     <h2>Ключевые метрики</h2>
     <table>
@@ -143,24 +145,80 @@ DASHBOARD_TEMPLATE = '''{% extends "base.html" %}
         <tr><td>Ожидающих выплат</td><td><strong>{{ pending_payouts }}</strong></td></tr>
     </table>
 </div>
+
+<!-- Графики -->
 <div class="card">
-    <h2>Последние пользователи</h2>
-    <table>
-        <tr><th>ID</th><th>Роль</th><th>Дата регистрации</th></tr>
-        {% for u in last_users %}
-        <tr><td>{{ u['user_id'] }}</td><td>{{ u['role'] }}</td><td>{{ u['created_at'] }}</td></tr>
-        {% endfor %}
-    </table>
+    <h2>Посты за 30 дней</h2>
+    <canvas id="postsChart" width="400" height="200"></canvas>
 </div>
 <div class="card">
-    <h2>Последние посты</h2>
-    <table>
-        <tr><th>ID</th><th>Канал</th><th>Статус</th><th>Дата</th></tr>
-        {% for p in last_posts %}
-        <tr><td>{{ p['id'] }}</td><td>{{ p['channel_id'] }}</td><td>{{ p['status'] }}</td><td>{{ p['published_at'] or p['created_at'] }}</td></tr>
-        {% endfor %}
-    </table>
+    <h2>Доход за 30 дней</h2>
+    <canvas id="revenueChart" width="400" height="200"></canvas>
 </div>
+<div class="card">
+    <h2>Магазины (30 дней)</h2>
+    <canvas id="storeChart" width="400" height="200"></canvas>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(async function() {
+    const resp = await fetch('/admin/dashboard/data');
+    const data = await resp.json();
+
+    // Посты
+    new Chart(document.getElementById('postsChart'), {
+        type: 'line',
+        data: {
+            labels: data.posts_labels,
+            datasets: [{
+                label: 'Посты',
+                data: data.posts_counts,
+                borderColor: '#ff4444',
+                backgroundColor: 'rgba(255,68,68,0.1)',
+                fill: true,
+            }]
+        },
+        options: {
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+
+    // Доход
+    new Chart(document.getElementById('revenueChart'), {
+        type: 'line',
+        data: {
+            labels: data.revenue_labels,
+            datasets: [{
+                label: 'Доход (₽)',
+                data: data.revenue_values,
+                borderColor: '#4caf50',
+                backgroundColor: 'rgba(76,175,80,0.1)',
+                fill: true,
+            }]
+        },
+        options: {
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+
+    // Магазины (круговая)
+    new Chart(document.getElementById('storeChart'), {
+        type: 'doughnut',
+        data: {
+            labels: data.store_labels,
+            datasets: [{
+                label: 'Постов',
+                data: data.store_values,
+                backgroundColor: [
+                    '#ff4444', '#4caf50', '#ff9800', '#2196f3', '#9c27b0',
+                    '#00bcd4', '#ffeb3b', '#e91e63', '#8bc34a', '#607d8b'
+                ],
+            }]
+        }
+    });
+})();
+</script>
 {% endblock %}'''
 
 # ---------- USERS LIST ----------
