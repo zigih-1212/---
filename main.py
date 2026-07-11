@@ -430,7 +430,11 @@ def init_db() -> None:
         try:
             cursor.execute("ALTER TABLE users ADD COLUMN payout_notified INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
-            pass          
+            pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN tax_status TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
