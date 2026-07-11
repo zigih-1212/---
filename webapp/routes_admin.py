@@ -150,6 +150,41 @@ async def user_edit_save(user_id: int, request: Request,
         conn.close()
     return RedirectResponse(url="/admin/users", status_code=303)
 
+@router.get("/payouts", response_class=HTMLResponse)
+async def payouts_list(request: Request, _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        users = conn.execute("""
+            SELECT user_id, role, username, balance_available, balance_pending, sub_id
+            FROM users
+            WHERE balance_available > 0
+            ORDER BY role, balance_available DESC
+        """).fetchall()
+    finally:
+        conn.close()
+    return render("admin_payouts.html", users=users, active_page='payouts')
+
+@router.post("/payouts/pay")
+async def payouts_execute(request: Request, user_id: int = Form(...), amount: float = Form(...), _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT balance_available FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user:
+            return RedirectResponse(url="/admin/payouts", status_code=303)
+        if amount > user["balance_available"]:
+            amount = user["balance_available"]
+        # Создаём запись выплаты
+        conn.execute("INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) VALUES (?, ?, ?, ?, ?, 'completed')",
+                     (user_id, amount, amount, 0, 'manual'))
+        # Обнуляем доступный баланс
+        conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (amount, user_id))
+        conn.commit()
+        # Аудит
+        log_admin_action(_ , "manual_payout", f"user {user_id} payout {amount}")
+    finally:
+        conn.close()
+    return RedirectResponse(url="/admin/payouts", status_code=303)
+
 # ---------- Посты ----------
 @router.get("/posts", response_class=HTMLResponse)
 async def posts_list(request: Request, status: str = "", user_id: str = "", _: int = Depends(admin_required)):
