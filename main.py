@@ -638,18 +638,7 @@ async def cb_blogger_referral(callback: CallbackQuery):
         ])
     )
     await callback.answer()
-@router.callback_query(F.data == "blogger:social")
-async def cb_blogger_social(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "🌐 <b>Мои соцсети</b>\n\n"
-        "В этом разделе вы сможете добавить свои YouTube, Rutube и другие каналы для автоматического анонсирования новых видео.\n"
-        "Функция скоро появится.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
-        ])
-    )
-    await callback.answer()
+
 # ---------------------------------------------------------------------------
 # /start
 # ---------------------------------------------------------------------------
