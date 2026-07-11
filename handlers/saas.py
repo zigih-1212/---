@@ -346,7 +346,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
     user_id = callback.from_user.id
 
-    # Получаем выбранные пользователем магазины
+    # Получаем выбранные пользователем магазины и шаблон товаров
     conn = get_db()
     try:
         user_stores = conn.execute(
@@ -354,6 +354,8 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             (user_id,)
         ).fetchall()
         store_ids = [r["category_id"] for r in user_stores]
+        user_tmpl = conn.execute("SELECT product_template FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        custom_template = user_tmpl["product_template"] if user_tmpl and user_tmpl["product_template"] else None
     finally:
         conn.close()
 
@@ -453,7 +455,9 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
             adult=adult,
             old_price=product["old_price"] if "old_price" in product.keys() else None,
             discount_percent=product["discount_percent"] if "discount_percent" in product.keys() else None,
-            delivery_info=delivery_info
+            delivery_info=delivery_info,
+            promocode=promocode,
+            custom_template=custom_template
         )
 
         msg = await publish_post_with_fallback(
