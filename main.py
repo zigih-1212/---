@@ -432,7 +432,7 @@ def log_admin_action(admin_id: int, action: str, details: str = ""):
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
-def generate_sub_id(username: str, user_id: int) -> str:
+def generate_sub_id(username: str, user_id: int, role: str = "blogger") -> str:
     _TRANSLIT_MAP = {
         "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
         "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
@@ -446,7 +446,8 @@ def generate_sub_id(username: str, user_id: int) -> str:
         result += _TRANSLIT_MAP.get(ch, ch if ch.isalnum() or ch == "_" else "")
     result = re.sub(r"[^a-z0-9_]", "", result)
     result = re.sub(r"_+", "_", result).strip("_") or f"user{user_id}"
-    return f"{result}_uid{user_id}"
+    prefix = "saas_" if role == "saas" else "blogger_"
+    return f"{prefix}{result}_uid{user_id}"
 
 def sanitize_html(text: str) -> str:
     if not text:
