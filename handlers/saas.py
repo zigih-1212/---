@@ -1052,6 +1052,65 @@ async def cb_finance(callback: CallbackQuery):
                                       reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
     await callback.answer()
 
+@router.callback_query(F.data.startswith("receipt:upload:"))
+async def cb_receipt_upload(callback: CallbackQuery, state: FSMContext):
+    request_id = int(callback.data.split(":")[2])
+    user_id = callback.from_user.id
+    # Проверим принадлежность заявки и статус
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT * FROM payout_requests WHERE id=? AND user_id=? AND status='awaiting_receipt'", 
+                           (request_id, user_id)).fetchone()
+        if not req:
+            await callback.answer("❌ Заявка не найдена или не в статусе ожидания чека.", show_alert=True)
+            return
+    finally:
+        conn.close()
+    await callback.message.answer("📎 Прикрепите фото/скриншот чека из приложения «Мой налог».")
+    await state.set_state(PayoutStates.waiting_for_receipt_photo)
+    await state.update_data(payout_request_id=request_id)
+    await callback.answer()
+
+@router.message(PayoutStates.waiting_for_receipt_photo, F.photo)
+async def process_receipt_photo(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    data = await state.get_data()
+    request_id = data.get("payout_request_id")
+    if not request_id:
+        await message.answer("❌ Ошибка сессии. Попробуйте снова.")
+        await state.clear()
+        return
+
+    # Получаем file_id фото
+    photo = message.photo[-1]
+    file_id = photo.file_id
+
+    conn = get_db()
+    try:
+        # Обновляем статус заявки и сохраняем file_id (можно в отдельное поле, добавим receipt_photo)
+        conn.execute("UPDATE payout_requests SET status='receipt_uploaded', receipt_photo=? WHERE id=?",
+                     (file_id, request_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Уведомление админам
+    for admin_id in ADMIN_IDS:
+        try:
+            await message.bot.send_photo(
+                admin_id,
+                photo=file_id,
+                caption=f"🧾 Чек по заявке #{request_id} от пользователя {user_id}.\n"
+                        f"Проверьте и подтвердите выплату в админке.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🌐 Админка", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))]
+                ])
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки чека админу {admin_id}: {e}")
+
+    await message.answer("✅ Чек отправлен администратору. Ожидайте подтверждения.")
+    await state.clear()
 # ---------------------------------------------------------------------------
 # Оферта
 # ---------------------------------------------------------------------------
