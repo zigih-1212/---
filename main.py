@@ -1239,7 +1239,17 @@ async def cb_support_contact(callback: CallbackQuery):
 
 @router.callback_query(F.data == "menu:instructions")
 async def cb_menu_instructions(callback: CallbackQuery) -> None:
-    await show_saas_instruction(callback)
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        role = user["role"] if user else "blogger"
+    finally:
+        conn.close()
+    if role == "saas":
+        await show_saas_instruction(callback)
+    else:
+        await show_blogger_instruction(callback)
     await callback.answer()
 
 async def show_saas_instruction(callback: CallbackQuery):
@@ -1275,6 +1285,43 @@ async def show_saas_instruction(callback: CallbackQuery):
         ])
     )
 
+async def show_blogger_instruction(callback: CallbackQuery):
+    text = (
+        "📖 <b>Инструкция для блогеров</b>\n\n"
+        "<b>1. Бесплатный доступ</b>\n"
+        "─ Вы пользуетесь ботом бесплатно, без ограничений по времени.\n"
+        "─ Доход от продаж делится: 70% вам, 30% сервису.\n\n"
+        "<b>2. Подключение каналов</b>\n"
+        "─ Перейдите в «📢 Мои Telegram-каналы» и отправьте @username вашего канала.\n"
+        "─ Можно добавить любое количество каналов.\n\n"
+        "<b>3. Выбор магазинов</b>\n"
+        "─ Нажмите «🏪 Магазины» и отметьте интересующие вас магазины.\n"
+        "─ Если ничего не выбрано, будут использоваться все доступные магазины.\n\n"
+        "<b>4. Интервал постов</b>\n"
+        "─ В разделе «⚙️ Периодичность постов» выберите частоту публикаций.\n"
+        "─ Можно задать фиксированный интервал (1, 2, 4, 6 постов в час) или ввести своё значение.\n\n"
+        "<b>5. Видео-каналы (YouTube, Rutube)</b>\n"
+        "─ В разделе «🎥 Мои видео-каналы» добавьте ссылки на свои YouTube или Rutube каналы.\n"
+        "─ Бот будет автоматически анонсировать новые видео в ваших Telegram-каналах.\n"
+        "─ Для TikTok и Instagram используйте ручную отправку ссылки (кнопка «📤 Ручной пост»).\n\n"
+        "<b>6. Реферальная система</b>\n"
+        "─ В разделе «🔗 Реферальная ссылка» вы получите персональную ссылку.\n"
+        "─ Приглашайте других блогеров — когда они начнут зарабатывать, вы будете получать 10% от их дохода.\n\n"
+        "<b>7. Шаблоны постов</b>\n"
+        "─ В разделе «📝 Шаблоны постов» можно настроить внешний вид товарных и видео-анонсов.\n"
+        "─ Используйте подстановки {title}, {price}, {link} и другие, чтобы создать уникальный стиль.\n\n"
+        "<b>8. Выплаты</b>\n"
+        "─ Заработанные средства отображаются в разделе «💰 Финансы».\n"
+        "─ Выплаты производятся по запросу администратору (@Zigih90).\n\n"
+        "<i>По всем вопросам обращайтесь к администратору.</i>"
+    )
+    await callback.message.edit_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+        ])
+    )
 # ---------------------------------------------------------------------------
 # Административные команды
 # ---------------------------------------------------------------------------
