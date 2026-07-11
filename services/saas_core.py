@@ -119,8 +119,8 @@ async def publish_from_catalog(bot: Bot):
         user_id = user["user_id"]
         role = user["role"]
         tariff_id = user["tariff_id"]
-        post_interval = user["post_interval_minutes"] or 60   # для SaaS не используется, но не мешает
-        commission_rate = user["commission_rate"] or 0.95     # пока не используется в этой функции
+        post_interval = user["post_interval_minutes"] or 60
+        commission_rate = user["commission_rate"] or 0.95
 
         # Проверка интервала для блогеров
         if role == "blogger":
@@ -173,11 +173,9 @@ async def publish_from_catalog(bot: Bot):
         from services.admitad import STORE_ID_MAP, ADULT_STORES, STORES
         allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
 
-        # Для блогеров, если нет выбранных магазинов, используем все доступные
         if role == "blogger" and not allowed_sources:
             allowed_sources = list(STORES.keys())
 
-        # Получаем min_discount (только для SaaS)
         min_discount = 0
         if role == "saas":
             conn = get_db()
@@ -186,6 +184,14 @@ async def publish_from_catalog(bot: Bot):
                 min_discount = min_disc["min_discount"] if min_disc else 0
             finally:
                 conn.close()
+
+        # Получаем пользовательский шаблон товара
+        conn = get_db()
+        try:
+            user_tmpl = conn.execute("SELECT product_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+            custom_template = user_tmpl["product_template"] if user_tmpl and user_tmpl["product_template"] else None
+        finally:
+            conn.close()
 
         # Выбор товара
         conn = get_db()
@@ -200,7 +206,6 @@ async def publish_from_catalog(bot: Bot):
                 product = None
 
             if not product:
-                # Сбрасываем used для разрешённых источников и пробуем ещё раз
                 if allowed_sources:
                     conn.execute(
                         f"UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ? AND source IN ({placeholders})",
@@ -230,7 +235,6 @@ async def publish_from_catalog(bot: Bot):
             logger.info(f"[DEBUG] User {user_id}: нет доступных товаров")
             continue
 
-        # Если товаров осталось мало — докачиваем (особенно важно для блогеров)
         if role == "blogger":
             conn = get_db()
             try:
@@ -295,7 +299,8 @@ async def publish_from_catalog(bot: Bot):
                 old_price=product["old_price"] if "old_price" in product.keys() else None,
                 discount_percent=product["discount_percent"] if "discount_percent" in product.keys() else None,
                 delivery_info=delivery_info,
-                promocode=promocode
+                promocode=promocode,
+                custom_template=custom_template
             )
 
             try:
