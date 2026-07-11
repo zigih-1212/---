@@ -151,21 +151,28 @@ async def user_edit_save(user_id: int, request: Request,
     return RedirectResponse(url="/admin/users", status_code=303)
 
 @router.get("/payouts", response_class=HTMLResponse)
-async def payouts_list(request: Request, _: int = Depends(admin_required)):
+async def payouts_list(request: Request, admin_id: int = Depends(admin_required)):
     conn = get_db()
     try:
         users = conn.execute("""
-            SELECT user_id, role, username, balance_available, balance_pending, sub_id
+            SELECT user_id, role, username, balance_available, sub_id
             FROM users
             WHERE balance_available > 0
-            ORDER BY role, balance_available DESC
+            ORDER BY balance_available DESC
+        """).fetchall()
+        requests = conn.execute("""
+            SELECT pr.id, pr.user_id, pr.amount, pr.message, pr.status, pr.created_at
+            FROM payout_requests pr
+            ORDER BY pr.status = 'pending' DESC, pr.created_at DESC
+            LIMIT 50
         """).fetchall()
     finally:
         conn.close()
-    return render("admin_payouts.html", users=users, active_page='payouts')
+    return render("admin_payouts.html", users=users, requests=requests, active_page='payouts')
 
 @router.post("/payouts/pay")
-async def payouts_execute(request: Request, user_id: int = Form(...), amount: float = Form(...), _: int = Depends(admin_required)):
+async def payouts_execute(request: Request, user_id: int = Form(...), amount: float = Form(...),
+                          admin_id: int = Depends(admin_required)):
     conn = get_db()
     try:
         user = conn.execute("SELECT balance_available FROM users WHERE user_id=?", (user_id,)).fetchone()
@@ -173,18 +180,47 @@ async def payouts_execute(request: Request, user_id: int = Form(...), amount: fl
             return RedirectResponse(url="/admin/payouts", status_code=303)
         if amount > user["balance_available"]:
             amount = user["balance_available"]
-        # Создаём запись выплаты
         conn.execute("INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) VALUES (?, ?, ?, ?, ?, 'completed')",
                      (user_id, amount, amount, 0, 'manual'))
-        # Обнуляем доступный баланс
         conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (amount, user_id))
         conn.commit()
-        # Аудит
-        log_admin_action(_ , "manual_payout", f"user {user_id} payout {amount}")
+        log_admin_action(admin_id, "manual_payout", f"user {user_id} payout {amount}")
     finally:
         conn.close()
     return RedirectResponse(url="/admin/payouts", status_code=303)
 
+@router.post("/payouts/request/{request_id}/complete")
+async def complete_payout_request(request_id: int, admin_id: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT * FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req or req["status"] != "pending":
+            return RedirectResponse(url="/admin/payouts", status_code=303)
+        user_id = req["user_id"]
+        amount = req["amount"]
+        # Списать баланс, если хватает (обычно amount = весь доступный баланс на момент запроса)
+        conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (amount, user_id))
+        # Обновить статус запроса
+        conn.execute("UPDATE payout_requests SET status='completed' WHERE id=?", (request_id,))
+        # Запись в payouts для истории
+        conn.execute("INSERT INTO payouts (user_id, amount_requested, amount_to_withdraw, amount_blogger, card, status) VALUES (?, ?, ?, ?, ?, 'completed')",
+                     (user_id, amount, amount, 0, 'request'))
+        conn.commit()
+        log_admin_action(admin_id, "complete_payout_request", f"request #{request_id} user {user_id} amount {amount}")
+    finally:
+        conn.close()
+    return RedirectResponse(url="/admin/payouts", status_code=303)
+
+@router.post("/payouts/request/{request_id}/decline")
+async def decline_payout_request(request_id: int, admin_id: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        conn.execute("UPDATE payout_requests SET status='declined' WHERE id=?", (request_id,))
+        conn.commit()
+        log_admin_action(admin_id, "decline_payout_request", f"request #{request_id}")
+    finally:
+        conn.close()
+    return RedirectResponse(url="/admin/payouts", status_code=303)
 # ---------- Посты ----------
 @router.get("/posts", response_class=HTMLResponse)
 async def posts_list(request: Request, status: str = "", user_id: str = "", _: int = Depends(admin_required)):
