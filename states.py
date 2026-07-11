@@ -32,3 +32,6 @@ class PayoutStates(StatesGroup):
 class TemplateStates(StatesGroup):
     waiting_product_template = State()
     waiting_video_template = State()
+    
+class TaxStates(StatesGroup):
+    waiting_tax_status = State()
