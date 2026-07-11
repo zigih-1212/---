@@ -1519,28 +1519,35 @@ async def process_payout_message(message: Message, state: FSMContext):
         return
     conn = get_db()
     try:
-        available = conn.execute("SELECT balance_available FROM users WHERE user_id=?", (user_id,)).fetchone()["balance_available"]
+        user = conn.execute("SELECT balance_available, tax_status FROM users WHERE user_id=?", (user_id,)).fetchone()
+        available = user["balance_available"]
+        if user["tax_status"] != "business":
+            await message.answer("❌ Вывод средств недоступен для вашего налогового статуса.")
+            await state.clear()
+            return
         if available < MIN_PAYOUT:
             await message.answer("❌ Недостаточно средств.")
             await state.clear()
             return
-        # Сохраняем запрос
-        conn.execute("INSERT INTO payout_requests (user_id, amount, message) VALUES (?, ?, ?)",
-                     (user_id, available, text))
+        # Списание баланса сразу
+        conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (available, user_id))
+        # Создание заявки со статусом processing
+        conn.execute(
+            "INSERT INTO payout_requests (user_id, amount, message, status) VALUES (?, ?, ?, 'processing')",
+            (user_id, available, text)
+        )
         conn.commit()
         request_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        conn.execute("UPDATE users SET payout_notified=0 WHERE user_id=?", (user_id,))
-        conn.commit()
     finally:
         conn.close()
 
     await message.answer(
-        f"✅ Запрос на выплату <b>{available:.2f} ₽</b> принят. "
-        f"Администратор обработает его в ближайшее время. Номер заявки: <b>#{request_id}</b>.",
+        f"✅ Заявка на выплату <b>{available:.2f} ₽</b> создана и передана администратору. "
+        f"Номер заявки: <b>#{request_id}</b>.\nОжидайте уведомления о переводе.",
         parse_mode=ParseMode.HTML
     )
 
-    # Уведомление админам в телеграм
+    # Уведомление админам
     for admin_id in ADMIN_IDS:
         try:
             await message.bot.send_message(
