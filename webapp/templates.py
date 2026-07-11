@@ -56,6 +56,34 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
 </body>
 </html>'''
 
+ADMIN_PAYOUTS_TEMPLATE = '''{% extends "base.html" %}
+{% block title %}Выплаты{% endblock %}
+{% block content %}
+<h1>💰 Выплаты пользователям</h1>
+<div class="card">
+    <h2>Доступно к выплате</h2>
+    <table>
+        <tr><th>ID</th><th>Роль</th><th>Username</th><th>Доступно</th><th>В ожидании</th><th>SubID</th><th></th></tr>
+        {% for u in users %}
+        <tr>
+            <td>{{ u['user_id'] }}</td>
+            <td>{{ u['role'] }}</td>
+            <td>{{ u['username'] or '—' }}</td>
+            <td><strong>{{ u['balance_available'] }}</strong> ₽</td>
+            <td>{{ u['balance_pending'] }} ₽</td>
+            <td><code>{{ u['sub_id'] }}</code></td>
+            <td>
+                <form method="post" action="/admin/payouts/pay" style="display:inline;">
+                    <input type="hidden" name="user_id" value="{{ u['user_id'] }}">
+                    <input type="number" name="amount" value="{{ u['balance_available'] }}" step="0.01" style="width:100px;">
+                    <button type="submit">Выплатить</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}'''
 # ---------- LOGIN ----------
 LOGIN_TEMPLATE = '''<!DOCTYPE html>
 <html lang="ru">
