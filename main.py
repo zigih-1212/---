@@ -1478,18 +1478,29 @@ async def cb_payout_request(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     conn = get_db()
     try:
-        available = conn.execute("SELECT balance_available FROM users WHERE user_id=?", (user_id,)).fetchone()["balance_available"]
-        existing = conn.execute("SELECT id FROM payout_requests WHERE user_id=? AND status='pending'", (user_id,)).fetchone()
+        user = conn.execute("SELECT balance_available, tax_status FROM users WHERE user_id=?", (user_id,)).fetchone()
+        available = user["balance_available"]
+        tax_status = user["tax_status"]
+        # Проверка налогового статуса
+        if tax_status != "business":
+            await callback.answer("❌ Вывод средств доступен только самозанятым/ИП.", show_alert=True)
+            return
+        # Проверка активных заявок
+        active = conn.execute(
+            "SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')",
+            (user_id,)
+        ).fetchone()
+        if active:
+            await callback.answer("❌ У вас уже есть активная заявка на выплату.", show_alert=True)
+            return
+        if available < MIN_PAYOUT:
+            await callback.answer(f"❌ Минимальная сумма вывода: {MIN_PAYOUT} ₽", show_alert=True)
+            return
     finally:
         conn.close()
-    if existing:
-        await callback.answer("❌ У вас уже есть активный запрос на выплату.", show_alert=True)
-        return
-    if available < MIN_PAYOUT:
-        await callback.answer("❌ Недостаточно средств для вывода.", show_alert=True)
-        return
+
     await callback.message.answer(
-        f"💸 Укажите реквизиты для выплаты (номер карты,банк, TON-кошелёк или другие данные):\n"
+        f"💸 Укажите реквизиты для выплаты (номер карты, банк, TON-кошелёк или другие данные):\n"
         f"Доступно: <b>{available:.2f} ₽</b>\n\n"
         f"Пример: <i>Сбербанк 2202 2081 0829 0025</i>",
         parse_mode=ParseMode.HTML,
@@ -1499,7 +1510,6 @@ async def cb_payout_request(callback: CallbackQuery, state: FSMContext):
     )
     await state.set_state(PayoutStates.waiting_for_card)
     await callback.answer()
-
 @router.message(PayoutStates.waiting_for_card)
 async def process_payout_message(message: Message, state: FSMContext):
     user_id = message.from_user.id
