@@ -144,8 +144,8 @@ async def cb_toggle_store(callback: CallbackQuery):
 
     conn = get_db()
     try:
-    if user_row and user_row["role"] != "blogger" and user_row["tariff_id"]:
-        user_row = conn.execute("SELECT tariff_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+        user_row = conn.execute("SELECT role, tariff_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if user_row and user_row["role"] != "blogger" and user_row["tariff_id"]:
         max_stores = 3
         if user_row and user_row["tariff_id"]:
             tariff_row = conn.execute("SELECT max_stores FROM tariffs WHERE id=?", (user_row["tariff_id"],)).fetchone()
