@@ -19,6 +19,7 @@ from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES, get_d
 from keyboards.saas import kb_payment_methods
 from services.text_rewriter import generate_post_text
 from services.admitad import get_random_promocode
+from states import SaasStates, PaymentFSM, PayoutStates, TaxStates
 
 logger = logging.getLogger("autopost_bot.saas")
 
@@ -1091,8 +1092,9 @@ async def cb_oferta(callback: CallbackQuery):
     await callback.answer()
 
 
+# handlers/saas.py — замените существующий @router.callback_query(F.data == "oferta:accept")
 @router.callback_query(F.data == "oferta:accept")
-async def cb_oferta_accept(callback: CallbackQuery):
+async def cb_oferta_accept(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     conn = get_db()
     try:
@@ -1100,10 +1102,17 @@ async def cb_oferta_accept(callback: CallbackQuery):
         conn.commit()
     finally:
         conn.close()
-    await callback.answer("✅ Вы приняли условия Оферты.", show_alert=True)
-    # Возвращаем в кабинет
-    from main import show_user_cabinet
-    await show_user_cabinet(callback.message, user_id=user_id)
+    await callback.answer("✅ Вы приняли условия Оферты.", show_alert=False)
+    # Запрос налогового статуса
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🧾 Я Самозанятый / ИП", callback_data="tax:business")],
+        [InlineKeyboardButton(text="👤 Обычное физлицо", callback_data="tax:individual")],
+    ])
+    await callback.message.answer(
+        "Для возможности вывода средств укажите ваш налоговый статус в РФ:",
+        reply_markup=kb
+    )
+    await state.set_state(TaxStates.waiting_tax_status)
 
 @router.callback_query(F.data == "saas_toggle:force_preview_reset")
 async def cb_force_preview_reset(callback: CallbackQuery):
