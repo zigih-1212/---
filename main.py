@@ -1385,6 +1385,75 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
     else:
         await call.answer("Неизвестная команда", show_alert=True)
 
+@router.callback_query(F.data == "payout:request")
+async def cb_payout_request(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        available = conn.execute("SELECT balance_available FROM users WHERE user_id=?", (user_id,)).fetchone()["balance_available"]
+    finally:
+        conn.close()
+    if available < MIN_PAYOUT:
+        await callback.answer("❌ Недостаточно средств для вывода.", show_alert=True)
+        return
+    await callback.message.answer(
+        f"💸 Укажите реквизиты для выплаты (номер карты, банк, TON-кошелёк или другие данные):\n"
+        f"Доступно: <b>{available:.2f} ₽</b>\n\n"
+        f"Пример: <i>Сбербанк 2202 2081 0829 0025</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:finance")]
+        ])
+    )
+    await state.set_state(PayoutStates.waiting_for_card)
+    await callback.answer()
+
+@router.message(PayoutStates.waiting_for_card)
+async def process_payout_message(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip()
+    if len(text) < 10:
+        await message.answer("❌ Слишком короткое сообщение. Введите реквизиты подробнее.")
+        return
+    conn = get_db()
+    try:
+        available = conn.execute("SELECT balance_available FROM users WHERE user_id=?", (user_id,)).fetchone()["balance_available"]
+        if available < MIN_PAYOUT:
+            await message.answer("❌ Недостаточно средств.")
+            await state.clear()
+            return
+        # Сохраняем запрос
+        conn.execute("INSERT INTO payout_requests (user_id, amount, message) VALUES (?, ?, ?)",
+                     (user_id, available, text))
+        conn.commit()
+        request_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    finally:
+        conn.close()
+
+    await message.answer(
+        f"✅ Запрос на выплату <b>{available:.2f} ₽</b> принят. "
+        f"Администратор обработает его в ближайшее время. Номер заявки: <b>#{request_id}</b>.",
+        parse_mode=ParseMode.HTML
+    )
+
+    # Уведомление админам в телеграм
+    for admin_id in ADMIN_IDS:
+        try:
+            await message.bot.send_message(
+                admin_id,
+                f"🔔 Новый запрос на выплату!\n"
+                f"Пользователь: {user_id}\n"
+                f"Сумма: {available:.2f} ₽\n"
+                f"Заявка #{request_id}\n"
+                f"Реквизиты: {text[:200]}",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🌐 Открыть админку", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))]
+                ])
+            )
+        except Exception as e:
+            logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
+
+    await state.clear()
 # ---------------------------------------------------------------------------
 # Колбэк "cabinet:open" (из интерфейса)
 # ---------------------------------------------------------------------------
