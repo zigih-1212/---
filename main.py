@@ -17,6 +17,7 @@ import time
 import random
 import hashlib
 import os
+import feedparser
 from aiogram.types import FSInputFile
 from aiogram.filters import Command, CommandStart
 from datetime import datetime
@@ -457,7 +458,68 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         logger.error(f"Ошибка проверки админки в {channel_id}: {e}")
         return False
 
+async def check_rss_and_publish(bot: Bot):
+    """Проверяет RSS-ленты YouTube и Rutube и публикует новые видео."""
+    conn = get_db()
+    try:
+        channels = conn.execute("""
+            SELECT sc.id, sc.user_id, sc.platform, sc.channel_id, sc.last_video_id,
+                   c.channel_id as tg_channel
+            FROM social_channels sc
+            JOIN channels c ON sc.user_id = c.user_id AND c.is_active = 1
+            WHERE sc.is_active = 1 AND sc.platform IN ('youtube', 'rutube')
+        """).fetchall()
+    finally:
+        conn.close()
 
+    for ch in channels:
+        if ch["platform"] == "youtube":
+            # Формируем URL RSS: для channel_id (UC...) или username
+            if ch["channel_id"].startswith("UC"):
+                rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={ch['channel_id']}"
+            else:
+                # Если это username, придётся использовать другой способ, пока пропустим
+                logger.warning(f"YouTube username {ch['channel_id']} not supported yet")
+                continue
+        elif ch["platform"] == "rutube":
+            rss_url = f"https://rutube.ru/api/rss/channel/{ch['channel_id']}/"
+        else:
+            continue
+
+        try:
+            feed = feedparser.parse(rss_url)
+        except Exception as e:
+            logger.error(f"Error parsing RSS for {ch['channel_id']}: {e}")
+            continue
+
+        if not feed.entries:
+            continue
+
+        latest_entry = feed.entries[0]  # Первый — самый свежий
+        video_id = latest_entry.get('id', '') or latest_entry.get('link', '')
+        if video_id == ch["last_video_id"]:
+            continue  # Уже публиковали
+
+        # Публикуем
+        title = latest_entry.get('title', 'Новое видео')
+        link = latest_entry.get('link', '')
+        description = latest_entry.get('summary', '')[:200]
+        caption = f"🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href='{link}'>Смотреть</a>"
+
+        try:
+            await bot.send_message(ch["tg_channel"], caption, parse_mode=ParseMode.HTML)
+            logger.info(f"Published new video {video_id} to {ch['tg_channel']}")
+        except Exception as e:
+            logger.error(f"Failed to publish to {ch['tg_channel']}: {e}")
+            continue
+
+        # Обновляем last_video_id
+        conn = get_db()
+        try:
+            conn.execute("UPDATE social_channels SET last_video_id=? WHERE id=?", (video_id, ch["id"]))
+            conn.commit()
+        finally:
+            conn.close()
       
 # =============================================================================
 # === КЛАВИАТУРЫ ==============================================================
