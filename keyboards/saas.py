@@ -27,6 +27,7 @@ def kb_cabinet_menu(role: str = "saas"):
             [InlineKeyboardButton(text="📝 Шаблоны постов", callback_data="menu:templates")],
             [InlineKeyboardButton(text="🎥 Мои видео-каналы", callback_data="blogger:social_channels")],
             [InlineKeyboardButton(text="🔗 Реферальная ссылка", callback_data="blogger:referral")],
+            [InlineKeyboardButton(text="💰 Финансы", callback_data="menu:finance")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
             [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
