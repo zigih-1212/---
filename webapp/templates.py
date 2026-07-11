@@ -44,6 +44,7 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
     <a href="/admin/store_delivery" class="{{ 'active' if active_page == 'delivery' }}">🚚 Доставка</a>
     <a href="/admin/test_promocodes" class="{{ 'active' if active_page == 'test_promo' }}">🎁 Промокоды (тест)</a>
     <a href="/admin/broadcast" class="{{ 'active' if active_page == 'broadcast' }}">📣 Рассылка</a>
+    <a href="/admin/payouts" class="{{ 'active' if active_page == 'payouts' }}">💰 Выплаты</a>
     <a href="/admin/bulk-actions" class="{{ 'active' if active_page == 'bulk' }}">👥 Массовые действия</a>
     <a href="/admin/settings-edit" class="{{ 'active' if active_page == 'settings' }}">⚙️ Настройки</a>
     <a href="/admin/audit" class="{{ 'active' if active_page == 'audit' }}">📜 Аудит</a>
