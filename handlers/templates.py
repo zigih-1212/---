@@ -1,0 +1,204 @@
+import logging
+import random
+from aiogram import Router, F, Bot
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.enums import ParseMode
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from services.db import get_db
+from states import TemplateStates
+from services.text_rewriter import generate_post_text
+from services.admitad import get_delivery_for_store, get_random_promocode
+
+logger = logging.getLogger("autopost_bot.templates")
+router = Router(name="templates")
+
+DEFAULT_PRODUCT_TEMPLATE = (
+    "🔥 <b>{title}</b>\n\n"
+    "💰 {price_label}: {price} {currency}{discount_line}\n"
+    "👉 {link}\n"
+    "{promocode_line}{delivery_line}"
+    "\n\nРеклама. {advertiser}. Erid: {erid}"
+)
+
+DEFAULT_VIDEO_TEMPLATE = (
+    "🎬 <b>{title}</b>\n\n"
+    "{description}\n\n"
+    "🔗 <a href='{link}'>Смотреть</a>"
+)
+
+def get_template_preview_buttons() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 Изменить шаблон товаров", callback_data="templates:set_product")],
+        [InlineKeyboardButton(text="📝 Изменить шаблон видео", callback_data="templates:set_video")],
+        [InlineKeyboardButton(text="🔄 Сбросить до стандартных", callback_data="templates:reset")],
+        [InlineKeyboardButton(text="👀 Предпросмотр товара", callback_data="templates:preview_product")],
+        [InlineKeyboardButton(text="👀 Предпросмотр видео", callback_data="templates:preview_video")],
+        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")],
+    ])
+
+@router.callback_query(F.data == "menu:templates")
+async def cb_menu_templates(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT product_template, video_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+        product_tmpl = user["product_template"] if user else ""
+        video_tmpl = user["video_template"] if user else ""
+    finally:
+        conn.close()
+
+    text = (
+        "📝 <b>Шаблоны постов</b>\n\n"
+        "<b>Товарный шаблон:</b>\n"
+        f"<code>{product_tmpl or DEFAULT_PRODUCT_TEMPLATE}</code>\n\n"
+        "<b>Видео-шаблон:</b>\n"
+        f"<code>{video_tmpl or DEFAULT_VIDEO_TEMPLATE}</code>\n\n"
+        "Используйте подстановки:\n"
+        "<b>Для товаров:</b> {title}, {price}, {currency}, {link}, {advertiser}, {erid}, {old_price}, {discount_percent}, {delivery_line}, {promocode_line}\n"
+        "<b>Для видео:</b> {title}, {link}, {description}"
+    )
+    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=get_template_preview_buttons())
+    await callback.answer()
+
+# --- Установка шаблона товара ---
+@router.callback_query(F.data == "templates:set_product")
+async def cb_set_product_template(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer(
+        "✏️ Введите шаблон для товарных постов. Можно использовать подстановки:\n"
+        "{title}, {price}, {currency}, {link}, {advertiser}, {erid}, {old_price}, {discount_percent}, {delivery_line}, {promocode_line}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="templates:cancel")]
+        ])
+    )
+    await state.set_state(TemplateStates.waiting_product_template)
+    await callback.answer()
+
+@router.message(TemplateStates.waiting_product_template)
+async def process_product_template(message: Message, state: FSMContext):
+    template = message.text.strip()
+    if len(template) < 10:
+        await message.answer("❌ Шаблон слишком короткий. Минимум 10 символов.")
+        return
+    user_id = message.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET product_template=? WHERE user_id=?", (template, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    await message.answer("✅ Шаблон товаров сохранён! Теперь покажу предпросмотр с реальным товаром...")
+    await show_product_preview(message, user_id, template)
+    await state.clear()
+
+# --- Установка шаблона видео ---
+@router.callback_query(F.data == "templates:set_video")
+async def cb_set_video_template(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer(
+        "✏️ Введите шаблон для видео-анонсов. Можно использовать:\n"
+        "{title}, {link}, {description}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="templates:cancel")]
+        ])
+    )
+    await state.set_state(TemplateStates.waiting_video_template)
+    await callback.answer()
+
+@router.message(TemplateStates.waiting_video_template)
+async def process_video_template(message: Message, state: FSMContext):
+    template = message.text.strip()
+    if len(template) < 10:
+        await message.answer("❌ Шаблон слишком короткий.")
+        return
+    user_id = message.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET video_template=? WHERE user_id=?", (template, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    await message.answer("✅ Шаблон видео сохранён! Предпросмотр с тестовыми данными:")
+    await show_video_preview(message, template)
+    await state.clear()
+
+# --- Сброс шаблонов ---
+@router.callback_query(F.data == "templates:reset")
+async def cb_reset_templates(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET product_template='', video_template='' WHERE user_id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    await callback.message.edit_text("✅ Шаблоны сброшены до стандартных.", reply_markup=get_template_preview_buttons())
+    await callback.answer()
+
+# --- Предпросмотр товара ---
+async def show_product_preview(message: Message, user_id: int, template: str = None):
+    conn = get_db()
+    try:
+        product = conn.execute("""
+            SELECT * FROM gdeslon_catalog
+            WHERE user_id=? AND erid IS NOT NULL AND erid != ''
+            ORDER BY RANDOM() LIMIT 1
+        """, (user_id,)).fetchone()
+        if not product:
+            await message.answer("❌ Нет доступных товаров для предпросмотра.")
+            return
+    finally:
+        conn.close()
+
+    delivery_info = get_delivery_for_store(product["source"] or "")
+    promocode = get_random_promocode(product["source"] or "")
+    caption = generate_post_text(
+        title=product["title"],
+        price=product["price"],
+        currency=product["currency"] or "₽",
+        advertiser=product["advertiser"] or "Рекламодатель",
+        erid=product["erid"],
+        partner_url=product["partner_url"] or "https://example.com",
+        old_price=product["old_price"],
+        discount_percent=product["discount_percent"],
+        delivery_info=delivery_info,
+        promocode=promocode,
+        custom_template=template  # будет использован пользовательский шаблон
+    )
+    await message.answer(caption, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+async def show_video_preview(message: Message, template: str):
+    # Тестовые данные
+    test_data = {
+        "title": "Название видео",
+        "link": "https://youtube.com/watch?v=test",
+        "description": "Описание видео до 200 символов..."
+    }
+    try:
+        text = template.format(**test_data)
+    except KeyError as e:
+        text = f"❌ Ошибка в шаблоне: неизвестная подстановка {e}"
+    await message.answer(text, parse_mode=ParseMode.HTML)
+
+@router.callback_query(F.data == "templates:preview_product")
+async def cb_preview_product(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    await show_product_preview(callback.message, user_id)
+    await callback.answer()
+
+@router.callback_query(F.data == "templates:preview_video")
+async def cb_preview_video(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        template = conn.execute("SELECT video_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+        tmpl = template["video_template"] if template and template["video_template"] else DEFAULT_VIDEO_TEMPLATE
+    finally:
+        conn.close()
+    await show_video_preview(callback.message, tmpl)
+    await callback.answer()
+
+@router.callback_query(F.data == "templates:cancel")
+async def cb_templates_cancel(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await cb_menu_templates(callback)
+    await callback.answer()
