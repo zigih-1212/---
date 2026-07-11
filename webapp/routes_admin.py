@@ -481,3 +481,44 @@ async def reports_download(fname: str, _: int = Depends(admin_required)):
     if os.path.isfile(path):
         return FileResponse(path, media_type='text/csv', filename=fname)
     return HTMLResponse("Файл не найден", status_code=404)
+
+@router.get("/dashboard/data")
+async def dashboard_data(_: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        # Посты по дням за последние 30 дней
+        posts_by_day = conn.execute("""
+            SELECT DATE(published_at) as day, COUNT(*) as cnt
+            FROM posts
+            WHERE status='published' AND published_at >= datetime('now', '-30 days')
+            GROUP BY day
+            ORDER BY day
+        """).fetchall()
+        # Доход по дням (сумма payment_sum) за последние 30 дней
+        revenue_by_day = conn.execute("""
+            SELECT DATE(time, 'unixepoch') as day, SUM(payment_sum) as total
+            FROM admitad_transactions
+            WHERE time >= strftime('%s', 'now', '-30 days')
+            GROUP BY day
+            ORDER BY day
+        """).fetchall()
+        # Распределение по магазинам за последние 30 дней (по количеству постов)
+        store_distribution = conn.execute("""
+            SELECT g.source, COUNT(*) as cnt
+            FROM posts p
+            JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
+            WHERE p.status='published' AND p.published_at >= datetime('now', '-30 days')
+            GROUP BY g.source
+            ORDER BY cnt DESC
+        """).fetchall()
+    finally:
+        conn.close()
+
+    return {
+        "posts_labels": [r["day"] for r in posts_by_day],
+        "posts_counts": [r["cnt"] for r in posts_by_day],
+        "revenue_labels": [r["day"] for r in revenue_by_day],
+        "revenue_values": [r["total"] for r in revenue_by_day],
+        "store_labels": [r["source"] or "Неизвестно" for r in store_distribution],
+        "store_values": [r["cnt"] for r in store_distribution],
+    }
