@@ -343,19 +343,32 @@ async def cb_cancel_galaxy_city(callback: CallbackQuery):
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
-    await callback.answer("🔍 Подбираю товар для предпросмотра...", show_alert=False)
     user_id = callback.from_user.id
-
-    # Получаем выбранные магазины и пользовательский шаблон
     conn = get_db()
     try:
-        user_stores = conn.execute(
-            "SELECT category_id FROM user_category_preferences WHERE user_id = ?",
-            (user_id,)
-        ).fetchall()
+        user = conn.execute("SELECT force_preview_confirmed FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        preview_confirmed = bool(user["force_preview_confirmed"]) if user else False
+    finally:
+        conn.close()
+
+    if preview_confirmed:
+        await callback.answer("🚀 Публикую пост...", show_alert=True)
+        await _force_post_immediate(callback, bot, user_id)
+        return
+
+    await callback.answer("🔍 Подбираю товар для предпросмотра...", show_alert=False)
+    await _force_post_preview(callback, bot, user_id)
+
+
+async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int) -> None:
+    conn = get_db()
+    try:
+        user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id = ?", (user_id,)).fetchall()
         store_ids = [r["category_id"] for r in user_stores]
         user_tmpl = conn.execute("SELECT product_template FROM users WHERE user_id = ?", (user_id,)).fetchone()
         custom_template = user_tmpl["product_template"] if user_tmpl and user_tmpl["product_template"] else None
+        min_disc = conn.execute("SELECT min_discount FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        min_discount = min_disc["min_discount"] if min_disc else 0
     finally:
         conn.close()
 
@@ -363,9 +376,68 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
 
     conn = get_db()
     try:
+        if allowed_sources:
+            placeholders = ','.join('?' * len(allowed_sources))
+            product = conn.execute(
+                f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                (user_id, *allowed_sources, min_discount)
+            ).fetchone()
+        else:
+            product = None
+
+        if not product:
+            if allowed_sources:
+                conn.execute(
+                    f"UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ? AND source IN ({placeholders})",
+                    (user_id, *allowed_sources)
+                )
+                conn.commit()
+                product = conn.execute(
+                    f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                    (user_id, *allowed_sources, min_discount)
+                ).fetchone()
+            else:
+                product = conn.execute(
+                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                    (user_id, min_discount)
+                ).fetchone()
+                if not product:
+                    conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
+                    conn.commit()
+                    product = conn.execute(
+                        "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                        (user_id, min_discount)
+                    ).fetchone()
+
+        if product:
+            conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
+            conn.commit()
+    finally:
+        conn.close()
+
+    if not product:
+        await callback.message.answer("❌ В каталоге пока нет товаров с маркировкой ERID.")
+        return
+
+    await _publish_product(callback, bot, user_id, product, custom_template)
+
+
+async def _force_post_preview(callback: CallbackQuery, bot: Bot, user_id: int) -> None:
+    conn = get_db()
+    try:
+        user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id = ?", (user_id,)).fetchall()
+        store_ids = [r["category_id"] for r in user_stores]
+        user_tmpl = conn.execute("SELECT product_template FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        custom_template = user_tmpl["product_template"] if user_tmpl and user_tmpl["product_template"] else None
         min_disc = conn.execute("SELECT min_discount FROM users WHERE user_id = ?", (user_id,)).fetchone()
         min_discount = min_disc["min_discount"] if min_disc else 0
+    finally:
+        conn.close()
 
+    allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
+
+    conn = get_db()
+    try:
         if allowed_sources:
             placeholders = ','.join('?' * len(allowed_sources))
             product = conn.execute(
@@ -402,12 +474,9 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         conn.close()
 
     if not product:
-        await callback.message.answer(
-            "❌ В каталоге пока нет товаров с маркировкой ERID. Попробуйте позже или выберите больше магазинов."
-        )
+        await callback.message.answer("❌ В каталоге пока нет товаров с маркировкой ERID.")
         return
 
-    # Генерируем превью
     partner_url = product['partner_url'] or ''
     title = product['title'] or ''
     price = product['price'] or 0
@@ -435,7 +504,6 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         custom_template=custom_template
     )
 
-    # Отправляем превью с кнопками
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"force_confirm:{product['id']}")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data=f"force_cancel:{product['id']}")],
@@ -447,7 +515,66 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         reply_markup=kb,
         has_spoiler=adult
     )
-    await callback.answer()
+
+
+async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, product, custom_template=None) -> None:
+    partner_url = product['partner_url'] or ''
+    title = product['title'] or ''
+    price = product['price'] or 0
+    currency = product['currency'] or '₽'
+    advertiser = product['advertiser'] or 'Рекламодатель'
+    erid = product['erid'] or ''
+    photo_url = product["image_url"]
+    source = product["source"] if "source" in product.keys() else ""
+
+    channels = get_db().execute(
+        "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
+        (user_id,)
+    ).fetchall()
+    get_db().close()
+
+    if not channels:
+        await callback.message.answer("❌ У вас нет активных каналов.")
+        return
+
+    for ch in channels:
+        final_url = partner_url
+        if ch["sub_id"]:
+            final_url += ('&' if '?' in final_url else '?') + 'subid=' + ch["sub_id"]
+        adult = source in ADULT_STORES
+        delivery_info = get_delivery_for_store(source)
+        promocode = get_random_promocode(source)
+
+        caption = generate_post_text(
+            title=title, price=price, currency=currency,
+            advertiser=advertiser, erid=erid, partner_url=final_url,
+            adult=adult,
+            old_price=product["old_price"] if "old_price" in product.keys() else None,
+            discount_percent=product["discount_percent"] if "discount_percent" in product.keys() else None,
+            delivery_info=delivery_info, promocode=promocode,
+            custom_template=custom_template
+        )
+
+        msg = await publish_post_with_fallback(
+            bot=bot, channel_id=ch["channel_id"],
+            caption=caption, photo_url=photo_url, has_spoiler=adult
+        )
+        if msg:
+            direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}"
+            donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
+            conn_rec = get_db()
+            try:
+                conn_rec.execute(
+                    """INSERT INTO posts 
+                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
+                    (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
+                     datetime.now(timezone.utc).isoformat())
+                )
+                conn_rec.commit()
+            finally:
+                conn_rec.close()
+        await asyncio.sleep(1)
 
 @router.callback_query(F.data.startswith("force_confirm:"))
 async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
