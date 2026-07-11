@@ -9,7 +9,6 @@ from webapp.auth import (
     admin_required, create_admin_session, delete_admin_session,
     verify_admin_session, verify_admin_token
 )
-from webapp.templates import DASHBOARD_TEMPLATE
 from webapp.dependencies import get_bot
 from webapp.templates import (
     BASE_TEMPLATE, LOGIN_TEMPLATE, DASHBOARD_TEMPLATE, USERS_TEMPLATE,
