@@ -2,7 +2,6 @@ from aiogram.fsm.state import State, StatesGroup
 
 class OnboardingStates(StatesGroup):
     waiting_role = State()
-    waiting_channel = State()
     waiting_saas_tg_channel = State()
 
 class AdminStates(StatesGroup):
@@ -15,6 +14,9 @@ class SaasStates(StatesGroup):
     waiting_erid_override = State()
     waiting_promocode = State()
     choosing_channel_for_promo = State()
+
+class BloggerStates(StatesGroup):
+    waiting_post_interval = State()
 
 class PaymentFSM(StatesGroup):
     choosing_tariff = State()
