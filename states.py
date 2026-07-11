@@ -28,3 +28,7 @@ class PaymentFSM(StatesGroup):
 class PayoutStates(StatesGroup):
     waiting_for_card = State()
     waiting_for_amount = State()
+
+class TemplateStates(StatesGroup):
+    waiting_product_template = State()
+    waiting_video_template = State()
