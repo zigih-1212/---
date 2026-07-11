@@ -449,7 +449,115 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     )
     await callback.answer()
 
+@router.callback_query(F.data.startswith("force_confirm:"))
+async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
+    product_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
 
+    conn = get_db()
+    try:
+        product = conn.execute("SELECT * FROM gdeslon_catalog WHERE id = ? AND user_id = ?", (product_id, user_id)).fetchone()
+        if not product:
+            await callback.answer("❌ Товар не найден.", show_alert=True)
+            return
+        if product["used"] == 1:
+            await callback.answer("❌ Этот товар уже был опубликован.", show_alert=True)
+            await callback.message.delete()
+            return
+
+        # Помечаем как использованный
+        conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Публикация во все активные каналы
+    channels = conn.execute(
+        "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
+        (user_id,)
+    ).fetchall()
+    conn.close()
+
+    if not channels:
+        await callback.answer("❌ Нет активных каналов.", show_alert=True)
+        return
+
+    partner_url = product['partner_url'] or ''
+    title = product['title'] or ''
+    price = product['price'] or 0
+    currency = product['currency'] or '₽'
+    advertiser = product['advertiser'] or 'Рекламодатель'
+    erid = product['erid'] or ''
+    photo_url = product["image_url"]
+    source = product["source"] if "source" in product.keys() else ""
+    adult = source in ADULT_STORES
+    delivery_info = get_delivery_for_store(source)
+    promocode = get_random_promocode(source)
+
+    conn = get_db()
+    try:
+        user_tmpl = conn.execute("SELECT product_template FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        custom_template = user_tmpl["product_template"] if user_tmpl and user_tmpl["product_template"] else None
+    finally:
+        conn.close()
+
+    for ch in channels:
+        final_url = partner_url
+        if ch["sub_id"]:
+            if '?' in final_url:
+                final_url += '&subid=' + ch["sub_id"]
+            else:
+                final_url += '?subid=' + ch["sub_id"]
+
+        caption = generate_post_text(
+            title=title,
+            price=price,
+            currency=currency,
+            advertiser=advertiser,
+            erid=erid,
+            partner_url=final_url,
+            adult=adult,
+            old_price=product["old_price"] if "old_price" in product.keys() else None,
+            discount_percent=product["discount_percent"] if "discount_percent" in product.keys() else None,
+            delivery_info=delivery_info,
+            promocode=promocode,
+            custom_template=custom_template
+        )
+
+        msg = await publish_post_with_fallback(
+            bot=bot,
+            channel_id=ch["channel_id"],
+            caption=caption,
+            photo_url=photo_url,
+            has_spoiler=adult
+        )
+        if msg:
+            direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
+            donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
+            conn_rec = get_db()
+            try:
+                conn_rec.execute(
+                    """INSERT INTO posts 
+                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
+                    (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
+                     datetime.now(timezone.utc).isoformat())
+                )
+                conn_rec.commit()
+            finally:
+                conn_rec.close()
+        await asyncio.sleep(1)
+
+    await callback.message.delete()
+    await callback.message.answer("✅ Пост успешно опубликован!")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("force_cancel:"))
+async def cb_force_cancel(callback: CallbackQuery) -> None:
+    # Товар не трогаем, он остаётся used=0
+    await callback.message.delete()
+    await callback.message.answer("🚫 Публикация отменена.")
+    await callback.answer()
 # ---------------------------------------------------------------------------
 # Настройка источника товаров (заглушка)
 # ---------------------------------------------------------------------------
