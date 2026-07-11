@@ -343,10 +343,10 @@ async def cb_cancel_galaxy_city(callback: CallbackQuery):
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
-    await callback.answer("🚀 Публикую пост из каталога...", show_alert=True)
+    await callback.answer("🔍 Подбираю товар для предпросмотра...", show_alert=False)
     user_id = callback.from_user.id
 
-    # Получаем выбранные пользователем магазины и шаблон товаров
+    # Получаем выбранные магазины и пользовательский шаблон
     conn = get_db()
     try:
         user_stores = conn.execute(
@@ -398,10 +398,6 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
                         "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
                         (user_id, min_discount)
                     ).fetchone()
-
-        if product:
-            conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
-            conn.commit()
     finally:
         conn.close()
 
@@ -411,6 +407,7 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         )
         return
 
+    # Генерируем превью
     partner_url = product['partner_url'] or ''
     title = product['title'] or ''
     price = product['price'] or 0
@@ -419,72 +416,38 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     erid = product['erid'] or ''
     photo_url = product["image_url"]
     source = product["source"] if "source" in product.keys() else ""
+    adult = source in ADULT_STORES
+    delivery_info = get_delivery_for_store(source)
+    promocode = get_random_promocode(source)
 
-    conn = get_db()
-    try:
-        channels = conn.execute(
-            "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
-            (user_id,)
-        ).fetchall()
-    finally:
-        conn.close()
+    caption = generate_post_text(
+        title=title,
+        price=price,
+        currency=currency,
+        advertiser=advertiser,
+        erid=erid,
+        partner_url=partner_url,
+        adult=adult,
+        old_price=product["old_price"] if "old_price" in product.keys() else None,
+        discount_percent=product["discount_percent"] if "discount_percent" in product.keys() else None,
+        delivery_info=delivery_info,
+        promocode=promocode,
+        custom_template=custom_template
+    )
 
-    if not channels:
-        await callback.message.answer("❌ У вас нет активных каналов. Добавьте канал в разделе «Мои каналы».")
-        return
-
-    for ch in channels:
-        final_url = partner_url
-        if ch["sub_id"]:
-            if '?' in final_url:
-                final_url += '&subid=' + ch["sub_id"]
-            else:
-                final_url += '?subid=' + ch["sub_id"]
-
-        adult = source in ADULT_STORES
-        delivery_info = get_delivery_for_store(source)
-        promocode = get_random_promocode(source)
-        
-        caption = generate_post_text(
-            title=title,
-            price=price,
-            currency=currency,
-            advertiser=advertiser,
-            erid=erid,
-            partner_url=final_url,
-            adult=adult,
-            old_price=product["old_price"] if "old_price" in product.keys() else None,
-            discount_percent=product["discount_percent"] if "discount_percent" in product.keys() else None,
-            delivery_info=delivery_info,
-            promocode=promocode,
-            custom_template=custom_template
-        )
-
-        msg = await publish_post_with_fallback(
-            bot=bot,
-            channel_id=ch["channel_id"],
-            caption=caption,
-            photo_url=photo_url,
-            has_spoiler=adult
-        )
-        if msg:
-            direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
-            donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
-            conn_rec = get_db()
-            try:
-                conn_rec.execute(
-                    """INSERT INTO posts 
-                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
-                    (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
-                     datetime.now(timezone.utc).isoformat())
-                )
-                conn_rec.commit()
-            finally:
-                conn_rec.close()
-        await asyncio.sleep(1)
-
-    await callback.message.answer("✅ Пост опубликован!")
+    # Отправляем превью с кнопками
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"force_confirm:{product['id']}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data=f"force_cancel:{product['id']}")],
+    ])
+    await callback.message.answer_photo(
+        photo=photo_url,
+        caption=caption,
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb,
+        has_spoiler=adult
+    )
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------
