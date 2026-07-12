@@ -43,6 +43,13 @@ def apply_referral_bonus(user_id: int, payment_sum: float, blogger_amount: float
             logger.warning(f"Referral bonus {bonus} exceeds service share {service_share}, skipping")
             return
         conn.execute("UPDATE users SET balance_pending = balance_pending + ? WHERE user_id = ?", (bonus, referrer_id))
+        
+        # Обновление реферальной статистики
+        conn.execute("""
+            INSERT INTO referrals (referrer_id, referral_id, total_brought_profit) VALUES (?, ?, ?)
+            ON CONFLICT(referrer_id, referral_id) DO UPDATE SET total_brought_profit = total_brought_profit + ?
+        """, (referrer_id, user_id, bonus, bonus))
+        
         conn.commit()
         logger.info(f"Referral bonus: +{bonus} to user {referrer_id} from user {user_id} (service share {service_share})")
     except Exception as e:
