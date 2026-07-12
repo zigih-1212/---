@@ -461,6 +461,18 @@ def init_db() -> None:
             cursor.execute("ALTER TABLE payout_requests ADD COLUMN receipt_photo TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+        try:
+            cursor.execute("ALTER TABLE subid_stats ADD COLUMN leads_count INTEGER DEFAULT 0")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE subid_stats ADD COLUMN earnings_pending REAL DEFAULT 0.0")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE subid_stats ADD COLUMN earnings_approved REAL DEFAULT 0.0")
+        except:
+            pass          
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
