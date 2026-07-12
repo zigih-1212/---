@@ -96,8 +96,18 @@ async def cb_set_product_template(callback: CallbackQuery, state: FSMContext):
 @router.message(TemplateStates.waiting_product_template)
 async def process_product_template(message: Message, state: FSMContext):
     template = message.text.strip()
+    # Проверка длины
     if len(template) < 10:
         await message.answer("❌ Шаблон слишком короткий. Минимум 10 символов.")
+        return
+    # Проверка обязательных подстановок
+    required = ['{title}', '{price}', '{currency}', '{link}', '{advertiser}', '{erid}']
+    missing = [r for r in required if r not in template]
+    if missing:
+        await message.answer(
+            f"❌ В шаблоне не хватает обязательных элементов: {', '.join(missing)}\n"
+            "Пожалуйста, добавьте их и попробуйте снова."
+        )
         return
     user_id = message.from_user.id
     conn = get_db()
@@ -106,10 +116,9 @@ async def process_product_template(message: Message, state: FSMContext):
         conn.commit()
     finally:
         conn.close()
-    await message.answer("✅ Шаблон товаров сохранён! Теперь покажу предпросмотр с реальным товаром...")
+    await message.answer("✅ Шаблон товаров сохранён! Сейчас покажу предпросмотр с реальным товаром...")
     await show_product_preview(message, user_id, template)
     await state.clear()
-
 # --- Установка шаблона видео ---
 @router.callback_query(F.data == "templates:set_video")
 async def cb_set_video_template(callback: CallbackQuery, state: FSMContext):
