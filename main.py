@@ -1352,10 +1352,10 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
             "INSERT INTO users (user_id, username, sub_id, role, referrer_id) VALUES (?, ?, ?, ?, ?)",
             (user_id, callback.from_user.username, sub_id, role, referrer_id)
         )
-    if role == "blogger":
-        conn.execute("UPDATE users SET commission_rate = 0.70 WHERE user_id = ?", (user_id,))
-    else:
-        conn.execute("UPDATE users SET commission_rate = 0.95 WHERE user_id = ?", (user_id,))
+        if role == "blogger":
+            conn.execute("UPDATE users SET commission_rate = 0.70 WHERE user_id = ?", (user_id,))
+        else:
+            conn.execute("UPDATE users SET commission_rate = 0.95 WHERE user_id = ?", (user_id,))
         conn.commit()
     finally:
         conn.close()
