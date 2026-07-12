@@ -12,25 +12,26 @@ def kb_cabinet_menu(role: str = "saas"):
             [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-            [InlineKeyboardButton(text="💰 Финансы", callback_data="menu:finance")],
             [InlineKeyboardButton(text="💎 Тарифы", callback_data="menu:tariffs")],
-            [InlineKeyboardButton(text="📝 Шаблоны постов", callback_data="menu:templates")],
             [InlineKeyboardButton(text="🎁 Активировать промокод", callback_data="promo:activate")],
             [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
             [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
+            [InlineKeyboardButton(text="📜 Оферта", callback_data="menu:oferta")],
+            [InlineKeyboardButton(text="📝 Шаблоны постов", callback_data="menu:templates")],
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ]
     else:  # blogger
         buttons = [
+            [InlineKeyboardButton(text="🏪 Магазины", callback_data="menu:categories")],
             [InlineKeyboardButton(text="📢 Мои Telegram-каналы", callback_data="menu:my_channels")],
             [InlineKeyboardButton(text="⚙️ Периодичность постов", callback_data="blogger:post_interval")],
-            [InlineKeyboardButton(text="📝 Шаблоны постов", callback_data="menu:templates")],
             [InlineKeyboardButton(text="🎥 Мои видео-каналы", callback_data="blogger:social_channels")],
             [InlineKeyboardButton(text="🔗 Реферальная ссылка", callback_data="blogger:referral")],
-            [InlineKeyboardButton(text="💰 Финансы", callback_data="menu:finance")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
             [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
+            [InlineKeyboardButton(text="📜 Оферта", callback_data="menu:oferta")],
+            [InlineKeyboardButton(text="📝 Шаблоны постов", callback_data="menu:templates")],
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
