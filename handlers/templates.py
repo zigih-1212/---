@@ -65,8 +65,27 @@ async def cb_menu_templates(callback: CallbackQuery):
 @router.callback_query(F.data == "templates:set_product")
 async def cb_set_product_template(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
-        "✏️ Введите шаблон для товарных постов. Можно использовать подстановки:\n"
-        "{title}, {price}, {currency}, {link}, {advertiser}, {erid}, {old_price}, {discount_percent}, {delivery_line}, {promocode_line}",
+        "✏️ Введите шаблон для товарных постов. Можно менять порядок и добавлять эмодзи, но обязательные элементы должны остаться:\n\n"
+        "Обязательные подстановки (их нельзя удалять):\n"
+        "{title} — название товара\n"
+        "{price} — цена\n"
+        "{currency} — валюта (₽)\n"
+        "{link} — ссылка «Посмотреть и заказать»\n"
+        "{advertiser} — рекламодатель\n"
+        "{erid} — ERID (обязательная маркировка)\n\n"
+        "Необязательные (можно удалить или переместить):\n"
+        "{old_price} — старая цена\n"
+        "{discount_percent} — скидка в %\n"
+        "{delivery_line} — строка с доставкой\n"
+        "{promocode_line} — строка с промокодом\n"
+        "{price_label} — слово «Цена»\n\n"
+        "Пример стандартного шаблона:\n"
+        "<code>🔥 {title}\n"
+        "💰 {price_label}: {price} {currency}\n"
+        "📦 {link}\n"
+        "{discount_line}{delivery_line}{promocode_line}\n\n"
+        "Реклама. {advertiser}. Erid: {erid}</code>",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="templates:cancel")]
         ])
