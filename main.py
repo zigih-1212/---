@@ -705,7 +705,8 @@ async def cb_blogger_referral(callback: CallbackQuery):
     await callback.message.edit_text(
         f"🔗 <b>Ваша реферальная ссылка:</b>\n\n"
         f"<code>{ref_link}</code>\n\n"
-        "Если пользователь зарегистрируется по этой ссылке, вы будете получать 70% от его дохода.\n"
+        "Приглашайте других блогеров по этой ссылке.\n"
+        "Когда они начнут зарабатывать, вы будете получать <b>10%</b> от их дохода.\n"
         "Ссылка работает только для новых блогеров.",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
