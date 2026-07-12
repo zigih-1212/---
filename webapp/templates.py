@@ -568,13 +568,22 @@ AUDIT_TEMPLATE = '''{% extends "base.html" %}
 REPORTS_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Ежедневные отчёты{% endblock %}
 {% block content %}
-<h1>📁 Ежедневные отчёты</h1>
+<h1>📁 Отчёты</h1>
+
 <div class="card">
+    <h2>Ежедневные файлы (CSV)</h2>
     <table>
         <tr><th>Имя файла</th><th></th></tr>
         {% for f in files %}
         <tr><td>{{ f }}</td><td><a href="/admin/reports/download/{{ f }}" class="btn">Скачать</a></td></tr>
         {% endfor %}
     </table>
+</div>
+
+<div class="card" style="margin-top:30px;">
+    <h2>Финансовые и аналитические отчёты</h2>
+    <p><a href="/admin/payouts/csv" class="btn">Скачать историю выплат (CSV)</a></p>
+    <p><a href="/admin/subid-stats/csv" class="btn">Скачать статистику SubID (CSV)</a></p>
+    <p><a href="/admin/referrals/csv" class="btn">Скачать реферальные связи (CSV)</a></p>
 </div>
 {% endblock %}'''
