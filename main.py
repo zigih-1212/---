@@ -366,7 +366,28 @@ def init_db() -> None:
         )
     """)
     conn.commit()
-  
+    # Таблица для сводной статистики по subid
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS subid_stats (
+            subid1 TEXT PRIMARY KEY,
+            clicks_count INTEGER DEFAULT 0,
+            leads_count INTEGER DEFAULT 0,
+            earnings_pending REAL DEFAULT 0.0,
+            earnings_approved REAL DEFAULT 0.0
+        )
+    """)
+    # Таблица реферальных связей (детальная, для отчётов)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS referrals (
+            referrer_id INTEGER NOT NULL,
+            referral_id INTEGER NOT NULL,
+            total_brought_profit REAL DEFAULT 0.0,
+            PRIMARY KEY (referrer_id, referral_id),
+            FOREIGN KEY(referrer_id) REFERENCES users(user_id),
+            FOREIGN KEY(referral_id) REFERENCES users(user_id)
+        )
+    """)
+    conn.commit()  
     # Миграции
     migrations = [
         "ALTER TABLE users ADD COLUMN payout_card TEXT",
