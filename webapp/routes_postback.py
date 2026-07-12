@@ -46,6 +46,30 @@ async def admitad_postback(request: Request):
         elif status == "approved":
             conn.execute("UPDATE users SET balance_pending = balance_pending - ?, balance_available = balance_available + ? WHERE user_id = ?", (user_amount, user_amount, user_id))
 
+        # Обновление статистики по subid
+        if subid1:
+            if action in ('click', 'lead', 'sale'):
+                conn.execute("""
+                    INSERT INTO subid_stats (subid1, clicks_count) VALUES (?, 1)
+                    ON CONFLICT(subid1) DO UPDATE SET clicks_count = clicks_count + 1
+                """, (subid1,))
+            if action == 'lead' and status in ('pending', 'new'):
+                conn.execute("""
+                    INSERT INTO subid_stats (subid1, leads_count) VALUES (?, 1)
+                    ON CONFLICT(subid1) DO UPDATE SET leads_count = leads_count + 1
+                """, (subid1,))
+            if payment_sum > 0:
+                if status in ('pending', 'new'):
+                    conn.execute("""
+                        INSERT INTO subid_stats (subid1, earnings_pending) VALUES (?, ?)
+                        ON CONFLICT(subid1) DO UPDATE SET earnings_pending = earnings_pending + ?
+                    """, (subid1, payment_sum, payment_sum))
+                elif status == 'approved':
+                    conn.execute("""
+                        INSERT INTO subid_stats (subid1, earnings_approved) VALUES (?, ?)
+                        ON CONFLICT(subid1) DO UPDATE SET earnings_approved = earnings_approved + ?
+                    """, (subid1, payment_sum, payment_sum))
+
         conn.commit()
 
         apply_referral_bonus(user_id, payment_sum, user_amount)
