@@ -1,5 +1,6 @@
 # webapp/routes_admin.py
 import os
+import io, csv
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Request, Form, Depends, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse
@@ -18,6 +19,7 @@ from webapp.templates import (
     SETTINGS_TEMPLATE, AUDIT_TEMPLATE, REPORTS_TEMPLATE,
     ADMIN_PAYOUTS_TEMPLATE
 )
+from fastapi.responses import StreamingResponse
 
 router = APIRouter()
 
@@ -57,6 +59,14 @@ def render(template_name: str, **kwargs):
     template = env.get_template(template_name)
     return HTMLResponse(template.render(**kwargs))
 
+def generate_csv(rows, headers):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow([row[h] for h in headers])
+    output.seek(0)
+    return output.getvalue()
 # ---------- Вход / Выход ----------
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, token: str = Query(None)):
@@ -531,6 +541,52 @@ async def settings_edit_save(night_start: str = Form("23:00"), night_end: str = 
     conn.close()
     return RedirectResponse(url="/admin/settings-edit", status_code=303)
 
+@router.get("/payouts/csv")
+async def download_payouts_csv(_: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT id, user_id, amount, message, status, receipt_photo, created_at
+            FROM payout_requests
+            ORDER BY id DESC
+        """).fetchall()
+    finally:
+        conn.close()
+    csv_content = generate_csv(rows, ["id", "user_id", "amount", "message", "status", "receipt_photo", "created_at"])
+    return StreamingResponse(io.StringIO(csv_content), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=payouts.csv"})
+
+@router.get("/subid-stats/csv")
+async def download_subid_stats_csv(_: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT s.subid1, s.clicks_count, s.leads_count, s.earnings_pending, s.earnings_approved, 
+                   c.channel_title, u.username
+            FROM subid_stats s
+            LEFT JOIN channels c ON c.sub_id = s.subid1
+            LEFT JOIN users u ON c.user_id = u.user_id
+            ORDER BY s.earnings_approved DESC
+        """).fetchall()
+    finally:
+        conn.close()
+    csv_content = generate_csv(rows, ["subid1", "clicks_count", "leads_count", "earnings_pending", "earnings_approved", "channel_title", "username"])
+    return StreamingResponse(io.StringIO(csv_content), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=subid_stats.csv"})
+
+@router.get("/referrals/csv")
+async def download_referrals_csv(_: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT r.referrer_id, ref.username as referrer_name, r.referral_id, ref2.username as referral_name, r.total_brought_profit
+            FROM referrals r
+            JOIN users ref ON r.referrer_id = ref.user_id
+            JOIN users ref2 ON r.referral_id = ref2.user_id
+            ORDER BY r.total_brought_profit DESC
+        """).fetchall()
+    finally:
+        conn.close()
+    csv_content = generate_csv(rows, ["referrer_id", "referrer_name", "referral_id", "referral_name", "total_brought_profit"])
+    return StreamingResponse(io.StringIO(csv_content), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=referrals.csv"})
 # ---------- Аудит ----------
 @router.get("/audit", response_class=HTMLResponse)
 async def audit_list(request: Request, _: int = Depends(admin_required)):
