@@ -123,15 +123,19 @@ async def process_product_template(message: Message, state: FSMContext):
 @router.callback_query(F.data == "templates:set_video")
 async def cb_set_video_template(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
-        "✏️ Введите шаблон для видео-анонсов. Можно использовать:\n"
-        "{title}, {link}, {description}",
+        "✏️ Введите шаблон для видео-анонсов. Можно использовать подстановки:\n"
+        "{title} — название видео\n"
+        "{link} — ссылка на видео\n"
+        "{description} — описание (будет обрезано до 200 символов)\n\n"
+        "Пример:\n"
+        "<code>🎬 {title}\n\n{description}\n\n🔗 {link}</code>",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="templates:cancel")]
         ])
     )
     await state.set_state(TemplateStates.waiting_video_template)
     await callback.answer()
-
 @router.message(TemplateStates.waiting_video_template)
 async def process_video_template(message: Message, state: FSMContext):
     template = message.text.strip()
