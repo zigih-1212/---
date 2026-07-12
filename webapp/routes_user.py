@@ -1,4 +1,4 @@
-# webapp/routes_user.py (полная замена содержимого)
+# webapp/routes_user.py (полная замена)
 
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -16,13 +16,18 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 <style>
     body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; }
     h1 { color: #ff4444; }
-    .container { max-width: 1000px; margin: auto; }
+    .container { max-width: 1100px; margin: auto; }
     .period-selector { margin-bottom: 20px; }
     .period-selector button { background: #333; color: #ccc; border: 1px solid #555; padding: 8px 16px; cursor: pointer; }
     .period-selector button.active { background: #ff4444; color: #fff; border-color: #ff4444; }
     canvas { background: #222; border-radius: 12px; padding: 10px; margin-bottom: 30px; }
     .balance { font-size: 1.2em; margin-bottom: 20px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .card { background: #1e1e1e; border-radius: 12px; padding: 20px; margin-bottom: 30px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { padding: 8px 12px; border-bottom: 1px solid #333; text-align: left; }
+    th { background: #2a2a2a; color: #ff4444; }
+    tr:hover { background: #2a2a2a; }
     @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -40,6 +45,17 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <div><canvas id="revenueChart"></canvas></div>
     </div>
     <div style="max-width:400px; margin:auto;"><canvas id="storeChart"></canvas></div>
+
+    <div class="card">
+        <h2>📢 Сравнение каналов</h2>
+        <table id="channels-table">
+            <tr><th>Канал</th><th>Постов</th><th>Кликов</th><th>Продаж</th><th>Доход</th><th>Конверсия</th></tr>
+        </table>
+    </div>
+    <div class="card">
+        <h2>🏆 Топ-5 товаров</h2>
+        <ol id="top-products"></ol>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -56,12 +72,14 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         const resp = await fetch(`/my-stats/data?token=${token}&period=${period}`);
         const data = await resp.json();
 
+        // Баланс и сводка
         document.getElementById('balance-info').innerHTML = `
             <p>💰 Доступно к выводу: <b>${data.balance_available.toFixed(2)} ₽</b></p>
             <p>⏳ В ожидании: <b>${data.balance_pending.toFixed(2)} ₽</b></p>
             <p>📬 Постов за период: <b>${data.total_posts}</b> | 💵 Доход: <b>${data.total_revenue.toFixed(2)} ₽</b></p>
         `;
 
+        // График постов
         if (postsChart) postsChart.destroy();
         postsChart = new Chart(document.getElementById('postsChart'), {
             type: 'line',
@@ -78,6 +96,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             options: { scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
         });
 
+        // График дохода
         if (revenueChart) revenueChart.destroy();
         if (data.revenue_values && data.revenue_values.length > 0) {
             revenueChart = new Chart(document.getElementById('revenueChart'), {
@@ -99,6 +118,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             revenueChart = null;
         }
 
+        // Круговая магазинов
         if (storeChart) storeChart.destroy();
         if (data.store_labels && data.store_labels.length > 0) {
             storeChart = new Chart(document.getElementById('storeChart'), {
@@ -112,6 +132,38 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
                     }]
                 }
             });
+        }
+
+        // Таблица каналов
+        const table = document.getElementById('channels-table');
+        table.innerHTML = '<tr><th>Канал</th><th>Постов</th><th>Кликов</th><th>Продаж</th><th>Доход</th><th>Конверсия</th></tr>';
+        if (data.channels && data.channels.length > 0) {
+            data.channels.forEach(ch => {
+                const row = table.insertRow();
+                row.innerHTML = `
+                    <td>${ch.title}</td>
+                    <td>${ch.posts}</td>
+                    <td>${ch.clicks}</td>
+                    <td>${ch.leads}</td>
+                    <td>${ch.earnings.toFixed(2)} ₽</td>
+                    <td>${ch.conversion}%</td>
+                `;
+            });
+        } else {
+            table.insertRow().innerHTML = '<td colspan="6">Нет данных</td>';
+        }
+
+        // Топ товаров
+        const topList = document.getElementById('top-products');
+        topList.innerHTML = '';
+        if (data.top_products && data.top_products.length > 0) {
+            data.top_products.forEach(p => {
+                const li = document.createElement('li');
+                li.textContent = `${p.title} (${p.count} раз)`;
+                topList.appendChild(li);
+            });
+        } else {
+            topList.innerHTML = '<li>Нет данных</li>';
         }
     }
 
@@ -146,17 +198,16 @@ async def user_stats_page(token: str = Query(...)):
 async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
     user_id = get_user_id_from_token(token)
 
-    # Определяем смещение даты
     if period == "7d":
         since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     elif period == "30d":
         since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    else:  # all – используем начало 2020 года как достаточно давнюю дату
+    else:
         since = "2020-01-01T00:00:00"
 
     conn = get_db()
     try:
-        # Посты по дням
+        # Посты
         post_rows = conn.execute("""
             SELECT DATE(published_at) as day, COUNT(*) as count
             FROM posts
@@ -164,7 +215,7 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             GROUP BY day ORDER BY day
         """, (user_id, since)).fetchall()
 
-        # Доход по дням (сумма approved)
+        # Доход (approved)
         revenue_rows = conn.execute("""
             SELECT DATE(time, 'unixepoch') as day, SUM(payment_sum) as total
             FROM admitad_transactions
@@ -172,7 +223,7 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             GROUP BY day ORDER BY day
         """, (user_id, since)).fetchall()
 
-        # Магазины (по постам)
+        # Магазины (из постов)
         store_rows = conn.execute("""
             SELECT g.source, COUNT(*) as cnt
             FROM posts p
@@ -188,6 +239,32 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         total_posts = sum(r["count"] for r in post_rows) if post_rows else 0
         total_revenue = sum(r["total"] for r in revenue_rows) if revenue_rows else 0.0
 
+        # Сравнение каналов
+        channel_rows = conn.execute("""
+            SELECT c.channel_title, c.channel_id,
+                   COUNT(p.id) as posts_cnt,
+                   COALESCE(s.clicks_count, 0) as clicks,
+                   COALESCE(s.leads_count, 0) as leads,
+                   COALESCE(s.earnings_approved, 0) as earnings
+            FROM channels c
+            LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.user_id = c.user_id AND p.status='published' AND p.published_at >= ?
+            LEFT JOIN subid_stats s ON s.subid1 = c.sub_id
+            WHERE c.user_id = ? AND c.is_active = 1
+            GROUP BY c.channel_id
+            ORDER BY earnings DESC
+        """, (since, user_id)).fetchall()
+
+        # Топ-5 товаров по количеству публикаций
+        top_products = conn.execute("""
+            SELECT g.title, COUNT(*) as cnt
+            FROM posts p
+            JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
+            WHERE p.user_id = ? AND p.status='published' AND p.published_at >= ?
+            GROUP BY g.title
+            ORDER BY cnt DESC
+            LIMIT 5
+        """, (user_id, since)).fetchall()
+
         return JSONResponse({
             "posts_labels": [r["day"] for r in post_rows],
             "posts_counts": [r["count"] for r in post_rows],
@@ -199,6 +276,15 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             "balance_pending": balance["balance_pending"] if balance else 0,
             "total_posts": total_posts,
             "total_revenue": total_revenue,
+            "channels": [{
+                "title": r["channel_title"] or r["channel_id"],
+                "posts": r["posts_cnt"],
+                "clicks": r["clicks"],
+                "leads": r["leads"],
+                "earnings": r["earnings"],
+                "conversion": round(r["leads"] / r["clicks"] * 100, 1) if r["clicks"] > 0 else 0
+            } for r in channel_rows],
+            "top_products": [{"title": r["title"], "count": r["cnt"]} for r in top_products],
         })
     finally:
         conn.close()
