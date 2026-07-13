@@ -44,7 +44,10 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <div><canvas id="postsChart"></canvas></div>
         <div><canvas id="revenueChart"></canvas></div>
     </div>
-    <div style="max-width:400px; margin:auto;"><canvas id="storeChart"></canvas></div>
+    <div class="grid">
+        <div><canvas id="clicksChart"></canvas></div>
+        <div style="max-width:400px; margin:auto;"><canvas id="storeChart"></canvas></div>
+    </div>
 
     <div class="card">
         <h2>📢 Сравнение каналов</h2>
@@ -66,20 +69,19 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     if (!token) { document.body.innerHTML = 'Токен не указан'; return; }
 
     let currentPeriod = '30d';
-    let postsChart, revenueChart, storeChart;
+    let postsChart, revenueChart, clicksChart, storeChart;
 
     async function loadData(period) {
         const resp = await fetch(`/my-stats/data?token=${token}&period=${period}`);
         const data = await resp.json();
 
-        // Баланс и сводка
         document.getElementById('balance-info').innerHTML = `
             <p>💰 Доступно к выводу: <b>${data.balance_available.toFixed(2)} ₽</b></p>
             <p>⏳ В ожидании: <b>${data.balance_pending.toFixed(2)} ₽</b></p>
             <p>📬 Постов за период: <b>${data.total_posts}</b> | 💵 Доход: <b>${data.total_revenue.toFixed(2)} ₽</b></p>
         `;
 
-        // График постов
+        // Посты
         if (postsChart) postsChart.destroy();
         postsChart = new Chart(document.getElementById('postsChart'), {
             type: 'line',
@@ -93,10 +95,13 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
                     fill: true,
                 }]
             },
-            options: { scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+            options: {
+                plugins: { tooltip: { callbacks: { label: (ctx) => `${ctx.raw} пост(ов)` } } },
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+            }
         });
 
-        // График дохода
+        // Доход
         if (revenueChart) revenueChart.destroy();
         if (data.revenue_values && data.revenue_values.length > 0) {
             revenueChart = new Chart(document.getElementById('revenueChart'), {
@@ -111,14 +116,73 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
                         fill: true,
                     }]
                 },
-                options: { scales: { y: { beginAtZero: true } } }
+                options: {
+                    plugins: { tooltip: { callbacks: { label: (ctx) => `${ctx.raw} ₽` } } },
+                    scales: { y: { beginAtZero: true } }
+                }
             });
         } else {
             document.getElementById('revenueChart').getContext('2d').clearRect(0,0,400,200);
             revenueChart = null;
         }
 
-        // Круговая магазинов
+        // Клики + Конверсия
+        if (clicksChart) clicksChart.destroy();
+        if (data.clicks_labels && data.clicks_labels.length > 0) {
+            clicksChart = new Chart(document.getElementById('clicksChart'), {
+                type: 'bar',
+                data: {
+                    labels: data.clicks_labels,
+                    datasets: [
+                        {
+                            label: 'Клики',
+                            data: data.clicks_counts,
+                            backgroundColor: 'rgba(33,150,243,0.6)',
+                            yAxisID: 'y-clicks'
+                        },
+                        {
+                            label: 'Конверсия, %',
+                            data: data.conversion_values,
+                            type: 'line',
+                            borderColor: '#ff9800',
+                            backgroundColor: 'rgba(255,152,0,0.1)',
+                            yAxisID: 'y-conv',
+                            fill: false,
+                        }
+                    ]
+                },
+                options: {
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    if (ctx.dataset.label === 'Клики') return `${ctx.raw} кликов`;
+                                    return `${ctx.raw} %`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        'y-clicks': {
+                            type: 'linear',
+                            position: 'left',
+                            beginAtZero: true,
+                            title: { display: true, text: 'Клики' }
+                        },
+                        'y-conv': {
+                            type: 'linear',
+                            position: 'right',
+                            beginAtZero: true,
+                            max: 100,
+                            title: { display: true, text: 'Конверсия, %' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Магазины
         if (storeChart) storeChart.destroy();
         if (data.store_labels && data.store_labels.length > 0) {
             storeChart = new Chart(document.getElementById('storeChart'), {
@@ -130,6 +194,9 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
                         data: data.store_values,
                         backgroundColor: ['#ff4444','#4caf50','#ff9800','#2196f3','#9c27b0','#00bcd4','#ffeb3b','#e91e63','#8bc34a','#607d8b'],
                     }]
+                },
+                options: {
+                    plugins: { tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.raw} пост(ов)` } } }
                 }
             });
         }
