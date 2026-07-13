@@ -316,13 +316,13 @@ async def publish_from_catalog(bot: Bot):
                     donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
                     conn_rec = get_db()
                     try:
-                    conn_rec.execute(
-                        """INSERT INTO posts 
-                        (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at, caption)
-                        VALUES (?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
-                        (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
-                         datetime.now(timezone.utc).isoformat(), caption)
-                    )
+                        conn_rec.execute(
+                            """INSERT INTO posts 
+                            (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at, caption)
+                            VALUES (?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
+                            (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
+                             datetime.now(timezone.utc).isoformat(), caption)
+                        )
                         conn_rec.commit()
                     finally:
                         conn_rec.close()
