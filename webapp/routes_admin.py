@@ -312,9 +312,11 @@ async def posts_list(request: Request, status: str = "", user_id: str = "", _: i
     query = """
         SELECT p.id, p.user_id, p.channel_id, p.status, p.published_at, p.created_at,
                g.image_url as photo_url,
-               p.caption as caption_text
+               p.caption as caption_text,
+               c.channel_title
         FROM posts p
         LEFT JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
+        LEFT JOIN channels c ON p.channel_id = c.channel_id AND p.user_id = c.user_id
         WHERE 1=1
     """
     params = []
