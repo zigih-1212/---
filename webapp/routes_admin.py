@@ -330,7 +330,11 @@ async def posts_list(request: Request, status: str = "", user_id: str = "", _: i
         posts = conn.execute(query, params).fetchall()
     finally:
         conn.close()
-    return render("admin_posts.html", posts=posts, request=request, active_page='posts')
+    response = render("admin_posts.html", posts=posts, request=request, active_page='posts')
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 # ---------- Карантин ----------
 @router.get("/quarantine", response_class=HTMLResponse)
