@@ -309,15 +309,22 @@ async def decline_payout_request(request_id: int, admin_id: int = Depends(admin_
 @router.get("/posts", response_class=HTMLResponse)
 async def posts_list(request: Request, status: str = "", user_id: str = "", _: int = Depends(admin_required)):
     conn = get_db()
-    query = "SELECT id, user_id, channel_id, status, published_at, created_at FROM posts WHERE 1=1"
+    query = """
+        SELECT p.id, p.user_id, p.channel_id, p.status, p.published_at, p.created_at,
+               g.image_url as photo_url,
+               (SELECT caption_text FROM posts_text WHERE post_id = p.id LIMIT 1) as caption_text
+        FROM posts p
+        LEFT JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
+        WHERE 1=1
+    """
     params = []
     if status:
-        query += " AND status = ?"
+        query += " AND p.status = ?"
         params.append(status)
     if user_id:
-        query += " AND user_id = ?"
+        query += " AND p.user_id = ?"
         params.append(user_id)
-    query += " ORDER BY id DESC LIMIT 100"
+    query += " ORDER BY p.id DESC LIMIT 100"
     try:
         posts = conn.execute(query, params).fetchall()
     finally:
