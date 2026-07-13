@@ -831,7 +831,8 @@ async def show_user_cabinet(message: Message, user_id: int = None):
         await message.answer("Пожалуйста, начните с команды /start")
         return
 
-    # Если оферта не принята – показываем только оферту
+    role = user["role"]
+
     # Если оферта не принята – показываем только оферту
     if not user["oferta_accepted"]:
         if role == "saas":
@@ -920,7 +921,7 @@ async def show_user_cabinet(message: Message, user_id: int = None):
         await message.answer(text_oferta, parse_mode=ParseMode.HTML, reply_markup=kb)
         return
 
-    role = user["role"]
+    # role уже определена выше
     sub_until = user["subscription_until"]
     if sub_until:
         try:
@@ -957,7 +958,6 @@ async def show_user_cabinet(message: Message, user_id: int = None):
         f"{finance_text}"
     )
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_cabinet_menu(role))
-
 # ---------------------------------------------------------------------------
 # Главное меню (колбэк)
 # ---------------------------------------------------------------------------
