@@ -531,15 +531,28 @@ async def settings_edit_form(request: Request, _: int = Depends(admin_required))
     return render("admin_settings.html", settings=settings, active_page='settings')
 
 @router.post("/settings-edit/save", response_class=HTMLResponse)
-async def settings_edit_save(night_start: str = Form("23:00"), night_end: str = Form("08:00"),
-                             run_interval: str = Form("900"), min_payout: str = Form("2000"),
-                             payout_bank_pct: str = Form("0.043"), _: int = Depends(admin_required)):
+async def settings_edit_save(
+    night_start: str = Form("23:00"),
+    night_end: str = Form("08:00"),
+    run_interval: str = Form("900"),
+    min_payout: str = Form("2000"),
+    payout_bank_pct: str = Form("0.043"),
+    admin_id: int = Depends(admin_required)
+):
     conn = get_db()
-    for key, val in [("night_start", night_start), ("night_end", night_end), ("run_interval", run_interval),
-                     ("min_payout", min_payout), ("payout_bank_pct", payout_bank_pct)]:
-        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, val))
-    conn.commit()
-    conn.close()
+    try:
+        for key, val in [
+            ("night_start", night_start),
+            ("night_end", night_end),
+            ("run_interval", run_interval),
+            ("min_payout", min_payout),
+            ("payout_bank_pct", payout_bank_pct)
+        ]:
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, val))
+        conn.commit()
+        log_admin_action(admin_id, "edit_settings", f"night={night_start}-{night_end}, interval={run_interval}, min_payout={min_payout}")
+    finally:
+        conn.close()
     return RedirectResponse(url="/admin/settings-edit", status_code=303)
 
 @router.get("/payouts/csv")
