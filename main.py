@@ -472,7 +472,11 @@ def init_db() -> None:
         try:
             cursor.execute("ALTER TABLE subid_stats ADD COLUMN earnings_approved REAL DEFAULT 0.0")
         except:
-            pass          
+            pass
+        try:
+            cursor.execute("ALTER TABLE posts ADD COLUMN caption TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
