@@ -233,6 +233,11 @@ async def publish_from_catalog(bot: Bot):
 
         if not product:
             logger.info(f"[DEBUG] User {user_id}: нет доступных товаров")
+            if role == "blogger":
+                # Пополняем каталог, если он пуст
+                logger.info(f"[DEBUG] User {user_id}: запускаем экстренное пополнение каталога")
+                from services.admitad import fetch_admitad_catalog_for_user
+                await fetch_admitad_catalog_for_user(user_id, max_items_per_store=100)
             continue
 
         if role == "blogger":
