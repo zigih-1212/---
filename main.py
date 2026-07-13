@@ -820,7 +820,7 @@ async def show_user_cabinet(message: Message, user_id: int = None):
     conn = get_db()
     try:
         user = conn.execute(
-            "SELECT role, subscription_until, username, balance_pending, balance_available, oferta_accepted "
+            "SELECT role, subscription_until, username, balance_pending, balance_available, oferta_accepted, tax_status "
             "FROM users WHERE user_id=?",
             (user_id,)
         ).fetchone()
