@@ -579,10 +579,10 @@ async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, prod
             try:
                 conn_rec.execute(
                     """INSERT INTO posts 
-                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
+                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at, caption)
                     VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
                     (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
-                     datetime.now(timezone.utc).isoformat())
+                     datetime.now(timezone.utc).isoformat(), caption)
                 )
                 conn_rec.commit()
             finally:
