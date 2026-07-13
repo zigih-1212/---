@@ -25,8 +25,9 @@ def is_admin(user_id: int) -> bool:
 
 def apply_referral_bonus(user_id: int, payment_sum: float, blogger_amount: float):
     """
-    Вычисляет и начисляет реферальный бонус из доли сервиса (30%).
+    Начисляет реферальное вознаграждение из доли реферала (70%).
     blogger_amount = payment_sum * 0.70
+    Реферер получает 10% от blogger_amount, которые вычитаются из blogger_amount.
     """
     REFERRAL_RATE = 0.10
     if blogger_amount <= 0:
@@ -38,10 +39,14 @@ def apply_referral_bonus(user_id: int, payment_sum: float, blogger_amount: float
             return
         referrer_id = user["referrer_id"]
         bonus = round(blogger_amount * REFERRAL_RATE, 2)
-        service_share = round(payment_sum * 0.30, 2)
-        if bonus > service_share:
-            logger.warning(f"Referral bonus {bonus} exceeds service share {service_share}, skipping")
-            return
+        
+        # Вычитаем бонус из доли реферала
+        new_blogger_amount = round(blogger_amount - bonus, 2)
+        
+        # Обновляем баланс реферала (уменьшаем его долю)
+        # Поскольку баланс уже был начислен в postback'е, нужно скорректировать
+        # Вместо сложной корректировки просто начисляем рефереру, а разницу вычитаем у реферала
+        conn.execute("UPDATE users SET balance_pending = balance_pending - ? WHERE user_id = ?", (bonus, user_id))
         conn.execute("UPDATE users SET balance_pending = balance_pending + ? WHERE user_id = ?", (bonus, referrer_id))
         
         # Обновление реферальной статистики
@@ -51,12 +56,11 @@ def apply_referral_bonus(user_id: int, payment_sum: float, blogger_amount: float
         """, (referrer_id, user_id, bonus, bonus))
         
         conn.commit()
-        logger.info(f"Referral bonus: +{bonus} to user {referrer_id} from user {user_id} (service share {service_share})")
+        logger.info(f"Referral bonus: +{bonus} to user {referrer_id} from user {user_id} (deducted from referral's share)")
     except Exception as e:
         logger.error(f"Failed to apply referral bonus for user {user_id}: {e}")
     finally:
         conn.close()
-
 async def check_payout_threshold(user_id: int, bot: Bot):
     conn = get_db()
     try:
