@@ -1361,9 +1361,26 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
             conn.execute("UPDATE users SET commission_rate = 0.70 WHERE user_id = ?", (user_id,))
         else:
             conn.execute("UPDATE users SET commission_rate = 0.95 WHERE user_id = ?", (user_id,))
+        # Реферальная связь
+        if referrer_id:
+            conn.execute("""
+                INSERT OR IGNORE INTO referrals (referrer_id, referral_id, total_brought_profit)
+                VALUES (?, ?, 0)
+            """, (referrer_id, user_id))
         conn.commit()
     finally:
         conn.close()
+
+    # Уведомление рефереру
+    if referrer_id:
+        try:
+            await callback.bot.send_message(
+                referrer_id,
+                f"🎉 По вашей реферальной ссылке зарегистрировался новый блогер (ID {user_id})!\n"
+                "Вы будете получать 10% от его заработка."
+            )
+        except Exception as e:
+            logger.error(f"Не удалось уведомить реферера {referrer_id}: {e}")
 
     if role == "saas":
         await callback.message.edit_text(
