@@ -950,11 +950,20 @@ async def show_user_cabinet(message: Message, user_id: int = None):
             f"💳 Доступно к выводу: <b>{available:.2f} ₽</b>"
         )
 
+    tax_status_display = ""
+    if user["tax_status"] == "business":
+        tax_status_display = "🧾 Самозанятый / ИП"
+    elif user["tax_status"] == "individual":
+        tax_status_display = "👤 Физическое лицо"
+    else:
+        tax_status_display = "❓ Не указан"
+
     text = (
         f"💼 <b>Личный кабинет</b>\n\n"
         f"👤 Роль: <b>{role.upper()}</b>\n"
         f"📅 Статус подписки: {status_text}\n"
-        f"🆔 ID: <code>{user_id}</code>"
+        f"🆔 ID: <code>{user_id}</code>\n"
+        f"📌 Налоговый статус: {tax_status_display}"
         f"{finance_text}"
     )
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_cabinet_menu(role))
