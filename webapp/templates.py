@@ -286,7 +286,7 @@ USER_EDIT_TEMPLATE = '''{% extends "base.html" %}
 {% endblock %}'''
 
 # ---------- POSTS LIST ----------
-POSTS_TEMPLATE = '''{% extends "base.html" %}
+POSTS_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}Посты{% endblock %}
 {% block content %}
 <h1>📬 Посты (последние 100)</h1>
@@ -303,10 +303,10 @@ POSTS_TEMPLATE = '''{% extends "base.html" %}
     <button type="submit">Фильтр</button>
 </form>
 <div class="card">
-    <table>
+    <table id="posts-table">
         <tr><th>ID</th><th>Пользователь</th><th>Канал</th><th>Статус</th><th>Дата</th></tr>
         {% for p in posts %}
-        <tr>
+        <tr data-photo="{{ p['photo_url'] or '' }}" data-caption="{{ p['caption_text'] or '' | e }}" style="cursor:pointer;">
             <td>{{ p['id'] }}</td>
             <td>{{ p['user_id'] }}</td>
             <td>{{ p['channel_id'] or '—' }}</td>
@@ -316,6 +316,47 @@ POSTS_TEMPLATE = '''{% extends "base.html" %}
         {% endfor %}
     </table>
 </div>
+
+<!-- Модальное окно для превью поста -->
+<div id="post-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; justify-content:center; align-items:center;">
+    <div style="background:#1e1e1e; border-radius:16px; max-width:500px; width:90%; padding:20px; position:relative;">
+        <span id="close-modal" style="position:absolute; top:10px; right:15px; color:#ff4444; font-size:24px; cursor:pointer;">&times;</span>
+        <img id="modal-photo" src="" style="width:100%; border-radius:12px; margin-bottom:15px;" onerror="this.style.display='none'">
+        <div id="modal-caption" style="color:#ccc; word-wrap:break-word;"></div>
+    </div>
+</div>
+
+<script>
+    const modal = document.getElementById('post-modal');
+    const modalPhoto = document.getElementById('modal-photo');
+    const modalCaption = document.getElementById('modal-caption');
+    const closeBtn = document.getElementById('close-modal');
+
+    document.querySelectorAll('#posts-table tr[data-photo]').forEach(row => {
+        row.addEventListener('click', () => {
+            const photo = row.getAttribute('data-photo');
+            const caption = row.getAttribute('data-caption');
+            if (photo) {
+                modalPhoto.src = photo;
+                modalPhoto.style.display = 'block';
+            } else {
+                modalPhoto.style.display = 'none';
+            }
+            modalCaption.innerHTML = caption;
+            modal.style.display = 'flex';
+        });
+    });
+
+    closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+</script>
 {% endblock %}'''
 
 # ---------- QUARANTINE ----------
