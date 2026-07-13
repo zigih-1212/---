@@ -110,19 +110,19 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
             (user_id,)
         ).fetchall()
         selected_ids = {r["category_id"] for r in selected_rows}
+        # Проверяем роль, чтобы для блогера без магазинов заполнить все
+        role_row = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        is_blogger = role_row and role_row["role"] == "blogger"
     finally:
         conn.close()
 
     saved = 0
     for store_id, store_name in STORE_ID_MAP.items():
-        if store_id not in selected_ids:
+        # Если у пользователя нет выбранных магазинов и он блогер – используем все
+        if not is_blogger and store_id not in selected_ids:
             continue
-        if store_name not in STORES:
-            continue
-
-        store_cfg = STORES[store_name]
-        feed_url = store_cfg.get("feed_url", "")
-        if not feed_url:
+        # Если блогер и список выбранных пуст – загружаем все
+        if is_blogger and selected_ids and store_id not in selected_ids:
             continue
 
         store_saved = 0
