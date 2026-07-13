@@ -1,6 +1,7 @@
 # webapp/routes_admin.py
 import os
 import io, csv
+import logging
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Request, Form, Depends, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse
@@ -23,7 +24,7 @@ from fastapi.responses import StreamingResponse
 from config import BOT_USERNAME
 
 router = APIRouter()
-
+logger = logging.getLogger("autopost_bot.admin")
 # ---------- Загрузчик шаблонов ----------
 class DictLoader(BaseLoader):
     def __init__(self, mapping):
@@ -562,13 +563,9 @@ async def settings_edit_save(
         ]:
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, val))
         conn.commit()
-        try:
-            log_admin_action(admin_id, "edit_settings", f"night={night_start}-{night_end}, interval={run_interval}, min_payout={min_payout}")
-        except Exception as e:
-            logger.error(f"Audit logging failed: {e}")
+        log_admin_action(admin_id, "edit_settings", f"night={night_start}-{night_end}, interval={run_interval}, min_payout={min_payout}")
     except Exception as e:
         logger.error(f"Settings save error: {e}")
-        conn.close()
         return HTMLResponse(f"<h1>Ошибка сохранения: {e}</h1>", status_code=500)
     finally:
         conn.close()
