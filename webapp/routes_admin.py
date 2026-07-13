@@ -309,16 +309,15 @@ async def decline_payout_request(request_id: int, admin_id: int = Depends(admin_
 @router.get("/posts", response_class=HTMLResponse)
 async def posts_list(request: Request, status: str = "", user_id: str = "", _: int = Depends(admin_required)):
     conn = get_db()
-    query = """
-        SELECT p.id, p.user_id, p.channel_id, p.status, p.published_at, p.created_at,
-               g.image_url as photo_url,
-               p.caption as caption_text,
-               c.channel_title
-        FROM posts p
-        LEFT JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
-        LEFT JOIN channels c ON p.channel_id = c.channel_id AND p.user_id = c.user_id
-        WHERE 1=1
-    """
+        query = """
+            SELECT p.id, p.user_id, p.channel_id, p.status, p.published_at, p.created_at,
+                   g.image_url as photo_url,
+                   p.caption as caption_text,
+                   (SELECT channel_title FROM channels WHERE channel_id = p.channel_id AND user_id = p.user_id LIMIT 1) as channel_title
+            FROM posts p
+            LEFT JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
+            WHERE 1=1
+        """
     params = []
     if status:
         query += " AND p.status = ?"
