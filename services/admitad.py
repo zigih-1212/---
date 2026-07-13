@@ -110,7 +110,8 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
             (user_id,)
         ).fetchall()
         selected_ids = {r["category_id"] for r in selected_rows}
-        # Проверяем роль, чтобы для блогера без магазинов заполнить все
+
+        # Определяем, блогер ли это
         role_row = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
         is_blogger = role_row and role_row["role"] == "blogger"
     finally:
@@ -118,11 +119,20 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
 
     saved = 0
     for store_id, store_name in STORE_ID_MAP.items():
-        # Если у пользователя нет выбранных магазинов и он блогер – используем все
+        # Для SaaS – только выбранные магазины
         if not is_blogger and store_id not in selected_ids:
             continue
-        # Если блогер и список выбранных пуст – загружаем все
+        # Для блогера – если список выбранных НЕ пуст, проверяем выбор
         if is_blogger and selected_ids and store_id not in selected_ids:
+            continue
+        # Если блогер и список пуст – загружаем все (условие выше пропускает)
+
+        if store_name not in STORES:
+            continue
+
+        store_cfg = STORES[store_name]
+        feed_url = store_cfg.get("feed_url", "")      # <-- эта строка была утеряна
+        if not feed_url:
             continue
 
         store_saved = 0
@@ -206,7 +216,6 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
 
     logger.info(f"Admitad: всего добавлено {saved} товаров для user {user_id}")
     return saved
-
 
 async def refill_admitad_catalogs(bot=None):
     conn = get_db()
