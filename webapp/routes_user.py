@@ -223,6 +223,22 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             GROUP BY day ORDER BY day
         """, (user_id, since)).fetchall()
 
+        # Клики (по дням, из транзакций с action='click')
+        clicks_rows = conn.execute("""
+            SELECT DATE(time, 'unixepoch') as day, COUNT(*) as clicks
+            FROM admitad_transactions
+            WHERE user_id=? AND time >= strftime('%s', ?) AND action='click'
+            GROUP BY day ORDER BY day
+        """, (user_id, since)).fetchall()
+
+        # Лиды (pending/approved) по дням
+        leads_rows = conn.execute("""
+            SELECT DATE(time, 'unixepoch') as day, COUNT(*) as leads
+            FROM admitad_transactions
+            WHERE user_id=? AND time >= strftime('%s', ?) AND action='lead'
+            GROUP BY day ORDER BY day
+        """, (user_id, since)).fetchall()
+
         # Магазины (из постов)
         store_rows = conn.execute("""
             SELECT g.source, COUNT(*) as cnt
@@ -239,6 +255,24 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         total_posts = sum(r["count"] for r in post_rows) if post_rows else 0
         total_revenue = sum(r["total"] for r in revenue_rows) if revenue_rows else 0.0
 
+        # Собираем словари по дням для кликов и лидов
+        clicks_dict = {r["day"]: r["clicks"] for r in clicks_rows}
+        leads_dict = {r["day"]: r["leads"] for r in leads_rows}
+
+        # Определяем все дни в периоде для корректных нулей
+        from datetime import date, timedelta as td
+        start_date = date.today() - td(days={"7d":7, "30d":30}.get(period, 1000))
+        end_date = date.today()
+        all_days = [(start_date + td(days=i)).isoformat() for i in range((end_date - start_date).days + 1)]
+
+        clicks_counts = [clicks_dict.get(day, 0) for day in all_days]
+        leads_counts = [leads_dict.get(day, 0) for day in all_days]
+
+        # Конверсия (leads/clicks * 100) по дням, если кликов 0, то 0
+        conversion_values = []
+        for c, l in zip(clicks_counts, leads_counts):
+            conversion_values.append(round(l / c * 100, 1) if c > 0 else 0.0)
+
         # Сравнение каналов
         channel_rows = conn.execute("""
             SELECT c.channel_title, c.channel_id,
@@ -254,7 +288,7 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             ORDER BY earnings DESC
         """, (since, user_id)).fetchall()
 
-        # Топ-5 товаров по количеству публикаций
+        # Топ-5 товаров
         top_products = conn.execute("""
             SELECT g.title, COUNT(*) as cnt
             FROM posts p
@@ -270,6 +304,10 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             "posts_counts": [r["count"] for r in post_rows],
             "revenue_labels": [r["day"] for r in revenue_rows],
             "revenue_values": [r["total"] for r in revenue_rows],
+            "clicks_labels": all_days,
+            "clicks_counts": clicks_counts,
+            "conversion_labels": all_days,
+            "conversion_values": conversion_values,
             "store_labels": [r["source"] or "Без названия" for r in store_rows],
             "store_values": [r["cnt"] for r in store_rows],
             "balance_available": balance["balance_available"] if balance else 0,
