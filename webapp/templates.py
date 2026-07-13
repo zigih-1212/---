@@ -306,7 +306,10 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
     <table id="posts-table">
         <tr><th>ID</th><th>Пользователь</th><th>Канал</th><th>Статус</th><th>Дата</th></tr>
         {% for p in posts %}
-        <tr data-photo="{{ p['photo_url'] or '' }}" data-caption="{{ p['caption_text'] or '' | e }}" style="cursor:pointer;">
+        <tr data-photo="{{ p['photo_url'] or '' }}" 
+            data-caption="{{ p['caption_text'] or '' | e }}" 
+            data-channel="{{ p['channel_title'] or p['channel_id'] or '—' }}" 
+            style="cursor:pointer;">
             <td>{{ p['id'] }}</td>
             <td>{{ p['user_id'] }}</td>
             <td>{{ p['channel_id'] or '—' }}</td>
@@ -318,11 +321,15 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
 </div>
 
 <!-- Модальное окно для превью поста -->
-<div id="post-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; justify-content:center; align-items:center;">
-    <div style="background:#1e1e1e; border-radius:16px; max-width:500px; width:90%; padding:20px; position:relative;">
-        <span id="close-modal" style="position:absolute; top:10px; right:15px; color:#ff4444; font-size:24px; cursor:pointer;">&times;</span>
-        <img id="modal-photo" src="" style="width:100%; border-radius:12px; margin-bottom:15px;" onerror="this.style.display='none'">
-        <div id="modal-caption" style="color:#ccc; word-wrap:break-word;"></div>
+<div id="post-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:center;">
+    <div style="background:#0f0f0f; border-radius:12px; max-width:400px; width:90%; overflow:hidden; color:#fff; font-family: 'Segoe UI', sans-serif; position:relative;">
+        <span id="close-modal" style="position:absolute; top:8px; right:12px; color:#aaa; font-size:20px; cursor:pointer; z-index:10;">✕</span>
+        <div style="background:#1a1a1a; padding:10px 15px; display:flex; align-items:center;">
+            <div style="background:#ff4444; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold; font-size:14px;">#</div>
+            <div id="modal-channel-title" style="font-weight:600; font-size:15px;">Канал</div>
+        </div>
+        <img id="modal-photo" src="" style="width:100%; display:none;" onerror="this.style.display='none'">
+        <div id="modal-caption" style="padding:10px 15px 15px; font-size:14px; line-height:1.4; word-wrap:break-word;"></div>
     </div>
 </div>
 
@@ -330,19 +337,22 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
     const modal = document.getElementById('post-modal');
     const modalPhoto = document.getElementById('modal-photo');
     const modalCaption = document.getElementById('modal-caption');
+    const modalChannel = document.getElementById('modal-channel-title');
     const closeBtn = document.getElementById('close-modal');
 
     document.querySelectorAll('#posts-table tr[data-photo]').forEach(row => {
         row.addEventListener('click', () => {
             const photo = row.getAttribute('data-photo');
             const caption = row.getAttribute('data-caption');
+            const channel = row.getAttribute('data-channel') || 'Канал';
             if (photo) {
                 modalPhoto.src = photo;
                 modalPhoto.style.display = 'block';
             } else {
                 modalPhoto.style.display = 'none';
             }
-            modalCaption.innerHTML = caption;
+            modalCaption.innerHTML = caption || '<i style="color:#888;">Текст поста отсутствует</i>';
+            modalChannel.textContent = channel;
             modal.style.display = 'flex';
         });
     });
@@ -356,6 +366,11 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
             modal.style.display = 'none';
         }
     });
+
+    // Автообновление каждые 30 секунд
+    setInterval(function() {
+        location.reload();
+    }, 30000);
 </script>
 {% endblock %}'''
 
