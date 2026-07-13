@@ -562,7 +562,14 @@ async def settings_edit_save(
         ]:
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, val))
         conn.commit()
-        log_admin_action(admin_id, "edit_settings", f"night={night_start}-{night_end}, interval={run_interval}, min_payout={min_payout}")
+        try:
+            log_admin_action(admin_id, "edit_settings", f"night={night_start}-{night_end}, interval={run_interval}, min_payout={min_payout}")
+        except Exception as e:
+            logger.error(f"Audit logging failed: {e}")
+    except Exception as e:
+        logger.error(f"Settings save error: {e}")
+        conn.close()
+        return HTMLResponse(f"<h1>Ошибка сохранения: {e}</h1>", status_code=500)
     finally:
         conn.close()
     return RedirectResponse(url="/admin/settings-edit", status_code=303)
