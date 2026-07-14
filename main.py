@@ -298,7 +298,6 @@ def init_db() -> None:
             FOREIGN KEY(category_id) REFERENCES product_categories(id)
         )
     """)
-    # Создание таблицы gdeslon_catalog, если её ещё нет
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS gdeslon_catalog (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -315,7 +314,6 @@ def init_db() -> None:
             used INTEGER DEFAULT 0
         )
     """)
-    # Таблица для хранения транзакций из Admitad (вебхуки)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS admitad_transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -347,7 +345,6 @@ def init_db() -> None:
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # Уникальный индекс для предотвращения дубликатов
     cursor.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_gdeslon_unique 
             ON gdeslon_catalog(user_id, sku)
@@ -366,7 +363,6 @@ def init_db() -> None:
         )
     """)
     conn.commit()
-    # Таблица для сводной статистики по subid
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS subid_stats (
             subid1 TEXT PRIMARY KEY,
@@ -376,7 +372,6 @@ def init_db() -> None:
             earnings_approved REAL DEFAULT 0.0
         )
     """)
-    # Таблица реферальных связей (детальная, для отчётов)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS referrals (
             referrer_id INTEGER NOT NULL,
@@ -397,7 +392,7 @@ def init_db() -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(request_id) REFERENCES payout_requests(id)
         )
-    """)  
+    """)
     conn.commit()  
     # Миграции
     migrations = [
