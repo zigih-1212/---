@@ -413,7 +413,6 @@ def init_db() -> None:
         "ALTER TABLE users ADD COLUMN min_discount INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN stats_token TEXT",
         "ALTER TABLE users ADD COLUMN stats_token_expires TIMESTAMP",
-        # Миграция для города в user_category_preferences
         "ALTER TABLE user_category_preferences ADD COLUMN city TEXT",
     ]
     for mig in migrations:
@@ -421,70 +420,75 @@ def init_db() -> None:
             cursor.execute(mig)
         except sqlite3.OperationalError:
             pass
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN post_interval_minutes INTEGER DEFAULT 60")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN commission_rate REAL DEFAULT 0.95")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN product_template TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN video_template TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN template_preview_data TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass 
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN force_preview_confirmed INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass  
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN payout_notified INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN tax_status TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE payout_requests ADD COLUMN receipt_photo TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE subid_stats ADD COLUMN leads_count INTEGER DEFAULT 0")
-        except:
-            pass
-        try:
-            cursor.execute("ALTER TABLE subid_stats ADD COLUMN earnings_pending REAL DEFAULT 0.0")
-        except:
-            pass
-        try:
-            cursor.execute("ALTER TABLE subid_stats ADD COLUMN earnings_approved REAL DEFAULT 0.0")
-        except:
-            pass
-        try:
-            cursor.execute("ALTER TABLE posts ADD COLUMN caption TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass 
-        # Миграция для напоминаний о чеке
-        try:
-            cursor.execute("ALTER TABLE payout_requests ADD COLUMN sent_at TIMESTAMP")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE payout_requests ADD COLUMN receipt_reminded INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:          
+
+    # Дополнительные миграции (каждая в своём try/except)
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN post_interval_minutes INTEGER DEFAULT 60")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN commission_rate REAL DEFAULT 0.95")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN product_template TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN video_template TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN template_preview_data TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN force_preview_confirmed INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN payout_notified INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN tax_status TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE payout_requests ADD COLUMN receipt_photo TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE subid_stats ADD COLUMN leads_count INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE subid_stats ADD COLUMN earnings_pending REAL DEFAULT 0.0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE subid_stats ADD COLUMN earnings_approved REAL DEFAULT 0.0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE posts ADD COLUMN caption TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+
+    # Новые миграции для выплат (напоминания о чеке)
+    try:
+        cursor.execute("ALTER TABLE payout_requests ADD COLUMN sent_at TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE payout_requests ADD COLUMN receipt_reminded INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
