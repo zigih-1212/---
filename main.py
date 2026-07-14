@@ -476,7 +476,15 @@ def init_db() -> None:
         try:
             cursor.execute("ALTER TABLE posts ADD COLUMN caption TEXT DEFAULT ''")
         except sqlite3.OperationalError:
-            pass  
+            pass 
+        # Миграция для напоминаний о чеке
+        try:
+            cursor.execute("ALTER TABLE payout_requests ADD COLUMN sent_at TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE payout_requests ADD COLUMN receipt_reminded INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:          
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
@@ -1806,6 +1814,37 @@ async def send_subscription_reminders(bot: Bot):
     finally:
         conn.close()
 
+async def check_receipt_reminders(bot: Bot):
+    """Напоминает блогерам о необходимости загрузить чек через 12 часов после отправки денег."""
+    conn = get_db()
+    try:
+        now = datetime.now(timezone.utc)
+        twelve_hours_ago = (now - timedelta(hours=12)).isoformat()
+        rows = conn.execute("""
+            SELECT id, user_id, amount FROM payout_requests
+            WHERE status = 'awaiting_receipt'
+            AND sent_at IS NOT NULL
+            AND sent_at <= ?
+            AND receipt_reminded = 0
+        """, (twelve_hours_ago,)).fetchall()
+        for row in rows:
+            try:
+                await bot.send_message(
+                    row["user_id"],
+                    f"⏰ <b>Напоминание о чеке</b>\n\n"
+                    f"Вам был отправлен перевод на сумму <b>{row['amount']} ₽</b>.\n"
+                    "Согласно оферте, вы обязаны загрузить чек из приложения «Мой налог» в течение 24 часов.\n"
+                    "Пожалуйста, перейдите в раздел «💰 Финансы» и нажмите «📤 Отправить чек».",
+                    parse_mode=ParseMode.HTML
+                )
+                conn.execute("UPDATE payout_requests SET receipt_reminded = 1 WHERE id = ?", (row["id"],))
+                conn.commit()
+                logger.info(f"Отправлено напоминание о чеке по заявке #{row['id']}")
+            except Exception as e:
+                logger.error(f"Ошибка отправки напоминания для заявки #{row['id']}: {e}")
+    finally:
+        conn.close()
+
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(run_billing_check, trigger="interval", hours=1, kwargs={"bot": bot}, id="billing_check", replace_existing=True)
@@ -1818,6 +1857,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(send_subscription_reminders, trigger="cron", hour=10, minute=0, kwargs={"bot": bot}, id="subscription_reminders", replace_existing=True)
     scheduler.add_job(update_all_store_data_from_feed, trigger="cron", hour=4, minute=0, id="update_coupons_feed", replace_existing=True)
     scheduler.add_job(check_rss_and_publish, trigger="interval", minutes=15, kwargs={"bot": bot}, id="check_rss", replace_existing=True)
+    scheduler.add_job(check_receipt_reminders, trigger="interval", minutes=30, kwargs={"bot": bot}, id="receipt_reminders", replace_existing=True)  
     return scheduler
 
 # ---------------------------------------------------------------------------
