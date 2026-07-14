@@ -288,6 +288,12 @@ async def publish_from_catalog(bot: Bot):
                     final_url += '&subid=' + ch["sub_id"]
                 else:
                     final_url += '?subid=' + ch["sub_id"]
+            # Добавляем subid2 для детализации трафика
+            subid2 = generate_subid2(user_id, ch["channel_id"])
+            if '?' in final_url:
+                final_url += '&subid2=' + subid2
+            else:
+                final_url += '?subid2=' + subid2
 
             adult = source in ADULT_STORES
             delivery_info = get_delivery_for_store(source)
