@@ -503,7 +503,11 @@ def init_db() -> None:
     try:
         cursor.execute("ALTER TABLE posts ADD COLUMN views_count INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
-        pass  
+        pass
+    try:
+        cursor.execute("ALTER TABLE posts ADD COLUMN subid2 TEXT")
+    except sqlite3.OperationalError:
+        pass      
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
