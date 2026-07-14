@@ -689,3 +689,74 @@ REPORTS_TEMPLATE = '''{% extends "base.html" %}
     <p><a href="/admin/referrals/csv" class="btn">Скачать реферальные связи (CSV)</a></p>
 </div>
 {% endblock %}'''
+
+ADMIN_CHAT_TEMPLATE = r'''{% extends "base.html" %}
+{% block title %}Чат выплаты #{{ request_id }}{% endblock %}
+{% block content %}
+<h1>💬 Чат по заявке #{{ request_id }} <span class="status-badge" id="status-badge">{{ status }}</span></h1>
+<div class="chat-box" id="chat-messages" style="background:#111; border-radius:10px; padding:15px; height:400px; overflow-y:auto; margin:15px 0;"></div>
+<div class="chat-input" style="display:flex; gap:10px; margin-top:10px;">
+    <input type="text" id="message-text" placeholder="Сообщение..." style="flex:1; padding:12px; background:#333; border:1px solid #555; color:#ccc; border-radius:8px;">
+    <button onclick="sendMessage()" style="padding:12px 20px;">📨</button>
+</div>
+<div style="margin-top:15px;">
+    <button id="send-money-btn" style="display:none;" onclick="sendMoney()">💸 Деньги отправлены</button>
+    <button id="decline-btn" style="display:none;" onclick="declineRequest()">❌ Отклонить</button>
+    <button id="confirm-btn" style="display:none;" onclick="confirmReceipt()">✅ Подтвердить чек</button>
+</div>
+<a href="/admin/payouts" style="color:#ff4444; margin-top:20px; display:inline-block;">← Назад к списку</a>
+
+<script>
+const requestId = {{ request_id }};
+
+async function loadChat() {
+    const resp = await fetch(`/admin/payouts/${requestId}/chat-data`);
+    const data = await resp.json();
+    document.getElementById('status-badge').textContent = data.status;
+    document.getElementById('status-badge').className = 'status-badge status-' + data.status;
+    const messages = data.messages;
+    const chatDiv = document.getElementById('chat-messages');
+    chatDiv.innerHTML = messages.map(msg => {
+        const side = msg.sender_role === 'admin' ? 'admin' : 'user';
+        let text = '';
+        if (msg.file_path) {
+            text = `<a href="/admin/receipt-file?path=${encodeURIComponent(msg.file_path)}" target="_blank"><img src="/admin/receipt-file?path=${encodeURIComponent(msg.file_path)}" style="max-width:150px; border-radius:8px;"></a>`;
+        }
+        if (msg.message) text += msg.message;
+        return `<div class="chat-msg ${side}">${text}<span class="time">${msg.created_at}</span></div>`;
+    }).join('');
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+
+    const status = data.status;
+    document.getElementById('send-money-btn').style.display = (status === 'processing') ? 'inline-block' : 'none';
+    document.getElementById('decline-btn').style.display = (status !== 'completed' && status !== 'declined') ? 'inline-block' : 'none';
+    document.getElementById('confirm-btn').style.display = (status === 'receipt_uploaded') ? 'inline-block' : 'none';
+}
+
+async function sendMessage() {
+    const text = document.getElementById('message-text').value.trim();
+    if (!text) return;
+    const formData = new FormData();
+    formData.append('message', text);
+    await fetch(`/admin/payouts/${requestId}/send-message`, { method: 'POST', body: formData });
+    document.getElementById('message-text').value = '';
+    loadChat();
+}
+
+async function sendMoney() {
+    await fetch(`/admin/payouts/request/${requestId}/send-money`, { method: 'POST' });
+    loadChat();
+}
+async function declineRequest() {
+    await fetch(`/admin/payouts/request/${requestId}/decline`, { method: 'POST' });
+    loadChat();
+}
+async function confirmReceipt() {
+    await fetch(`/admin/payouts/request/${requestId}/confirm-receipt`, { method: 'POST' });
+    loadChat();
+}
+
+setInterval(loadChat, 10000);
+loadChat();
+</script>
+{% endblock %}'''
