@@ -811,6 +811,10 @@ async def handle_payout_start(message: Message, state: FSMContext):
 # ---------------------------------------------------------------------------
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, command: Command = None):
+    # 1. Проверка запроса выплаты из веб-статистики
+    if command.args == "payout":
+        await handle_payout_start(message, state)
+        return  
     await state.clear()
     if command.args == "payout":
         await handle_payout_start(message, state)
