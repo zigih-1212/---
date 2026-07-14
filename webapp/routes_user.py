@@ -11,6 +11,7 @@ from config import BOT_USERNAME, MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from services.text_rewriter import generate_post_text
 from services.admitad import get_delivery_for_store, get_random_promocode, STORE_ID_MAP, ADULT_STORES
+from fastapi.responses import StreamingResponse
 
 router = APIRouter()
 
@@ -78,6 +79,12 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <div id="finance-transactions" style="margin-top:20px;"></div>
     </div>
 
+    <div class="card">
+        <h2>📄 Отчёт для ОРД</h2>
+        <p style="margin-bottom:10px;">Скачайте CSV-файл с данными о публикациях старше 30 дней для подачи в ЕРИР.</p>
+        <a id="ord-report-link" href="#" class="btn">📥 Скачать отчёт (CSV)</a>
+    </div>
+
     <div class="grid">
         <div><canvas id="postsChart"></canvas></div>
         <div><canvas id="revenueChart"></canvas></div>
@@ -108,6 +115,9 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 
     let currentPeriod = '30d';
     let postsChart, revenueChart, clicksChart, storeChart;
+
+    // Устанавливаем ссылку на отчёт ОРД
+    document.getElementById('ord-report-link').href = `/my-stats/ord-report?token=${token}`;
 
     async function loadData(period) {
         const resp = await fetch(`/my-stats/data?token=${token}&period=${period}`);
@@ -645,6 +655,36 @@ async def user_stats_page(token: str = Query(...)):
     html = USER_STATS_TEMPLATE.replace('{{ token }}', token)
     return HTMLResponse(content=html)
 
+@router.get("/ord-report")
+async def download_ord_report(token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        # Посты, опубликованные более 30 дней назад
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        posts = conn.execute("""
+            SELECT p.published_at, p.erid, p.views_count, p.direct_link
+            FROM posts p
+            WHERE p.user_id = ? AND p.status = 'published' AND p.published_at <= ?
+            ORDER BY p.published_at DESC
+        """, (user_id, cutoff)).fetchall()
+    finally:
+        conn.close()
+
+    import csv, io
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Дата публикации", "ERID", "Просмотры", "Ссылка на пост"])
+    for p in posts:
+        writer.writerow([p["published_at"], p["erid"], p["views_count"] or 0, p["direct_link"]])
+    output.seek(0)
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=ord_report_{user_id}.csv"}
+    )
+    
 @router.get("/data")
 async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
     user_id = get_user_id_from_token(token)
