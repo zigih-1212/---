@@ -294,13 +294,29 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
         pending_payouts = conn.execute("SELECT COUNT(*) FROM payouts WHERE status='pending'").fetchone()[0]
         last_users = conn.execute("SELECT user_id, role, created_at FROM users ORDER BY created_at DESC LIMIT 5").fetchall()
         last_posts = conn.execute("SELECT id, channel_id, status, published_at, created_at FROM posts ORDER BY id DESC LIMIT 5").fetchall()
+        
+        # Аномалии CTR (пользователи, у которых средний CTR > 25% за 7 дней)
+        ctr_alerts = conn.execute("""
+            SELECT s.subid1, s.clicks_count, s.leads_count,
+                   ROUND(CAST(s.leads_count AS REAL) / NULLIF(s.clicks_count, 0) * 100, 1) as ctr,
+                   c.user_id, u.username, c.channel_title
+            FROM subid_stats s
+            JOIN channels c ON c.sub_id = s.subid1
+            JOIN users u ON u.user_id = c.user_id
+            WHERE s.clicks_count > 10
+              AND CAST(s.leads_count AS REAL) / s.clicks_count > 0.25
+            ORDER BY ctr DESC
+            LIMIT 10
+        """).fetchall()
     finally:
         conn.close()
     return render("admin_dashboard.html",
                   active_saas=active_saas, active_bloggers=active_bloggers,
                   posts_today=posts_today, posts_week=posts_week,
                   errors_today=errors_today, pending_payouts=pending_payouts,
-                  last_users=last_users, last_posts=last_posts, active_page='dashboard')
+                  last_users=last_users, last_posts=last_posts,
+                  ctr_alerts=ctr_alerts,
+                  active_page='dashboard')
 
 @router.get("/payouts/{request_id}/chat", response_class=HTMLResponse)
 async def admin_payout_chat_page(request_id: int, request: Request, _: int = Depends(admin_required)):
