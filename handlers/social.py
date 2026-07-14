@@ -74,29 +74,40 @@ async def process_add_channel_link(message: Message, state: FSMContext):
 
     if "youtube.com" in url or "youtu.be" in url:
         platform = "youtube"
-        # Извлечение channel_id или @username
-        # Поддерживаем форматы: /channel/UC..., /@username, /c/username
-        patterns = [
-            r'(?:channel/|@)([a-zA-Z0-9_-]+)',
-            r'(?:c/)([a-zA-Z0-9_-]+)',
-            r'youtu\.be/([a-zA-Z0-9_-]+)'  # это video id, но не канал
-        ]
-        for pat in patterns:
-            match = re.search(pat, url)
-            if match:
-                extracted = match.group(1)
-                # Если это не video id (длина 11) – скорее username
-                if len(extracted) != 11 and not extracted.startswith("UC"):
-                    # Это username, но для RSS нужен channel_id. Получим его через API?
-                    # Временно сохраним username как channel_id, а RSS будем строить через YouTube Data API или через парсинг страницы.
-                    # Для простоты пока будем использовать username, но позже можно добавить получение channel_id через oembed.
-                    channel_id = extracted  # username
-                elif extracted.startswith("UC") and len(extracted) == 24:
-                    channel_id = extracted
-                break
-        if not channel_id:
-            await message.answer("❌ Не удалось извлечь ID канала. Убедитесь, что ссылка содержит /channel/... или @username.")
+        # Если есть /channel/UC... или /@username
+        if "/channel/" in url:
+            channel_id = url.split("/channel/")[1].split("/")[0]
+        elif "/@" in url:
+            username = url.split("/@")[1].split("/")[0].split("?")[0]
+            # Попробуем получить channel_id через страницу канала
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(f"https://www.youtube.com/@{username}")
+                    if resp.status_code == 200:
+                        # Ищем externalId в мета-тегах
+                        import re
+                        match = re.search(r'"externalId":"(UC[\w-]+)"', resp.text)
+                        if match:
+                            channel_id = match.group(1)
+                        else:
+                            # Если не нашли, попробуем другой вариант – искать canonical
+                            match = re.search(r'<link rel="canonical" href="https://www\.youtube\.com/channel/(UC[\w-]+)">', resp.text)
+                            if match:
+                                channel_id = match.group(1)
+                            else:
+                                await message.answer("❌ Не удалось автоматически определить ID канала. Пожалуйста, укажите прямую ссылку вида https://www.youtube.com/channel/UC...")
+                                return
+                    else:
+                        await message.answer("❌ Не удалось загрузить страницу канала. Проверьте ссылку.")
+                        return
+            except Exception as e:
+                logger.error(f"Ошибка получения channel_id: {e}")
+                await message.answer("❌ Ошибка при определении ID канала.")
+                return
+        else:
+            await message.answer("❌ Неверный формат ссылки. Используйте ссылку с /channel/... или /@username.")
             return
+    # ... (Rutube остаётся без изменений)
     elif "rutube.ru" in url:
         platform = "rutube"
         match = re.search(r'rutube\.ru/channel/(\d+)', url)
