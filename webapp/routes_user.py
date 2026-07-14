@@ -1,10 +1,10 @@
-# webapp/routes_user.py (полная замена)
+# webapp/routes_user.py (исправленный)
 
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from services.db import get_db
 from webapp.auth import get_user_id_from_token
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from config import BOT_USERNAME
 
 router = APIRouter()
@@ -365,15 +365,7 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         # Баланс
         balance = conn.execute("SELECT balance_available, balance_pending FROM users WHERE user_id=?",
                                (user_id,)).fetchone()
-        # Последние 10 транзакций
-        transactions = conn.execute("""
-            SELECT payment_sum, currency, payment_status, order_id, action, time
-            FROM admitad_transactions
-            WHERE user_id = ?
-            ORDER BY time DESC
-            LIMIT 10
-        """, (user_id,)).fetchall()
-        
+
         total_posts = sum(r["count"] for r in post_rows) if post_rows else 0
         total_revenue = sum(r["total"] for r in revenue_rows) if revenue_rows else 0.0
 
@@ -382,10 +374,9 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         leads_dict = {r["day"]: r["leads"] for r in leads_rows}
 
         # Определяем все дни в периоде для корректных нулей
-        from datetime import date, timedelta as td
-        start_date = date.today() - td(days={"7d":7, "30d":30}.get(period, 1000))
+        start_date = date.today() - timedelta(days={"7d":7, "30d":30}.get(period, 1000))
         end_date = date.today()
-        all_days = [(start_date + td(days=i)).isoformat() for i in range((end_date - start_date).days + 1)]
+        all_days = [(start_date + timedelta(days=i)).isoformat() for i in range((end_date - start_date).days + 1)]
 
         clicks_counts = [clicks_dict.get(day, 0) for day in all_days]
         leads_counts = [leads_dict.get(day, 0) for day in all_days]
@@ -412,6 +403,15 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
 
         # Топ-5 товаров
         top_products = conn.execute("""
+            SELECT g.title, COUNT(*) as cnt
+            FROM posts p
+            JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
+            WHERE p.user_id = ? AND p.status='published' AND p.published_at >= ?
+            GROUP BY g.title
+            ORDER BY cnt DESC
+            LIMIT 5
+        """, (user_id, since)).fetchall()
+
         # Последние 10 транзакций
         transactions = conn.execute("""
             SELECT payment_sum, currency, payment_status, order_id, action, time
