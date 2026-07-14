@@ -715,7 +715,13 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         conversion_values = [round(l / c * 100, 1) if c > 0 else 0.0 for c, l in zip(clicks_counts, leads_counts)]
         channel_rows = conn.execute("""SELECT c.channel_title, c.channel_id, COUNT(p.id) as posts_cnt, COALESCE(s.clicks_count, 0) as clicks, COALESCE(s.leads_count, 0) as leads, COALESCE(s.earnings_approved, 0) as earnings FROM channels c LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.user_id = c.user_id AND p.status='published' AND p.published_at >= ? LEFT JOIN subid_stats s ON s.subid1 = c.sub_id WHERE c.user_id = ? AND c.is_active = 1 GROUP BY c.channel_id ORDER BY earnings DESC""", (since, user_id)).fetchall()
         top_products = conn.execute("""SELECT g.title, COUNT(*) as cnt FROM posts p JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%' WHERE p.user_id = ? AND p.status='published' AND p.published_at >= ? GROUP BY g.title ORDER BY cnt DESC LIMIT 5""", (user_id, since)).fetchall()
-        transactions = conn.execute("""SELECT payment_sum, currency, payment_status, order_id, action, time FROM admitad_transactions WHERE user_id = ? ORDER BY time DESC LIMIT 10""", (user_id,)).fetchall()
+        transactions = conn.execute("""
+            SELECT payment_sum, currency, payment_status, order_id, action, time, decline_reason
+            FROM admitad_transactions
+            WHERE user_id = ?
+            ORDER BY time DESC
+            LIMIT 10
+        """, (user_id,)).fetchall()
         return JSONResponse({
             "posts_labels": [r["day"] for r in post_rows],
             "posts_counts": [r["count"] for r in post_rows],
@@ -733,7 +739,17 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             "total_revenue": total_revenue,
             "channels": [{"title": r["channel_title"] or r["channel_id"], "posts": r["posts_cnt"], "clicks": r["clicks"], "leads": r["leads"], "earnings": r["earnings"], "conversion": round(r["leads"] / r["clicks"] * 100, 1) if r["clicks"] > 0 else 0} for r in channel_rows],
             "top_products": [{"title": r["title"], "count": r["cnt"]} for r in top_products],
-            "recent_transactions": [{"amount": t["payment_sum"], "currency": t["currency"], "status": t["payment_status"], "order_id": t["order_id"], "action": t["action"], "date": datetime.fromtimestamp(int(t["time"]), tz=timezone.utc).strftime("%d.%m.%Y %H:%M") if t["time"] else ""} for t in transactions] if transactions else [],
+            "recent_transactions": [
+                {
+                    "amount": t["payment_sum"],
+                    "currency": t["currency"],
+                    "status": t["payment_status"],
+                    "order_id": t["order_id"],
+                    "action": t["action"],
+                    "date": datetime.fromtimestamp(int(t["time"]), tz=timezone.utc).strftime("%d.%m.%Y %H:%M") if t["time"] else "",
+                    "decline_reason": t["decline_reason"] or ""
+                } for t in transactions
+            ] if transactions else [],
             "bot_username": BOT_USERNAME
         })
     finally:
