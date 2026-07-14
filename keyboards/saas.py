@@ -18,7 +18,6 @@ def kb_cabinet_menu(role: str = "saas"):
             [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="📜 Оферта", callback_data="menu:oferta")],
             [InlineKeyboardButton(text="🧾 Налоговый статус", callback_data="tax_status:change")],
-            [InlineKeyboardButton(text="📝 Шаблоны постов", callback_data="menu:templates")],
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ]
     else:  # blogger
@@ -31,7 +30,6 @@ def kb_cabinet_menu(role: str = "saas"):
             [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
             [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="📜 Оферта", callback_data="menu:oferta")],
-            [InlineKeyboardButton(text="📝 Шаблоны постов", callback_data="menu:templates")],
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
