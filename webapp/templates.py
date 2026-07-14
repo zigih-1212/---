@@ -678,6 +678,10 @@ ADMIN_CHAT_TEMPLATE = r'''<!DOCTYPE html>
     <button id="confirm-btn" class="confirm" style="display:none;" onclick="confirmReceipt()">✅ Подтвердить чек</button>
 </div>
 
+    <div id="receipt-warning" style="display:none; margin-top:15px; padding:12px; background:#2a1a1a; border:1px solid #ff9800; border-radius:8px;">
+        ⚠️ <b>Внимание:</b> проверьте чек вручную — сверьте сумму, дату и ИНН получателя.
+    </div>
+
 <script>
 const requestId = {{ request_id }};
 
