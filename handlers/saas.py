@@ -612,11 +612,14 @@ async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
         conn.close()
 
     # Публикация во все активные каналы
-    channels = conn.execute(
-        "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
-        (user_id,)
-    ).fetchall()
-    conn.close()
+    conn = get_db()
+    try:
+        channels = conn.execute(
+            "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        ).fetchall()
+    finally:
+        conn.close()
 
     if not channels:
         await callback.answer("❌ Нет активных каналов.", show_alert=True)
@@ -642,18 +645,18 @@ async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
         conn.close()
 
     for ch in channels:
-            final_url = partner_url
-            if ch["sub_id"]:
-                if '?' in final_url:
-                    final_url += '&subid=' + ch["sub_id"]
-                else:
-                    final_url += '?subid=' + ch["sub_id"]
-            # Добавляем subid2 для детализации трафика
-            subid2 = generate_subid2(user_id, ch["channel_id"])
+        final_url = partner_url
+        if ch["sub_id"]:
             if '?' in final_url:
-                final_url += '&subid2=' + subid2
+                final_url += '&subid=' + ch["sub_id"]
             else:
-                final_url += '?subid2=' + subid2
+                final_url += '?subid=' + ch["sub_id"]
+        # Добавляем subid2 для детализации трафика
+        subid2 = generate_subid2(user_id, ch["channel_id"])
+        if '?' in final_url:
+            final_url += '&subid2=' + subid2
+        else:
+            final_url += '?subid2=' + subid2
 
         caption = generate_post_text(
             title=title,
@@ -684,9 +687,9 @@ async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
             try:
                 conn_rec.execute(
                     """INSERT INTO posts 
-                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
-                    (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
+                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, status, published_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'published', ?)""",
+                    (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], subid2, direct_link,
                      datetime.now(timezone.utc).isoformat())
                 )
                 conn_rec.commit()
@@ -1331,3 +1334,7 @@ async def cb_change_tax_status(callback: CallbackQuery, state: FSMContext):
     )
     await state.set_state(TaxStates.waiting_tax_status)
     await callback.answer()
+
+def generate_subid2(user_id: int, channel_id: str) -> str:
+    clean_channel = channel_id.lstrip("@").replace(" ", "_")
+    return f"u{user_id}_ch_{clean_channel[:20]}"
