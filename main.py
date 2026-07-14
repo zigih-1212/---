@@ -1947,9 +1947,6 @@ async def main() -> None:
 
     from handlers.social import router as social_router
     dp.include_router(social_router)
-    from handlers.templates import router as templates_router
-    dp.include_router(templates_router)
-  
     scheduler = setup_scheduler(bot)
     scheduler.start()
     logger.info("Планировщик (APScheduler) запущен")
