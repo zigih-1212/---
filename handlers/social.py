@@ -25,6 +25,11 @@ class SocialStates(StatesGroup):
     waiting_add_link = State()
     waiting_manual_link = State()
 
+DEFAULT_VIDEO_TEMPLATE = (
+    "🎬 <b>{title}</b>\n\n"
+    "{description}\n\n"
+    "🔗 <a href='{link}'>Смотреть</a>"
+)
 # ---------- Клавиатуры ----------
 def kb_social_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
