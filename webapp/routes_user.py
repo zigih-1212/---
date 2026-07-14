@@ -153,7 +153,11 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             let html = '<h3>Последние транзакции</h3><table><tr><th>Сумма</th><th>Статус</th><th>Заказ</th><th>Дата</th></tr>';
             data.recent_transactions.forEach(t => {
                 const statusEmoji = {pending: '⏳', approved: '✅', declined: '❌', new: '🆕', waiting: '⏳', paid: '💳'}[t.status] || '❓';
-                html += `<tr><td>${t.amount} ${t.currency}</td><td>${statusEmoji} ${t.status}</td><td>${t.order_id || '—'}</td><td>${t.date}</td></tr>`;
+                let reasonHtml = '';
+                if (t.status === 'declined' && t.decline_reason) {
+                    reasonHtml = `<br><small style="color:#ff4444;">Причина: ${t.decline_reason}</small>`;
+                }
+                html += `<tr><td>${t.amount} ${t.currency}</td><td>${statusEmoji} ${t.status}${reasonHtml}</td><td>${t.order_id || '—'}</td><td>${t.date}</td></tr>`;
             });
             html += '</table>';
             txDiv.innerHTML = html;
