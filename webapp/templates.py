@@ -115,10 +115,15 @@ LOGIN_TEMPLATE = '''<!DOCTYPE html>
 </html>'''
 
 
-ADMIN_CHAT_TEMPLATE = r'''{% extends "base.html" %}
-{% block title %}Чат выплаты #{{ request_id }}{% endblock %}
-{% block content %}
+ADMIN_CHAT_TEMPLATE = r'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Чат выплаты #{{ request_id }}</title>
 <style>
+    body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; margin: 0; }
+    h1 { color: #ff4444; }
+    .back-link { color: #ff4444; text-decoration: none; display: inline-block; margin-bottom: 20px; }
     .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: bold; margin-left: 10px; }
     .status-processing { background: #ff9800; color: #000; }
     .status-awaiting_receipt { background: #2196f3; color: #fff; }
@@ -134,12 +139,14 @@ ADMIN_CHAT_TEMPLATE = r'''{% extends "base.html" %}
     .chat-input input { flex: 1; padding: 12px; background: #333; border: 1px solid #555; color: #ccc; border-radius: 8px; }
     .chat-input button { background: #ff4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; }
     .action-buttons { margin-top: 15px; display: flex; gap: 10px; }
-    .action-buttons button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
-    .action-buttons .send-money { background: #ff9800; color: #000; }
-    .action-buttons .decline { background: #f44336; color: #fff; }
-    .action-buttons .confirm { background: #4caf50; color: #fff; }
+    .action-buttons button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; color: white; }
+    .send-money { background: #ff9800; }
+    .decline { background: #f44336; }
+    .confirm { background: #4caf50; }
 </style>
-
+</head>
+<body>
+<a href="/admin/payouts" class="back-link">← Назад к списку выплат</a>
 <h1>💬 Чат по заявке #{{ request_id }} <span class="status-badge" id="status-badge">{{ status }}</span></h1>
 <div class="chat-box" id="chat-messages">Загрузка...</div>
 <div class="chat-input">
@@ -151,7 +158,6 @@ ADMIN_CHAT_TEMPLATE = r'''{% extends "base.html" %}
     <button id="decline-btn" class="decline" style="display:none;" onclick="declineRequest()">❌ Отклонить</button>
     <button id="confirm-btn" class="confirm" style="display:none;" onclick="confirmReceipt()">✅ Подтвердить чек</button>
 </div>
-<a href="/admin/payouts" style="color:#ff4444; margin-top:20px; display:inline-block;">← Назад к списку</a>
 
 <script>
 const requestId = {{ request_id }};
@@ -159,12 +165,11 @@ const requestId = {{ request_id }};
 async function loadChat() {
     try {
         const resp = await fetch(`/admin/payouts/${requestId}/chat-data`);
-        if (!resp.ok) throw new Error('Network error');
+        if (!resp.ok) throw new Error('Ошибка сети');
         const data = await resp.json();
 
-        const badge = document.getElementById('status-badge');
-        badge.textContent = data.status;
-        badge.className = 'status-badge status-' + data.status;
+        document.getElementById('status-badge').textContent = data.status;
+        document.getElementById('status-badge').className = 'status-badge status-' + data.status;
 
         const chatDiv = document.getElementById('chat-messages');
         if (!data.messages || data.messages.length === 0) {
@@ -182,12 +187,12 @@ async function loadChat() {
         }
         chatDiv.scrollTop = chatDiv.scrollHeight;
 
-        // Показать/скрыть кнопки действий
         document.getElementById('send-money-btn').style.display = (data.status === 'processing') ? 'inline-block' : 'none';
         document.getElementById('decline-btn').style.display = (data.status !== 'completed' && data.status !== 'declined') ? 'inline-block' : 'none';
         document.getElementById('confirm-btn').style.display = (data.status === 'receipt_uploaded') ? 'inline-block' : 'none';
     } catch(e) {
-        document.getElementById('chat-messages').innerHTML = '<p style="color:#ff4444;">Ошибка загрузки чата</p>';
+        document.getElementById('chat-messages').innerHTML = '<p style="color:#ff4444;">Ошибка загрузки чата. Проверьте консоль.</p>';
+        console.error(e);
     }
 }
 
@@ -201,7 +206,7 @@ async function sendMessage() {
         document.getElementById('message-text').value = '';
         loadChat();
     } catch(e) {
-        alert('Ошибка отправки');
+        alert('Ошибка отправки сообщения');
     }
 }
 
@@ -221,7 +226,8 @@ async function confirmReceipt() {
 setInterval(loadChat, 10000);
 loadChat();
 </script>
-{% endblock %}'''
+</body>
+</html>'''
 # ---------- DASHBOARD ----------
 DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}Дашборд{% endblock %}
