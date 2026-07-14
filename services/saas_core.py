@@ -336,4 +336,19 @@ async def publish_from_catalog(bot: Bot):
                     logger.warning(f"[DEBUG] Не удалось опубликовать в {ch['channel_id']}")
             except Exception as e:
                 logger.error(f"[DEBUG] Ошибка публикации в {ch['channel_id']}: {e}")
-            await asyncio.sleep(1)
+                # Отправляем пост в карантин с причиной ошибки
+                conn_q = get_db()
+                try:
+                    donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
+                    conn_q.execute(
+                        """INSERT INTO posts 
+                        (user_id, donor_post_id, channel_id, target_channel_id, subid1, status, quarantine_reason, created_at)
+                        VALUES (?, ?, ?, ?, ?, 'quarantine', ?, ?)""",
+                        (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'],
+                         f"Ошибка отправки: {str(e)[:200]}", datetime.now(timezone.utc).isoformat())
+                    )
+                    conn_q.commit()
+                except Exception as db_err:
+                    logger.error(f"Не удалось записать в карантин: {db_err}")
+                finally:
+                    conn_q.close()
