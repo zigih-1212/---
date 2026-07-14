@@ -275,8 +275,12 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     // Функция запроса выплаты (открывает чат с ботом)
     window.requestPayout = function() {
         if (botUsername) {
-            // Прямая ссылка на бота с командой /start payout
-            window.location.href = `https://t.me/${botUsername}?start=payout`;
+            const url = `https://t.me/${botUsername}?start=payout`;
+            // Пробуем открыть через tg:// сначала (для мобильных), иначе https
+            window.location.href = `tg://resolve?domain=${botUsername}&start=payout`;
+            setTimeout(() => {
+                window.location.href = url;
+            }, 500);
         } else {
             alert('Имя бота не загружено. Обновите страницу.');
         }
