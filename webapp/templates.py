@@ -118,16 +118,38 @@ LOGIN_TEMPLATE = '''<!DOCTYPE html>
 ADMIN_CHAT_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}Чат выплаты #{{ request_id }}{% endblock %}
 {% block content %}
+<style>
+    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: bold; margin-left: 10px; }
+    .status-processing { background: #ff9800; color: #000; }
+    .status-awaiting_receipt { background: #2196f3; color: #fff; }
+    .status-receipt_uploaded { background: #4caf50; color: #fff; }
+    .status-completed { background: #888; color: #fff; }
+    .status-declined { background: #f44336; color: #fff; }
+    .chat-box { background: #111; border-radius: 10px; padding: 15px; height: 400px; overflow-y: auto; margin: 15px 0; }
+    .chat-msg { margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; }
+    .chat-msg.admin { background: #2a1a1a; text-align: right; }
+    .chat-msg.user { background: #1a2a1a; text-align: left; }
+    .chat-msg .time { font-size: 0.75em; color: #888; display: block; margin-top: 4px; }
+    .chat-input { display: flex; gap: 10px; margin-top: 10px; }
+    .chat-input input { flex: 1; padding: 12px; background: #333; border: 1px solid #555; color: #ccc; border-radius: 8px; }
+    .chat-input button { background: #ff4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; }
+    .action-buttons { margin-top: 15px; display: flex; gap: 10px; }
+    .action-buttons button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    .action-buttons .send-money { background: #ff9800; color: #000; }
+    .action-buttons .decline { background: #f44336; color: #fff; }
+    .action-buttons .confirm { background: #4caf50; color: #fff; }
+</style>
+
 <h1>💬 Чат по заявке #{{ request_id }} <span class="status-badge" id="status-badge">{{ status }}</span></h1>
-<div class="chat-box" id="chat-messages" style="background:#111; border-radius:10px; padding:15px; height:400px; overflow-y:auto; margin:15px 0;"></div>
-<div class="chat-input" style="display:flex; gap:10px; margin-top:10px;">
-    <input type="text" id="message-text" placeholder="Сообщение..." style="flex:1; padding:12px; background:#333; border:1px solid #555; color:#ccc; border-radius:8px;">
-    <button onclick="sendMessage()" style="padding:12px 20px;">📨</button>
+<div class="chat-box" id="chat-messages">Загрузка...</div>
+<div class="chat-input">
+    <input type="text" id="message-text" placeholder="Введите сообщение...">
+    <button onclick="sendMessage()">📨</button>
 </div>
-<div style="margin-top:15px;">
-    <button id="send-money-btn" style="display:none;" onclick="sendMoney()">💸 Деньги отправлены</button>
-    <button id="decline-btn" style="display:none;" onclick="declineRequest()">❌ Отклонить</button>
-    <button id="confirm-btn" style="display:none;" onclick="confirmReceipt()">✅ Подтвердить чек</button>
+<div class="action-buttons">
+    <button id="send-money-btn" class="send-money" style="display:none;" onclick="sendMoney()">💸 Деньги отправлены</button>
+    <button id="decline-btn" class="decline" style="display:none;" onclick="declineRequest()">❌ Отклонить</button>
+    <button id="confirm-btn" class="confirm" style="display:none;" onclick="confirmReceipt()">✅ Подтвердить чек</button>
 </div>
 <a href="/admin/payouts" style="color:#ff4444; margin-top:20px; display:inline-block;">← Назад к списку</a>
 
@@ -135,38 +157,52 @@ ADMIN_CHAT_TEMPLATE = r'''{% extends "base.html" %}
 const requestId = {{ request_id }};
 
 async function loadChat() {
-    const resp = await fetch(`/admin/payouts/${requestId}/chat-data`);
-    const data = await resp.json();
-    document.getElementById('status-badge').textContent = data.status;
-    document.getElementById('status-badge').className = 'status-badge status-' + data.status;
-    const messages = data.messages;
-    const chatDiv = document.getElementById('chat-messages');
-    chatDiv.innerHTML = messages.map(msg => {
-        const side = msg.sender_role === 'admin' ? 'admin' : 'user';
-        let text = '';
-        if (msg.file_path) {
-            text = `<a href="/admin/receipt-file?path=${encodeURIComponent(msg.file_path)}" target="_blank"><img src="/admin/receipt-file?path=${encodeURIComponent(msg.file_path)}" style="max-width:150px; border-radius:8px;"></a>`;
-        }
-        if (msg.message) text += msg.message;
-        return `<div class="chat-msg ${side}">${text}<span class="time">${msg.created_at}</span></div>`;
-    }).join('');
-    chatDiv.scrollTop = chatDiv.scrollHeight;
+    try {
+        const resp = await fetch(`/admin/payouts/${requestId}/chat-data`);
+        if (!resp.ok) throw new Error('Network error');
+        const data = await resp.json();
 
-    // Показать/скрыть кнопки действий
-    const status = data.status;
-    document.getElementById('send-money-btn').style.display = (status === 'processing') ? 'inline-block' : 'none';
-    document.getElementById('decline-btn').style.display = (status !== 'completed' && status !== 'declined') ? 'inline-block' : 'none';
-    document.getElementById('confirm-btn').style.display = (status === 'receipt_uploaded') ? 'inline-block' : 'none';
+        const badge = document.getElementById('status-badge');
+        badge.textContent = data.status;
+        badge.className = 'status-badge status-' + data.status;
+
+        const chatDiv = document.getElementById('chat-messages');
+        if (!data.messages || data.messages.length === 0) {
+            chatDiv.innerHTML = '<p style="color:#888;">Сообщений пока нет</p>';
+        } else {
+            chatDiv.innerHTML = data.messages.map(msg => {
+                const side = msg.sender_role === 'admin' ? 'admin' : 'user';
+                let text = '';
+                if (msg.file_path) {
+                    text = `<a href="/admin/receipt-file?path=${encodeURIComponent(msg.file_path)}" target="_blank"><img src="/admin/receipt-file?path=${encodeURIComponent(msg.file_path)}" style="max-width:150px; border-radius:8px;"></a>`;
+                }
+                if (msg.message) text += msg.message.replace(/\n/g, '<br>');
+                return `<div class="chat-msg ${side}">${text}<span class="time">${msg.created_at || ''}</span></div>`;
+            }).join('');
+        }
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+
+        // Показать/скрыть кнопки действий
+        document.getElementById('send-money-btn').style.display = (data.status === 'processing') ? 'inline-block' : 'none';
+        document.getElementById('decline-btn').style.display = (data.status !== 'completed' && data.status !== 'declined') ? 'inline-block' : 'none';
+        document.getElementById('confirm-btn').style.display = (data.status === 'receipt_uploaded') ? 'inline-block' : 'none';
+    } catch(e) {
+        document.getElementById('chat-messages').innerHTML = '<p style="color:#ff4444;">Ошибка загрузки чата</p>';
+    }
 }
 
 async function sendMessage() {
     const text = document.getElementById('message-text').value.trim();
     if (!text) return;
-    const formData = new FormData();
-    formData.append('message', text);
-    await fetch(`/admin/payouts/${requestId}/send-message`, { method: 'POST', body: formData });
-    document.getElementById('message-text').value = '';
-    loadChat();
+    try {
+        const formData = new FormData();
+        formData.append('message', text);
+        await fetch(`/admin/payouts/${requestId}/send-message`, { method: 'POST', body: formData });
+        document.getElementById('message-text').value = '';
+        loadChat();
+    } catch(e) {
+        alert('Ошибка отправки');
+    }
 }
 
 async function sendMoney() {
