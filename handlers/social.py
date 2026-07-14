@@ -67,47 +67,44 @@ async def process_add_channel_link(message: Message, state: FSMContext):
     url = message.text.strip()
     user_id = message.from_user.id
 
-    # Определение платформы и извлечение ID
     platform = None
     channel_id = None
     channel_url = url
 
     if "youtube.com" in url or "youtu.be" in url:
         platform = "youtube"
-        # Если есть /channel/UC... или /@username
+        # Если есть /channel/UC...
         if "/channel/" in url:
-            channel_id = url.split("/channel/")[1].split("/")[0]
+            channel_id = url.split("/channel/")[1].split("/")[0].split("?")[0]
+        # Если есть /@username
         elif "/@" in url:
             username = url.split("/@")[1].split("/")[0].split("?")[0]
-            # Попробуем получить channel_id через страницу канала
             try:
-                async with httpx.AsyncClient(timeout=10) as client:
+                async with httpx.AsyncClient(timeout=15) as client:
                     resp = await client.get(f"https://www.youtube.com/@{username}")
                     if resp.status_code == 200:
                         # Ищем externalId в мета-тегах
-                        import re
                         match = re.search(r'"externalId":"(UC[\w-]+)"', resp.text)
                         if match:
                             channel_id = match.group(1)
                         else:
-                            # Если не нашли, попробуем другой вариант – искать canonical
+                            # Запасной вариант: canonical URL
                             match = re.search(r'<link rel="canonical" href="https://www\.youtube\.com/channel/(UC[\w-]+)">', resp.text)
                             if match:
                                 channel_id = match.group(1)
                             else:
-                                await message.answer("❌ Не удалось автоматически определить ID канала. Пожалуйста, укажите прямую ссылку вида https://www.youtube.com/channel/UC...")
+                                await message.answer("❌ Не удалось определить ID канала. Попробуйте использовать прямую ссылку вида https://www.youtube.com/channel/UC...")
                                 return
                     else:
                         await message.answer("❌ Не удалось загрузить страницу канала. Проверьте ссылку.")
                         return
             except Exception as e:
                 logger.error(f"Ошибка получения channel_id: {e}")
-                await message.answer("❌ Ошибка при определении ID канала.")
+                await message.answer("❌ Произошла ошибка при определении ID канала. Попробуйте позже.")
                 return
         else:
-            await message.answer("❌ Неверный формат ссылки. Используйте ссылку с /channel/... или /@username.")
+            await message.answer("❌ Неверный формат ссылки. Укажите ссылку с /channel/... или /@username.")
             return
-    # ... (Rutube остаётся без изменений)
     elif "rutube.ru" in url:
         platform = "rutube"
         match = re.search(r'rutube\.ru/channel/(\d+)', url)
@@ -123,7 +120,6 @@ async def process_add_channel_link(message: Message, state: FSMContext):
     # Сохраняем в БД
     conn = get_db()
     try:
-        # Проверяем, нет ли уже такого канала
         exists = conn.execute(
             "SELECT id FROM social_channels WHERE user_id=? AND platform=? AND channel_id=?",
             (user_id, platform, channel_id)
@@ -143,7 +139,6 @@ async def process_add_channel_link(message: Message, state: FSMContext):
 
     await message.answer(f"✅ Канал {platform} добавлен! Новые видео будут автоматически публиковаться в ваши Telegram-каналы.")
     await state.clear()
-    # Возвращаемся в меню соцсетей
     await message.answer("🎥 Управление видео-каналами:", reply_markup=kb_social_main())
 
 # ---------- Список каналов ----------
@@ -211,7 +206,6 @@ async def process_manual_link(message: Message, state: FSMContext, bot: Bot):
         await message.answer("❌ Некорректная ссылка.")
         return
 
-    # Получаем активные каналы пользователя
     conn = get_db()
     try:
         channels = conn.execute(
@@ -227,7 +221,6 @@ async def process_manual_link(message: Message, state: FSMContext, bot: Bot):
         await message.answer("❌ У вас нет активных Telegram-каналов.")
         return
 
-    # Формируем текст поста по шаблону
     caption = tmpl.format(title=url, link=url, description="")
     for ch in channels:
         try:
