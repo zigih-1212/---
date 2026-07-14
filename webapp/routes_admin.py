@@ -914,6 +914,19 @@ async def dashboard_data(_: int = Depends(admin_required)):
             GROUP BY g.source
             ORDER BY cnt DESC
         """).fetchall()
+        # Аномалии CTR (пользователи, у которых средний CTR > 25% за 7 дней)
+        ctr_alerts = conn.execute("""
+            SELECT s.subid1, s.clicks_count, s.leads_count,
+                   ROUND(CAST(s.leads_count AS REAL) / NULLIF(s.clicks_count, 0) * 100, 1) as ctr,
+                   c.user_id, u.username, c.channel_title
+            FROM subid_stats s
+            JOIN channels c ON c.sub_id = s.subid1
+            JOIN users u ON u.user_id = c.user_id
+            WHERE s.clicks_count > 10
+              AND CAST(s.leads_count AS REAL) / s.clicks_count > 0.25
+            ORDER BY ctr DESC
+            LIMIT 10
+        """).fetchall()
     finally:
         conn.close()
 
@@ -924,4 +937,15 @@ async def dashboard_data(_: int = Depends(admin_required)):
         "revenue_values": [r["total"] for r in revenue_by_day],
         "store_labels": [r["source"] or "Неизвестно" for r in store_distribution],
         "store_values": [r["cnt"] for r in store_distribution],
+        "ctr_alerts": [
+            {
+                "user_id": r["user_id"],
+                "username": r["username"],
+                "channel_title": r["channel_title"],
+                "subid1": r["subid1"],
+                "clicks": r["clicks_count"],
+                "leads": r["leads_count"],
+                "ctr": r["ctr"]
+            } for r in ctr_alerts
+        ],
     }
