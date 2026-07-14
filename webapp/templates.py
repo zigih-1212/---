@@ -61,70 +61,106 @@ ADMIN_PAYOUTS_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}Выплаты{% endblock %}
 {% block content %}
 <h1>💰 Выплаты</h1>
-
-<!-- Секция пользователей с доступным балансом (быстрые выплаты) -->
-<div class="card">
-    <h2>Доступно к выплате</h2>
-    <table>
-        <tr><th>ID</th><th>Роль</th><th>Username</th><th>Доступно</th><th>SubID</th><th></th></tr>
-        {% for u in users %}
-        <tr>
-            <td>{{ u['user_id'] }}</td>
-            <td>{{ u['role'] }}</td>
-            <td>{{ u['username'] or '—' }}</td>
-            <td><strong>{{ u['balance_available'] }}</strong> ₽</td>
-            <td><code>{{ u['sub_id'] }}</code></td>
-            <td>
-                <form method="post" action="/admin/payouts/pay" style="display:inline;">
-                    <input type="hidden" name="user_id" value="{{ u['user_id'] }}">
-                    <input type="number" name="amount" value="{{ u['balance_available'] }}" step="0.01" style="width:100px;">
-                    <button type="submit">Выплатить</button>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
+<div style="display: flex; gap: 20px;">
+    <div style="flex: 1; overflow-x: auto;">
+        <h2>Запросы</h2>
+        <table>
+            <tr><th>ID</th><th>Польз.</th><th>Сумма</th><th>Статус</th><th></th></tr>
+            {% for r in requests %}
+            <tr>
+                <td>{{ r['id'] }}</td>
+                <td>{{ r['user_id'] }}</td>
+                <td>{{ r['amount'] }} ₽</td>
+                <td>{{ r['status'] }}</td>
+                <td><button onclick="loadChat({{ r['id'] }})">Чат</button></td>
+            </tr>
+            {% endfor %}
+        </table>
+        <h2>Быстрые выплаты</h2>
+        <table>
+            <tr><th>ID</th><th>Роль</th><th>Доступно</th><th></th></tr>
+            {% for u in users %}
+            <tr>
+                <td>{{ u['user_id'] }}</td>
+                <td>{{ u['role'] }}</td>
+                <td>{{ u['balance_available'] }} ₽</td>
+                <td>
+                    <form method="post" action="/admin/payouts/pay" style="display:inline;">
+                        <input type="hidden" name="user_id" value="{{ u['user_id'] }}">
+                        <input type="number" name="amount" value="{{ u['balance_available'] }}" step="0.01" style="width:100px;">
+                        <button type="submit">Выплатить</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    <div id="chat-container" style="flex: 1; display: none; background: #1e1e1e; border-radius: 10px; padding: 15px;">
+        <h3>Чат по заявке #<span id="chat-request-id"></span></h3>
+        <div id="chat-messages" style="max-height: 400px; overflow-y: auto; margin: 10px 0;"></div>
+        <div style="display: flex; gap: 5px;">
+            <input type="text" id="admin-chat-input" placeholder="Сообщение..." style="flex:1;">
+            <button onclick="sendAdminMessage()">Отправить</button>
+        </div>
+        <div style="margin-top: 10px;">
+            <button onclick="sendMoney()" id="send-money-btn" style="display:none;">💸 Деньги отправлены</button>
+            <button onclick="declineRequest()" id="decline-btn" style="display:none;">❌ Отклонить</button>
+            <button onclick="confirmReceipt()" id="confirm-btn" style="display:none;">✅ Подтвердить чек</button>
+        </div>
+    </div>
 </div>
 
-<!-- Секция запросов на выплату -->
-<div class="card" style="margin-top:30px;">
-    <h2>Запросы на выплату</h2>
-    <table>
-        <tr><th>ID</th><th>Пользователь</th><th>Сумма</th><th>Реквизиты</th><th>Статус</th><th>Чек</th><th>Дата</th><th></th></tr>
-        {% for r in requests %}
-        <tr style="{% if r['status'] == 'processing' %}background-color: #4a2020;{% elif r['status'] == 'awaiting_receipt' %}background-color: #3a3a20;{% elif r['status'] == 'receipt_uploaded' %}background-color: #203a20;{% endif %}">
-            <td>{{ r['id'] }}</td>
-            <td>{{ r['user_id'] }}</td>
-            <td>{{ r['amount'] }} ₽</td>
-            <td style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r['message'] }}</td>
-            <td>{{ r['status'] }}</td>
-            <td>{% if r['receipt_photo'] %}<a href="https://t.me/{{ bot_username }}?start=receipt_{{ r['id'] }}">Посмотреть</a>{% else %}—{% endif %}</td>
-            <td>{{ r['created_at'] }}</td>
-            <td>
-                {% if r['status'] == 'processing' %}
-                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/send-money" style="display:inline;">
-                    <button type="submit" style="background:#ff9800;">💸 Деньги отправлены</button>
-                </form>
-                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/decline" style="display:inline;">
-                    <button type="submit" style="background:#f44336;">❌ Отклонить</button>
-                </form>
-                {% elif r['status'] == 'awaiting_receipt' %}
-                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/decline" style="display:inline;">
-                    <button type="submit" style="background:#f44336;">❌ Отклонить</button>
-                </form>
-                {% elif r['status'] == 'receipt_uploaded' %}
-                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/confirm-receipt" style="display:inline;">
-                    <button type="submit" style="background:#4caf50;">✅ Чек получен, закрыть</button>
-                </form>
-                <form method="post" action="/admin/payouts/request/{{ r['id'] }}/decline" style="display:inline;">
-                    <button type="submit" style="background:#f44336;">❌ Отклонить</button>
-                </form>
-                {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-</div>
+<script>
+let currentRequestId = null;
+let currentStatus = '';
+
+async function loadChat(requestId) {
+    currentRequestId = requestId;
+    document.getElementById('chat-container').style.display = 'block';
+    document.getElementById('chat-request-id').textContent = requestId;
+    const resp = await fetch(`/admin/payouts/${requestId}/chat`);
+    const messages = await resp.json();
+    const chatDiv = document.getElementById('chat-messages');
+    chatDiv.innerHTML = messages.map(m => {
+        const side = m.sender_role === 'admin' ? 'admin' : 'user';
+        const text = m.message || (m.file_path ? `<a href="/admin/receipt-file?path=${encodeURIComponent(m.file_path)}" target="_blank">📎 Чек</a>` : '');
+        return `<div style="text-align:${side==='admin'?'right':'left'}; color:${side==='admin'?'#ff9800':'#4caf50'}">${text}<br><small>${m.created_at}</small></div>`;
+    }).join('');
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+
+    // Узнаем статус заявки и покажем нужные кнопки
+    const statusResp = await fetch(`/admin/payouts/${requestId}/status`);
+    const statusData = await statusResp.json();
+    currentStatus = statusData.status;
+    document.getElementById('send-money-btn').style.display = (currentStatus === 'processing') ? 'inline-block' : 'none';
+    document.getElementById('decline-btn').style.display = (currentStatus !== 'completed') ? 'inline-block' : 'none';
+    document.getElementById('confirm-btn').style.display = (currentStatus === 'receipt_uploaded') ? 'inline-block' : 'none';
+}
+
+async function sendAdminMessage() {
+    if (!currentRequestId) return;
+    const text = document.getElementById('admin-chat-input').value;
+    if (!text) return;
+    const formData = new FormData();
+    formData.append('message', text);
+    await fetch(`/admin/payouts/${currentRequestId}/send-message`, {method: 'POST', body: formData});
+    document.getElementById('admin-chat-input').value = '';
+    loadChat(currentRequestId);
+}
+
+async function sendMoney() {
+    await fetch(`/admin/payouts/request/${currentRequestId}/send-money`, {method: 'POST'});
+    loadChat(currentRequestId);
+}
+async function declineRequest() {
+    await fetch(`/admin/payouts/request/${currentRequestId}/decline`, {method: 'POST'});
+    loadChat(currentRequestId);
+}
+async function confirmReceipt() {
+    await fetch(`/admin/payouts/request/${currentRequestId}/confirm-receipt`, {method: 'POST'});
+    loadChat(currentRequestId);
+}
+</script>
 {% endblock %}'''
 # ---------- LOGIN ----------
 LOGIN_TEMPLATE = '''<!DOCTYPE html>
