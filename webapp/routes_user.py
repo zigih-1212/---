@@ -1,12 +1,11 @@
-# webapp/routes_user.py (исправленный — финальная версия)
+# webapp/routes_user.py (полная замена)
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Request, Query, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from services.db import get_db
 from webapp.auth import get_user_id_from_token
 from datetime import datetime, timedelta, timezone, date
 from config import BOT_USERNAME, MIN_PAYOUT
-from fastapi import APIRouter, Request, Query, Form
 
 router = APIRouter()
 
@@ -30,8 +29,11 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     th, td { padding: 8px 12px; border-bottom: 1px solid #333; text-align: left; }
     th { background: #2a2a2a; color: #ff4444; }
     tr:hover { background: #2a2a2a; }
-    #payout-btn { background: #4caf50; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1.1em; cursor: pointer; margin-top: 15px; transition: background 0.2s; }
+    #payout-btn, #receipt-btn { color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1.1em; cursor: pointer; margin-top: 15px; transition: background 0.2s; }
+    #payout-btn { background: #4caf50; }
     #payout-btn:hover { background: #388e3c; }
+    #receipt-btn { background: #ff9800; }
+    #receipt-btn:hover { background: #e68900; }
     #payout-msg { margin-top: 10px; padding: 10px; background: #2a2a2a; border-radius: 8px; }
     #payout-msg a { color: #ff4444; font-weight: bold; }
     @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
@@ -51,6 +53,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <h2>💰 Финансы</h2>
         <div class="balance" id="finance-balance">Загрузка...</div>
         <button id="payout-btn" style="display:none;" onclick="requestPayout()">💸 Запросить выплату</button>
+        <button id="receipt-btn" style="display:none;" onclick="uploadReceipt()">📤 Отправить чек</button>
         <div id="payout-msg" style="display:none;"></div>
         <div id="finance-transactions" style="margin-top:15px;"></div>
     </div>
@@ -91,7 +94,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         const resp = await fetch(`/my-stats/data?token=${token}&period=${period}`);
         const data = await resp.json();
 
-        // Сохраняем bot_username для кнопки выплаты
         botUsername = data.bot_username || '';
 
         // Финансы
@@ -108,6 +110,19 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         } else {
             payoutBtn.style.display = 'none';
         }
+
+        // Проверка статуса ожидания чека
+        try {
+            const statusResp = await fetch(`/my-stats/payout-status?token=${token}`);
+            const statusData = await statusResp.json();
+            const receiptBtn = document.getElementById('receipt-btn');
+            if (statusData.has_active) {
+                receiptBtn.style.display = 'inline-block';
+                receiptBtn.textContent = `📤 Отправить чек (заявка #${statusData.request_id})`;
+            } else {
+                receiptBtn.style.display = 'none';
+            }
+        } catch(e) {}
 
         // Таблица транзакций
         const txDiv = document.getElementById('finance-transactions');
@@ -277,7 +292,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     }
 
     window.requestPayout = function() {
-        const token = new URLSearchParams(window.location.search).get('token');
         const msg = document.getElementById('payout-msg');
         msg.innerHTML = '⏳ Отправка запроса...';
         msg.style.display = 'block';
@@ -294,6 +308,15 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         }).catch(() => {
             msg.innerHTML = '❌ Ошибка соединения с сервером';
         });
+    };
+
+    window.uploadReceipt = function() {
+        const msg = document.getElementById('payout-msg');
+        msg.innerHTML = 'Чтобы отправить чек, перейдите в чат с ботом и нажмите кнопку «📤 Отправить чек» в разделе Финансы.';
+        msg.style.display = 'block';
+        if (botUsername) {
+            msg.innerHTML += `<br><a href="https://t.me/${botUsername}" target="_blank">👉 Открыть бота</a>`;
+        }
     };
 
     document.getElementById('btn7d').addEventListener('click', () => {
@@ -318,42 +341,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 </body>
 </html>'''
 
-@router.post("/request-payout")
-async def request_payout_endpoint(request: Request, token: str = Form(...)):
-    user_id = get_user_id_from_token(token)
-    bot = request.app.state.bot
-    conn = get_db()
-    try:
-        user = conn.execute(
-            "SELECT role, balance_available, tax_status, oferta_accepted FROM users WHERE user_id=?",
-            (user_id,)
-        ).fetchone()
-        if not user or user["oferta_accepted"] != 1:
-            return JSONResponse({"ok": False, "error": "Оферта не принята"})
-        if user["tax_status"] != "business":
-            return JSONResponse({"ok": False, "error": "Требуется статус самозанятого/ИП"})
-        available = user["balance_available"] or 0.0
-        if available < MIN_PAYOUT:
-            return JSONResponse({"ok": False, "error": f"Минимальная сумма {MIN_PAYOUT} ₽"})
-        active = conn.execute(
-            "SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')",
-            (user_id,)
-        ).fetchone()
-        if active:
-            return JSONResponse({"ok": False, "error": "Уже есть активная заявка"})
-    finally:
-        conn.close()
-
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💸 Запросить выплату", callback_data="payout:request")]
-    ])
-    try:
-        await bot.send_message(user_id, "💰 Нажмите кнопку, чтобы запросить выплату:", reply_markup=kb)
-        return JSONResponse({"ok": True})
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)})
-
+# ---------- Основные эндпоинты ----------
 @router.get("/", response_class=HTMLResponse)
 async def user_stats_page(token: str = Query(...)):
     get_user_id_from_token(token)
@@ -496,5 +484,63 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             ] if transactions else [],
             "bot_username": BOT_USERNAME
         })
+    finally:
+        conn.close()
+
+
+@router.post("/request-payout")
+async def request_payout_endpoint(request: Request, token: str = Form(...)):
+    user_id = get_user_id_from_token(token)
+    bot = request.app.state.bot
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT role, balance_available, tax_status, oferta_accepted FROM users WHERE user_id=?",
+            (user_id,)
+        ).fetchone()
+        if not user or user["oferta_accepted"] != 1:
+            return JSONResponse({"ok": False, "error": "Оферта не принята"})
+        if user["tax_status"] != "business":
+            return JSONResponse({"ok": False, "error": "Требуется статус самозанятого/ИП"})
+        available = user["balance_available"] or 0.0
+        if available < MIN_PAYOUT:
+            return JSONResponse({"ok": False, "error": f"Минимальная сумма {MIN_PAYOUT} ₽"})
+        active = conn.execute(
+            "SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')",
+            (user_id,)
+        ).fetchone()
+        if active:
+            return JSONResponse({"ok": False, "error": "Уже есть активная заявка"})
+    finally:
+        conn.close()
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💸 Запросить выплату", callback_data="payout:request")]
+    ])
+    try:
+        await bot.send_message(user_id, "💰 Нажмите кнопку, чтобы запросить выплату:", reply_markup=kb)
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
+
+
+@router.get("/payout-status")
+async def payout_status(token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        active = conn.execute(
+            "SELECT id, amount, status FROM payout_requests WHERE user_id=? AND status IN ('awaiting_receipt') ORDER BY id DESC LIMIT 1",
+            (user_id,)
+        ).fetchone()
+        if active:
+            return JSONResponse({
+                "has_active": True,
+                "request_id": active["id"],
+                "amount": active["amount"],
+                "status": active["status"]
+            })
+        return JSONResponse({"has_active": False})
     finally:
         conn.close()
