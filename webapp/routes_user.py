@@ -275,12 +275,21 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     // Функция запроса выплаты (открывает чат с ботом)
     window.requestPayout = function() {
         if (botUsername) {
-            const url = `https://t.me/${botUsername}?start=payout`;
-            // Пробуем открыть через tg:// сначала (для мобильных), иначе https
-            window.location.href = `tg://resolve?domain=${botUsername}&start=payout`;
-            setTimeout(() => {
-                window.location.href = url;
-            }, 500);
+            // Копируем команду в буфер обмена
+            const command = '/start payout';
+            navigator.clipboard.writeText(command).then(() => {
+                // Открываем чат с ботом
+                const url = `https://t.me/${botUsername}`;
+                window.open(url, '_blank');
+                // Показываем уведомление
+                setTimeout(() => {
+                    alert('Команда /start payout скопирована! Вставьте её в открывшийся чат с ботом.');
+                }, 1000);
+            }).catch(() => {
+                // Если буфер не работает — просто открываем бота
+                window.open(`https://t.me/${botUsername}`, '_blank');
+                alert('Отправьте боту команду: /start payout');
+            });
         } else {
             alert('Имя бота не загружено. Обновите страницу.');
         }
