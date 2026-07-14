@@ -455,6 +455,244 @@ loadMessages();
 </body>
 </html>'''
 
+# ---------- Редактор шаблонов постов ----------
+TEMPLATE_EDITOR_HTML = r'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Настройка шаблонов</title>
+<style>
+    body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; max-width: 800px; margin: auto; }
+    h1 { color: #ff4444; }
+    .card { background: #1e1e1e; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .option-group { margin: 15px 0; }
+    .option-group label { margin-right: 15px; }
+    .preview-box { background: #111; border-radius: 8px; padding: 15px; margin-top: 15px; white-space: pre-wrap; }
+    button { background: #ff4444; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; }
+    select, input[type="checkbox"] { margin-right: 8px; }
+    .back-link { color: #ff4444; margin-bottom: 15px; display: inline-block; }
+    .status-msg { color: #4caf50; }
+</style>
+</head>
+<body>
+<a href="/my-stats?token={{ token }}" class="back-link">← Назад к статистике</a>
+<h1>🎨 Настройка шаблонов постов</h1>
+
+<div class="card">
+    <h2>Товарный пост</h2>
+    <div class="option-group">
+        <label>Стиль:</label>
+        <select id="product-style">
+            <option value="default">🔥 Классический</option>
+            <option value="compact">⚡ Компактный</option>
+            <option value="modern">✨ Современный</option>
+            <option value="emoji">🎉 С эмодзи</option>
+        </select>
+    </div>
+    <div class="option-group">
+        <label><input type="checkbox" id="show-discount"> Показывать скидку</label>
+        <label><input type="checkbox" id="show-delivery"> Показывать доставку</label>
+        <label><input type="checkbox" id="show-promocode"> Показывать промокод</label>
+    </div>
+    <div class="preview-box" id="product-preview">Загрузка...</div>
+</div>
+
+<div class="card">
+    <h2>Видео-анонс</h2>
+    <div class="option-group">
+        <label>Стиль:</label>
+        <select id="video-style">
+            <option value="default">🎬 Стандартный</option>
+            <option value="compact">📹 Компактный</option>
+        </select>
+    </div>
+    <div class="preview-box" id="video-preview">Загрузка...</div>
+</div>
+
+<button onclick="saveTemplates()">💾 Сохранить настройки</button>
+<span id="save-status" class="status-msg"></span>
+
+<script>
+const token = new URLSearchParams(window.location.search).get('token');
+let productTemplate = '', videoTemplate = '';
+
+async function load() {
+    const resp = await fetch(`/my-stats/templates-data?token=${token}`);
+    const data = await resp.json();
+    // Применяем сохранённые настройки к форме
+    if (data.product_style) document.getElementById('product-style').value = data.product_style;
+    if (data.video_style) document.getElementById('video-style').value = data.video_style;
+    document.getElementById('show-discount').checked = data.show_discount !== false;
+    document.getElementById('show-delivery').checked = data.show_delivery !== false;
+    document.getElementById('show-promocode').checked = data.show_promocode !== false;
+
+    updatePreview();
+}
+
+function buildProductTemplate() {
+    const style = document.getElementById('product-style').value;
+    const discount = document.getElementById('show-discount').checked;
+    const delivery = document.getElementById('show-delivery').checked;
+    const promocode = document.getElementById('show-promocode').checked;
+
+    // Генерируем шаблон в зависимости от стиля и флагов
+    let template = '';
+    if (style === 'compact') {
+        template = '⚡️ {title}\n💰 {price_label}: {price} {currency}';
+    } else if (style === 'modern') {
+        template = '✨ {title}\n💲 {price_label}: {price} {currency}';
+    } else if (style === 'emoji') {
+        template = '🎉 {title}\n💸 {price_label}: {price} {currency}';
+    } else { // default
+        template = '🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}';
+    }
+
+    if (discount) template += '{discount_line}';
+    template += '\n👉 {link}';
+    if (promocode) template += '{promocode_line}';
+    if (delivery) template += '{delivery_line}';
+    template += '\n\nРеклама. {advertiser}. Erid: {erid}';
+    return template;
+}
+
+function buildVideoTemplate() {
+    const style = document.getElementById('video-style').value;
+    if (style === 'compact') return '🎬 {title}\n🔗 {link}';
+    return '🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href=\'{link}\'>Смотреть</a>';
+}
+
+function updatePreview() {
+    const productTpl = buildProductTemplate();
+    const videoTpl = buildVideoTemplate();
+    productTemplate = productTpl;
+    videoTemplate = videoTpl;
+
+    // Подставляем тестовые данные в превью (упрощённо)
+    const testProduct = {
+        title: 'Крутой товар',
+        price: '1299',
+        currency: '₽',
+        price_label: 'Цена',
+        discount_line: '\n🔥 Скидка 30% (было 1855 ₽)',
+        link: '🔗 ссылка',
+        promocode_line: '\n🎟 Промокод: SUPER20',
+        delivery_line: '\n🚚 Бесплатная доставка',
+        advertiser: 'Магазин',
+        erid: 'XXX-123'
+    };
+    const testVideo = {
+        title: 'Моё новое видео',
+        link: 'https://youtube.com/...',
+        description: 'Краткое описание видео'
+    };
+
+    let productPreview = productTpl;
+    Object.entries(testProduct).forEach(([key, val]) => {
+        productPreview = productPreview.replace(`{${key}}`, val);
+    });
+    // убираем оставшиеся неиспользуемые подстановки
+    productPreview = productPreview.replace(/\{[^}]+\}/g, '');
+
+    let videoPreview = videoTpl;
+    Object.entries(testVideo).forEach(([key, val]) => {
+        videoPreview = videoPreview.replace(`{${key}}`, val);
+    });
+
+    document.getElementById('product-preview').textContent = productPreview;
+    document.getElementById('video-preview').textContent = videoPreview;
+}
+
+document.getElementById('product-style').addEventListener('change', updatePreview);
+document.getElementById('video-style').addEventListener('change', updatePreview);
+document.getElementById('show-discount').addEventListener('change', updatePreview);
+document.getElementById('show-delivery').addEventListener('change', updatePreview);
+document.getElementById('show-promocode').addEventListener('change', updatePreview);
+
+async function saveTemplates() {
+    const payload = {
+        token: token,
+        product_template: productTemplate,
+        video_template: videoTemplate,
+        product_style: document.getElementById('product-style').value,
+        video_style: document.getElementById('video-style').value,
+        show_discount: document.getElementById('show-discount').checked,
+        show_delivery: document.getElementById('show-delivery').checked,
+        show_promocode: document.getElementById('show-promocode').checked
+    };
+    const resp = await fetch('/my-stats/templates-save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    });
+    const result = await resp.json();
+    document.getElementById('save-status').textContent = result.ok ? '✅ Сохранено' : '❌ Ошибка';
+}
+
+load();
+</script>
+</body>
+</html>'''
+
+@router.get("/templates", response_class=HTMLResponse)
+async def templates_editor(token: str = Query(...)):
+    get_user_id_from_token(token)
+    return HTMLResponse(content=TEMPLATE_EDITOR_HTML.replace("{{ token }}", token))
+
+@router.get("/templates-data")
+async def templates_data(token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT product_template, video_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user:
+            return JSONResponse({"product_template": "", "video_template": ""})
+        # Здесь можно хранить дополнительные настройки стилей в отдельной колонке или парсить из шаблона.
+        # Пока возвращаем значения по умолчанию, если шаблоны не соответствуют новому формату.
+        # Мы не будем усложнять — будем хранить стили в отдельной таблице или в колонке template_preview_data.
+        # Для простоты при первой настройке сбросим на дефолтные.
+        settings = conn.execute("SELECT template_preview_data FROM users WHERE user_id=?", (user_id,)).fetchone()
+        style_opts = {}
+        if settings and settings["template_preview_data"]:
+            try:
+                style_opts = json.loads(settings["template_preview_data"])
+            except:
+                pass
+        return JSONResponse({
+            "product_style": style_opts.get("product_style", "default"),
+            "video_style": style_opts.get("video_style", "default"),
+            "show_discount": style_opts.get("show_discount", True),
+            "show_delivery": style_opts.get("show_delivery", True),
+            "show_promocode": style_opts.get("show_promocode", True),
+        })
+    finally:
+        conn.close()
+
+@router.post("/templates-save")
+async def templates_save(request: Request):
+    data = await request.json()
+    token = data.get("token")
+    user_id = get_user_id_from_token(token)
+    product_template = data.get("product_template", "")
+    video_template = data.get("video_template", "")
+    style_opts = {
+        "product_style": data.get("product_style", "default"),
+        "video_style": data.get("video_style", "default"),
+        "show_discount": data.get("show_discount", True),
+        "show_delivery": data.get("show_delivery", True),
+        "show_promocode": data.get("show_promocode", True),
+    }
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET product_template=?, video_template=?, template_preview_data=? WHERE user_id=?",
+                     (product_template, video_template, json.dumps(style_opts), user_id))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        logger.error(f"Save templates error: {e}")
+        return JSONResponse({"ok": False, "error": str(e)})
+    finally:
+        conn.close()
+
 # ---------- Эндпоинты ----------
 @router.get("/", response_class=HTMLResponse)
 async def user_stats_page(token: str = Query(...)):
