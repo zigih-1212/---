@@ -99,6 +99,115 @@ async def logout(request: Request):
     resp.delete_cookie("admin_session")
     return resp
 
+@router.get("/payouts/{request_id}/chat")
+async def admin_payout_chat(request_id: int, _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        messages = conn.execute("""
+            SELECT sender_role, message, file_path, created_at
+            FROM payout_chat
+            WHERE request_id = ?
+            ORDER BY created_at ASC
+        """, (request_id,)).fetchall()
+        return JSONResponse([{
+            "sender_role": m["sender_role"],
+            "message": m["message"],
+            "file_path": m["file_path"],
+            "created_at": m["created_at"]
+        } for m in messages])
+    finally:
+        conn.close()
+
+@router.post("/payouts/{request_id}/send-message")
+async def admin_send_message(request_id: int, message: str = Form(...), _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'admin', ?)",
+                     (request_id, message))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    finally:
+        conn.close()
+
+# Модифицируем send_money, decline, confirm_receipt
+@router.post("/payouts/request/{request_id}/send-money")
+async def send_money(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT * FROM payout_requests WHERE id=? AND status='processing'", (request_id,)).fetchone()
+        if not req:
+            return RedirectResponse(url="/admin/payouts", status_code=303)
+        user_id = req["user_id"]
+        now_iso = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "UPDATE payout_requests SET status='awaiting_receipt', sent_at=?, receipt_reminded=0 WHERE id=?",
+            (now_iso, request_id)
+        )
+        # Сообщение в чат
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'admin', ?)",
+                     (request_id, "💰 Деньги отправлены. Пожалуйста, загрузите чек из приложения «Мой налог»."))
+        conn.commit()
+        # Уведомление блогеру через Telegram (как и раньше)
+        bot = request.app.state.bot
+        try:
+            await bot.send_message(
+                user_id,
+                f"💰 Вам отправлен перевод на сумму <b>{req['amount']} ₽</b>.\n"
+                "Загрузите чек в веб-статистике."
+            )
+        except Exception as e:
+            logger.error(f"Не удалось уведомить пользователя {user_id}: {e}")
+        log_admin_action(admin_id, "send_money", f"request #{request_id}")
+    finally:
+        conn.close()
+    return RedirectResponse(url="/admin/payouts", status_code=303)
+
+@router.post("/payouts/request/{request_id}/decline")
+async def decline_payout_request(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT * FROM payout_requests WHERE id=? AND status!='completed'", (request_id,)).fetchone()
+        if not req:
+            return RedirectResponse(url="/admin/payouts", status_code=303)
+        user_id = req["user_id"]
+        amount = req["amount"]
+        if req["status"] in ("processing", "awaiting_receipt", "receipt_uploaded"):
+            conn.execute("UPDATE users SET balance_available = balance_available + ? WHERE user_id=?", (amount, user_id))
+        conn.execute("UPDATE payout_requests SET status='declined' WHERE id=?", (request_id,))
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'admin', ?)",
+                     (request_id, "❌ Заявка отклонена. Средства возвращены на баланс."))
+        conn.commit()
+        # Уведомление
+        bot = request.app.state.bot
+        try:
+            await bot.send_message(user_id, "❌ Ваша заявка на выплату отклонена.")
+        except: pass
+        log_admin_action(admin_id, "decline_payout", f"request #{request_id}")
+    finally:
+        conn.close()
+    return RedirectResponse(url="/admin/payouts", status_code=303)
+
+@router.post("/payouts/request/{request_id}/confirm-receipt")
+async def confirm_receipt(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT * FROM payout_requests WHERE id=? AND status='receipt_uploaded'", (request_id,)).fetchone()
+        if not req:
+            return RedirectResponse(url="/admin/payouts", status_code=303)
+        conn.execute("UPDATE payout_requests SET status='completed' WHERE id=?", (request_id,))
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'admin', ?)",
+                     (request_id, "✅ Чек принят. Выплата завершена."))
+        conn.commit()
+        # Уведомление
+        bot = request.app.state.bot
+        try:
+            await bot.send_message(req["user_id"], "✅ Ваш чек принят! Выплата успешно завершена.")
+        except: pass
+        log_admin_action(admin_id, "confirm_receipt", f"request #{request_id}")
+    finally:
+        conn.close()
+    return RedirectResponse(url="/admin/payouts", status_code=303)
+
 # ---------- Дашборд ----------
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: int = Depends(admin_required)):
