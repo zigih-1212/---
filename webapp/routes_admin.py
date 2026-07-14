@@ -208,6 +208,23 @@ async def confirm_receipt(request_id: int, request: Request, admin_id: int = Dep
         conn.close()
     return RedirectResponse(url="/admin/payouts", status_code=303)
 
+@router.get("/payouts/{request_id}/status")
+async def payout_request_status(request_id: int, _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if req:
+            return JSONResponse({"status": req["status"]})
+        return JSONResponse({"status": "unknown"})
+    finally:
+        conn.close()
+
+@router.get("/receipt-file")
+async def get_receipt_file(path: str = Query(...), _: int = Depends(admin_required)):
+    full_path = os.path.join("/app/data/receipts", path)
+    if not os.path.exists(full_path):
+        return HTMLResponse("Файл не найден", status_code=404)
+    return FileResponse(full_path)
 # ---------- Дашборд ----------
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: int = Depends(admin_required)):
