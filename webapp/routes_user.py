@@ -1,13 +1,19 @@
-# webapp/routes_user.py (полная замена)
+# webapp/routes_user.py (полная замена – чат выплат в вебе)
 
-from fastapi import APIRouter, Request, Query, Form
-from fastapi.responses import HTMLResponse, JSONResponse
+import os
+import uuid
+from fastapi import APIRouter, Request, Query, Form, UploadFile, File
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from services.db import get_db
 from webapp.auth import get_user_id_from_token
 from datetime import datetime, timedelta, timezone, date
-from config import BOT_USERNAME, MIN_PAYOUT
+from config import BOT_USERNAME, MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
 router = APIRouter()
+
+UPLOAD_DIR = "/app/data/receipts"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 <html lang="ru">
@@ -29,13 +35,24 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     th, td { padding: 8px 12px; border-bottom: 1px solid #333; text-align: left; }
     th { background: #2a2a2a; color: #ff4444; }
     tr:hover { background: #2a2a2a; }
-    #payout-btn, #receipt-btn { color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1.1em; cursor: pointer; margin-top: 15px; transition: background 0.2s; }
-    #payout-btn { background: #4caf50; }
-    #payout-btn:hover { background: #388e3c; }
-    #receipt-btn { background: #ff9800; }
-    #receipt-btn:hover { background: #e68900; }
-    #payout-msg { margin-top: 10px; padding: 10px; background: #2a2a2a; border-radius: 8px; }
-    #payout-msg a { color: #ff4444; font-weight: bold; }
+    button { background: #ff4444; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-top: 10px; font-size: 1em; }
+    button:hover { opacity: 0.9; }
+    .payout-form textarea { width: 100%; padding: 12px; margin: 10px 0; background: #333; border: 1px solid #555; color: #ccc; border-radius: 8px; font-size: 1em; }
+    .chat-box { background: #111; border-radius: 10px; padding: 15px; max-height: 400px; overflow-y: auto; margin: 15px 0; }
+    .chat-msg { margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; }
+    .chat-msg.admin { background: #2a1a1a; text-align: right; }
+    .chat-msg.user { background: #1a2a1a; text-align: left; }
+    .chat-msg .time { font-size: 0.75em; color: #888; display: block; margin-top: 4px; }
+    .chat-input { display: flex; gap: 10px; margin-top: 10px; }
+    .chat-input input { flex: 1; padding: 12px; background: #333; border: 1px solid #555; color: #ccc; border-radius: 8px; font-size: 1em; }
+    #receipt-upload { margin-top: 15px; }
+    #receipt-upload input[type="file"] { background: #333; padding: 8px; border-radius: 8px; }
+    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: bold; margin-left: 10px; }
+    .status-processing { background: #ff9800; color: #000; }
+    .status-awaiting_receipt { background: #2196f3; color: #fff; }
+    .status-receipt_uploaded { background: #4caf50; color: #fff; }
+    .status-completed { background: #888; color: #fff; }
+    .status-declined { background: #f44336; color: #fff; }
     @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -52,10 +69,30 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     <div class="card" id="finance-card">
         <h2>💰 Финансы</h2>
         <div class="balance" id="finance-balance">Загрузка...</div>
-        <button id="payout-btn" style="display:none;" onclick="requestPayout()">💸 Запросить выплату</button>
-        <button id="receipt-btn" style="display:none;" onclick="uploadReceipt()">📤 Отправить чек</button>
-        <div id="payout-msg" style="display:none;"></div>
-        <div id="finance-transactions" style="margin-top:15px;"></div>
+        <div id="payout-section">
+            <div id="payout-request-form" style="display:none;">
+                <h3>💸 Запросить выплату</h3>
+                <textarea id="payout-details" rows="3" placeholder="Введите реквизиты: номер карты, банк, TON-кошелёк или другие данные..."></textarea>
+                <button onclick="submitPayoutRequest()">📤 Отправить запрос</button>
+                <div id="payout-msg" style="margin-top:10px;"></div>
+            </div>
+            <div id="active-payout-chat" style="display:none;">
+                <h3>
+                    Выплата #<span id="request-id-display"></span>
+                    <span class="status-badge" id="request-status"></span>
+                </h3>
+                <div class="chat-box" id="chat-messages"></div>
+                <div class="chat-input">
+                    <input type="text" id="chat-input-text" placeholder="Введите сообщение...">
+                    <button onclick="sendChatMessage()">📨 Отправить</button>
+                </div>
+                <div id="receipt-upload" style="display:none;">
+                    <input type="file" id="receipt-file" accept="image/*">
+                    <button onclick="uploadReceipt()">📤 Отправить чек</button>
+                </div>
+            </div>
+        </div>
+        <div id="finance-transactions" style="margin-top:20px;"></div>
     </div>
 
     <div class="grid">
@@ -88,41 +125,43 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 
     let currentPeriod = '30d';
     let postsChart, revenueChart, clicksChart, storeChart;
+    let activeRequestId = null;
     let botUsername = '';
 
     async function loadData(period) {
         const resp = await fetch(`/my-stats/data?token=${token}&period=${period}`);
         const data = await resp.json();
-
         botUsername = data.bot_username || '';
 
-        // Финансы
         document.getElementById('finance-balance').innerHTML = `
             <p>💳 Доступно к выводу: <b>${data.balance_available.toFixed(2)} ₽</b></p>
             <p>⏳ В ожидании: <b>${data.balance_pending.toFixed(2)} ₽</b></p>
             <p>📬 Постов за период: <b>${data.total_posts}</b> | 💵 Доход: <b>${data.total_revenue.toFixed(2)} ₽</b></p>
         `;
 
-        // Кнопка выплаты
-        const payoutBtn = document.getElementById('payout-btn');
-        if (data.balance_available >= 3000) {
-            payoutBtn.style.display = 'inline-block';
-        } else {
-            payoutBtn.style.display = 'none';
-        }
+        const reqForm = document.getElementById('payout-request-form');
+        const activeChat = document.getElementById('active-payout-chat');
 
-        // Проверка статуса ожидания чека
-        try {
-            const statusResp = await fetch(`/my-stats/payout-status?token=${token}`);
-            const statusData = await statusResp.json();
-            const receiptBtn = document.getElementById('receipt-btn');
-            if (statusData.has_active) {
-                receiptBtn.style.display = 'inline-block';
-                receiptBtn.textContent = `📤 Отправить чек (заявка #${statusData.request_id})`;
+        // Проверяем наличие активной заявки
+        const statusResp = await fetch(`/my-stats/payout-status?token=${token}`);
+        const statusData = await statusResp.json();
+
+        if (statusData.has_active) {
+            activeRequestId = statusData.request_id;
+            reqForm.style.display = 'none';
+            activeChat.style.display = 'block';
+            document.getElementById('request-id-display').textContent = activeRequestId;
+            updateStatusDisplay(statusData.status);
+            loadChat(activeRequestId);
+        } else {
+            activeRequestId = null;
+            activeChat.style.display = 'none';
+            if (data.balance_available >= 3000) {
+                reqForm.style.display = 'block';
             } else {
-                receiptBtn.style.display = 'none';
+                reqForm.style.display = 'none';
             }
-        } catch(e) {}
+        }
 
         // Таблица транзакций
         const txDiv = document.getElementById('finance-transactions');
@@ -178,9 +217,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
                     scales: { y: { beginAtZero: true } }
                 }
             });
-        } else {
-            document.getElementById('revenueChart').getContext('2d').clearRect(0,0,400,200);
-            revenueChart = null;
         }
 
         // Клики + Конверсия
@@ -291,33 +327,112 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         }
     }
 
-    window.requestPayout = function() {
-        const msg = document.getElementById('payout-msg');
-        msg.innerHTML = '⏳ Отправка запроса...';
-        msg.style.display = 'block';
-        fetch('/my-stats/request-payout', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: 'token=' + encodeURIComponent(token)
-        }).then(r => r.json()).then(data => {
-            if (data.ok) {
-                msg.innerHTML = '✅ Перейдите в чат с ботом и нажмите появившуюся кнопку «Запросить выплату».';
-            } else {
-                msg.innerHTML = '❌ ' + data.error;
-            }
-        }).catch(() => {
-            msg.innerHTML = '❌ Ошибка соединения с сервером';
-        });
-    };
+    function updateStatusDisplay(status) {
+        const badge = document.getElementById('request-status');
+        badge.textContent = status;
+        badge.className = 'status-badge';
+        switch(status) {
+            case 'processing': badge.classList.add('status-processing'); break;
+            case 'awaiting_receipt': badge.classList.add('status-awaiting_receipt'); break;
+            case 'receipt_uploaded': badge.classList.add('status-receipt_uploaded'); break;
+            case 'completed': badge.classList.add('status-completed'); break;
+            case 'declined': badge.classList.add('status-declined'); break;
+        }
+        document.getElementById('receipt-upload').style.display = (status === 'awaiting_receipt') ? 'block' : 'none';
+    }
 
-    window.uploadReceipt = function() {
-        const msg = document.getElementById('payout-msg');
-        msg.innerHTML = 'Чтобы отправить чек, перейдите в чат с ботом и нажмите кнопку «📤 Отправить чек» в разделе Финансы.';
-        msg.style.display = 'block';
-        if (botUsername) {
-            msg.innerHTML += `<br><a href="https://t.me/${botUsername}" target="_blank">👉 Открыть бота</a>`;
+    // Отправка запроса на выплату
+    window.submitPayoutRequest = async function() {
+        const details = document.getElementById('payout-details').value.trim();
+        if (details.length < 10) {
+            document.getElementById('payout-msg').innerHTML = '❌ Слишком короткие реквизиты. Минимум 10 символов.';
+            return;
+        }
+        document.getElementById('payout-msg').innerHTML = '⏳ Отправка запроса...';
+        const formData = new FormData();
+        formData.append('token', token);
+        formData.append('details', details);
+        const resp = await fetch('/my-stats/request-payout', { method: 'POST', body: formData });
+        const result = await resp.json();
+        if (result.ok) {
+            activeRequestId = result.request_id;
+            document.getElementById('payout-request-form').style.display = 'none';
+            document.getElementById('active-payout-chat').style.display = 'block';
+            document.getElementById('request-id-display').textContent = activeRequestId;
+            updateStatusDisplay('processing');
+            loadChat(activeRequestId);
+        } else {
+            document.getElementById('payout-msg').innerHTML = '❌ ' + result.error;
         }
     };
+
+    // Загрузка чата
+    async function loadChat(requestId) {
+        const resp = await fetch(`/my-stats/payout-chat/${requestId}?token=${token}`);
+        const messages = await resp.json();
+        const chatDiv = document.getElementById('chat-messages');
+        chatDiv.innerHTML = messages.map(msg => {
+            const side = msg.sender_role === 'admin' ? 'admin' : 'user';
+            let text = '';
+            if (msg.file_path) {
+                text = `<a href="/my-stats/receipt-file?path=${encodeURIComponent(msg.file_path)}&token=${token}" target="_blank">📎 Чек</a>`;
+            }
+            if (msg.message) {
+                text += msg.message;
+            }
+            return `<div class="chat-msg ${side}">${text}<span class="time">${msg.created_at}</span></div>`;
+        }).join('');
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    // Отправка сообщения в чат
+    window.sendChatMessage = async function() {
+        if (!activeRequestId) return;
+        const text = document.getElementById('chat-input-text').value.trim();
+        if (!text) return;
+        const formData = new FormData();
+        formData.append('token', token);
+        formData.append('request_id', activeRequestId);
+        formData.append('message', text);
+        await fetch('/my-stats/send-message', { method: 'POST', body: formData });
+        document.getElementById('chat-input-text').value = '';
+        loadChat(activeRequestId);
+    };
+
+    // Загрузка чека
+    window.uploadReceipt = async function() {
+        if (!activeRequestId) return;
+        const fileInput = document.getElementById('receipt-file');
+        if (!fileInput.files.length) return;
+        const formData = new FormData();
+        formData.append('token', token);
+        formData.append('request_id', activeRequestId);
+        formData.append('file', fileInput.files[0]);
+        const resp = await fetch('/my-stats/upload-receipt', { method: 'POST', body: formData });
+        const result = await resp.json();
+        if (result.ok) {
+            loadChat(activeRequestId);
+            document.getElementById('receipt-file').value = '';
+            updateStatusDisplay('receipt_uploaded');
+        } else {
+            alert(result.error || 'Ошибка загрузки');
+        }
+    };
+
+    // Периодическое обновление чата и статуса
+    setInterval(async () => {
+        if (activeRequestId) {
+            loadChat(activeRequestId);
+            const statusResp = await fetch(`/my-stats/payout-status?token=${token}`);
+            const statusData = await statusResp.json();
+            if (statusData.has_active) {
+                updateStatusDisplay(statusData.status);
+            } else {
+                // заявка завершена – перезагружаем страницу
+                location.reload();
+            }
+        }
+    }, 10000);
 
     document.getElementById('btn7d').addEventListener('click', () => {
         document.querySelectorAll('.period-selector button').forEach(b => b.classList.remove('active'));
@@ -489,40 +604,59 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
 
 
 @router.post("/request-payout")
-async def request_payout_endpoint(request: Request, token: str = Form(...)):
+async def request_payout(request: Request, token: str = Form(...), details: str = Form(...)):
     user_id = get_user_id_from_token(token)
-    bot = request.app.state.bot
+    if len(details.strip()) < 10:
+        return JSONResponse({"ok": False, "error": "Слишком короткие реквизиты (минимум 10 символов)"})
+    
     conn = get_db()
     try:
-        user = conn.execute(
-            "SELECT role, balance_available, tax_status, oferta_accepted FROM users WHERE user_id=?",
-            (user_id,)
-        ).fetchone()
+        user = conn.execute("SELECT role, balance_available, tax_status, oferta_accepted FROM users WHERE user_id=?", (user_id,)).fetchone()
         if not user or user["oferta_accepted"] != 1:
             return JSONResponse({"ok": False, "error": "Оферта не принята"})
         if user["tax_status"] != "business":
             return JSONResponse({"ok": False, "error": "Требуется статус самозанятого/ИП"})
+        
         available = user["balance_available"] or 0.0
         if available < MIN_PAYOUT:
-            return JSONResponse({"ok": False, "error": f"Минимальная сумма {MIN_PAYOUT} ₽"})
-        active = conn.execute(
-            "SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')",
-            (user_id,)
-        ).fetchone()
+            return JSONResponse({"ok": False, "error": f"Минимальная сумма вывода: {MIN_PAYOUT} ₽"})
+        
+        active = conn.execute("SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')", (user_id,)).fetchone()
         if active:
-            return JSONResponse({"ok": False, "error": "Уже есть активная заявка"})
+            return JSONResponse({"ok": False, "error": "У вас уже есть активная заявка на выплату"})
+        
+        # Списываем баланс и создаем заявку
+        conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (available, user_id))
+        cursor = conn.execute(
+            "INSERT INTO payout_requests (user_id, amount, message, status) VALUES (?, ?, ?, 'processing')",
+            (user_id, available, details.strip())
+        )
+        request_id = cursor.lastrowid
+        
+        # Первое сообщение в чат
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'user', ?)",
+                     (request_id, f"Реквизиты: {details.strip()}"))
+        conn.commit()
+        
+        # Уведомление админам в Telegram
+        bot = request.app.state.bot
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(
+                    admin_id,
+                    f"🔔 Новый запрос на выплату #{request_id}\n"
+                    f"Пользователь: {user_id}\n"
+                    f"Сумма: {available:.2f} ₽",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🌐 Открыть админку", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))]
+                    ])
+                )
+            except Exception as e:
+                pass
+        
+        return JSONResponse({"ok": True, "request_id": request_id})
     finally:
         conn.close()
-
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💸 Запросить выплату", callback_data="payout:request")]
-    ])
-    try:
-        await bot.send_message(user_id, "💰 Нажмите кнопку, чтобы запросить выплату:", reply_markup=kb)
-        return JSONResponse({"ok": True})
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)})
 
 
 @router.get("/payout-status")
@@ -531,16 +665,118 @@ async def payout_status(token: str = Query(...)):
     conn = get_db()
     try:
         active = conn.execute(
-            "SELECT id, amount, status FROM payout_requests WHERE user_id=? AND status IN ('awaiting_receipt') ORDER BY id DESC LIMIT 1",
+            "SELECT id, status FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded') ORDER BY id DESC LIMIT 1",
             (user_id,)
         ).fetchone()
         if active:
-            return JSONResponse({
-                "has_active": True,
-                "request_id": active["id"],
-                "amount": active["amount"],
-                "status": active["status"]
-            })
+            return JSONResponse({"has_active": True, "request_id": active["id"], "status": active["status"]})
         return JSONResponse({"has_active": False})
     finally:
         conn.close()
+
+
+@router.get("/payout-chat/{request_id}")
+async def get_payout_chat(request_id: int, token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT user_id FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req or req["user_id"] != user_id:
+            return JSONResponse([])
+        
+        messages = conn.execute("""
+            SELECT sender_role, message, file_path, created_at
+            FROM payout_chat
+            WHERE request_id = ?
+            ORDER BY created_at ASC
+        """, (request_id,)).fetchall()
+        
+        return JSONResponse([{
+            "sender_role": m["sender_role"],
+            "message": m["message"],
+            "file_path": m["file_path"],
+            "created_at": m["created_at"]
+        } for m in messages])
+    finally:
+        conn.close()
+
+
+@router.post("/send-message")
+async def send_chat_message(token: str = Form(...), request_id: int = Form(...), message: str = Form(...)):
+    user_id = get_user_id_from_token(token)
+    if not message.strip():
+        return JSONResponse({"ok": False, "error": "Сообщение не может быть пустым"})
+    
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT user_id, status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req or req["user_id"] != user_id:
+            return JSONResponse({"ok": False, "error": "Заявка не найдена"})
+        if req["status"] in ('completed', 'declined'):
+            return JSONResponse({"ok": False, "error": "Заявка уже закрыта"})
+        
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'user', ?)",
+                     (request_id, message.strip()))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    finally:
+        conn.close()
+
+
+@router.post("/upload-receipt")
+async def upload_receipt(token: str = Form(...), request_id: int = Form(...), file: UploadFile = File(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT user_id, status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req or req["user_id"] != user_id:
+            return JSONResponse({"ok": False, "error": "Заявка не найдена"})
+        if req["status"] != "awaiting_receipt":
+            return JSONResponse({"ok": False, "error": "Сейчас нельзя загрузить чек"})
+        
+        # Проверка расширения файла
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+            return JSONResponse({"ok": False, "error": "Неверный формат файла. Разрешены: JPG, PNG, GIF, WebP"})
+        
+        # Сохраняем файл
+        filename = f"{uuid.uuid4()}{ext}"
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        content = await file.read()
+        with open(filepath, "wb") as f:
+            f.write(content)
+        
+        # Запись в чат
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, file_path) VALUES (?, 'user', ?)",
+                     (request_id, filename))
+        conn.execute("UPDATE payout_requests SET status='receipt_uploaded', receipt_photo=? WHERE id=?", 
+                     (filename, request_id))
+        conn.commit()
+        
+        return JSONResponse({"ok": True})
+    finally:
+        conn.close()
+
+
+@router.get("/receipt-file")
+async def get_receipt_file(path: str = Query(...), token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    # Проверяем, что пользователь имеет доступ к этому чеку
+    conn = get_db()
+    try:
+        # Ищем заявку, к которой относится этот файл
+        req = conn.execute("""
+            SELECT pr.user_id FROM payout_requests pr
+            JOIN payout_chat pc ON pr.id = pc.request_id
+            WHERE pc.file_path = ?
+            LIMIT 1
+        """, (path,)).fetchone()
+        if not req or req["user_id"] != user_id:
+            return HTMLResponse("Доступ запрещён", status_code=403)
+    finally:
+        conn.close()
+    
+    full_path = os.path.join(UPLOAD_DIR, path)
+    if not os.path.exists(full_path):
+        return HTMLResponse("Файл не найден", status_code=404)
+    return FileResponse(full_path)
