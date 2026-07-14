@@ -4,7 +4,7 @@ import io, csv
 import logging
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Request, Form, Depends, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse, StreamingResponse, JSONResponse
 from jinja2 import Environment, BaseLoader, TemplateNotFound
 from services.db import get_db
 from webapp.auth import (
