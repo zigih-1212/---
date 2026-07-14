@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from services.db import get_db
 from webapp.auth import get_user_id_from_token
 from datetime import datetime, timedelta, timezone
+from config import BOT_USERNAME
 
 router = APIRouter()
 
@@ -318,7 +319,15 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         # Баланс
         balance = conn.execute("SELECT balance_available, balance_pending FROM users WHERE user_id=?",
                                (user_id,)).fetchone()
-
+        # Последние 10 транзакций
+        transactions = conn.execute("""
+            SELECT payment_sum, currency, payment_status, order_id, action, time
+            FROM admitad_transactions
+            WHERE user_id = ?
+            ORDER BY time DESC
+            LIMIT 10
+        """, (user_id,)).fetchall()
+        
         total_posts = sum(r["count"] for r in post_rows) if post_rows else 0
         total_revenue = sum(r["total"] for r in revenue_rows) if revenue_rows else 0.0
 
@@ -357,14 +366,14 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
 
         # Топ-5 товаров
         top_products = conn.execute("""
-            SELECT g.title, COUNT(*) as cnt
-            FROM posts p
-            JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
-            WHERE p.user_id = ? AND p.status='published' AND p.published_at >= ?
-            GROUP BY g.title
-            ORDER BY cnt DESC
-            LIMIT 5
-        """, (user_id, since)).fetchall()
+        # Последние 10 транзакций
+        transactions = conn.execute("""
+            SELECT payment_sum, currency, payment_status, order_id, action, time
+            FROM admitad_transactions
+            WHERE user_id = ?
+            ORDER BY time DESC
+            LIMIT 10
+        """, (user_id,)).fetchall()
 
         return JSONResponse({
             "posts_labels": [r["day"] for r in post_rows],
@@ -390,6 +399,17 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
                 "conversion": round(r["leads"] / r["clicks"] * 100, 1) if r["clicks"] > 0 else 0
             } for r in channel_rows],
             "top_products": [{"title": r["title"], "count": r["cnt"]} for r in top_products],
+            "recent_transactions": [
+                {
+                    "amount": t["payment_sum"],
+                    "currency": t["currency"],
+                    "status": t["payment_status"],
+                    "order_id": t["order_id"],
+                    "action": t["action"],
+                    "date": datetime.fromtimestamp(int(t["time"]), tz=timezone.utc).strftime("%d.%m.%Y %H:%M") if t["time"] else ""
+                } for t in transactions
+            ] if transactions else [],
+            "bot_username": BOT_USERNAME
         })
     finally:
         conn.close()
