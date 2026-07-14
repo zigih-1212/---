@@ -192,17 +192,21 @@ async def payouts_list(request: Request, admin_id: int = Depends(admin_required)
     return render("admin_payouts.html", users=users, requests=requests, active_page='payouts', bot_username=BOT_USERNAME)
 
 @router.post("/payouts/request/{request_id}/send-money")
-async def send_money(request_id: int, admin_id: int = Depends(admin_required)):
+async def send_money(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
     conn = get_db()
     try:
         req = conn.execute("SELECT * FROM payout_requests WHERE id=? AND status='processing'", (request_id,)).fetchone()
         if not req:
             return RedirectResponse(url="/admin/payouts", status_code=303)
         user_id = req["user_id"]
-        # Меняем статус
-        conn.execute("UPDATE payout_requests SET status='awaiting_receipt' WHERE id=?", (request_id,))
+        # Меняем статус и фиксируем время отправки денег
+        now_iso = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "UPDATE payout_requests SET status='awaiting_receipt', sent_at=?, receipt_reminded=0 WHERE id=?",
+            (now_iso, request_id)
+        )
         conn.commit()
-        # Уведомление блогеру (через бота)
+        # Уведомление блогеру
         bot = request.app.state.bot
         try:
             await bot.send_message(
@@ -219,8 +223,9 @@ async def send_money(request_id: int, admin_id: int = Depends(admin_required)):
         conn.close()
     return RedirectResponse(url="/admin/payouts", status_code=303)
 
+
 @router.post("/payouts/request/{request_id}/decline")
-async def decline_payout_request(request_id: int, admin_id: int = Depends(admin_required)):
+async def decline_payout_request(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
     conn = get_db()
     try:
         req = conn.execute("SELECT * FROM payout_requests WHERE id=? AND status!='completed'", (request_id,)).fetchone()
@@ -234,12 +239,24 @@ async def decline_payout_request(request_id: int, admin_id: int = Depends(admin_
         conn.execute("UPDATE payout_requests SET status='declined' WHERE id=?", (request_id,))
         conn.commit()
         log_admin_action(admin_id, "decline_payout", f"request #{request_id}")
+
+        # Уведомление блогеру об отклонении
+        bot = request.app.state.bot
+        try:
+            await bot.send_message(
+                user_id,
+                "❌ Ваша заявка на выплату была отклонена администратором.\n"
+                "Средства возвращены на баланс. Если есть вопросы, обратитесь в поддержку."
+            )
+        except Exception as e:
+            logger.error(f"Не удалось уведомить пользователя {user_id}: {e}")
     finally:
         conn.close()
     return RedirectResponse(url="/admin/payouts", status_code=303)
 
+
 @router.post("/payouts/request/{request_id}/confirm-receipt")
-async def confirm_receipt(request_id: int, admin_id: int = Depends(admin_required)):
+async def confirm_receipt(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
     conn = get_db()
     try:
         req = conn.execute("SELECT * FROM payout_requests WHERE id=? AND status='receipt_uploaded'", (request_id,)).fetchone()
@@ -248,7 +265,16 @@ async def confirm_receipt(request_id: int, admin_id: int = Depends(admin_require
         conn.execute("UPDATE payout_requests SET status='completed' WHERE id=?", (request_id,))
         conn.commit()
         log_admin_action(admin_id, "confirm_receipt", f"request #{request_id}")
-        # Можно уведомить блогера
+
+        # Уведомление блогеру об успешном завершении
+        bot = request.app.state.bot
+        try:
+            await bot.send_message(
+                req["user_id"],
+                "✅ Ваш чек принят! Выплата успешно завершена."
+            )
+        except Exception as e:
+            logger.error(f"Не удалось уведомить пользователя {req['user_id']}: {e}")
     finally:
         conn.close()
     return RedirectResponse(url="/admin/payouts", status_code=303)
