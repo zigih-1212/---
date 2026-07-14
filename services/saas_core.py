@@ -84,7 +84,28 @@ async def publish_post_with_fallback(
                 has_spoiler=has_spoiler,
             )
         except TelegramAPIError as e:
-            logger.warning(f"Ошибка отправки видео: {e}")
+            logger.warning(f"Ошибка отправки: {e}")
+            reason = get_block_reason(e)
+            if reason:
+                # Деактивируем канал
+                conn_deact = get_db()
+                try:
+                    conn_deact.execute("UPDATE channels SET is_active = 0 WHERE channel_id = ?", (channel_id,))
+                    conn_deact.commit()
+                    # Уведомление владельцу канала (найдём user_id по channel_id)
+                    user_row = conn_deact.execute("SELECT user_id FROM channels WHERE channel_id = ?", (channel_id,)).fetchone()
+                    if user_row:
+                        try:
+                            await bot.send_message(
+                                user_row["user_id"],
+                                f"⚠️ Бот не может публиковать посты в канал <b>{channel_id}</b>.\n"
+                                f"Причина: {reason}. Канал деактивирован. Вы можете повторно добавить его после исправления проблемы."
+                            )
+                        except: pass
+                finally:
+                    conn_deact.close()
+                return None  # Прерываем текущую попытку
+            # Если не критично, пробуем фолбэк дальше
 
     try:
         return await bot.send_message(
