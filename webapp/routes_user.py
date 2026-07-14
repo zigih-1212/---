@@ -29,6 +29,8 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     th, td { padding: 8px 12px; border-bottom: 1px solid #333; text-align: left; }
     th { background: #2a2a2a; color: #ff4444; }
     tr:hover { background: #2a2a2a; }
+    #payout-btn { background: #4caf50; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1.1em; cursor: pointer; margin-top: 15px; transition: background 0.2s; }
+    #payout-btn:hover { background: #388e3c; }
     @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -40,7 +42,15 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <button id="btn30d" class="active">30 дней</button>
         <button id="btnAll">Всё время</button>
     </div>
-    <div class="balance" id="balance-info">Загрузка...</div>
+
+    <!-- 💰 Финансы -->
+    <div class="card" id="finance-card">
+        <h2>💰 Финансы</h2>
+        <div class="balance" id="finance-balance">Загрузка...</div>
+        <button id="payout-btn" style="display:none;" onclick="requestPayout()">💸 Запросить выплату</button>
+        <div id="finance-transactions" style="margin-top:15px;"></div>
+    </div>
+
     <div class="grid">
         <div><canvas id="postsChart"></canvas></div>
         <div><canvas id="revenueChart"></canvas></div>
@@ -71,16 +81,43 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 
     let currentPeriod = '30d';
     let postsChart, revenueChart, clicksChart, storeChart;
+    let botUsername = '';
 
     async function loadData(period) {
         const resp = await fetch(`/my-stats/data?token=${token}&period=${period}`);
         const data = await resp.json();
 
-        document.getElementById('balance-info').innerHTML = `
-            <p>💰 Доступно к выводу: <b>${data.balance_available.toFixed(2)} ₽</b></p>
+        // Сохраняем bot_username для кнопки выплаты
+        botUsername = data.bot_username || '';
+
+        // Финансы
+        document.getElementById('finance-balance').innerHTML = `
+            <p>💳 Доступно к выводу: <b>${data.balance_available.toFixed(2)} ₽</b></p>
             <p>⏳ В ожидании: <b>${data.balance_pending.toFixed(2)} ₽</b></p>
             <p>📬 Постов за период: <b>${data.total_posts}</b> | 💵 Доход: <b>${data.total_revenue.toFixed(2)} ₽</b></p>
         `;
+
+        // Кнопка выплаты
+        const payoutBtn = document.getElementById('payout-btn');
+        if (data.balance_available >= 3000) {
+            payoutBtn.style.display = 'inline-block';
+        } else {
+            payoutBtn.style.display = 'none';
+        }
+
+        // Таблица транзакций
+        const txDiv = document.getElementById('finance-transactions');
+        if (data.recent_transactions && data.recent_transactions.length > 0) {
+            let html = '<h3>Последние транзакции</h3><table><tr><th>Сумма</th><th>Статус</th><th>Заказ</th><th>Дата</th></tr>';
+            data.recent_transactions.forEach(t => {
+                const statusEmoji = {pending: '⏳', approved: '✅', declined: '❌', new: '🆕', waiting: '⏳', paid: '💳'}[t.status] || '❓';
+                html += `<tr><td>${t.amount} ${t.currency}</td><td>${statusEmoji} ${t.status}</td><td>${t.order_id || '—'}</td><td>${t.date}</td></tr>`;
+            });
+            html += '</table>';
+            txDiv.innerHTML = html;
+        } else {
+            txDiv.innerHTML = '<p>Нет транзакций</p>';
+        }
 
         // Посты
         if (postsChart) postsChart.destroy();
@@ -234,6 +271,15 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             topList.innerHTML = '<li>Нет данных</li>';
         }
     }
+
+    // Функция запроса выплаты (открывает чат с ботом)
+    window.requestPayout = function() {
+        if (botUsername) {
+            window.open(`https://t.me/${botUsername}?start=payout`, '_blank');
+        } else {
+            alert('Не удалось определить имя бота. Обратитесь в поддержку.');
+        }
+    };
 
     document.getElementById('btn7d').addEventListener('click', () => {
         document.querySelectorAll('.period-selector button').forEach(b => b.classList.remove('active'));
