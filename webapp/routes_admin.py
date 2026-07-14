@@ -247,6 +247,42 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
                   posts_today=posts_today, posts_week=posts_week,
                   errors_today=errors_today, pending_payouts=pending_payouts,
                   last_users=last_users, last_posts=last_posts, active_page='dashboard')
+
+@router.get("/payouts/{request_id}/chat", response_class=HTMLResponse)
+async def admin_payout_chat_page(request_id: int, request: Request, _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req:
+            return HTMLResponse("Заявка не найдена", status_code=404)
+        return render("admin_chat.html", request_id=request_id, status=req["status"])
+    finally:
+        conn.close()
+
+@router.get("/payouts/{request_id}/chat-data")
+async def admin_chat_data(request_id: int, _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req:
+            return JSONResponse({"status": "unknown", "messages": []})
+        messages = conn.execute("""
+            SELECT sender_role, message, file_path, created_at
+            FROM payout_chat
+            WHERE request_id = ?
+            ORDER BY created_at ASC
+        """, (request_id,)).fetchall()
+        return JSONResponse({
+            "status": req["status"],
+            "messages": [{
+                "sender_role": m["sender_role"],
+                "message": m["message"],
+                "file_path": m["file_path"],
+                "created_at": m["created_at"]
+            } for m in messages]
+        })
+    finally:
+        conn.close()
 # ---------- Пользователи ----------
 @router.get("/users", response_class=HTMLResponse)
 async def users_list(request: Request, _: int = Depends(admin_required)):
