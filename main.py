@@ -1895,15 +1895,15 @@ async def check_receipt_reminders(bot: Bot):
         """, (twelve_hours_ago,)).fetchall()
         for row in rows:
             try:
-            await bot.send_message(
-                row["user_id"],
-                f"⏰ <b>Напоминание о чеке</b>\n\n"
-                f"Вам был отправлен перевод на сумму <b>{row['amount']} ₽</b>.\n"
-                "Согласно оферте, вы обязаны загрузить чек из приложения «Мой налог» в течение 24 часов.\n"
-                "Пожалуйста, перейдите в веб-статистику и нажмите «📤 Отправить чек».",
-                parse_mode=ParseMode.HTML
-            )
-          cute("UPDATE payout_requests SET receipt_reminded = 1 WHERE id = ?", (row["id"],))
+                await bot.send_message(
+                    row["user_id"],
+                    f"⏰ <b>Напоминание о чеке</b>\n\n"
+                    f"Вам был отправлен перевод на сумму <b>{row['amount']} ₽</b>.\n"
+                    "Согласно оферте, вы обязаны загрузить чек из приложения «Мой налог» в течение 24 часов.\n"
+                    "Пожалуйста, перейдите в веб-статистику и нажмите «📤 Отправить чек».",
+                    parse_mode=ParseMode.HTML
+                )
+                conn.execute("UPDATE payout_requests SET receipt_reminded = 1 WHERE id = ?", (row["id"],))
                 conn.commit()
                 logger.info(f"Отправлено напоминание о чеке по заявке #{row['id']}")
             except Exception as e:
