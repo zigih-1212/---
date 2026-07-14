@@ -7,6 +7,7 @@ from config import ADMIN_IDS
 from config import MIN_PAYOUT
 from config import BOT_USERNAME
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 logger = logging.getLogger("autopost_bot.referral")
 
 def log_admin_action(admin_id: int, action: str, details: str = ""):
@@ -22,6 +23,22 @@ def log_admin_action(admin_id: int, action: str, details: str = ""):
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
+def get_block_reason(exception: Exception) -> str | None:
+    """Возвращает причину деактивации канала или None, если ошибка не критична."""
+    if isinstance(exception, TelegramForbiddenError):
+        if "bot was kicked" in str(exception).lower():
+            return "Бот удалён из канала"
+        elif "user is deactivated" in str(exception).lower():
+            return "Владелец канала заблокировал бота"
+        elif "chat not found" in str(exception).lower():
+            return "Канал не найден или бот не имеет доступа"
+        else:
+            return "Доступ запрещён"
+    elif isinstance(exception, TelegramBadRequest):
+        if "chat not found" in str(exception).lower():
+            return "Канал не найден"
+    return None
 
 def apply_referral_bonus(user_id: int, payment_sum: float, blogger_amount: float):
     """
