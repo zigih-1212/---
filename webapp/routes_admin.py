@@ -54,9 +54,9 @@ TEMPLATES = {
     "admin_audit.html": AUDIT_TEMPLATE,
     "admin_reports.html": REPORTS_TEMPLATE,
     "admin_payouts.html": ADMIN_PAYOUTS_TEMPLATE,
+    "admin_chat.html": ADMIN_CHAT_TEMPLATE,    
 }
 
-TEMPLATES["admin_chat.html"] = ADMIN_CHAT_TEMPLATE
 env = Environment(loader=DictLoader(TEMPLATES))
 
 def render(template_name: str, **kwargs):
@@ -100,6 +100,56 @@ async def logout(request: Request):
     resp = RedirectResponse(url="/admin/login", status_code=303)
     resp.delete_cookie("admin_session")
     return resp
+
+@router.get("/payouts/{request_id}/chat", response_class=HTMLResponse)
+async def admin_chat_page(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req:
+            return HTMLResponse("Заявка не найдена", status_code=404)
+        return render("admin_chat.html", request_id=request_id, status=req["status"])
+    finally:
+        conn.close()
+
+@router.get("/payouts/{request_id}/chat-data")
+async def admin_chat_data(request_id: int, admin_id: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req:
+            return JSONResponse({"status": "unknown", "messages": []})
+        messages = conn.execute("""
+            SELECT sender_role, message, file_path, created_at
+            FROM payout_chat
+            WHERE request_id = ?
+            ORDER BY created_at ASC
+        """, (request_id,)).fetchall()
+        return JSONResponse({
+            "status": req["status"],
+            "messages": [{
+                "sender_role": m["sender_role"],
+                "message": m["message"],
+                "file_path": m["file_path"],
+                "created_at": m["created_at"]
+            } for m in messages]
+        })
+    finally:
+        conn.close()
+
+@router.post("/payouts/{request_id}/send-message")
+async def admin_send_message(request_id: int, message: str = Form(...), admin_id: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req or req["status"] in ('completed', 'declined'):
+            return JSONResponse({"ok": False})
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'admin', ?)",
+                     (request_id, message))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    finally:
+        conn.close()
 
 @router.get("/payouts/{request_id}/chat")
 async def admin_payout_chat(request_id: int, _: int = Depends(admin_required)):
@@ -149,13 +199,14 @@ async def send_money(request_id: int, request: Request, admin_id: int = Depends(
         conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'admin', ?)",
                      (request_id, "💰 Деньги отправлены. Пожалуйста, загрузите чек из приложения «Мой налог»."))
         conn.commit()
-        # Уведомление блогеру через Telegram (как и раньше)
+
+        # Уведомление блогеру
         bot = request.app.state.bot
         try:
             await bot.send_message(
                 user_id,
-                f"💰 Вам отправлен перевод на сумму <b>{req['amount']} ₽</b>.\n"
-                "Загрузите чек в веб-статистике."
+                f"💰 Вам отправлен перевод на сумму <b>{req['amount']} ₽</b>.\nЗагрузите чек в веб-статистике.",
+                parse_mode=ParseMode.HTML
             )
         except Exception as e:
             logger.error(f"Не удалось уведомить пользователя {user_id}: {e}")
@@ -179,7 +230,7 @@ async def decline_payout_request(request_id: int, request: Request, admin_id: in
         conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'admin', ?)",
                      (request_id, "❌ Заявка отклонена. Средства возвращены на баланс."))
         conn.commit()
-        # Уведомление
+
         bot = request.app.state.bot
         try:
             await bot.send_message(user_id, "❌ Ваша заявка на выплату отклонена.")
@@ -200,7 +251,7 @@ async def confirm_receipt(request_id: int, request: Request, admin_id: int = Dep
         conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'admin', ?)",
                      (request_id, "✅ Чек принят. Выплата завершена."))
         conn.commit()
-        # Уведомление
+
         bot = request.app.state.bot
         try:
             await bot.send_message(req["user_id"], "✅ Ваш чек принят! Выплата успешно завершена.")
