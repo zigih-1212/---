@@ -37,9 +37,18 @@ async def admitad_postback(request: Request):
 
         conn.execute("""
             INSERT OR IGNORE INTO admitad_transactions 
-            (admitad_id, user_id, action, action_id, payment_sum, payment_status, subid1)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (data.get("id"), user_id, action, action_id, payment_sum, status, subid1))
+            (admitad_id, user_id, action, action_id, payment_sum, payment_status, subid1, decline_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data.get("id"),
+            user_id,
+            action,
+            action_id,
+            payment_sum,
+            status,
+            subid1,
+            data.get("reason") or data.get("decline_reason") or ""
+        ))
 
         if status in ("pending", "new"):
             conn.execute("UPDATE users SET balance_pending = balance_pending + ? WHERE user_id = ?", (user_amount, user_id))
