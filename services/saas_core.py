@@ -17,6 +17,10 @@ from config import is_night_time
 from services.text_rewriter import generate_post_text
 from services.admitad import get_delivery_for_store, get_random_promocode, STORE_ID_MAP, ADULT_STORES
 
+def generate_subid2(user_id: int, channel_id: str) -> str:
+    clean_channel = channel_id.lstrip("@").replace(" ", "_")
+    return f"u{user_id}_ch_{clean_channel[:20]}"
+    
 logger = logging.getLogger("autopost_bot")
 
 # ---------------------------------------------------------------------------
