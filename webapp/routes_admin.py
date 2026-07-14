@@ -69,6 +69,10 @@ def generate_csv(rows, headers):
         writer.writerow([row[h] for h in headers])
     output.seek(0)
     return output.getvalue()
+
+@router.get("/", response_class=HTMLResponse)
+async def admin_root(request: Request):
+    return RedirectResponse(url="/admin/dashboard", status_code=303)
 # ---------- Вход / Выход ----------
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, token: str = Query(None)):
