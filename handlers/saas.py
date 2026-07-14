@@ -1275,3 +1275,34 @@ async def cb_force_preview_reset(callback: CallbackQuery):
         conn.close()
     await callback.answer("🔍 Предпросмотр снова будет показываться перед публикацией.", show_alert=True)
     await open_saas_settings(callback)
+
+@router.callback_query(F.data == "tax_status:change")
+async def cb_change_tax_status(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT tax_status FROM users WHERE user_id=?", (user_id,)).fetchone()
+        current = user["tax_status"] if user else ""
+    finally:
+        conn.close()
+
+    if current == "business":
+        current_text = "🧾 Самозанятый / ИП"
+    elif current == "individual":
+        current_text = "👤 Физическое лицо"
+    else:
+        current_text = "не указан"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🧾 Я Самозанятый / ИП", callback_data="tax:business")],
+        [InlineKeyboardButton(text="👤 Обычное физлицо", callback_data="tax:individual")],
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
+    ])
+    await callback.message.edit_text(
+        f"Ваш текущий налоговый статус: <b>{current_text}</b>\n\n"
+        "Выберите новый статус:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+    await state.set_state(TaxStates.waiting_tax_status)
+    await callback.answer()
