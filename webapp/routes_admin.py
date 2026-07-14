@@ -18,7 +18,8 @@ from webapp.templates import (
     TARIFF_EDIT_TEMPLATE, BROADCAST_TEMPLATE, PROMOCODES_TEMPLATE,
     STORE_DELIVERY_TEMPLATE, TEST_PROMOCODES_TEMPLATE, BULK_ACTIONS_TEMPLATE,
     SETTINGS_TEMPLATE, AUDIT_TEMPLATE, REPORTS_TEMPLATE,
-    ADMIN_PAYOUTS_TEMPLATE
+    ADMIN_PAYOUTS_TEMPLATE,
+    ADMIN_CHAT_TEMPLATE
 )
 from config import BOT_USERNAME
 from aiogram.enums import ParseMode
@@ -55,6 +56,7 @@ TEMPLATES = {
     "admin_payouts.html": ADMIN_PAYOUTS_TEMPLATE,
 }
 
+TEMPLATES["admin_chat.html"] = ADMIN_CHAT_TEMPLATE
 env = Environment(loader=DictLoader(TEMPLATES))
 
 def render(template_name: str, **kwargs):
