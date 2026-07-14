@@ -499,7 +499,11 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE payout_requests ADD COLUMN receipt_reminded INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
         pass
-
+    # В функции init_db() после создания таблицы posts добавить миграцию:
+    try:
+        cursor.execute("ALTER TABLE posts ADD COLUMN views_count INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
@@ -817,6 +821,39 @@ async def handle_payout_start(message: Message, state: FSMContext):
         ])
     )
     await state.set_state(PayoutStates.waiting_for_card)
+
+async def update_post_views(bot: Bot):
+    """Обновляет количество просмотров для постов, опубликованных 30+ дней назад."""
+    conn = get_db()
+    try:
+        # Берём посты старше 30 дней, у которых views_count ещё не обновлён (можно проверять по флагу)
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        posts = conn.execute("""
+            SELECT p.id, p.channel_id, p.target_channel_id, p.direct_link,
+                   CAST(substr(p.direct_link, instr(p.direct_link, '/')+1) AS INTEGER) as message_id
+            FROM posts p
+            WHERE p.status = 'published' 
+              AND p.published_at <= ?
+              AND p.views_count = 0
+        """, (cutoff,)).fetchall()
+
+        updated = 0
+        for post in posts:
+            try:
+                chat_id = post["channel_id"]
+                msg_id = post["message_id"]
+                if not chat_id or not msg_id:
+                    continue
+                msg = await bot.get_message(chat_id=chat_id, message_id=msg_id)
+                if msg and msg.views:
+                    conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (msg.views, post["id"]))
+                    updated += 1
+            except Exception as e:
+                logger.warning(f"Не удалось получить просмотры для поста {post['id']}: {e}")
+        conn.commit()
+        logger.info(f"Обновлено просмотров: {updated}")
+    finally:
+        conn.close()
 # ---------------------------------------------------------------------------
 # /start
 # ---------------------------------------------------------------------------
@@ -1923,7 +1960,8 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(send_subscription_reminders, trigger="cron", hour=10, minute=0, kwargs={"bot": bot}, id="subscription_reminders", replace_existing=True)
     scheduler.add_job(update_all_store_data_from_feed, trigger="cron", hour=4, minute=0, id="update_coupons_feed", replace_existing=True)
     scheduler.add_job(check_rss_and_publish, trigger="interval", minutes=15, kwargs={"bot": bot}, id="check_rss", replace_existing=True)
-    scheduler.add_job(check_receipt_reminders, trigger="interval", minutes=30, kwargs={"bot": bot}, id="receipt_reminders", replace_existing=True)  
+    scheduler.add_job(check_receipt_reminders, trigger="interval", minutes=30, kwargs={"bot": bot}, id="receipt_reminders", replace_existing=True)
+    scheduler.add_job(update_post_views, 'cron', hour=3, minute=30, kwargs={"bot": bot}, id="update_views", replace_existing=True)
     return scheduler
 
 # ---------------------------------------------------------------------------
