@@ -953,9 +953,9 @@ async def show_user_cabinet(message: Message, user_id: int = None):
 
     # Финансовый блок
     finance_text = ""
-    if role == "saas":
-        pending = user["balance_pending"] or 0.0
-        available = user["balance_available"] or 0.0
+    pending = user["balance_pending"] or 0.0
+    available = user["balance_available"] or 0.0
+    if role in ("saas", "blogger"):
         finance_text = (
             f"\n\n💰 <b>Баланс</b>\n"
             f"⏳ В ожидании: <b>{pending:.2f} ₽</b>\n"
