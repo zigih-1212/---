@@ -713,6 +713,7 @@ async function loadChat() {
         document.getElementById('send-money-btn').style.display = (data.status === 'processing') ? 'inline-block' : 'none';
         document.getElementById('decline-btn').style.display = (data.status !== 'completed' && data.status !== 'declined') ? 'inline-block' : 'none';
         document.getElementById('confirm-btn').style.display = (data.status === 'receipt_uploaded') ? 'inline-block' : 'none';
+        document.getElementById('receipt-warning').style.display = (data.status === 'receipt_uploaded') ? 'block' : 'none';        
     } catch(e) {
         document.getElementById('chat-messages').innerHTML = '<p style="color:#ff4444;">Ошибка загрузки чата</p>';
     }
