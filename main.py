@@ -763,12 +763,58 @@ async def process_tax_status(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await show_user_cabinet(callback.message, user_id=user_id)
     await callback.answer()
+
+async def handle_payout_start(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role, balance_available, tax_status, oferta_accepted FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user:
+            await message.answer("Сначала зарегистрируйтесь через /start")
+            return
+        if user["oferta_accepted"] != 1:
+            await message.answer("Примите оферту в личном кабинете.")
+            return
+        if user["role"] not in ("blogger", "saas"):
+            await message.answer("Вывод средств доступен только блогерам и SaaS-клиентам.")
+            return
+        if user["tax_status"] != "business":
+            await message.answer("Вывод средств доступен только самозанятым/ИП.")
+            return
+        available = user["balance_available"] or 0.0
+        if available < MIN_PAYOUT:
+            await message.answer(f"❌ Минимальная сумма вывода: {MIN_PAYOUT} ₽")
+            return
+        # Проверка активной заявки
+        active = conn.execute(
+            "SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')",
+            (user_id,)
+        ).fetchone()
+        if active:
+            await message.answer("❌ У вас уже есть активная заявка на выплату.")
+            return
+    finally:
+        conn.close()
+
+    await message.answer(
+        f"💸 Укажите реквизиты для выплаты (номер карты, банк, TON-кошелёк или другие данные):\n"
+        f"Доступно: <b>{available:.2f} ₽</b>\n\n"
+        f"Пример: <i>Сбербанк 2202 2081 0829 0025</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
+        ])
+    )
+    await state.set_state(PayoutStates.waiting_for_card)
 # ---------------------------------------------------------------------------
 # /start
 # ---------------------------------------------------------------------------
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, command: Command = None):
     await state.clear()
+    if command.args == "payout":
+        await handle_payout_start(message, state)
+        return  
     if is_admin(message.from_user.id):
         await message.answer("👋 Добро пожаловать в Панель администратора.", reply_markup=kb_admin_panel())
         return
