@@ -387,6 +387,17 @@ def init_db() -> None:
             FOREIGN KEY(referral_id) REFERENCES users(user_id)
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS payout_chat (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id INTEGER NOT NULL,
+            sender_role TEXT NOT NULL CHECK(sender_role IN ('user','admin')),
+            message TEXT,
+            file_path TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(request_id) REFERENCES payout_requests(id)
+        )
+    """)  
     conn.commit()  
     # Миграции
     migrations = [
