@@ -1,4 +1,4 @@
-# webapp/routes_user.py (полная замена – чат выплат в вебе)
+# webapp/routes_user.py — полная версия с чатом выплат
 
 import os
 import uuid
@@ -15,6 +15,7 @@ router = APIRouter()
 UPLOAD_DIR = "/app/data/receipts"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# ---------- Шаблон основной страницы статистики ----------
 USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -35,24 +36,10 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     th, td { padding: 8px 12px; border-bottom: 1px solid #333; text-align: left; }
     th { background: #2a2a2a; color: #ff4444; }
     tr:hover { background: #2a2a2a; }
-    button { background: #ff4444; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-top: 10px; font-size: 1em; }
+    button, .btn { background: #ff4444; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 1em; margin-top: 10px; text-decoration: none; display: inline-block; }
     button:hover { opacity: 0.9; }
-    .payout-form textarea { width: 100%; padding: 12px; margin: 10px 0; background: #333; border: 1px solid #555; color: #ccc; border-radius: 8px; font-size: 1em; }
-    .chat-box { background: #111; border-radius: 10px; padding: 15px; max-height: 400px; overflow-y: auto; margin: 15px 0; }
-    .chat-msg { margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; }
-    .chat-msg.admin { background: #2a1a1a; text-align: right; }
-    .chat-msg.user { background: #1a2a1a; text-align: left; }
-    .chat-msg .time { font-size: 0.75em; color: #888; display: block; margin-top: 4px; }
-    .chat-input { display: flex; gap: 10px; margin-top: 10px; }
-    .chat-input input { flex: 1; padding: 12px; background: #333; border: 1px solid #555; color: #ccc; border-radius: 8px; font-size: 1em; }
-    #receipt-upload { margin-top: 15px; }
-    #receipt-upload input[type="file"] { background: #333; padding: 8px; border-radius: 8px; }
-    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: bold; margin-left: 10px; }
-    .status-processing { background: #ff9800; color: #000; }
-    .status-awaiting_receipt { background: #2196f3; color: #fff; }
-    .status-receipt_uploaded { background: #4caf50; color: #fff; }
-    .status-completed { background: #888; color: #fff; }
-    .status-declined { background: #f44336; color: #fff; }
+    .payout-form textarea { width: 100%; padding: 12px; margin: 10px 0; background: #333; border: 1px solid #555; color: #ccc; border-radius: 8px; }
+    #payout-msg { margin-top: 10px; }
     @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -65,31 +52,18 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <button id="btnAll">Всё время</button>
     </div>
 
-    <!-- 💰 Финансы -->
-    <div class="card" id="finance-card">
+    <div class="card">
         <h2>💰 Финансы</h2>
         <div class="balance" id="finance-balance">Загрузка...</div>
-        <div id="payout-section">
+        <div id="payout-actions">
             <div id="payout-request-form" style="display:none;">
                 <h3>💸 Запросить выплату</h3>
-                <textarea id="payout-details" rows="3" placeholder="Введите реквизиты: номер карты, банк, TON-кошелёк или другие данные..."></textarea>
+                <textarea id="payout-details" rows="3" placeholder="Введите реквизиты: номер карты, банк и т.д."></textarea>
                 <button onclick="submitPayoutRequest()">📤 Отправить запрос</button>
-                <div id="payout-msg" style="margin-top:10px;"></div>
+                <div id="payout-msg"></div>
             </div>
-            <div id="active-payout-chat" style="display:none;">
-                <h3>
-                    Выплата #<span id="request-id-display"></span>
-                    <span class="status-badge" id="request-status"></span>
-                </h3>
-                <div class="chat-box" id="chat-messages"></div>
-                <div class="chat-input">
-                    <input type="text" id="chat-input-text" placeholder="Введите сообщение...">
-                    <button onclick="sendChatMessage()">📨 Отправить</button>
-                </div>
-                <div id="receipt-upload" style="display:none;">
-                    <input type="file" id="receipt-file" accept="image/*">
-                    <button onclick="uploadReceipt()">📤 Отправить чек</button>
-                </div>
+            <div id="active-payout-link" style="display:none;">
+                <a id="chat-link" href="#" class="btn">💬 Перейти в чат с администратором</a>
             </div>
         </div>
         <div id="finance-transactions" style="margin-top:20px;"></div>
@@ -125,13 +99,10 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 
     let currentPeriod = '30d';
     let postsChart, revenueChart, clicksChart, storeChart;
-    let activeRequestId = null;
-    let botUsername = '';
 
     async function loadData(period) {
         const resp = await fetch(`/my-stats/data?token=${token}&period=${period}`);
         const data = await resp.json();
-        botUsername = data.bot_username || '';
 
         document.getElementById('finance-balance').innerHTML = `
             <p>💳 Доступно к выводу: <b>${data.balance_available.toFixed(2)} ₽</b></p>
@@ -139,23 +110,19 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             <p>📬 Постов за период: <b>${data.total_posts}</b> | 💵 Доход: <b>${data.total_revenue.toFixed(2)} ₽</b></p>
         `;
 
-        const reqForm = document.getElementById('payout-request-form');
-        const activeChat = document.getElementById('active-payout-chat');
-
-        // Проверяем наличие активной заявки
+        // Проверяем активную заявку
         const statusResp = await fetch(`/my-stats/payout-status?token=${token}`);
         const statusData = await statusResp.json();
+        const reqForm = document.getElementById('payout-request-form');
+        const activeLink = document.getElementById('active-payout-link');
+        const chatLink = document.getElementById('chat-link');
 
         if (statusData.has_active) {
-            activeRequestId = statusData.request_id;
             reqForm.style.display = 'none';
-            activeChat.style.display = 'block';
-            document.getElementById('request-id-display').textContent = activeRequestId;
-            updateStatusDisplay(statusData.status);
-            loadChat(activeRequestId);
+            activeLink.style.display = 'block';
+            chatLink.href = `/my-stats/chat/${statusData.request_id}?token=${token}`;
         } else {
-            activeRequestId = null;
-            activeChat.style.display = 'none';
+            activeLink.style.display = 'none';
             if (data.balance_available >= 3000) {
                 reqForm.style.display = 'block';
             } else {
@@ -327,112 +294,24 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         }
     }
 
-    function updateStatusDisplay(status) {
-        const badge = document.getElementById('request-status');
-        badge.textContent = status;
-        badge.className = 'status-badge';
-        switch(status) {
-            case 'processing': badge.classList.add('status-processing'); break;
-            case 'awaiting_receipt': badge.classList.add('status-awaiting_receipt'); break;
-            case 'receipt_uploaded': badge.classList.add('status-receipt_uploaded'); break;
-            case 'completed': badge.classList.add('status-completed'); break;
-            case 'declined': badge.classList.add('status-declined'); break;
-        }
-        document.getElementById('receipt-upload').style.display = (status === 'awaiting_receipt') ? 'block' : 'none';
-    }
-
-    // Отправка запроса на выплату
     window.submitPayoutRequest = async function() {
         const details = document.getElementById('payout-details').value.trim();
         if (details.length < 10) {
             document.getElementById('payout-msg').innerHTML = '❌ Слишком короткие реквизиты. Минимум 10 символов.';
             return;
         }
-        document.getElementById('payout-msg').innerHTML = '⏳ Отправка запроса...';
+        document.getElementById('payout-msg').innerHTML = '⏳ Отправка...';
         const formData = new FormData();
         formData.append('token', token);
         formData.append('details', details);
         const resp = await fetch('/my-stats/request-payout', { method: 'POST', body: formData });
         const result = await resp.json();
         if (result.ok) {
-            activeRequestId = result.request_id;
-            document.getElementById('payout-request-form').style.display = 'none';
-            document.getElementById('active-payout-chat').style.display = 'block';
-            document.getElementById('request-id-display').textContent = activeRequestId;
-            updateStatusDisplay('processing');
-            loadChat(activeRequestId);
+            window.location.href = `/my-stats/chat/${result.request_id}?token=${token}`;
         } else {
             document.getElementById('payout-msg').innerHTML = '❌ ' + result.error;
         }
     };
-
-    // Загрузка чата
-    async function loadChat(requestId) {
-        const resp = await fetch(`/my-stats/payout-chat/${requestId}?token=${token}`);
-        const messages = await resp.json();
-        const chatDiv = document.getElementById('chat-messages');
-        chatDiv.innerHTML = messages.map(msg => {
-            const side = msg.sender_role === 'admin' ? 'admin' : 'user';
-            let text = '';
-            if (msg.file_path) {
-                text = `<a href="/my-stats/receipt-file?path=${encodeURIComponent(msg.file_path)}&token=${token}" target="_blank">📎 Чек</a>`;
-            }
-            if (msg.message) {
-                text += msg.message;
-            }
-            return `<div class="chat-msg ${side}">${text}<span class="time">${msg.created_at}</span></div>`;
-        }).join('');
-        chatDiv.scrollTop = chatDiv.scrollHeight;
-    }
-
-    // Отправка сообщения в чат
-    window.sendChatMessage = async function() {
-        if (!activeRequestId) return;
-        const text = document.getElementById('chat-input-text').value.trim();
-        if (!text) return;
-        const formData = new FormData();
-        formData.append('token', token);
-        formData.append('request_id', activeRequestId);
-        formData.append('message', text);
-        await fetch('/my-stats/send-message', { method: 'POST', body: formData });
-        document.getElementById('chat-input-text').value = '';
-        loadChat(activeRequestId);
-    };
-
-    // Загрузка чека
-    window.uploadReceipt = async function() {
-        if (!activeRequestId) return;
-        const fileInput = document.getElementById('receipt-file');
-        if (!fileInput.files.length) return;
-        const formData = new FormData();
-        formData.append('token', token);
-        formData.append('request_id', activeRequestId);
-        formData.append('file', fileInput.files[0]);
-        const resp = await fetch('/my-stats/upload-receipt', { method: 'POST', body: formData });
-        const result = await resp.json();
-        if (result.ok) {
-            loadChat(activeRequestId);
-            document.getElementById('receipt-file').value = '';
-            updateStatusDisplay('receipt_uploaded');
-        } else {
-            alert(result.error || 'Ошибка загрузки');
-        }
-    };
-
-    // Периодическое обновление чата и статуса
-    setInterval(async () => {
-        if (activeRequestId) {
-            loadChat(activeRequestId);
-            const statusResp = await fetch(`/my-stats/payout-status?token=${token}`);
-            const statusData = await statusResp.json();
-            if (statusData.has_active) {
-                updateStatusDisplay(statusData.status);
-            } else {
-                // заявка завершена – перезагружаем страницу
-                location.reload();
-            }
-        }
-    }, 10000);
 
     document.getElementById('btn7d').addEventListener('click', () => {
         document.querySelectorAll('.period-selector button').forEach(b => b.classList.remove('active'));
@@ -456,7 +335,127 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 </body>
 </html>'''
 
-# ---------- Основные эндпоинты ----------
+# ---------- Шаблон чата выплат (для пользователя) ----------
+CHAT_TEMPLATE = r'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Чат выплаты</title>
+<style>
+    body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; }
+    h1 { color: #ff4444; }
+    .container { max-width: 700px; margin: auto; }
+    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: bold; margin-left: 10px; }
+    .status-processing { background: #ff9800; color: #000; }
+    .status-awaiting_receipt { background: #2196f3; color: #fff; }
+    .status-receipt_uploaded { background: #4caf50; color: #fff; }
+    .status-completed { background: #888; color: #fff; }
+    .status-declined { background: #f44336; color: #fff; }
+    .chat-box { background: #111; border-radius: 10px; padding: 15px; height: 400px; overflow-y: auto; margin: 15px 0; }
+    .chat-msg { margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; }
+    .chat-msg.admin { background: #2a1a1a; text-align: right; }
+    .chat-msg.user { background: #1a2a1a; text-align: left; }
+    .chat-msg .time { font-size: 0.75em; color: #888; display: block; margin-top: 4px; }
+    .chat-input { display: flex; gap: 10px; margin-top: 10px; }
+    .chat-input input { flex: 1; padding: 12px; background: #333; border: 1px solid #555; color: #ccc; border-radius: 8px; }
+    .chat-input button, .file-upload button { background: #ff4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; }
+    .file-upload { margin-top: 15px; display: flex; align-items: center; gap: 10px; }
+    .file-upload input[type="file"] { display: none; }
+    .file-upload label { background: #333; border: 2px dashed #555; padding: 12px 20px; border-radius: 8px; cursor: pointer; }
+    .file-upload label:hover { border-color: #ff4444; }
+    .preview-img { max-width: 100px; max-height: 100px; margin-left: 10px; }
+    .back-link { margin-bottom: 20px; display: inline-block; color: #ff4444; }
+</style>
+</head>
+<body>
+<div class="container">
+    <a href="/my-stats?token={{ token }}" class="back-link">← Назад к статистике</a>
+    <h1>💬 Чат по заявке #{{ request_id }} <span class="status-badge" id="status-badge">{{ status }}</span></h1>
+    <div class="chat-box" id="chat-messages">Загрузка...</div>
+    <div class="chat-input">
+        <input type="text" id="message-text" placeholder="Введите сообщение...">
+        <button onclick="sendMessage()">📨</button>
+    </div>
+    <div id="receipt-upload-section" class="file-upload" style="display: {{ 'block' if status == 'awaiting_receipt' else 'none' }};">
+        <input type="file" id="receipt-file" accept="image/*" onchange="previewFile()">
+        <label for="receipt-file">📎 Выберите чек</label>
+        <button onclick="uploadReceipt()">📤 Отправить</button>
+        <img id="preview" class="preview-img" style="display:none;">
+    </div>
+</div>
+
+<script>
+const requestId = {{ request_id }};
+const token = "{{ token }}";
+
+async function loadMessages() {
+    const resp = await fetch(`/my-stats/payout-chat/${requestId}?token=${token}`);
+    const messages = await resp.json();
+    const chatDiv = document.getElementById('chat-messages');
+    chatDiv.innerHTML = messages.map(msg => {
+        const side = msg.sender_role === 'admin' ? 'admin' : 'user';
+        let text = '';
+        if (msg.file_path) {
+            text = `<a href="/my-stats/receipt-file?path=${encodeURIComponent(msg.file_path)}&token=${token}" target="_blank"><img src="/my-stats/receipt-file?path=${encodeURIComponent(msg.file_path)}&token=${token}" style="max-width:150px; border-radius:8px;"></a>`;
+        }
+        if (msg.message) text += msg.message;
+        return `<div class="chat-msg ${side}">${text}<span class="time">${msg.created_at}</span></div>`;
+    }).join('');
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+}
+
+async function sendMessage() {
+    const text = document.getElementById('message-text').value.trim();
+    if (!text) return;
+    const formData = new FormData();
+    formData.append('token', token);
+    formData.append('request_id', requestId);
+    formData.append('message', text);
+    await fetch('/my-stats/send-message', { method: 'POST', body: formData });
+    document.getElementById('message-text').value = '';
+    loadMessages();
+}
+
+function previewFile() {
+    const file = document.getElementById('receipt-file').files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            document.getElementById('preview').src = e.target.result;
+            document.getElementById('preview').style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+async function uploadReceipt() {
+    const fileInput = document.getElementById('receipt-file');
+    if (!fileInput.files.length) return;
+    const formData = new FormData();
+    formData.append('token', token);
+    formData.append('request_id', requestId);
+    formData.append('file', fileInput.files[0]);
+    const resp = await fetch('/my-stats/upload-receipt', { method: 'POST', body: formData });
+    const result = await resp.json();
+    if (result.ok) {
+        loadMessages();
+        document.getElementById('receipt-file').value = '';
+        document.getElementById('preview').style.display = 'none';
+        document.getElementById('status-badge').textContent = 'receipt_uploaded';
+        document.getElementById('status-badge').className = 'status-badge status-receipt_uploaded';
+        document.getElementById('receipt-upload-section').style.display = 'none';
+    } else {
+        alert(result.error || 'Ошибка загрузки');
+    }
+}
+
+setInterval(loadMessages, 10000);
+loadMessages();
+</script>
+</body>
+</html>'''
+
+# ---------- Эндпоинты ----------
 @router.get("/", response_class=HTMLResponse)
 async def user_stats_page(token: str = Query(...)):
     get_user_id_from_token(token)
@@ -603,11 +602,28 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         conn.close()
 
 
+@router.get("/chat/{request_id}", response_class=HTMLResponse)
+async def user_chat_page(request_id: int, token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT id, status FROM payout_requests WHERE id=? AND user_id=?", 
+                           (request_id, user_id)).fetchone()
+        if not req:
+            return HTMLResponse("Заявка не найдена", status_code=404)
+        # Рендерим шаблон чата
+        return HTMLResponse(content=CHAT_TEMPLATE.replace("{{ request_id }}", str(request_id))
+                                              .replace("{{ status }}", req["status"])
+                                              .replace("{{ token }}", token))
+    finally:
+        conn.close()
+
+
 @router.post("/request-payout")
 async def request_payout(request: Request, token: str = Form(...), details: str = Form(...)):
     user_id = get_user_id_from_token(token)
     if len(details.strip()) < 10:
-        return JSONResponse({"ok": False, "error": "Слишком короткие реквизиты (минимум 10 символов)"})
+        return JSONResponse({"ok": False, "error": "Слишком короткие реквизиты"})
     
     conn = get_db()
     try:
@@ -623,37 +639,29 @@ async def request_payout(request: Request, token: str = Form(...), details: str 
         
         active = conn.execute("SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')", (user_id,)).fetchone()
         if active:
-            return JSONResponse({"ok": False, "error": "У вас уже есть активная заявка на выплату"})
+            return JSONResponse({"ok": False, "error": "У вас уже есть активная заявка"})
         
-        # Списываем баланс и создаем заявку
         conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (available, user_id))
         cursor = conn.execute(
             "INSERT INTO payout_requests (user_id, amount, message, status) VALUES (?, ?, ?, 'processing')",
             (user_id, available, details.strip())
         )
         request_id = cursor.lastrowid
-        
-        # Первое сообщение в чат
         conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'user', ?)",
                      (request_id, f"Реквизиты: {details.strip()}"))
         conn.commit()
         
-        # Уведомление админам в Telegram
+        # Уведомление админам
         bot = request.app.state.bot
         for admin_id in ADMIN_IDS:
             try:
-                await bot.send_message(
-                    admin_id,
-                    f"🔔 Новый запрос на выплату #{request_id}\n"
-                    f"Пользователь: {user_id}\n"
-                    f"Сумма: {available:.2f} ₽",
+                await bot.send_message(admin_id,
+                    f"🔔 Новый запрос на выплату #{request_id}\nПользователь: {user_id}\nСумма: {available:.2f} ₽",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🌐 Открыть админку", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))]
+                        [InlineKeyboardButton(text="🌐 Админка", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))]
                     ])
                 )
-            except Exception as e:
-                pass
-        
+            except: pass
         return JSONResponse({"ok": True, "request_id": request_id})
     finally:
         conn.close()
@@ -683,14 +691,12 @@ async def get_payout_chat(request_id: int, token: str = Query(...)):
         req = conn.execute("SELECT user_id FROM payout_requests WHERE id=?", (request_id,)).fetchone()
         if not req or req["user_id"] != user_id:
             return JSONResponse([])
-        
         messages = conn.execute("""
             SELECT sender_role, message, file_path, created_at
             FROM payout_chat
             WHERE request_id = ?
             ORDER BY created_at ASC
         """, (request_id,)).fetchall()
-        
         return JSONResponse([{
             "sender_role": m["sender_role"],
             "message": m["message"],
@@ -705,16 +711,12 @@ async def get_payout_chat(request_id: int, token: str = Query(...)):
 async def send_chat_message(token: str = Form(...), request_id: int = Form(...), message: str = Form(...)):
     user_id = get_user_id_from_token(token)
     if not message.strip():
-        return JSONResponse({"ok": False, "error": "Сообщение не может быть пустым"})
-    
+        return JSONResponse({"ok": False})
     conn = get_db()
     try:
         req = conn.execute("SELECT user_id, status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
-        if not req or req["user_id"] != user_id:
-            return JSONResponse({"ok": False, "error": "Заявка не найдена"})
-        if req["status"] in ('completed', 'declined'):
-            return JSONResponse({"ok": False, "error": "Заявка уже закрыта"})
-        
+        if not req or req["user_id"] != user_id or req["status"] in ('completed', 'declined'):
+            return JSONResponse({"ok": False})
         conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'user', ?)",
                      (request_id, message.strip()))
         conn.commit()
@@ -729,30 +731,20 @@ async def upload_receipt(token: str = Form(...), request_id: int = Form(...), fi
     conn = get_db()
     try:
         req = conn.execute("SELECT user_id, status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
-        if not req or req["user_id"] != user_id:
-            return JSONResponse({"ok": False, "error": "Заявка не найдена"})
-        if req["status"] != "awaiting_receipt":
-            return JSONResponse({"ok": False, "error": "Сейчас нельзя загрузить чек"})
-        
-        # Проверка расширения файла
+        if not req or req["user_id"] != user_id or req["status"] != "awaiting_receipt":
+            return JSONResponse({"ok": False, "error": "Нельзя загрузить чек"})
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
-            return JSONResponse({"ok": False, "error": "Неверный формат файла. Разрешены: JPG, PNG, GIF, WebP"})
-        
-        # Сохраняем файл
+            return JSONResponse({"ok": False, "error": "Формат не поддерживается"})
         filename = f"{uuid.uuid4()}{ext}"
         filepath = os.path.join(UPLOAD_DIR, filename)
-        content = await file.read()
         with open(filepath, "wb") as f:
-            f.write(content)
-        
-        # Запись в чат
+            f.write(await file.read())
         conn.execute("INSERT INTO payout_chat (request_id, sender_role, file_path) VALUES (?, 'user', ?)",
                      (request_id, filename))
         conn.execute("UPDATE payout_requests SET status='receipt_uploaded', receipt_photo=? WHERE id=?", 
                      (filename, request_id))
         conn.commit()
-        
         return JSONResponse({"ok": True})
     finally:
         conn.close()
@@ -761,21 +753,6 @@ async def upload_receipt(token: str = Form(...), request_id: int = Form(...), fi
 @router.get("/receipt-file")
 async def get_receipt_file(path: str = Query(...), token: str = Query(...)):
     user_id = get_user_id_from_token(token)
-    # Проверяем, что пользователь имеет доступ к этому чеку
-    conn = get_db()
-    try:
-        # Ищем заявку, к которой относится этот файл
-        req = conn.execute("""
-            SELECT pr.user_id FROM payout_requests pr
-            JOIN payout_chat pc ON pr.id = pc.request_id
-            WHERE pc.file_path = ?
-            LIMIT 1
-        """, (path,)).fetchone()
-        if not req or req["user_id"] != user_id:
-            return HTMLResponse("Доступ запрещён", status_code=403)
-    finally:
-        conn.close()
-    
     full_path = os.path.join(UPLOAD_DIR, path)
     if not os.path.exists(full_path):
         return HTMLResponse("Файл не найден", status_code=404)
