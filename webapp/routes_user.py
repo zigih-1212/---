@@ -6,6 +6,7 @@ from services.db import get_db
 from webapp.auth import get_user_id_from_token
 from datetime import datetime, timedelta, timezone, date
 from config import BOT_USERNAME
+from config import MIN_PAYOUT
 
 router = APIRouter()
 
@@ -276,19 +277,23 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     }
 
     window.requestPayout = function() {
-        if (botUsername) {
-            const command = '/start payout';
-            const msg = document.getElementById('payout-msg');
-            navigator.clipboard.writeText(command).then(() => {
-                msg.innerHTML = `✅ Команда <b>/start payout</b> скопирована!<br><a href="https://t.me/${botUsername}" target="_blank">👉 Нажмите здесь, чтобы открыть бота</a> и вставьте команду (Ctrl+V)`;
-                msg.style.display = 'block';
-            }).catch(() => {
-                msg.innerHTML = `Отправьте боту команду: <b>/start payout</b><br><a href="https://t.me/${botUsername}" target="_blank">👉 Открыть бота</a>`;
-                msg.style.display = 'block';
-            });
-        } else {
-            alert('Имя бота не загружено. Обновите страницу.');
-        }
+        const token = new URLSearchParams(window.location.search).get('token');
+        const msg = document.getElementById('payout-msg');
+        msg.innerHTML = '⏳ Отправка запроса...';
+        msg.style.display = 'block';
+        fetch('/my-stats/request-payout', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'token=' + encodeURIComponent(token)
+        }).then(r => r.json()).then(data => {
+            if (data.ok) {
+                msg.innerHTML = '✅ Перейдите в чат с ботом и нажмите появившуюся кнопку «Запросить выплату».';
+            } else {
+                msg.innerHTML = '❌ ' + data.error;
+            }
+        }).catch(() => {
+            msg.innerHTML = '❌ Ошибка соединения с сервером';
+        });
     };
 
     document.getElementById('btn7d').addEventListener('click', () => {
@@ -312,6 +317,42 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 </script>
 </body>
 </html>'''
+
+@router.post("/request-payout")
+async def request_payout_endpoint(request: Request, token: str = Form(...)):
+    user_id = get_user_id_from_token(token)
+    bot = request.app.state.bot
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT role, balance_available, tax_status, oferta_accepted FROM users WHERE user_id=?",
+            (user_id,)
+        ).fetchone()
+        if not user or user["oferta_accepted"] != 1:
+            return JSONResponse({"ok": False, "error": "Оферта не принята"})
+        if user["tax_status"] != "business":
+            return JSONResponse({"ok": False, "error": "Требуется статус самозанятого/ИП"})
+        available = user["balance_available"] or 0.0
+        if available < MIN_PAYOUT:
+            return JSONResponse({"ok": False, "error": f"Минимальная сумма {MIN_PAYOUT} ₽"})
+        active = conn.execute(
+            "SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')",
+            (user_id,)
+        ).fetchone()
+        if active:
+            return JSONResponse({"ok": False, "error": "Уже есть активная заявка"})
+    finally:
+        conn.close()
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💸 Запросить выплату", callback_data="payout:request")]
+    ])
+    try:
+        await bot.send_message(user_id, "💰 Нажмите кнопку, чтобы запросить выплату:", reply_markup=kb)
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
 
 @router.get("/", response_class=HTMLResponse)
 async def user_stats_page(token: str = Query(...)):
