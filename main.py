@@ -542,6 +542,11 @@ def generate_sub_id(username: str, user_id: int, role: str = "blogger") -> str:
     prefix = "saas_" if role == "saas" else "blogger_"
     return f"{prefix}{result}_uid{user_id}"
 
+
+def generate_subid2(user_id: int, channel_id: str) -> str:
+    """Генерирует уникальный subid2 для связки пользователь-канал."""
+    clean_channel = channel_id.lstrip("@").replace(" ", "_")
+    return f"u{user_id}_ch_{clean_channel[:20]}"
 def sanitize_html(text: str) -> str:
     if not text:
         return ""
