@@ -1,4 +1,4 @@
-# webapp/routes_user.py (исправленный)
+# webapp/routes_user.py (исправленный — финальная версия)
 
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -31,6 +31,8 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     tr:hover { background: #2a2a2a; }
     #payout-btn { background: #4caf50; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1.1em; cursor: pointer; margin-top: 15px; transition: background 0.2s; }
     #payout-btn:hover { background: #388e3c; }
+    #payout-msg { margin-top: 10px; padding: 10px; background: #2a2a2a; border-radius: 8px; }
+    #payout-msg a { color: #ff4444; font-weight: bold; }
     @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -48,6 +50,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <h2>💰 Финансы</h2>
         <div class="balance" id="finance-balance">Загрузка...</div>
         <button id="payout-btn" style="display:none;" onclick="requestPayout()">💸 Запросить выплату</button>
+        <div id="payout-msg" style="display:none;"></div>
         <div id="finance-transactions" style="margin-top:15px;"></div>
     </div>
 
@@ -272,23 +275,16 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         }
     }
 
-    // Функция запроса выплаты (открывает чат с ботом)
     window.requestPayout = function() {
         if (botUsername) {
-            // Копируем команду в буфер обмена
             const command = '/start payout';
+            const msg = document.getElementById('payout-msg');
             navigator.clipboard.writeText(command).then(() => {
-                // Открываем чат с ботом
-                const url = `https://t.me/${botUsername}`;
-                window.open(url, '_blank');
-                // Показываем уведомление
-                setTimeout(() => {
-                    alert('Команда /start payout скопирована! Вставьте её в открывшийся чат с ботом.');
-                }, 1000);
+                msg.innerHTML = `✅ Команда <b>/start payout</b> скопирована!<br><a href="https://t.me/${botUsername}" target="_blank">👉 Нажмите здесь, чтобы открыть бота</a> и вставьте команду (Ctrl+V)`;
+                msg.style.display = 'block';
             }).catch(() => {
-                // Если буфер не работает — просто открываем бота
-                window.open(`https://t.me/${botUsername}`, '_blank');
-                alert('Отправьте боту команду: /start payout');
+                msg.innerHTML = `Отправьте боту команду: <b>/start payout</b><br><a href="https://t.me/${botUsername}" target="_blank">👉 Открыть бота</a>`;
+                msg.style.display = 'block';
             });
         } else {
             alert('Имя бота не загружено. Обновите страницу.');
@@ -335,7 +331,6 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
 
     conn = get_db()
     try:
-        # Посты
         post_rows = conn.execute("""
             SELECT DATE(published_at) as day, COUNT(*) as count
             FROM posts
@@ -343,7 +338,6 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             GROUP BY day ORDER BY day
         """, (user_id, since)).fetchall()
 
-        # Доход (approved)
         revenue_rows = conn.execute("""
             SELECT DATE(time, 'unixepoch') as day, SUM(payment_sum) as total
             FROM admitad_transactions
@@ -351,7 +345,6 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             GROUP BY day ORDER BY day
         """, (user_id, since)).fetchall()
 
-        # Клики (по дням, из транзакций с action='click')
         clicks_rows = conn.execute("""
             SELECT DATE(time, 'unixepoch') as day, COUNT(*) as clicks
             FROM admitad_transactions
@@ -359,7 +352,6 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             GROUP BY day ORDER BY day
         """, (user_id, since)).fetchall()
 
-        # Лиды (pending/approved) по дням
         leads_rows = conn.execute("""
             SELECT DATE(time, 'unixepoch') as day, COUNT(*) as leads
             FROM admitad_transactions
@@ -367,7 +359,6 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             GROUP BY day ORDER BY day
         """, (user_id, since)).fetchall()
 
-        # Магазины (из постов)
         store_rows = conn.execute("""
             SELECT g.source, COUNT(*) as cnt
             FROM posts p
@@ -376,18 +367,15 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             GROUP BY g.source ORDER BY cnt DESC
         """, (user_id, since)).fetchall()
 
-        # Баланс
         balance = conn.execute("SELECT balance_available, balance_pending FROM users WHERE user_id=?",
                                (user_id,)).fetchone()
 
         total_posts = sum(r["count"] for r in post_rows) if post_rows else 0
         total_revenue = sum(r["total"] for r in revenue_rows) if revenue_rows else 0.0
 
-        # Собираем словари по дням для кликов и лидов
         clicks_dict = {r["day"]: r["clicks"] for r in clicks_rows}
         leads_dict = {r["day"]: r["leads"] for r in leads_rows}
 
-        # Определяем все дни в периоде для корректных нулей
         start_date = date.today() - timedelta(days={"7d":7, "30d":30}.get(period, 1000))
         end_date = date.today()
         all_days = [(start_date + timedelta(days=i)).isoformat() for i in range((end_date - start_date).days + 1)]
@@ -395,12 +383,10 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         clicks_counts = [clicks_dict.get(day, 0) for day in all_days]
         leads_counts = [leads_dict.get(day, 0) for day in all_days]
 
-        # Конверсия (leads/clicks * 100) по дням, если кликов 0, то 0
         conversion_values = []
         for c, l in zip(clicks_counts, leads_counts):
             conversion_values.append(round(l / c * 100, 1) if c > 0 else 0.0)
 
-        # Сравнение каналов
         channel_rows = conn.execute("""
             SELECT c.channel_title, c.channel_id,
                    COUNT(p.id) as posts_cnt,
@@ -415,7 +401,6 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             ORDER BY earnings DESC
         """, (since, user_id)).fetchall()
 
-        # Топ-5 товаров
         top_products = conn.execute("""
             SELECT g.title, COUNT(*) as cnt
             FROM posts p
@@ -426,7 +411,6 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             LIMIT 5
         """, (user_id, since)).fetchall()
 
-        # Последние 10 транзакций
         transactions = conn.execute("""
             SELECT payment_sum, currency, payment_status, order_id, action, time
             FROM admitad_transactions
