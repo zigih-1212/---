@@ -642,12 +642,18 @@ async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
         conn.close()
 
     for ch in channels:
-        final_url = partner_url
-        if ch["sub_id"]:
+            final_url = partner_url
+            if ch["sub_id"]:
+                if '?' in final_url:
+                    final_url += '&subid=' + ch["sub_id"]
+                else:
+                    final_url += '?subid=' + ch["sub_id"]
+            # Добавляем subid2 для детализации трафика
+            subid2 = generate_subid2(user_id, ch["channel_id"])
             if '?' in final_url:
-                final_url += '&subid=' + ch["sub_id"]
+                final_url += '&subid2=' + subid2
             else:
-                final_url += '?subid=' + ch["sub_id"]
+                final_url += '?subid2=' + subid2
 
         caption = generate_post_text(
             title=title,
