@@ -318,17 +318,6 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
                   ctr_alerts=ctr_alerts,
                   active_page='dashboard')
 
-@router.get("/payouts/{request_id}/chat", response_class=HTMLResponse)
-async def admin_payout_chat_page(request_id: int, request: Request, _: int = Depends(admin_required)):
-    conn = get_db()
-    try:
-        req = conn.execute("SELECT status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
-        if not req:
-            return HTMLResponse("Заявка не найдена", status_code=404)
-        return render("admin_chat.html", request_id=request_id, status=req["status"])
-    finally:
-        conn.close()
-
 @router.get("/payouts/{request_id}/chat-data")
 async def admin_chat_data(request_id: int, _: int = Depends(admin_required)):
     conn = get_db()
