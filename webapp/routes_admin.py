@@ -504,16 +504,6 @@ async def complete_payout_request(request_id: int, admin_id: int = Depends(admin
         conn.close()
     return RedirectResponse(url="/admin/payouts", status_code=303)
 
-@router.post("/payouts/request/{request_id}/decline")
-async def decline_payout_request(request_id: int, admin_id: int = Depends(admin_required)):
-    conn = get_db()
-    try:
-        conn.execute("UPDATE payout_requests SET status='declined' WHERE id=?", (request_id,))
-        conn.commit()
-        log_admin_action(admin_id, "decline_payout_request", f"request #{request_id}")
-    finally:
-        conn.close()
-    return RedirectResponse(url="/admin/payouts", status_code=303)
 # ---------- Посты ----------
 @router.get("/posts", response_class=HTMLResponse)
 async def posts_list(request: Request, status: str = "", user_id: str = "", _: int = Depends(admin_required)):
