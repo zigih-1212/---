@@ -116,6 +116,9 @@ def init_db() -> None:
     conn = get_db()
     cursor = conn.cursor()
 
+    cursor.execute("PRAGMA journal_mode=WAL;")
+    cursor.execute("PRAGMA synchronous=NORMAL;")
+  
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
