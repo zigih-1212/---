@@ -1,7 +1,6 @@
 import asyncio
 import httpx
 import re
-from bs4 import BeautifulSoup
 from xml.etree.ElementTree import XMLPullParser
 from urllib.parse import urlparse, parse_qs
 
