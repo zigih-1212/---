@@ -310,6 +310,9 @@ async def cb_galaxy_city_selected(callback: CallbackQuery):
 
     conn = get_db()
     try:
+        user_row = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        is_blogger_or_saas = user_row and user_row["role"] in ("blogger", "saas")
+
         existing = conn.execute(
             "SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = 12",
             (user_id,)
@@ -320,19 +323,20 @@ async def cb_galaxy_city_selected(callback: CallbackQuery):
                 (city_key, user_id)
             )
         else:
-            user_row = conn.execute("SELECT tariff_id FROM users WHERE user_id=?", (user_id,)).fetchone()
-            max_stores = 3
-            if user_row and user_row["tariff_id"]:
-                tariff_row = conn.execute("SELECT max_stores FROM tariffs WHERE id=?", (user_row["tariff_id"],)).fetchone()
-                if tariff_row and tariff_row["max_stores"]:
-                    max_stores = tariff_row["max_stores"]
-            current_count = conn.execute(
-                "SELECT COUNT(*) as cnt FROM user_category_preferences WHERE user_id = ?",
-                (user_id,)
-            ).fetchone()["cnt"]
-            if current_count >= max_stores:
-                await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_stores} магазинов.", show_alert=True)
-                return
+            if not is_blogger_or_saas:
+                user_row = conn.execute("SELECT tariff_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+                max_stores = 3
+                if user_row and user_row["tariff_id"]:
+                    tariff_row = conn.execute("SELECT max_stores FROM tariffs WHERE id=?", (user_row["tariff_id"],)).fetchone()
+                    if tariff_row and tariff_row["max_stores"]:
+                        max_stores = tariff_row["max_stores"]
+                current_count = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM user_category_preferences WHERE user_id = ?",
+                    (user_id,)
+                ).fetchone()["cnt"]
+                if current_count >= max_stores:
+                    await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_stores} магазинов.", show_alert=True)
+                    return
             conn.execute(
                 "INSERT INTO user_category_preferences (user_id, category_id, city) VALUES (?, ?, ?)",
                 (user_id, 12, city_key)
