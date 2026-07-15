@@ -1929,6 +1929,7 @@ async def send_subscription_reminders(bot: Bot):
             AND is_active=1
             AND subscription_until IS NOT NULL
             AND DATE(subscription_until) = ?
+            AND 1=0
         """, (target_iso,)).fetchall()
         for row in rows:
             user_id = row["user_id"]
@@ -1945,7 +1946,6 @@ async def send_subscription_reminders(bot: Bot):
                 logger.error(f"Не удалось отправить напоминание {user_id}: {e}")
     finally:
         conn.close()
-
 async def check_receipt_reminders(bot: Bot):
     """Напоминает блогерам о необходимости загрузить чек через 12 часов после отправки денег."""
     conn = get_db()
