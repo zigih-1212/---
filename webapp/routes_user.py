@@ -831,27 +831,43 @@ async def send_chat_message(token: str = Form(...), request_id: int = Form(...),
     finally:
         conn.close()
 
+from fastapi import Form
+from fastapi.responses import RedirectResponse, HTMLResponse
+from services.db import get_db
+
 @router.post("/upload-receipt")
-async def upload_receipt(token: str = Form(...), request_id: int = Form(...), file: UploadFile = File(...)):
-    user_id = get_user_id_from_token(token)
+async def upload_receipt(
+    request: Request,
+    request_id: int = Form(...),
+    receipt_link: str = Form(...)  # Теперь принимаем ссылку текстом
+):
+    # Проверка, что ссылка ведет на сайт ФНС
+    if "lknpd.nalog.ru" not in receipt_link:
+        # Если ссылка чужая - выдаем ошибку
+        return HTMLResponse(
+            "❌ Ошибка: Вы должны предоставить официальную ссылку на чек из сервиса «Мой Налог» (она начинается с lknpd.nalog.ru). <br><a href='javascript:history.back()'>Вернуться назад</a>", 
+            status_code=400
+        )
+
     conn = get_db()
     try:
-        req = conn.execute("SELECT user_id, status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
-        if not req or req["user_id"] != user_id or req["status"] != "awaiting_receipt":
-            return JSONResponse({"ok": False, "error": "Нельзя загрузить чек"})
-        ext = os.path.splitext(file.filename)[1].lower()
-        if ext not in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
-            return JSONResponse({"ok": False, "error": "Формат не поддерживается"})
-        filename = f"{uuid.uuid4()}{ext}"
-        filepath = os.path.join(UPLOAD_DIR, filename)
-        with open(filepath, "wb") as f:
-            f.write(await file.read())
-        conn.execute("INSERT INTO payout_chat (request_id, sender_role, file_path) VALUES (?, 'user', ?)", (request_id, filename))
-        conn.execute("UPDATE payout_requests SET status='receipt_uploaded', receipt_photo=? WHERE id=?", (filename, request_id))
+        # Поле receipt_photo в БД имеет тип TEXT, поэтому оно идеально подходит для хранения URL-ссылки
+        conn.execute(
+            "UPDATE payout_requests SET status = 'receipt_uploaded', receipt_photo = ? WHERE id = ?",
+            (receipt_link, request_id)
+        )
+        # Добавляем системное сообщение в чат выплат
+        conn.execute(
+            "INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'user', ?)",
+            (request_id, f"Пользователь предоставил чек (ссылка):\n{receipt_link}")
+        )
         conn.commit()
-        return JSONResponse({"ok": True})
     finally:
         conn.close()
+
+    # Редирект пользователя обратно в чат
+    token = request.query_params.get("token") or ""
+    return RedirectResponse(url=f"/my-stats/chat/{request_id}?token={token}", status_code=303)
 
 @router.get("/receipt-file")
 async def get_receipt_file(path: str = Query(...), token: str = Query(...)):
