@@ -1,6 +1,9 @@
 # services/text_rewriter.py
 import random
+import logging
 from config import CTA_PHRASES
+
+logger = logging.getLogger(__name__)
 
 TEMPLATES = [
     "🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}",
