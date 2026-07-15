@@ -1505,7 +1505,7 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
         if role == "blogger":
             conn.execute("UPDATE users SET commission_rate = 0.70 WHERE user_id = ?", (user_id,))
         else:
-            conn.execute("UPDATE users SET commission_rate = 0.95 WHERE user_id = ?", (user_id,))
+            conn.execute("UPDATE users SET commission_rate = 0.70 WHERE user_id = ?", (user_id,))
         # Реферальная связь
         if referrer_id:
             conn.execute("""
