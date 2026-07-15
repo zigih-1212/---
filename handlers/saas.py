@@ -831,7 +831,7 @@ async def cb_discount_set(callback: CallbackQuery):
 # Тарифы и оплата
 # ---------------------------------------------------------------------------
 def kb_tariffs() -> InlineKeyboardMarkup:
-    from config import load_tariffs
+    from config import load_tariffs, ADMIN_IDS, WEBAPP_ADMIN_URL, MIN_PAYOUT
     tariffs = load_tariffs()
 
     groups = {}
