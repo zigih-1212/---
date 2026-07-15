@@ -81,7 +81,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 
     <div class="card">
         <h2>📄 Отчёт для ОРД</h2>
-        <p style="margin-bottom:10px;">Скачайте CSV-файл с данными о публикациях старше 30 дней для подачи в ЕРИР.</p>
+        <p style="margin-bottom:10px;">Скачайте CSV-файл со всеми публикациями и количеством просмотров для подачи в ЕРИР.</p>
         <a id="ord-report-link" href="#" class="btn">📥 Скачать отчёт (CSV)</a>
     </div>
 
@@ -663,19 +663,51 @@ async def user_stats_page(token: str = Query(...)):
     html = USER_STATS_TEMPLATE.replace('{{ token }}', token)
     return HTMLResponse(content=html)
 
-@router.get("/ord-report")
-async def download_ord_report(token: str = Query(...)):
-    user_id = get_user_id_from_token(token)
+async def collect_views_for_user(user_id: int, bot):
+    """Собирает просмотры для всех постов пользователя и обновляет views_count."""
     conn = get_db()
     try:
-        # Посты, опубликованные более 30 дней назад
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        posts = conn.execute("""
+            SELECT p.id, p.channel_id, p.direct_link,
+                   CAST(substr(p.direct_link, instr(p.direct_link, '/')+1) AS INTEGER) as message_id
+            FROM posts p
+            WHERE p.user_id = ? AND p.status = 'published'
+        """, (user_id,)).fetchall()
+
+        updated = 0
+        for post in posts:
+            try:
+                chat_id = post["channel_id"]
+                msg_id = post["message_id"]
+                if not chat_id or not msg_id:
+                    continue
+                msg = await bot.get_message(chat_id=chat_id, message_id=msg_id)
+                if msg and msg.views:
+                    conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (msg.views, post["id"]))
+                    updated += 1
+            except Exception as e:
+                logger.warning(f"Не удалось получить просмотры для поста {post['id']}: {e}")
+        conn.commit()
+        logger.info(f"Собрано просмотров для пользователя {user_id}: {updated}")
+    finally:
+        conn.close()
+
+@router.get("/ord-report")
+async def download_ord_report(token: str = Query(...), request: Request = None):
+    user_id = get_user_id_from_token(token)
+    bot = request.app.state.bot
+
+    # Принудительно собираем просмотры перед отчётом
+    await collect_views_for_user(user_id, bot)
+
+    conn = get_db()
+    try:
         posts = conn.execute("""
             SELECT p.published_at, p.erid, p.views_count, p.direct_link
             FROM posts p
-            WHERE p.user_id = ? AND p.status = 'published' AND p.published_at <= ?
+            WHERE p.user_id = ? AND p.status = 'published'
             ORDER BY p.published_at DESC
-        """, (user_id, cutoff)).fetchall()
+        """, (user_id,)).fetchall()
     finally:
         conn.close()
 
