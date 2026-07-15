@@ -967,17 +967,72 @@ async def collect_views_for_user(user_id: int, bot):
 @router.get("/ord-report")
 async def download_ord_report(token: str = Query(...), request: Request = None):
     user_id = get_user_id_from_token(token)
+    
+    # Сбор просмотров из Telegram (ваша логика сохранена)
     bot = request.app.state.bot
     await collect_views_for_user(user_id, bot)
+    
     conn = get_db()
     try:
-        posts = conn.execute("SELECT p.published_at, p.erid, p.views_count, p.direct_link FROM posts p WHERE p.user_id = ? AND p.status = 'published' ORDER BY p.published_at DESC", (user_id,)).fetchall()
+        # Добавил фильтр AND p.erid IS NOT NULL, чтобы в ОРД не летели пустые строки
+        posts = conn.execute("""
+            SELECT p.published_at, p.erid, p.views_count, p.direct_link 
+            FROM posts p 
+            WHERE p.user_id = ? AND p.status = 'published' AND p.erid IS NOT NULL AND p.erid != ''
+            ORDER BY p.published_at DESC
+        """, (user_id,)).fetchall()
     finally:
         conn.close()
+        
     output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Дата публикации", "ERID", "Просмотры", "Ссылка на пост"])
+    
+    # ВАЖНО: BOM-маркер, чтобы Excel в Windows не ломал русские буквы
+    output.write('\ufeff')
+    writer = csv.writer(output, delimiter=',', quoting=csv.QUOTE_MINIMAL)
+    
+    # Идеальные заголовки по шаблону VK ОРД
+    writer.writerow([
+        "erid",
+        "Площадка",
+        "Тип площадки",
+        "Количество показов",
+        "Количество переходов",
+        "Сумма потраченная",
+        "Дата начала",
+        "Дата окончания"
+    ])
+    
     for p in posts:
-        writer.writerow([p["published_at"], p["erid"], p["views_count"] or 0, p["direct_link"]])
+        erid = p["erid"]
+        link = p["direct_link"] or ""
+        views = p["views_count"] or 0
+        
+        # VK ОРД требует дату в формате ДД.ММ.ГГГГ
+        try:
+            pub_date = datetime.fromisoformat(p["published_at"].replace("Z", "+00:00"))
+            date_str = pub_date.strftime("%d.%m.%Y")
+        except Exception:
+            date_str = ""
+            
+        writer.writerow([
+            erid,
+            link,
+            "Сайт/Приложение", # Стандарт для Telegram
+            views,
+            0,   # Клики (если не считаете отдельно)
+            "0", # Потраченная сумма
+            date_str,
+            ""   # Дата окончания
+        ])
+        
     output.seek(0)
-    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=ord_report_{user_id}.csv"})
+    
+    # Название файла изменено для удобства
+    from datetime import datetime as dt
+    filename = f"VK_ORD_Report_{user_id}_{dt.now().strftime('%Y%m%d')}.csv"
+    
+    return StreamingResponse(
+        iter([output.getvalue()]), 
+        media_type="text/csv", 
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
