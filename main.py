@@ -874,10 +874,8 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
     if command.args == "payout":
         await handle_payout_start(message, state)
         return  
+
     await state.clear()
-    if command.args == "payout":
-        await handle_payout_start(message, state)
-        return  
     if is_admin(message.from_user.id):
         await message.answer("👋 Добро пожаловать в Панель администратора.", reply_markup=kb_admin_panel())
         return
