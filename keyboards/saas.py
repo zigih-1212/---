@@ -10,6 +10,7 @@ def kb_cabinet_menu(role: str = "saas"):
         buttons = [
             [InlineKeyboardButton(text="🏪 Магазины", callback_data="menu:categories")],
             [InlineKeyboardButton(text="📢 Мои каналы", callback_data="menu:my_channels")],
+            [InlineKeyboardButton(text="⚙️ Периодичность постов", callback_data="blogger:post_interval")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="menu:stats")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
             [InlineKeyboardButton(text="🔗 Реферальная ссылка", callback_data="blogger:referral")],
