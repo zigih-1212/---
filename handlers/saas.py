@@ -438,7 +438,6 @@ async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int)
 
     await _publish_product(callback, bot, user_id, product, custom_template)
 
-
 async def _force_post_preview(callback: CallbackQuery, bot: Bot, user_id: int) -> None:
     conn = get_db()
     try:
@@ -494,6 +493,8 @@ async def _force_post_preview(callback: CallbackQuery, bot: Bot, user_id: int) -
         await callback.message.answer("❌ В каталоге пока нет товаров с маркировкой ERID.")
         return
 
+    # ... (далее идёт формирование caption и показ предпросмотра, без изменений)
+
     partner_url = product['partner_url'] or ''
     title = product['title'] or ''
     price = product['price'] or 0
@@ -544,11 +545,14 @@ async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, prod
     photo_url = product["image_url"]
     source = product["source"] if "source" in product.keys() else ""
 
-    channels = get_db().execute(
-        "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
-        (user_id,)
-    ).fetchall()
-    get_db().close()
+    conn = get_db()
+    try:
+        channels = conn.execute(
+            "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        ).fetchall()
+    finally:
+        conn.close()
 
     if not channels:
         await callback.message.answer("❌ У вас нет активных каналов.")
@@ -557,7 +561,17 @@ async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, prod
     for ch in channels:
         final_url = partner_url
         if ch["sub_id"]:
-            final_url += ('&' if '?' in final_url else '?') + 'subid=' + ch["sub_id"]
+            if '?' in final_url:
+                final_url += '&subid=' + ch["sub_id"]
+            else:
+                final_url += '?subid=' + ch["sub_id"]
+        # Добавляем subid2
+        subid2 = generate_subid2(user_id, ch["channel_id"])
+        if '?' in final_url:
+            final_url += '&subid2=' + subid2
+        else:
+            final_url += '?subid2=' + subid2
+
         adult = source in ADULT_STORES
         delivery_info = get_delivery_for_store(source)
         promocode = get_random_promocode(source)
@@ -583,9 +597,9 @@ async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, prod
             try:
                 conn_rec.execute(
                     """INSERT INTO posts 
-                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at, caption)
-                    VALUES (?, ?, ?, ?, ?, ?, 'published', ?)""",
-                    (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
+                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, status, published_at, caption)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
+                    (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], subid2, direct_link,
                      datetime.now(timezone.utc).isoformat(), caption)
                 )
                 conn_rec.commit()
