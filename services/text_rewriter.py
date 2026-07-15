@@ -1,5 +1,6 @@
 # services/text_rewriter.py
 import random
+from config import CTA_PHRASES
 
 TEMPLATES = [
     "🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}",
@@ -81,6 +82,12 @@ def generate_post_text(title, price, currency, advertiser, erid, partner_url,
         if adult:
             caption = "🔞 18+\n" + caption
 
+    # Подстановка CTA-фразы, если в шаблоне есть {cta_phrase}
+    if '{cta_phrase}' in caption and CTA_PHRASES:
+        caption = caption.replace('{cta_phrase}', random.choice(CTA_PHRASES))
+    elif '{cta_phrase}' in caption:
+        caption = caption.replace('{cta_phrase}', '')  # если список пуст, убираем плейсхолдер
+            
     if len(caption) > 1000:
         caption = caption[:1000] + '...'
 
