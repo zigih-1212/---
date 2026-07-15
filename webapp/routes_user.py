@@ -87,7 +87,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 
     <div class="grid">
         <div><canvas id="postsChart"></canvas></div>
-        <div><canvas id="revenueChart"></canvas></div>
+        <div id="revenue-chart-container"><canvas id="revenueChart"></canvas></div>
     </div>
     <div class="grid">
         <div><canvas id="clicksChart"></canvas></div>
@@ -101,7 +101,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         </table>
     </div>
     <div class="card">
-        <h2>🏆 Топ-5 товаров</h2>
+        <h2>🏆 Топ-5 товаров по публикациям</h2>
         <ol id="top-products"></ol>
     </div>
 </div>
@@ -116,7 +116,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     let currentPeriod = '30d';
     let postsChart, revenueChart, clicksChart, storeChart;
 
-    // Устанавливаем ссылку на отчёт ОРД
     document.getElementById('ord-report-link').href = `/my-stats/ord-report?token=${token}`;
 
     async function loadData(period) {
@@ -165,7 +164,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             txDiv.innerHTML = '<p>Нет транзакций</p>';
         }
 
-        // Графики (без изменений)
         if (postsChart) postsChart.destroy();
         postsChart = new Chart(document.getElementById('postsChart'), {
             type: 'line',
@@ -185,8 +183,10 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             }
         });
 
+        const revenueContainer = document.getElementById('revenue-chart-container');
         if (revenueChart) revenueChart.destroy();
         if (data.revenue_values && data.revenue_values.length > 0) {
+            revenueContainer.style.display = 'block';
             revenueChart = new Chart(document.getElementById('revenueChart'), {
                 type: 'line',
                 data: {
@@ -204,6 +204,9 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
                     scales: { y: { beginAtZero: true } }
                 }
             });
+        } else {
+            revenueContainer.style.display = 'none';
+            revenueChart = null;
         }
 
         if (clicksChart) clicksChart.destroy();
