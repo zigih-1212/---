@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 from aiogram import Router, F, Bot
 from aiogram.types import (
     CallbackQuery, Message, LabeledPrice,
-    InlineKeyboardMarkup, InlineKeyboardButton
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    WebAppInfo
 )
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
