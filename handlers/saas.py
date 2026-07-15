@@ -729,13 +729,13 @@ async def cb_force_cancel(callback: CallbackQuery) -> None:
 # Настройка источника товаров (заглушка)
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "saas_set:gdeslon_apikey")
-async def cb_saas_set_source(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_saas_set_source(callback: CallbackQuery) -> None:
     text = (
         "📦 <b>Источник товаров: Admitad</b>\n\n"
-        "Бот автоматически получает товары из магазинов-партнёров "
-        "(Читай-город, Hi Store, KANZLER и др.) с готовой маркировкой ERID.\n"
-        "API-ключ вводить не нужно — всё работает автоматически.\n\n"
-        "Вы можете выбрать магазины в разделе «🏪 Магазины»."
+        "Бот автоматически загружает товары из выбранных вами магазинов-партнёров "
+        "(Читай-город, KANZLER, SELA, Hi Store и других).\n"
+        "Все товары поступают с готовой маркировкой ERID — дополнительных действий не требуется.\n\n"
+        "Вы управляете ассортиментом через раздел «🏪 Магазины» в кабинете."
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Назад в настройки", callback_data="menu:settings")]
