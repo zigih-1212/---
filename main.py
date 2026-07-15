@@ -737,16 +737,19 @@ async def cb_blogger_referral(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
     try:
-        sub_id = conn.execute("SELECT sub_id FROM users WHERE user_id = ?", (user_id,)).fetchone()["sub_id"]
+        user = conn.execute("SELECT role, sub_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        sub_id = user["sub_id"]
+        role = user["role"]
     finally:
         conn.close()
     ref_link = f"https://t.me/{BOT_USERNAME}?start={sub_id}"
+    if role == "saas":
+        invite_text = "Приглашайте других SaaS-клиентов по этой ссылке.\nКогда они начнут зарабатывать, вы будете получать 10% от их дохода (эта сумма вычитается из их заработка)."
+    else:
+        invite_text = "Приглашайте других блогеров по этой ссылке.\nКогда они начнут зарабатывать, вы будете получать 10% от их дохода (эта сумма вычитается из их заработка)."
     await callback.message.edit_text(
         f"🔗 <b>Ваша реферальная ссылка:</b>\n\n"
-        f"<code>{ref_link}</code>\n\n"
-        "Приглашайте других блогеров по этой ссылке.\n"
-        "Когда они начнут зарабатывать, вы будете получать <b>10%</b> от их дохода (эта сумма вычитается из их заработка)."
-        "Ссылка работает только для новых блогеров.",
+        f"<code>{ref_link}</code>\n\n{invite_text}",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
