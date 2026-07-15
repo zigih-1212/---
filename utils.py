@@ -148,14 +148,13 @@ async def generate_success_text(user_id: int, role: str = "blogger") -> str:
             WHERE user_id=? AND time >= strftime('%s', 'now', '-30 days')
         """, (user_id,)).fetchone()[0] or 0
 
-    finally:
-        conn.close()
-
+        # Перенесено внутрь try, чтобы соединение было открыто
     if role == "saas":
         role_text = "SaaS-клиент AutoPost"
     else:
         role_text = "Блогер AutoPost"
 
+    # sub_id уже получен внутри try
     lines = [
         f"🚀 Я зарабатываю с AutoPost Bot!",
         f"👤 {role_text}",
@@ -169,12 +168,9 @@ async def generate_success_text(user_id: int, role: str = "blogger") -> str:
     lines.append(f"💰 Заработано за 30 дней: {recent_earn:.0f} ₽")
     lines.append(f"💳 Общий баланс: {total_earned:.0f} ₽ (доступно {available:.0f} ₽)")
 
-    if role == "blogger":
-        # Реферальная ссылка
-        sub_id = conn.execute("SELECT sub_id FROM users WHERE user_id=?", (user_id,)).fetchone()
-        if sub_id:
-            ref_link = f"https://t.me/{BOT_USERNAME}?start={sub_id['sub_id']}"
-            lines.append(f"\n🔗 Присоединяйся: {ref_link}")
+    if role == "blogger" and sub_id:
+        ref_link = f"https://t.me/{BOT_USERNAME}?start={sub_id}"
+        lines.append(f"\n🔗 Присоединяйся: {ref_link}")
 
     return "\n".join(lines)
 
