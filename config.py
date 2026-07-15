@@ -99,3 +99,10 @@ CARD_TBANK: str = os.getenv("PAY_TBANK", "2200 7013 7009 3863")
 CARD_TON: str = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBray_FJRJoWZa1OOLnq-geGIbGT")
 CARD_VISA_KG: str = os.getenv("PAY_VISA_KG", "4196720087839790")
 DB_PATH: str = "/app/data/autopost.db"
+
+CTA_PHRASES = [
+    "🔥 Количество товара по акции ограничено!",
+    "⚡️ Скидка актуальна на момент публикации.",
+    "📦 Разбирают очень быстро, проверяйте наличие по ссылке!",
+    "⏳ Акция действует ограниченное время.",
+]
