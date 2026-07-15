@@ -557,8 +557,10 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
 
 <script>
 const token = "{{ token }}";
+const role = "{{ role }}";   // "saas" или "blogger"
+const isSaaS = (role === "saas");
 let currentTab = 'product';
-const isSaaS = {{ 'true' if role == 'saas' else 'false' }};
+
 const placeholders = {
     product: ['{title}', '{price}', '{currency}', '{link}', '{advertiser}', '{erid}', '{old_price}', '{discount_percent}', '{delivery_line}', '{promocode_line}', '{price_label}', '{cta_phrase}'],
     video: ['{title}', '{link}', '{description}']
@@ -567,27 +569,31 @@ const defaultProduct = `🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {curr
 const defaultVideo = `🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href='{link}'>Смотреть</a>`;
 
 if (isSaaS) {
+    // Скрываем вкладку видео
     document.getElementById('tab-video').style.display = 'none';
     document.getElementById('tab-video-content').style.display = 'none';
 }
 
 async function loadTemplates() {
-    const resp = await fetch(`/my-stats/get-templates?token=${token}`);
-    const data = await resp.json();
-    document.getElementById('product-template').value = data.product_template || defaultProduct;
-    if (!isSaaS) {
-        document.getElementById('video-template').value = data.video_template || defaultVideo;
-        renderPlaceholders('video');
+    try {
+        const resp = await fetch(`/my-stats/get-templates?token=${token}`);
+        const data = await resp.json();
+        document.getElementById('product-template').value = data.product_template || defaultProduct;
+        if (!isSaaS) {
+            document.getElementById('video-template').value = data.video_template || defaultVideo;
+            renderPlaceholders('video');
+        }
+        renderPlaceholders('product');
+        updatePreview();
+    } catch(e) {
+        console.error(e);
     }
-    renderPlaceholders('product');
-    updatePreview();
 }
 
 function renderPlaceholders(type) {
     const container = document.getElementById(`${type}-placeholders`);
-    if (container) {
-        container.innerHTML = placeholders[type].map(p => `<button class="placeholder-btn" onclick="insertPlaceholder('${type}', '${p}')">${p}</button>`).join('');
-    }
+    if (!container) return;
+    container.innerHTML = placeholders[type].map(p => `<button class="placeholder-btn" onclick="insertPlaceholder('${type}', '${p}')">${p}</button>`).join('');
 }
 
 function insertPlaceholder(type, placeholder) {
