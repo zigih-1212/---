@@ -1058,22 +1058,25 @@ async def show_user_cabinet(message: Message, user_id: int = None):
         return
 
     # role уже определена выше
-    sub_until = user["subscription_until"]
-    if sub_until:
-        try:
-            end_dt = datetime.fromisoformat(sub_until.replace("Z", "+00:00"))
-            now_dt = datetime.now(timezone.utc)
-            if now_dt < end_dt:
-                diff = end_dt - now_dt
-                days = diff.days
-                hours = diff.seconds // 3600
-                status_text = f"✅ Активна • <b>{days} дн. {hours} ч.</b>"
-            else:
-                status_text = "❌ Подписка истекла"
-        except Exception:
-            status_text = "⚠️ Ошибка чтения даты"
+    if role in ("blogger", "saas"):
+        status_text = "♾️ Бессрочный доступ"
     else:
-        status_text = "♾️ Бессрочный доступ" if role == "blogger" else "❌ Подписка не активирована"
+        sub_until = user["subscription_until"]
+        if sub_until:
+            try:
+                end_dt = datetime.fromisoformat(sub_until.replace("Z", "+00:00"))
+                now_dt = datetime.now(timezone.utc)
+                if now_dt < end_dt:
+                    diff = end_dt - now_dt
+                    days = diff.days
+                    hours = diff.seconds // 3600
+                    status_text = f"✅ Активна • <b>{days} дн. {hours} ч.</b>"
+                else:
+                    status_text = "❌ Подписка истекла"
+            except Exception:
+                status_text = "⚠️ Ошибка чтения даты"
+        else:
+            status_text = "❌ Подписка не активирована"
 
     # Финансовый блок
     finance_text = ""
