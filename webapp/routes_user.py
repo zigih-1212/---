@@ -1,24 +1,29 @@
-# webapp/routes_user.py — полная версия с чатом выплат и редактором шаблонов
+# webapp/routes_user.py — полная актуальная версия
 
 import os
 import uuid
+import csv
+import io
+import logging
 from fastapi import APIRouter, Request, Query, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from services.db import get_db
 from webapp.auth import get_user_id_from_token
 from datetime import datetime, timedelta, timezone, date
 from config import BOT_USERNAME, MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from services.text_rewriter import generate_post_text
-from services.admitad import get_delivery_for_store, get_random_promocode, STORE_ID_MAP, ADULT_STORES
-from fastapi.responses import StreamingResponse
+from services.admitad import get_delivery_for_store, get_random_promocode
 
 router = APIRouter()
+logger = logging.getLogger("autopost_bot.user")
 
 UPLOAD_DIR = "/app/data/receipts"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ---------- Шаблон основной страницы статистики (с навигацией) ----------
+# ------------------------------------------------------------------------------
+# Шаблон главной страницы статистики
+# ------------------------------------------------------------------------------
 USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -354,7 +359,9 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 </body>
 </html>'''
 
-# ---------- Шаблон чата выплат (для пользователя) ----------
+# ------------------------------------------------------------------------------
+# Шаблон чата выплат (пользователь)
+# ------------------------------------------------------------------------------
 CHAT_TEMPLATE = r'''<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -474,7 +481,9 @@ loadMessages();
 </body>
 </html>'''
 
-# ---------- Шаблон редактора шаблонов ----------
+# ------------------------------------------------------------------------------
+# Шаблон редактора шаблонов (с учётом роли)
+# ------------------------------------------------------------------------------
 TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -557,7 +566,6 @@ const placeholders = {
 const defaultProduct = `🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}\n{promocode_line}{delivery_line}\n{cta_phrase}\n\nРеклама. {advertiser}. Erid: {erid}`;
 const defaultVideo = `🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href='{link}'>Смотреть</a>`;
 
-// Скрываем вкладку Видео для SaaS
 if (isSaaS) {
     document.getElementById('tab-video').style.display = 'none';
     document.getElementById('tab-video-content').style.display = 'none';
@@ -667,76 +675,16 @@ loadTemplates();
 </body>
 </html>'''
 
-# ---------- Эндпоинты статистики (без изменений) ----------
+# ------------------------------------------------------------------------------
+# Эндпоинты
+# ------------------------------------------------------------------------------
+
 @router.get("/", response_class=HTMLResponse)
 async def user_stats_page(token: str = Query(...)):
     get_user_id_from_token(token)
-    # Подставим token в навигацию
     html = USER_STATS_TEMPLATE.replace('{{ token }}', token)
     return HTMLResponse(content=html)
 
-async def collect_views_for_user(user_id: int, bot):
-    """Собирает просмотры для всех постов пользователя и обновляет views_count."""
-    conn = get_db()
-    try:
-        posts = conn.execute("""
-            SELECT p.id, p.channel_id, p.direct_link,
-                   CAST(substr(p.direct_link, instr(p.direct_link, '/')+1) AS INTEGER) as message_id
-            FROM posts p
-            WHERE p.user_id = ? AND p.status = 'published'
-        """, (user_id,)).fetchall()
-
-        updated = 0
-        for post in posts:
-            try:
-                chat_id = post["channel_id"]
-                msg_id = post["message_id"]
-                if not chat_id or not msg_id:
-                    continue
-                msg = await bot.get_message(chat_id=chat_id, message_id=msg_id)
-                if msg and msg.views:
-                    conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (msg.views, post["id"]))
-                    updated += 1
-            except Exception as e:
-                logger.warning(f"Не удалось получить просмотры для поста {post['id']}: {e}")
-        conn.commit()
-        logger.info(f"Собрано просмотров для пользователя {user_id}: {updated}")
-    finally:
-        conn.close()
-
-@router.get("/ord-report")
-async def download_ord_report(token: str = Query(...), request: Request = None):
-    user_id = get_user_id_from_token(token)
-    bot = request.app.state.bot
-
-    # Принудительно собираем просмотры перед отчётом
-    await collect_views_for_user(user_id, bot)
-
-    conn = get_db()
-    try:
-        posts = conn.execute("""
-            SELECT p.published_at, p.erid, p.views_count, p.direct_link
-            FROM posts p
-            WHERE p.user_id = ? AND p.status = 'published'
-            ORDER BY p.published_at DESC
-        """, (user_id,)).fetchall()
-    finally:
-        conn.close()
-
-    import csv, io
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Дата публикации", "ERID", "Просмотры", "Ссылка на пост"])
-    for p in posts:
-        writer.writerow([p["published_at"], p["erid"], p["views_count"] or 0, p["direct_link"]])
-    output.seek(0)
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=ord_report_{user_id}.csv"}
-    )
-    
 @router.get("/data")
 async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
     user_id = get_user_id_from_token(token)
@@ -767,13 +715,7 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         conversion_values = [round(l / c * 100, 1) if c > 0 else 0.0 for c, l in zip(clicks_counts, leads_counts)]
         channel_rows = conn.execute("""SELECT c.channel_title, c.channel_id, COUNT(p.id) as posts_cnt, COALESCE(s.clicks_count, 0) as clicks, COALESCE(s.leads_count, 0) as leads, COALESCE(s.earnings_approved, 0) as earnings FROM channels c LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.user_id = c.user_id AND p.status='published' AND p.published_at >= ? LEFT JOIN subid_stats s ON s.subid1 = c.sub_id WHERE c.user_id = ? AND c.is_active = 1 GROUP BY c.channel_id ORDER BY earnings DESC""", (since, user_id)).fetchall()
         top_products = conn.execute("""SELECT g.title, COUNT(*) as cnt FROM posts p JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%' WHERE p.user_id = ? AND p.status='published' AND p.published_at >= ? GROUP BY g.title ORDER BY cnt DESC LIMIT 5""", (user_id, since)).fetchall()
-        transactions = conn.execute("""
-            SELECT payment_sum, currency, payment_status, order_id, action, time, decline_reason
-            FROM admitad_transactions
-            WHERE user_id = ?
-            ORDER BY time DESC
-            LIMIT 10
-        """, (user_id,)).fetchall()
+        transactions = conn.execute("""SELECT payment_sum, currency, payment_status, order_id, action, time, decline_reason FROM admitad_transactions WHERE user_id = ? ORDER BY time DESC LIMIT 10""", (user_id,)).fetchall()
         return JSONResponse({
             "posts_labels": [r["day"] for r in post_rows],
             "posts_counts": [r["count"] for r in post_rows],
@@ -791,27 +733,129 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             "total_revenue": total_revenue,
             "channels": [{"title": r["channel_title"] or r["channel_id"], "posts": r["posts_cnt"], "clicks": r["clicks"], "leads": r["leads"], "earnings": r["earnings"], "conversion": round(r["leads"] / r["clicks"] * 100, 1) if r["clicks"] > 0 else 0} for r in channel_rows],
             "top_products": [{"title": r["title"], "count": r["cnt"]} for r in top_products],
-            "recent_transactions": [
-                {
-                    "amount": t["payment_sum"],
-                    "currency": t["currency"],
-                    "status": t["payment_status"],
-                    "order_id": t["order_id"],
-                    "action": t["action"],
-                    "date": datetime.fromtimestamp(int(t["time"]), tz=timezone.utc).strftime("%d.%m.%Y %H:%M") if t["time"] else "",
-                    "decline_reason": t["decline_reason"] or ""
-                } for t in transactions
-            ] if transactions else [],
+            "recent_transactions": [{"amount": t["payment_sum"], "currency": t["currency"], "status": t["payment_status"], "order_id": t["order_id"], "action": t["action"], "date": datetime.fromtimestamp(int(t["time"]), tz=timezone.utc).strftime("%d.%m.%Y %H:%M") if t["time"] else "", "decline_reason": t["decline_reason"] or ""} for t in transactions] if transactions else [],
             "bot_username": BOT_USERNAME
         })
     finally:
         conn.close()
 
-# ---------- Эндпоинты чата выплат (без изменений) ----------
-# ... все существующие эндпоинты для чата, выплат, загрузки чека остаются без изменений ниже
-# (копируем их из предыдущей версии)
+@router.get("/chat/{request_id}", response_class=HTMLResponse)
+async def user_chat_page(request_id: int, token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT id, status FROM payout_requests WHERE id=? AND user_id=?", (request_id, user_id)).fetchone()
+        if not req:
+            return HTMLResponse("Заявка не найдена", status_code=404)
+        html = CHAT_TEMPLATE.replace("{{ request_id }}", str(request_id)).replace("{{ status }}", req["status"]).replace("{{ token }}", token)
+        return HTMLResponse(content=html)
+    finally:
+        conn.close()
 
-# ---------- НОВЫЕ ЭНДПОИНТЫ ДЛЯ ШАБЛОНОВ ----------
+@router.post("/request-payout")
+async def request_payout(request: Request, token: str = Form(...), details: str = Form(...)):
+    user_id = get_user_id_from_token(token)
+    if len(details.strip()) < 10:
+        return JSONResponse({"ok": False, "error": "Слишком короткие реквизиты"})
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role, balance_available, tax_status, oferta_accepted FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user or user["oferta_accepted"] != 1:
+            return JSONResponse({"ok": False, "error": "Оферта не принята"})
+        if user["tax_status"] != "business":
+            return JSONResponse({"ok": False, "error": "Требуется статус самозанятого/ИП"})
+        available = user["balance_available"] or 0.0
+        if available < MIN_PAYOUT:
+            return JSONResponse({"ok": False, "error": f"Минимальная сумма вывода: {MIN_PAYOUT} ₽"})
+        active = conn.execute("SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')", (user_id,)).fetchone()
+        if active:
+            return JSONResponse({"ok": False, "error": "У вас уже есть активная заявка"})
+        conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (available, user_id))
+        cursor = conn.execute("INSERT INTO payout_requests (user_id, amount, message, status) VALUES (?, ?, ?, 'processing')", (user_id, available, details.strip()))
+        request_id = cursor.lastrowid
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'user', ?)", (request_id, f"Реквизиты: {details.strip()}"))
+        conn.commit()
+        bot = request.app.state.bot
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(admin_id, f"🔔 Новый запрос на выплату #{request_id}\nПользователь: {user_id}\nСумма: {available:.2f} ₽", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🌐 Админка", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))]]))
+            except: pass
+        return JSONResponse({"ok": True, "request_id": request_id})
+    finally:
+        conn.close()
+
+@router.get("/payout-status")
+async def payout_status(token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        active = conn.execute("SELECT id, status FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded') ORDER BY id DESC LIMIT 1", (user_id,)).fetchone()
+        if active:
+            return JSONResponse({"has_active": True, "request_id": active["id"], "status": active["status"]})
+        return JSONResponse({"has_active": False})
+    finally:
+        conn.close()
+
+@router.get("/payout-chat/{request_id}")
+async def get_payout_chat(request_id: int, token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT user_id FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req or req["user_id"] != user_id:
+            return JSONResponse([])
+        messages = conn.execute("SELECT sender_role, message, file_path, created_at FROM payout_chat WHERE request_id = ? ORDER BY created_at ASC", (request_id,)).fetchall()
+        return JSONResponse([{"sender_role": m["sender_role"], "message": m["message"], "file_path": m["file_path"], "created_at": m["created_at"]} for m in messages])
+    finally:
+        conn.close()
+
+@router.post("/send-message")
+async def send_chat_message(token: str = Form(...), request_id: int = Form(...), message: str = Form(...)):
+    user_id = get_user_id_from_token(token)
+    if not message.strip():
+        return JSONResponse({"ok": False})
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT user_id, status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req or req["user_id"] != user_id or req["status"] in ('completed', 'declined'):
+            return JSONResponse({"ok": False})
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'user', ?)", (request_id, message.strip()))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    finally:
+        conn.close()
+
+@router.post("/upload-receipt")
+async def upload_receipt(token: str = Form(...), request_id: int = Form(...), file: UploadFile = File(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        req = conn.execute("SELECT user_id, status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+        if not req or req["user_id"] != user_id or req["status"] != "awaiting_receipt":
+            return JSONResponse({"ok": False, "error": "Нельзя загрузить чек"})
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+            return JSONResponse({"ok": False, "error": "Формат не поддерживается"})
+        filename = f"{uuid.uuid4()}{ext}"
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        with open(filepath, "wb") as f:
+            f.write(await file.read())
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, file_path) VALUES (?, 'user', ?)", (request_id, filename))
+        conn.execute("UPDATE payout_requests SET status='receipt_uploaded', receipt_photo=? WHERE id=?", (filename, request_id))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    finally:
+        conn.close()
+
+@router.get("/receipt-file")
+async def get_receipt_file(path: str = Query(...), token: str = Query(...)):
+    get_user_id_from_token(token)
+    full_path = os.path.join(UPLOAD_DIR, path)
+    if not os.path.exists(full_path):
+        return HTMLResponse("Файл не найден", status_code=404)
+    return FileResponse(full_path)
+
+# ---------- Шаблоны ----------
 @router.get("/templates", response_class=HTMLResponse)
 async def templates_page(token: str = Query(...)):
     user_id = get_user_id_from_token(token)
@@ -830,10 +874,7 @@ async def get_templates(token: str = Query(...)):
     conn = get_db()
     try:
         user = conn.execute("SELECT product_template, video_template FROM users WHERE user_id=?", (user_id,)).fetchone()
-        return JSONResponse({
-            "product_template": user["product_template"] if user else "",
-            "video_template": user["video_template"] if user else ""
-        })
+        return JSONResponse({"product_template": user["product_template"] if user else "", "video_template": user["video_template"] if user else ""})
     finally:
         conn.close()
 
@@ -857,7 +898,7 @@ async def preview_template(token: str = Query(...), type: str = Query("product")
     conn = get_db()
     try:
         if type == "product":
-            product = conn.execute("""SELECT * FROM gdeslon_catalog WHERE user_id=? AND erid IS NOT NULL AND erid != '' ORDER BY RANDOM() LIMIT 1""", (user_id,)).fetchone()
+            product = conn.execute("SELECT * FROM gdeslon_catalog WHERE user_id=? AND erid IS NOT NULL AND erid != '' ORDER BY RANDOM() LIMIT 1", (user_id,)).fetchone()
             if not product:
                 return JSONResponse({"html": "Нет товаров для предпросмотра"})
             delivery_info = get_delivery_for_store(product["source"] or "")
@@ -874,7 +915,47 @@ async def preview_template(token: str = Query(...), type: str = Query("product")
             )
             return JSONResponse({"html": caption})
         else:
-            # Видео предпросмотр не реализован, возвращаем заглушку
             return JSONResponse({"html": "Предпросмотр видео пока недоступен"})
     finally:
         conn.close()
+
+# ---------- Отчёт ОРД с принудительным сбором просмотров ----------
+async def collect_views_for_user(user_id: int, bot):
+    conn = get_db()
+    try:
+        posts = conn.execute("SELECT p.id, p.channel_id, p.direct_link, CAST(substr(p.direct_link, instr(p.direct_link, '/')+1) AS INTEGER) as message_id FROM posts p WHERE p.user_id = ? AND p.status = 'published'", (user_id,)).fetchall()
+        updated = 0
+        for post in posts:
+            try:
+                chat_id = post["channel_id"]
+                msg_id = post["message_id"]
+                if not chat_id or not msg_id:
+                    continue
+                msg = await bot.get_message(chat_id=chat_id, message_id=msg_id)
+                if msg and msg.views:
+                    conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (msg.views, post["id"]))
+                    updated += 1
+            except Exception as e:
+                logger.warning(f"Не удалось получить просмотры для поста {post['id']}: {e}")
+        conn.commit()
+        logger.info(f"Собрано просмотров для пользователя {user_id}: {updated}")
+    finally:
+        conn.close()
+
+@router.get("/ord-report")
+async def download_ord_report(token: str = Query(...), request: Request = None):
+    user_id = get_user_id_from_token(token)
+    bot = request.app.state.bot
+    await collect_views_for_user(user_id, bot)
+    conn = get_db()
+    try:
+        posts = conn.execute("SELECT p.published_at, p.erid, p.views_count, p.direct_link FROM posts p WHERE p.user_id = ? AND p.status = 'published' ORDER BY p.published_at DESC", (user_id,)).fetchall()
+    finally:
+        conn.close()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Дата публикации", "ERID", "Просмотры", "Ссылка на пост"])
+    for p in posts:
+        writer.writerow([p["published_at"], p["erid"], p["views_count"] or 0, p["direct_link"]])
+    output.seek(0)
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=ord_report_{user_id}.csv"})
