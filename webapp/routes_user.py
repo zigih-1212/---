@@ -547,10 +547,10 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
 const token = "{{ token }}";
 let currentTab = 'product';
 const placeholders = {
-    product: ['{title}', '{price}', '{currency}', '{link}', '{advertiser}', '{erid}', '{old_price}', '{discount_percent}', '{delivery_line}', '{promocode_line}', '{price_label}'],
+    product: ['{title}', '{price}', '{currency}', '{link}', '{advertiser}', '{erid}', '{old_price}', '{discount_percent}', '{delivery_line}', '{promocode_line}', '{price_label}', '{cta_phrase}'],
     video: ['{title}', '{link}', '{description}']
 };
-const defaultProduct = `🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}\n{promocode_line}{delivery_line}\n\nРеклама. {advertiser}. Erid: {erid}`;
+const defaultProduct = `🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}\n{promocode_line}{delivery_line}\n{cta_phrase}\n\nРеклама. {advertiser}. Erid: {erid}`;
 const defaultVideo = `🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href='{link}'>Смотреть</a>`;
 
 async function loadTemplates() {
@@ -595,7 +595,8 @@ function updatePreview() {
             discount_line: '\n🔥 Скидка 33%',
             delivery_line: '\n🚚 Бесплатная доставка',
             promocode_line: '\n🎟 Промокод: SALE',
-            price_label: 'Цена'
+            price_label: 'Цена',
+            cta_phrase: '🔥 Количество товара по акции ограничено!'
         };
         preview.innerHTML = template.replace(/\{(\w+)\}/g, (match, key) => testData[key] || match);
     } else {
