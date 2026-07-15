@@ -510,9 +510,7 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     <h1>📝 Шаблоны постов</h1>
     <div class="tabs">
         <button id="tab-product" class="active" onclick="switchTab('product')">Товарный</button>
-        {% if role != 'saas' %}
         <button id="tab-video" onclick="switchTab('video')">Видео</button>
-        {% endif %}
     </div>
 
     <div id="tab-product-content" class="editor-panel">
@@ -529,7 +527,6 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
             <div id="product-placeholders"></div>
         </div>
     </div>
-    {% if role != 'saas' %}
     <div id="tab-video-content" class="editor-panel" style="display:none;">
         <div class="editor">
             <textarea id="video-template" placeholder="Введите шаблон..."></textarea>
@@ -543,7 +540,6 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
             <div id="video-placeholders"></div>
         </div>
     </div>
-    {% endif %}
     <div class="preview-box">
         <h3>Предпросмотр</h3>
         <div id="preview-content"></div>
@@ -553,6 +549,7 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
 <script>
 const token = "{{ token }}";
 let currentTab = 'product';
+const isSaaS = {{ 'true' if role == 'saas' else 'false' }};
 const placeholders = {
     product: ['{title}', '{price}', '{currency}', '{link}', '{advertiser}', '{erid}', '{old_price}', '{discount_percent}', '{delivery_line}', '{promocode_line}', '{price_label}', '{cta_phrase}'],
     video: ['{title}', '{link}', '{description}']
@@ -560,13 +557,18 @@ const placeholders = {
 const defaultProduct = `🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}\n{promocode_line}{delivery_line}\n{cta_phrase}\n\nРеклама. {advertiser}. Erid: {erid}`;
 const defaultVideo = `🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href='{link}'>Смотреть</a>`;
 
+// Скрываем вкладку Видео для SaaS
+if (isSaaS) {
+    document.getElementById('tab-video').style.display = 'none';
+    document.getElementById('tab-video-content').style.display = 'none';
+}
+
 async function loadTemplates() {
     const resp = await fetch(`/my-stats/get-templates?token=${token}`);
     const data = await resp.json();
     document.getElementById('product-template').value = data.product_template || defaultProduct;
-    const videoEl = document.getElementById('video-template');
-    if (videoEl) {
-        videoEl.value = data.video_template || defaultVideo;
+    if (!isSaaS) {
+        document.getElementById('video-template').value = data.video_template || defaultVideo;
         renderPlaceholders('video');
     }
     renderPlaceholders('product');
@@ -575,11 +577,14 @@ async function loadTemplates() {
 
 function renderPlaceholders(type) {
     const container = document.getElementById(`${type}-placeholders`);
-    container.innerHTML = placeholders[type].map(p => `<button class="placeholder-btn" onclick="insertPlaceholder('${type}', '${p}')">${p}</button>`).join('');
+    if (container) {
+        container.innerHTML = placeholders[type].map(p => `<button class="placeholder-btn" onclick="insertPlaceholder('${type}', '${p}')">${p}</button>`).join('');
+    }
 }
 
 function insertPlaceholder(type, placeholder) {
     const textarea = document.getElementById(`${type}-template`);
+    if (!textarea) return;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const text = textarea.value;
