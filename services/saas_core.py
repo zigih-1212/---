@@ -168,26 +168,7 @@ async def publish_from_catalog(bot: Bot):
         # Лимит постов для SaaS
         max_posts_per_hour = 1
         if role == "saas" and tariff_id:
-            conn = get_db()
-            try:
-                tariff = conn.execute("SELECT max_posts_per_day FROM tariffs WHERE id = ?", (tariff_id,)).fetchone()
-                if tariff and tariff["max_posts_per_day"]:
-                    max_posts_per_hour = max(1, tariff["max_posts_per_day"] // 24)
-            finally:
-                conn.close()
-
-            conn = get_db()
-            try:
-                hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-                posts_last_hour = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM posts WHERE user_id = ? AND status = 'published' AND published_at >= ? AND donor_post_id LIKE 'admitad_%'",
-                    (user_id, hour_ago)
-                ).fetchone()["cnt"]
-            finally:
-                conn.close()
-            if posts_last_hour >= max_posts_per_hour:
-                logger.info(f"[DEBUG] User {user_id}: лимит превышен, пропускаем")
-                continue
+            pass   # полностью игнорируем ограничения
 
         # Загружаем выбранные пользователем магазины
         conn = get_db()
