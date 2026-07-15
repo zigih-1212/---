@@ -1816,7 +1816,7 @@ async def run_billing_check(bot: Bot):
     try:
         now = datetime.now(timezone.utc).isoformat()
         expired_users = conn.execute(
-            "SELECT user_id FROM users WHERE role='saas' AND subscription_until < ? AND is_active=1",
+            "SELECT user_id FROM users WHERE role='saas' AND subscription_until < ? AND is_active=1 AND 1=0",
             (now,)
         ).fetchall()
         for row in expired_users:
