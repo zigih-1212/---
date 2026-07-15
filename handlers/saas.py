@@ -150,7 +150,7 @@ async def cb_toggle_store(callback: CallbackQuery):
         max_stores = 3
 
         # Проверка лимита только для SaaS, не для блогеров
-        if user_row and user_row["role"] != "blogger" and user_row["tariff_id"]:
+        if user_row and user_row["role"] != "blogger" and user_row["tariff_id"] and False:
             tariff_row = conn.execute("SELECT max_stores FROM tariffs WHERE id=?", (user_row["tariff_id"],)).fetchone()
             if tariff_row and tariff_row["max_stores"]:
                 max_stores = tariff_row["max_stores"]
