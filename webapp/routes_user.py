@@ -510,7 +510,9 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     <h1>📝 Шаблоны постов</h1>
     <div class="tabs">
         <button id="tab-product" class="active" onclick="switchTab('product')">Товарный</button>
+        {% if role != 'saas' %}
         <button id="tab-video" onclick="switchTab('video')">Видео</button>
+        {% endif %}
     </div>
 
     <div id="tab-product-content" class="editor-panel">
@@ -527,6 +529,7 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
             <div id="product-placeholders"></div>
         </div>
     </div>
+    {% if role != 'saas' %}
     <div id="tab-video-content" class="editor-panel" style="display:none;">
         <div class="editor">
             <textarea id="video-template" placeholder="Введите шаблон..."></textarea>
@@ -540,6 +543,7 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
             <div id="video-placeholders"></div>
         </div>
     </div>
+    {% endif %}
     <div class="preview-box">
         <h3>Предпросмотр</h3>
         <div id="preview-content"></div>
@@ -560,9 +564,12 @@ async function loadTemplates() {
     const resp = await fetch(`/my-stats/get-templates?token=${token}`);
     const data = await resp.json();
     document.getElementById('product-template').value = data.product_template || defaultProduct;
-    document.getElementById('video-template').value = data.video_template || defaultVideo;
+    const videoEl = document.getElementById('video-template');
+    if (videoEl) {
+        videoEl.value = data.video_template || defaultVideo;
+        renderPlaceholders('video');
+    }
     renderPlaceholders('product');
-    renderPlaceholders('video');
     updatePreview();
 }
 
@@ -802,8 +809,14 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
 # ---------- НОВЫЕ ЭНДПОИНТЫ ДЛЯ ШАБЛОНОВ ----------
 @router.get("/templates", response_class=HTMLResponse)
 async def templates_page(token: str = Query(...)):
-    get_user_id_from_token(token)
-    html = TEMPLATES_PAGE_TEMPLATE.replace('{{ token }}', token)
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        role = user["role"] if user else "blogger"
+    finally:
+        conn.close()
+    html = TEMPLATES_PAGE_TEMPLATE.replace('{{ token }}', token).replace('{{ role }}', role)
     return HTMLResponse(content=html)
 
 @router.get("/get-templates")
