@@ -406,39 +406,6 @@ async def payouts_list(request: Request, admin_id: int = Depends(admin_required)
         conn.close()
     return render("admin_payouts.html", users=users, requests=requests, active_page='payouts', bot_username=BOT_USERNAME)
 
-@router.post("/payouts/request/{request_id}/send-money")
-async def send_money(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
-    conn = get_db()
-    try:
-        req = conn.execute("SELECT * FROM payout_requests WHERE id=? AND status='processing'", (request_id,)).fetchone()
-        if not req:
-            return RedirectResponse(url="/admin/payouts", status_code=303)
-        user_id = req["user_id"]
-        now_iso = datetime.now(timezone.utc).isoformat()
-        conn.execute(
-            "UPDATE payout_requests SET status='awaiting_receipt', sent_at=?, receipt_reminded=0 WHERE id=?",
-            (now_iso, request_id)
-        )
-        conn.commit()
-        bot = request.app.state.bot
-        try:
-            await bot.send_message(
-                user_id,
-                f"💰 Вам отправлен перевод на сумму <b>{req['amount']} ₽</b>.\n"
-                "В соответствии с законом, вы обязаны в течение 24 часов сформировать чек в приложении «Мой налог» "
-                "и отправить его через веб-статистику, нажав «📤 Отправить чек».",
-                parse_mode=ParseMode.HTML
-            )
-        except Exception as e:
-            logger.error(f"Не удалось уведомить пользователя {user_id}: {e}")
-        log_admin_action(admin_id, "send_money", f"request #{request_id}")
-    except Exception as e:
-        logger.error(f"Ошибка в send_money: {e}")
-    finally:
-        conn.close()
-    return RedirectResponse(url="/admin/payouts", status_code=303)
-
-
 @router.post("/payouts/request/{request_id}/decline")
 async def decline_payout_request(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
     conn = get_db()
