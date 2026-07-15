@@ -171,16 +171,6 @@ async def admin_payout_chat(request_id: int, _: int = Depends(admin_required)):
     finally:
         conn.close()
 
-@router.post("/payouts/{request_id}/send-message")
-async def admin_send_message(request_id: int, message: str = Form(...), _: int = Depends(admin_required)):
-    conn = get_db()
-    try:
-        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'admin', ?)",
-                     (request_id, message))
-        conn.commit()
-        return JSONResponse({"ok": True})
-    finally:
-        conn.close()
 
 # Модифицируем send_money, decline, confirm_receipt
 @router.post("/payouts/request/{request_id}/send-money")
