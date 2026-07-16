@@ -362,3 +362,30 @@ async def publish_from_catalog(bot: Bot):
                     logger.error(f"Не удалось записать в карантин: {db_err}")
                 finally:
                     conn_q.close()
+
+async def pin_post_if_enabled(bot: Bot, user_id: int, channel_id: str, message_id: int, pin_duration_hours: int = 24):
+    """
+    Закрепляет пост в канале, если у пользователя включён auto_pin.
+    По умолчанию закрепляет на 24 часа (можно настроить).
+    """
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT auto_pin FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        if not user or not user["auto_pin"]:
+            return
+        
+        # Закрепляем сообщение
+        await bot.pin_chat_message(chat_id=channel_id, message_id=message_id)
+        
+        # Записываем время открепления
+        unpin_at = datetime.now(timezone.utc) + timedelta(hours=pin_duration_hours)
+        conn.execute(
+            "INSERT INTO pinned_posts (chat_id, message_id, unpin_at) VALUES (?, ?, ?)",
+            (channel_id, message_id, unpin_at.isoformat())
+        )
+        conn.commit()
+        logger.info(f"Пост {message_id} закреплён в канале {channel_id} до {unpin_at}")
+    except Exception as e:
+        logger.error(f"Ошибка закрепления поста {message_id} в {channel_id}: {e}")
+    finally:
+        conn.close()
