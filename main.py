@@ -1525,6 +1525,18 @@ async def open_saas_settings(callback: CallbackQuery) -> None:
         await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except TelegramBadRequest:
         pass
+@router.callback_query(F.data == "saas_toggle:force_preview_enable")
+async def cb_force_preview_enable(callback: CallbackQuery):
+    """Включает режим предпросмотра (force_preview_confirmed = 1)"""
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET force_preview_confirmed = 1 WHERE user_id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    await callback.answer("✅ Предпросмотр включен (посты теперь публикуются сразу)", show_alert=True)
+    await open_saas_settings(callback)
 
 @router.callback_query(F.data.startswith("saas_toggle:"))
 async def cb_saas_toggles(callback: CallbackQuery) -> None:
