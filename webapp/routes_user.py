@@ -1109,46 +1109,6 @@ async def preview_template(token: str = Query(...), type: str = Query("product")
     finally:
         conn.close()
 
-# ---------- Отчёт ОРД с принудительным сбором просмотров ----------
-async def collect_views_for_user(user_id: int, bot):
-    """Собирает просмотры для всех опубликованных постов пользователя"""
-    conn = get_db()
-    try:
-        posts = conn.execute("""
-            SELECT p.id, p.channel_id, p.direct_link 
-            FROM posts p 
-            WHERE p.user_id = ? AND p.status = 'published' AND p.views_count = 0
-        """, (user_id,)).fetchall()
-        
-        logger.info(f"Сбор просмотров для user_id={user_id}, найдено {len(posts)} постов без просмотров")
-        
-        updated = 0
-        for post in posts:
-            if not post["direct_link"]:
-                continue
-            try:
-                parts = post["direct_link"].split("/")
-                msg_id = int(parts[-1])
-                chat_identifier = post["channel_id"]
-            except Exception as e:
-                logger.warning(f"Не удалось разобрать direct_link: {e}")
-                continue
-            
-            try:
-                # Используем get_messages (работает в aiogram 3.x)
-                messages = await bot.get_messages(chat_id=chat_identifier, message_ids=[msg_id])
-                if messages and messages[0].views:
-                    conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (messages[0].views, post["id"]))
-                    updated += 1
-                    logger.info(f"Обновлён просмотр для поста {post['id']}: {messages[0].views}")
-            except Exception as e:
-                logger.warning(f"Не удалось получить просмотры для поста {post['id']}: {e}")
-        conn.commit()
-        logger.info(f"Обновлено просмотров: {updated}")
-    except Exception as e:
-        logger.error(f"Ошибка в collect_views_for_user: {e}")
-    finally:
-        conn.close()
 # =============================================================================
 # === БЕТА-ФУНКЦИЯ: ПРЕДПРОСМОТР ПОСТА =======================================
 # =============================================================================
