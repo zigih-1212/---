@@ -883,7 +883,7 @@ async def cb_oferta_accept(callback: CallbackQuery, state: FSMContext):
 
     # ПОСЛЕ ОФЕРТЫ ПОКАЗЫВАЕМ ПОЛИТИКУ И ЗАПРАШИВАЕМ СОГЛАСИЕ
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📄 Ознакомиться с политикой", url="[ССЫЛКА НА ПОЛИТИКУ]")],
+        [InlineKeyboardButton(text="📄 Ознакомиться с политикой", url="https://teletype.in/@miliron/yYN0SEGfm5l")],
         [InlineKeyboardButton(text="✅ Согласен", callback_data="privacy:accept")],
         [InlineKeyboardButton(text="❌ Не согласен", callback_data="privacy:decline")]
     ])
@@ -891,7 +891,7 @@ async def cb_oferta_accept(callback: CallbackQuery, state: FSMContext):
         "📋 **Согласие на обработку персональных данных**\n\n"
         "Для продолжения работы с ботом необходимо ваше согласие на обработку персональных данных "
         "в соответствии с 152-ФЗ.\n\n"
-        "Подробнее: [ССЫЛКА НА ПОЛИТИКУ]",
+        "Подробнее: https://teletype.in/@miliron/yYN0SEGfm5l",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=kb
     )
@@ -989,7 +989,7 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
 @router.message(Command("privacy"))
 async def cmd_privacy(message: Message):
     await message.answer(
-        "📄 Политика конфиденциальности:\n[ССЫЛКА НА ПОЛИТИКУ]",
+        "📄 Политика конфиденциальности:\n https://teletype.in/@miliron/yYN0SEGfm5l",
         disable_web_page_preview=True
     )
 
@@ -1372,7 +1372,7 @@ async def cb_webstats(callback: CallbackQuery):
 @router.callback_query(F.data == "menu:privacy")
 async def cb_menu_privacy(callback: CallbackQuery):
     await callback.message.answer(
-        "📄 Политика конфиденциальности:\n[ССЫЛКА НА ПОЛИТИКУ]",
+        "📄 Политика конфиденциальности:\nhttps://teletype.in/@miliron/yYN0SEGfm5l",
         disable_web_page_preview=True
     )
     await callback.answer()
