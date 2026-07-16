@@ -1533,14 +1533,6 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
         try:
             # Проверка лимита каналов
             user = conn.execute("SELECT role, tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
-            if user and user["role"] != "blogger" and user["tariff_id"]:
-                tariff = conn.execute("SELECT max_channels FROM tariffs WHERE id = ?", (user["tariff_id"],)).fetchone()
-                max_channels = tariff["max_channels"] if tariff else 5
-                current_count = conn.execute("SELECT COUNT(*) as cnt FROM channels WHERE user_id = ?", (user_id,)).fetchone()["cnt"]
-                if current_count >= max_channels:
-                    await message.answer(f"❌ Ваш тариф позволяет подключить не более {max_channels} каналов.")
-                    return
-
             conn.execute(
                 """INSERT INTO channels (user_id, channel_id, channel_title, sub_id)
                    VALUES (?, ?, ?, ?)
