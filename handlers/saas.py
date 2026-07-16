@@ -76,94 +76,49 @@ async def cb_toggle_store(callback: CallbackQuery):
     store_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
 
-    # Обработка Galaxy Store
+    # Galaxy Store (id=12) — проверяем, что пользователь выбрал город
     if store_id == 12:
         conn = get_db()
         try:
-            user_row = conn.execute(
-                "SELECT tariff_id FROM users WHERE user_id=?", (user_id,)
-            ).fetchone()
-            if not user_row or not user_row["tariff_id"]:
-                await callback.answer("❌ Galaxy Store доступен только на тарифе Pro и VIP.", show_alert=True)
-                return
-            tariff = conn.execute(
-                "SELECT name FROM tariffs WHERE id=?", (user_row["tariff_id"],)
-            ).fetchone()
-            if not tariff or tariff["name"] not in ["Профи", "VIP"]:
-                await callback.answer("❌ Galaxy Store доступен только на тарифе Pro и VIP.", show_alert=True)
-                return
-        finally:
-            conn.close()
-
-        # Проверяем, включён ли уже Galaxy Store
-        conn = get_db()
-        try:
-            exists = conn.execute(
-                "SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = 12",
+            existing = conn.execute(
+                "SELECT city FROM user_category_preferences WHERE user_id = ? AND category_id = 12",
                 (user_id,)
             ).fetchone()
         finally:
             conn.close()
-        if exists:
-            # Удаляем
-            conn = get_db()
-            try:
-                conn.execute(
-                    "DELETE FROM user_category_preferences WHERE user_id = ? AND category_id = 12",
-                    (user_id,)
-                )
-                conn.commit()
-            finally:
-                conn.close()
-            await callback.answer("Galaxy Store удалён из ваших магазинов.")
-            await cb_stores(callback)
-            return
-        else:
-            # Показываем выбор города
+        if not existing or not existing["city"]:
             await show_city_selection(callback.message, user_id)
             await callback.answer()
             return
 
-    # Стандартная логика для остальных магазинов
+    # Остальные магазины
     if store_id == 1:
-        await callback.answer("❌ AliExpress временно недоступен (отсутствует маркировка ERID).", show_alert=True)
+        await callback.answer("❌ AliExpress временно недоступен.", show_alert=True)
         return
     if store_id == 3:
         await callback.answer("❌ Аквафор временно недоступен.", show_alert=True)
         return
     if store_id == 5:
-        await callback.answer("❌ Love Republic временно недоступен (отсутствует маркировка ERID).", show_alert=True)
+        await callback.answer("❌ Love Republic временно недоступен.", show_alert=True)
         return
 
     conn = get_db()
     try:
-        # Получаем роль и тариф пользователя
-        user_row = conn.execute("SELECT role, tariff_id FROM users WHERE user_id=?", (user_id,)).fetchone()
-        max_stores = 3
-
-        # Проверка лимита только для SaaS, не для блогеров
-        if user_row and user_row["role"] != "blogger" and user_row["tariff_id"] and False:
-            tariff_row = conn.execute("SELECT max_stores FROM tariffs WHERE id=?", (user_row["tariff_id"],)).fetchone()
-            if tariff_row and tariff_row["max_stores"]:
-                max_stores = tariff_row["max_stores"]
-
         existing = conn.execute(
             "SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
             (user_id, store_id)
         ).fetchone()
         if existing:
-            conn.execute("DELETE FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
-                         (user_id, store_id))
+            conn.execute(
+                "DELETE FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
+                (user_id, store_id)
+            )
         else:
-            current_count = conn.execute(
-                "SELECT COUNT(*) as cnt FROM user_category_preferences WHERE user_id = ?",
-                (user_id,)
-            ).fetchone()["cnt"]
-            if current_count >= max_stores and user_row["role"] != "blogger":
-                await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_stores} магазинов.", show_alert=True)
-                return
-            conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
-                         (user_id, store_id))
+            # ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ БЕЗ ОГРАНИЧЕНИЙ — просто добавляем
+            conn.execute(
+                "INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
+                (user_id, store_id)
+            )
         conn.commit()
     finally:
         conn.close()
@@ -315,20 +270,6 @@ async def cb_galaxy_city_selected(callback: CallbackQuery):
                 (city_key, user_id)
             )
         else:
-            if not is_blogger_or_saas:
-                user_row = conn.execute("SELECT tariff_id FROM users WHERE user_id=?", (user_id,)).fetchone()
-                max_stores = 3
-                if user_row and user_row["tariff_id"]:
-                    tariff_row = conn.execute("SELECT max_stores FROM tariffs WHERE id=?", (user_row["tariff_id"],)).fetchone()
-                    if tariff_row and tariff_row["max_stores"]:
-                        max_stores = tariff_row["max_stores"]
-                current_count = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM user_category_preferences WHERE user_id = ?",
-                    (user_id,)
-                ).fetchone()["cnt"]
-                if current_count >= max_stores:
-                    await callback.answer(f"❌ Ваш тариф позволяет выбрать не более {max_stores} магазинов.", show_alert=True)
-                    return
             conn.execute(
                 "INSERT INTO user_category_preferences (user_id, category_id, city) VALUES (?, ?, ?)",
                 (user_id, 12, city_key)
