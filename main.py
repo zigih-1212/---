@@ -1050,54 +1050,52 @@ async def cmd_beta(message: Message):
     if not is_admin(message.from_user.id):
         return
     
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(
+            "📋 Использование:\n"
+            "/beta add USER_ID — добавить тестера\n"
+            "/beta remove USER_ID — убрать тестера\n"
+            "/beta list — список тестеров"
+        )
+        return
+    
+    action = args[1]
+    conn = get_db()
     try:
-        args = message.text.split()
-        if len(args) < 2:
-            await message.answer(
-                "📋 Управление бета-тестерами:\n"
-                "/beta add USER_ID — добавить тестера\n"
-                "/beta remove USER_ID — убрать тестера\n"
-                "/beta list — список тестеров\n"
-                "/beta mode — статус бета-режима"
-            )
-            return
-        
-        from utils.feature_flags import add_beta_tester, remove_beta_tester, get_beta_testers, get_beta_mode, set_beta_mode
-        
-        action = args[1]
-        
-        if action == "add" and len(args) == 3:
+        if action == "add":
+            if len(args) < 3:
+                await message.answer("❌ Укажите USER_ID")
+                return
             user_id = int(args[2])
-            if add_beta_tester(user_id):
-                await message.answer(f"✅ Пользователь {user_id} добавлен в бета-тестеры")
-            else:
-                await message.answer(f"❌ Ошибка добавления {user_id}")
-        
-        elif action == "remove" and len(args) == 3:
+            conn.execute("UPDATE users SET beta_tester = 1 WHERE user_id = ?", (user_id,))
+            conn.commit()
+            await message.answer(f"✅ Пользователь {user_id} добавлен в бета-тестеры")
+        elif action == "remove":
+            if len(args) < 3:
+                await message.answer("❌ Укажите USER_ID")
+                return
             user_id = int(args[2])
-            if remove_beta_tester(user_id):
-                await message.answer(f"✅ Пользователь {user_id} удалён из бета-тестеров")
-            else:
-                await message.answer(f"❌ Ошибка удаления {user_id}")
-        
+            conn.execute("UPDATE users SET beta_tester = 0 WHERE user_id = ?", (user_id,))
+            conn.commit()
+            await message.answer(f"✅ Пользователь {user_id} удалён из бета-тестеров")
         elif action == "list":
-            testers = get_beta_testers()
-            if testers:
+            rows = conn.execute("SELECT user_id, username FROM users WHERE beta_tester = 1").fetchall()
+            if rows:
                 text = "👥 Бета-тестеры:\n"
-                for t in testers:
-                    text += f"- {t['user_id']} ({t['username'] or 'без username'})\n"
+                for r in rows:
+                    text += f"- {r['user_id']} ({r['username'] or 'без username'})\n"
                 await message.answer(text)
             else:
                 await message.answer("❌ Нет бета-тестеров")
-        
-        elif action == "mode":
-            mode = get_beta_mode()
-            await message.answer(f"🔬 Режим бета-тестирования: {'✅ ВКЛЮЧЁН' if mode else '❌ ВЫКЛЮЧЁН'}")
-        
         else:
-            await message.answer("❌ Неизвестная команда. Используйте: add/remove/list/mode")
+            await message.answer("❌ Неизвестное действие")
+    except ValueError:
+        await message.answer("❌ USER_ID должен быть числом")
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}")
+    finally:
+        conn.close()
 # ---------------------------------------------------------------------------
 # /cabinet
 # ---------------------------------------------------------------------------
