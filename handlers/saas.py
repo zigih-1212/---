@@ -23,7 +23,7 @@ from services.admitad import get_random_promocode
 from states import SaasStates, PaymentFSM, PayoutStates, TaxStates
 
 logger = logging.getLogger("autopost_bot.saas")
-logger.info(f"cb_stores called for user {callback.from_user.id}")
+
 router = Router(name="saas")
 
 # ---------------------------------------------------------------------------
@@ -31,10 +31,6 @@ router = Router(name="saas")
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:categories")
 async def cb_stores(callback: CallbackQuery):
-    import logging
-    logger = logging.getLogger("autopost_bot.saas")
-    logger.info(f"cb_stores called for user {callback.from_user.id}")
-    
     user_id = callback.from_user.id
     conn = get_db()
     try:
