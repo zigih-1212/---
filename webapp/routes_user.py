@@ -367,6 +367,22 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
                 card.appendChild(newCard);
             }
         }
+<!-- Бета-функция: предпросмотр поста (скрыта по умолчанию) -->
+<div id="preview-block" style="display: none;">
+    <div class="card">
+        <h2>👀 Предпросмотр поста (бета)</h2>
+        <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+            <button onclick="loadPreview()" class="btn">🎲 Случайный товар</button>
+            <button onclick="publishPost()" class="btn" style="background: #4caf50;">🚀 Опубликовать в канал</button>
+            <button onclick="document.getElementById('preview-content').innerHTML = ''; window._currentProductId = null;" class="btn" style="background: #555;">🧹 Очистить</button>
+        </div>
+        <div id="preview-container" style="background: #1e1e1e; border-radius: 12px; padding: 20px; border: 1px solid #333;">
+            <div id="preview-content" style="color: #ccc; text-align: center; padding: 40px 20px;">
+                Нажмите «Случайный товар» для предпросмотра
+            </div>
+        </div>
+    </div>
+</div>
 
         const postsTable = document.querySelector('#recent-posts-table tbody');
         if (postsTable) {
@@ -430,6 +446,87 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     loadData('30d');
 })();
 </script>
+// ===== БЕТА-ФУНКЦИЯ: ПРЕДПРОСМОТР ПОСТА =====
+const isBeta = {{ is_beta }};
+if (isBeta) {
+    document.getElementById('preview-block').style.display = 'block';
+}
+
+// Загрузка предпросмотра
+window.loadPreview = async function(productId = null) {
+    const container = document.getElementById('preview-content');
+    container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Загрузка...</div>';
+    
+    try {
+        let url = `/my-stats/preview-post?token=${token}`;
+        if (productId) url += `&product_id=${productId}`;
+        
+        const resp = await fetch(url);
+        const data = await resp.json();
+        
+        if (!data.ok) {
+            container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ ${data.error}</div>`;
+            return;
+        }
+        
+        const adultBadge = data.source === 'Розовый кролик' 
+            ? '<div style="background:#ff4444; color:#fff; padding:4px 12px; border-radius:12px; font-size:12px; display:inline-block; margin-bottom:8px;">🔞 18+</div>' 
+            : '';
+        
+        const imageHtml = data.image_url 
+            ? `<div style="margin-bottom:12px;"><img src="${data.image_url}" style="max-width:100%; max-height:300px; border-radius:8px; object-fit:contain; background:#111;" onerror="this.style.display='none'"></div>` 
+            : '';
+        
+        container.innerHTML = `
+            <div style="background: #0f0f0f; border-radius:12px; padding:16px; max-width:500px; margin:0 auto; text-align:left; border:1px solid #2a2a2a;">
+                ${adultBadge}
+                ${imageHtml}
+                <div style="font-size:14px; line-height:1.6; word-wrap:break-word; white-space:pre-wrap;">
+                    ${data.caption.replace(/\n/g, '<br>')}
+                </div>
+                <div style="margin-top:12px; padding-top:12px; border-top:1px solid #2a2a2a; font-size:12px; color:#888;">
+                    <span style="color:#4d6bfe;">💡 Нажмите «Опубликовать в канал», чтобы отправить этот пост</span>
+                </div>
+            </div>
+        `;
+        
+        window._currentProductId = data.product_id;
+        window._currentPartnerUrl = data.partner_url;
+        
+    } catch (e) {
+        container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка загрузки: ${e.message}</div>`;
+    }
+};
+
+// Публикация поста
+window.publishPost = async function() {
+    if (!window._currentProductId) {
+        alert('Сначала загрузите предпросмотр!');
+        return;
+    }
+    
+    if (!confirm('Опубликовать этот пост в ваш канал?')) return;
+    
+    const container = document.getElementById('preview-content');
+    container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Публикация...</div>';
+    
+    try {
+        const formData = new FormData();
+        formData.append('token', token);
+        formData.append('product_id', window._currentProductId);
+        
+        const resp = await fetch('/my-stats/publish-post', { method: 'POST', body: formData });
+        const result = await resp.json();
+        
+        if (result.ok) {
+            container.innerHTML = `<div style="text-align:center; padding:20px; color:#4caf50;">✅ Пост опубликован в канал!</div>`;
+        } else {
+            container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка: ${result.error}</div>`;
+        }
+    } catch (e) {
+        container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка публикации: ${e.message}</div>`;
+    }
+};
 </body>
 </html>'''
 
@@ -761,8 +858,16 @@ loadTemplates();
 
 @router.get("/", response_class=HTMLResponse)
 async def user_stats_page(token: str = Query(...)):
-    get_user_id_from_token(token)
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT beta_tester FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        is_beta = bool(row and row["beta_tester"] == 1)
+    finally:
+        conn.close()
+    
     html = USER_STATS_TEMPLATE.replace('{{ token }}', token)
+    html = html.replace('{{ is_beta }}', 'true' if is_beta else 'false')
     return HTMLResponse(content=html)
 
 @router.get("/data")
