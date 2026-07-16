@@ -2380,9 +2380,12 @@ async def generate_monthly_ord_reports(bot: Bot):
             
             # Отправляем пользователю
             filename = f"ORD_Report_{datetime.now().strftime('%Y%m')}.xlsx"
+            from aiogram.types import BufferedInputFile
+            file_bytes = output.getvalue()
+            document = BufferedInputFile(file_bytes, filename=filename)
             await bot.send_document(
                 chat_id=user_id,
-                document=("file.xlsx", output.getvalue()),
+                document=document,
                 caption=f"📊 Ежемесячный отчёт для ОРД за {datetime.now().strftime('%B %Y')}\n\nВсего постов: {len(posts)}"
             )
             logger.info(f"Отчёт ОРД отправлен пользователю {user_id}")
