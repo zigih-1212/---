@@ -1703,9 +1703,16 @@ async def cb_payout_request(callback: CallbackQuery, state: FSMContext):
 async def process_payout_message(message: Message, state: FSMContext):
     user_id = message.from_user.id
     text = message.text.strip()
-    if len(text) < 10:
-        await message.answer("❌ Слишком короткое сообщение. Введите реквизиты подробнее.")
+    
+    # Валидация реквизитов: номер карты (16 цифр), счёт (20 цифр) или телефон (11 цифр)
+    import re
+    if not re.match(r'^[\d\s\-]{11,20}$', text.replace(' ', '').replace('-', '')):
+        await message.answer(
+            "❌ Введите корректные реквизиты: номер карты (16 цифр), номер счёта (20 цифр) или номер телефона (11 цифр).\n"
+            "Пример: 2202 2081 0829 0025"
+        )
         return
+    
     conn = get_db()
     try:
         user = conn.execute("SELECT balance_available, tax_status FROM users WHERE user_id=?", (user_id,)).fetchone()
