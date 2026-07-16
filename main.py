@@ -933,7 +933,6 @@ async def update_post_views(bot: Bot):
     """Обновляет количество просмотров для постов, опубликованных 30+ дней назад."""
     conn = get_db()
     try:
-        # Берём посты старше 30 дней, у которых views_count ещё не обновлён (можно проверять по флагу)
         cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         posts = conn.execute("""
             SELECT p.id, p.channel_id, p.target_channel_id, p.direct_link,
@@ -951,9 +950,9 @@ async def update_post_views(bot: Bot):
                 msg_id = post["message_id"]
                 if not chat_id or not msg_id:
                     continue
-                msg = await bot.get_message(chat_id=chat_id, message_id=msg_id)
-                if msg and msg.views:
-                    conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (msg.views, post["id"]))
+                messages = await bot.get_messages(chat_id=chat_id, message_ids=[msg_id])
+                if messages and messages[0].views:
+                    conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (messages[0].views, post["id"]))
                     updated += 1
             except Exception as e:
                 logger.warning(f"Не удалось получить просмотры для поста {post['id']}: {e}")
