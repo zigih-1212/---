@@ -31,6 +31,10 @@ router = Router(name="saas")
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:categories")
 async def cb_stores(callback: CallbackQuery):
+    import logging
+    logger = logging.getLogger("autopost_bot.saas")
+    logger.info(f"cb_stores called for user {callback.from_user.id}")
+    
     user_id = callback.from_user.id
     conn = get_db()
     try:
@@ -70,7 +74,6 @@ async def cb_stores(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
-
 
 @router.callback_query(F.data.startswith("store_toggle:"))
 async def cb_toggle_store(callback: CallbackQuery):
