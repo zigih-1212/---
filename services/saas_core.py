@@ -148,21 +148,20 @@ async def publish_from_catalog(bot: Bot):
         post_interval = user["post_interval_minutes"] or 60
         commission_rate = user["commission_rate"] or 0.95
 
-        # Проверка интервала для блогеров
-        if role == "blogger":
-            conn = get_db()
-            try:
-                last_post = conn.execute(
-                    "SELECT MAX(published_at) FROM posts WHERE user_id=? AND status='published' AND donor_post_id LIKE 'admitad_%'",
-                    (user_id,)
-                ).fetchone()[0]
-                if last_post:
-                    last_dt = datetime.fromisoformat(last_post.replace("Z", "+00:00"))
-                    if (datetime.now(timezone.utc) - last_dt).total_seconds() < post_interval * 60:
-                        logger.info(f"[DEBUG] User {user_id}: интервал не вышел, пропускаем")
-                        continue
-            finally:
-                conn.close()
+        # Проверка интервала для всех пользователей
+        conn = get_db()
+        try:
+            last_post = conn.execute(
+                "SELECT MAX(published_at) FROM posts WHERE user_id=? AND status='published' AND donor_post_id LIKE 'admitad_%'",
+                (user_id,)
+            ).fetchone()[0]
+            if last_post:
+                last_dt = datetime.fromisoformat(last_post.replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - last_dt).total_seconds() < post_interval * 60:
+                    logger.info(f"[DEBUG] User {user_id}: интервал не вышел ({post_interval} мин), пропускаем")
+                    continue
+        finally:
+            conn.close()
 
         # Загружаем выбранные пользователем магазины
         conn = get_db()
