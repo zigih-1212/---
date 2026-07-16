@@ -16,6 +16,7 @@ from config import BOT_USERNAME, MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from services.text_rewriter import generate_post_text
 from services.admitad import get_delivery_for_store, get_random_promocode
+from utils import is_feature_available_async
 
 router = APIRouter()
 logger = logging.getLogger("autopost_bot.user")
