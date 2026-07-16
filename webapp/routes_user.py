@@ -724,6 +724,7 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         channel_rows = conn.execute("""SELECT c.channel_title, c.channel_id, COUNT(p.id) as posts_cnt, COALESCE(s.clicks_count, 0) as clicks, COALESCE(s.leads_count, 0) as leads, COALESCE(s.earnings_approved, 0) as earnings FROM channels c LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.user_id = c.user_id AND p.status='published' AND p.published_at >= ? LEFT JOIN subid_stats s ON s.subid1 = c.sub_id WHERE c.user_id = ? AND c.is_active = 1 GROUP BY c.channel_id ORDER BY earnings DESC""", (since, user_id)).fetchall()
         top_products = conn.execute("""SELECT g.title, COUNT(*) as cnt FROM posts p JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%' WHERE p.user_id = ? AND p.status='published' AND p.published_at >= ? GROUP BY g.title ORDER BY cnt DESC LIMIT 5""", (user_id, since)).fetchall()
         transactions = conn.execute("""SELECT payment_sum, currency, payment_status, order_id, action, time, decline_reason FROM admitad_transactions WHERE user_id = ? ORDER BY time DESC LIMIT 10""", (user_id,)).fetchall()
+        recent_posts = conn.execute("""SELECT erid, direct_link, views_count, published_at FROM posts WHERE user_id = ? AND status = 'published' AND erid IS NOT NULL AND erid != ''ORDER BY published_at DESC LIMIT 20""", (user_id,)).fetchall()
         return JSONResponse({
             "posts_labels": [r["day"] for r in post_rows],
             "posts_counts": [r["count"] for r in post_rows],
