@@ -587,7 +587,29 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         logger.error(f"Ошибка проверки админки в {channel_id}: {e}")
         return False
 
+async def is_beta_tester(user_id: int) -> bool:
+    """Проверяет, является ли пользователь бета-тестером."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT beta_tester FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        return bool(row and row["beta_tester"] == 1)
+    except Exception:
+        return False
+    finally:
+        conn.close()
 
+async def can_use_beta_commands(user_id: int) -> bool:
+    """Проверяет, может ли пользователь использовать бета-команды."""
+    if is_admin(user_id):
+        return True
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT beta_tester FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        return bool(row and row["beta_tester"] == 1)
+    except Exception:
+        return False
+    finally:
+        conn.close()
       
 # =============================================================================
 # === КЛАВИАТУРЫ ==============================================================
@@ -991,6 +1013,29 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
             )
     finally:
         conn.close()
+
+@router.message(Command("preview"))
+async def cmd_preview(message: Message):
+    user_id = message.from_user.id
+    
+    # Проверка: только бета-тестеры и админы
+    if not is_admin(user_id) and not await is_beta_tester(user_id):
+        await message.answer("❌ Эта команда доступна только бета-тестерам.")
+        return
+    
+    # Отправляем ссылку на веб-статистику с предпросмотром
+    token = generate_user_token(user_id)
+    link = f"{WEBAPP_BASE_URL}/my-stats?token={token}"
+    await message.answer(
+        f"👀 <b>Предпросмотр поста</b>\n\n"
+        f"Перейдите в веб-статистику и найдите блок «Предпросмотр поста»:\n"
+        f"<a href='{link}'>Открыть статистику</a>\n\n"
+        f"Там вы сможете:\n"
+        f"• Посмотреть, как пост будет выглядеть в канале\n"
+        f"• Опубликовать его в один клик",
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True
+    )
 
 @router.message(Command("privacy"))
 async def cmd_privacy(message: Message):
@@ -2168,7 +2213,6 @@ async def main() -> None:
         commands=[
             BotCommand(command="start", description="Главное меню"),
             BotCommand(command="cabinet", description="Личный кабинет"),
-            BotCommand(command="promo", description="Активировать промокод"),
         ],
         scope=BotCommandScopeDefault(),
     )
@@ -2179,9 +2223,11 @@ async def main() -> None:
                 commands=[
                     BotCommand(command="start", description="Панель администратора"),
                     BotCommand(command="cabinet", description="Панель администратора"),
-                    BotCommand(command="debug_sub", description="Проверить подписку пользователя"),
+                    BotCommand(command="debug_sub", description="Проверить подписку"),
                     BotCommand(command="force_trial", description="Выдать тестовые 3 дня"),
                     BotCommand(command="fix_channels", description="Удалить дубликаты каналов"),
+                    BotCommand(command="beta", description="Управление бета-тестерами"),
+                    BotCommand(command="preview", description="Предпросмотр поста"),
                 ],
                 scope=BotCommandScopeChat(chat_id=admin_id),
             )
@@ -2210,6 +2256,28 @@ async def main() -> None:
         await bot.session.close()
         scheduler.shutdown()
         logger.info("Бот и планировщик остановлены")
+
+# Получаем список бета-тестеров
+conn = get_db()
+beta_users = conn.execute("SELECT user_id FROM users WHERE beta_tester = 1").fetchall()
+conn.close()
+
+for user in beta_users:
+    user_id = user["user_id"]
+    try:
+        # Пропускаем админов — у них уже есть расширенные команды
+        if user_id in ADMIN_IDS:
+            continue
+        await bot.set_my_commands(
+            commands=[
+                BotCommand(command="start", description="Главное меню"),
+                BotCommand(command="cabinet", description="Личный кабинет"),
+                BotCommand(command="preview", description="Предпросмотр поста"),  # новая команда для бета-тестеров
+            ],
+            scope=BotCommandScopeChat(chat_id=user_id),
+        )
+    except Exception as e:
+        logger.warning(f"Не удалось установить команды для бета-тестера {user_id}: {e}")
 
 async def generate_monthly_ord_reports(bot: Bot):
     """Генерирует отчёт ОРД для всех пользователей с постами за прошедший месяц и отправляет им в Telegram"""
