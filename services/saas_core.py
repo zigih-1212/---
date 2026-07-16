@@ -145,7 +145,6 @@ async def publish_from_catalog(bot: Bot):
     for user in users:
         user_id = user["user_id"]
         role = user["role"]
-        tariff_id = user["tariff_id"]
         post_interval = user["post_interval_minutes"] or 60
         commission_rate = user["commission_rate"] or 0.95
 
