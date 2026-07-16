@@ -945,27 +945,46 @@ async def preview_template(token: str = Query(...), type: str = Query("product")
 
 # ---------- Отчёт ОРД с принудительным сбором просмотров ----------
 async def collect_views_for_user(user_id: int, bot):
+    """Собирает просмотры для всех опубликованных постов пользователя"""
     conn = get_db()
     try:
-        posts = conn.execute("SELECT p.id, p.channel_id, p.direct_link, CAST(substr(p.direct_link, instr(p.direct_link, '/')+1) AS INTEGER) as message_id FROM posts p WHERE p.user_id = ? AND p.status = 'published'", (user_id,)).fetchall()
+        posts = conn.execute("""
+            SELECT p.id, p.channel_id, p.direct_link 
+            FROM posts p 
+            WHERE p.user_id = ? AND p.status = 'published' AND p.views_count = 0
+        """, (user_id,)).fetchall()
+        
+        logger.info(f"Сбор просмотров для user_id={user_id}, найдено {len(posts)} постов без просмотров")
+        
         updated = 0
         for post in posts:
+            if not post["direct_link"]:
+                continue
+            # Извлекаем message_id из direct_link
             try:
-                chat_id = post["channel_id"]
-                msg_id = post["message_id"]
-                if not chat_id or not msg_id:
-                    continue
-                msg = await bot.get_message(chat_id=chat_id, message_id=msg_id)
+                # Формат: https://t.me/channel_name/123 или https://t.me/c/123456/123
+                parts = post["direct_link"].split("/")
+                msg_id = int(parts[-1])
+                chat_identifier = post["channel_id"]
+            except Exception as e:
+                logger.warning(f"Не удалось разобрать direct_link: {e}")
+                continue
+            
+            try:
+                # Пытаемся получить сообщение
+                msg = await bot.get_message(chat_id=chat_identifier, message_id=msg_id)
                 if msg and msg.views:
                     conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (msg.views, post["id"]))
                     updated += 1
+                    logger.info(f"Обновлён просмотр для поста {post['id']}: {msg.views}")
             except Exception as e:
                 logger.warning(f"Не удалось получить просмотры для поста {post['id']}: {e}")
         conn.commit()
-        logger.info(f"Собрано просмотров для пользователя {user_id}: {updated}")
+        logger.info(f"Обновлено просмотров: {updated}")
+    except Exception as e:
+        logger.error(f"Ошибка в collect_views_for_user: {e}")
     finally:
         conn.close()
-
 @router.get("/ord-report")
 async def download_ord_report(token: str = Query(...), request: Request = None):
     user_id = get_user_id_from_token(token)
