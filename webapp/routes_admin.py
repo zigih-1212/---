@@ -28,7 +28,7 @@ from utils import log_admin_action
 router = APIRouter()
 logger = logging.getLogger("autopost_bot.admin")
 # ---------- Загрузчик шаблонов ----------
-class DictLoader(BaseLoader):settings_edit_form 
+class DictLoader(BaseLoader):
     def __init__(self, mapping):
         self.mapping = mapping
     def get_source(self, environment, template):
