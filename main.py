@@ -2199,8 +2199,8 @@ async def main() -> None:
     dp = Dispatcher(storage=storage)
     dp.update.middleware(ErrorLoggingMiddleware())
 
-    dp.include_router(router)           # основной
-    dp.include_router(saas_router)      # саас (промокоды, магазины и т.д.)
+    dp.include_router(router)
+    dp.include_router(saas_router)
 
     from handlers.social import router as social_router
     dp.include_router(social_router)
@@ -2208,7 +2208,7 @@ async def main() -> None:
     scheduler.start()
     logger.info("Планировщик (APScheduler) запущен")
 
-    # Установка команд
+    # ===== КОМАНДЫ ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ =====
     await bot.set_my_commands(
         commands=[
             BotCommand(command="start", description="Главное меню"),
@@ -2217,13 +2217,14 @@ async def main() -> None:
         scope=BotCommandScopeDefault(),
     )
 
+    # ===== КОМАНДЫ ДЛЯ АДМИНОВ =====
     for admin_id in ADMIN_IDS:
         try:
             await bot.set_my_commands(
                 commands=[
                     BotCommand(command="start", description="Панель администратора"),
                     BotCommand(command="cabinet", description="Панель администратора"),
-                    BotCommand(command="debug_sub", description="Проверить подписку"),
+                    BotCommand(command="debug_sub", description="Проверить подписку пользователя"),
                     BotCommand(command="force_trial", description="Выдать тестовые 3 дня"),
                     BotCommand(command="fix_channels", description="Удалить дубликаты каналов"),
                     BotCommand(command="beta", description="Управление бета-тестерами"),
@@ -2234,8 +2235,31 @@ async def main() -> None:
         except TelegramBadRequest as e:
             logger.warning(f"Не удалось установить команды для админа {admin_id}: {e}")
 
-    fastapi_app = create_app(bot)
+    # ===== КОМАНДЫ ДЛЯ БЕТА-ТЕСТЕРОВ =====
+    conn = get_db()
+    try:
+        beta_users = conn.execute("SELECT user_id FROM users WHERE beta_tester = 1").fetchall()
+        for user in beta_users:
+            user_id = user["user_id"]
+            if user_id in ADMIN_IDS:
+                continue
+            try:
+                await bot.set_my_commands(
+                    commands=[
+                        BotCommand(command="start", description="Главное меню"),
+                        BotCommand(command="cabinet", description="Личный кабинет"),
+                        BotCommand(command="preview", description="Предпросмотр поста"),
+                    ],
+                    scope=BotCommandScopeChat(chat_id=user_id),
+                )
+                logger.info(f"Команды для бета-тестера {user_id} установлены")
+            except Exception as e:
+                logger.warning(f"Не удалось установить команды для {user_id}: {e}")
+    finally:
+        conn.close()
 
+    # ===== ЗАПУСК FASTAPI =====
+    fastapi_app = create_app(bot)
     config = uvicorn.Config(
         fastapi_app,
         host=WEBAPP_HOST,
@@ -2256,28 +2280,6 @@ async def main() -> None:
         await bot.session.close()
         scheduler.shutdown()
         logger.info("Бот и планировщик остановлены")
-
-# Получаем список бета-тестеров
-conn = get_db()
-beta_users = conn.execute("SELECT user_id FROM users WHERE beta_tester = 1").fetchall()
-conn.close()
-
-for user in beta_users:
-    user_id = user["user_id"]
-    try:
-        # Пропускаем админов — у них уже есть расширенные команды
-        if user_id in ADMIN_IDS:
-            continue
-        await bot.set_my_commands(
-            commands=[
-                BotCommand(command="start", description="Главное меню"),
-                BotCommand(command="cabinet", description="Личный кабинет"),
-                BotCommand(command="preview", description="Предпросмотр поста"),  # новая команда для бета-тестеров
-            ],
-            scope=BotCommandScopeChat(chat_id=user_id),
-        )
-    except Exception as e:
-        logger.warning(f"Не удалось установить команды для бета-тестера {user_id}: {e}")
 
 async def generate_monthly_ord_reports(bot: Bot):
     """Генерирует отчёт ОРД для всех пользователей с постами за прошедший месяц и отправляет им в Telegram"""
