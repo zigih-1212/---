@@ -23,6 +23,7 @@ from webapp.templates import (
 )
 from config import BOT_USERNAME
 from aiogram.enums import ParseMode
+from utils import log_admin_action
 
 router = APIRouter()
 logger = logging.getLogger("autopost_bot.admin")
