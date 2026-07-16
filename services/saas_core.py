@@ -164,11 +164,6 @@ async def publish_from_catalog(bot: Bot):
             finally:
                 conn.close()
 
-        # Лимит постов для SaaS
-        max_posts_per_hour = 1
-        if role == "saas" and tariff_id:
-            pass   # полностью игнорируем ограничения
-
         # Загружаем выбранные пользователем магазины
         conn = get_db()
         try:
