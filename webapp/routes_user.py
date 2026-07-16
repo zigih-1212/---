@@ -113,6 +113,23 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     </div>
 </div>
 
+<div class="card">
+    <h2>📋 Последние посты для ОРД</h2>
+    <div style="overflow-x: auto;">
+        <table id="recent-posts-table">
+            <thead>
+                <tr>
+                    <th>ERID</th>
+                    <th>Ссылка</th>
+                    <th>Показы</th>
+                    <th>Дата</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 (function() {
@@ -129,12 +146,14 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         const resp = await fetch(`/my-stats/data?token=${token}&period=${period}`);
         const data = await resp.json();
 
+        // Финансы
         document.getElementById('finance-balance').innerHTML = `
             <p>💳 Доступно к выводу: <b>${data.balance_available.toFixed(2)} ₽</b></p>
             <p>⏳ В ожидании: <b>${data.balance_pending.toFixed(2)} ₽</b></p>
             <p>📬 Постов за период: <b>${data.total_posts}</b> | 💵 Доход: <b>${data.total_revenue.toFixed(2)} ₽</b></p>
         `;
 
+        // Статус выплаты
         const statusResp = await fetch(`/my-stats/payout-status?token=${token}`);
         const statusData = await statusResp.json();
         const reqForm = document.getElementById('payout-request-form');
@@ -154,6 +173,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             }
         }
 
+        // Транзакции
         const txDiv = document.getElementById('finance-transactions');
         if (data.recent_transactions && data.recent_transactions.length > 0) {
             let html = '<h3>Последние транзакции</h3><table><tr><th>Сумма</th><th>Статус</th><th>Заказ</th><th>Дата</th></tr>';
@@ -171,6 +191,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             txDiv.innerHTML = '<p>Нет транзакций</p>';
         }
 
+        // График постов
         if (postsChart) postsChart.destroy();
         postsChart = new Chart(document.getElementById('postsChart'), {
             type: 'line',
@@ -190,6 +211,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             }
         });
 
+        // График дохода
         const revenueContainer = document.getElementById('revenue-chart-container');
         if (revenueChart) revenueChart.destroy();
         if (data.revenue_values && data.revenue_values.length > 0) {
@@ -216,6 +238,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             revenueChart = null;
         }
 
+        // График кликов и конверсии
         if (clicksChart) clicksChart.destroy();
         if (data.clicks_labels && data.clicks_labels.length > 0) {
             clicksChart = new Chart(document.getElementById('clicksChart'), {
@@ -271,6 +294,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             });
         }
 
+        // Круговая диаграмма магазинов
         if (storeChart) storeChart.destroy();
         if (data.store_labels && data.store_labels.length > 0) {
             storeChart = new Chart(document.getElementById('storeChart'), {
@@ -289,6 +313,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             });
         }
 
+        // Таблица каналов
         const table = document.getElementById('channels-table');
         table.innerHTML = '<tr><th>Канал</th><th>Постов</th><th>Кликов</th><th>Продаж</th><th>Доход</th><th>Конверсия</th></tr>';
         if (data.channels && data.channels.length > 0) {
@@ -307,6 +332,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             table.insertRow().innerHTML = '<td colspan="6">Нет данных</td>';
         }
 
+        // Топ-5 товаров
         const topList = document.getElementById('top-products');
         topList.innerHTML = '';
         if (data.top_products && data.top_products.length > 0) {
@@ -318,8 +344,69 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         } else {
             topList.innerHTML = '<li>Нет данных</li>';
         }
+
+        // ===== НОВЫЙ БЛОК: Таблица последних постов для ОРД =====
+        const postsTableBody = document.querySelector('#recent-posts-table tbody');
+        if (!postsTableBody) {
+            // Если таблица не найдена, создадим её динамически
+            const card = document.querySelector('.card:last-child')?.parentElement;
+            if (card) {
+                const newCard = document.createElement('div');
+                newCard.className = 'card';
+                newCard.innerHTML = `
+                    <h2>📋 Последние посты для ОРД</h2>
+                    <div style="overflow-x: auto;">
+                        <table id="recent-posts-table">
+                            <thead>
+                                <tr><th>ERID</th><th>Ссылка</th><th>Показы</th><th>Дата</th></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                `;
+                card.appendChild(newCard);
+            }
+        }
+
+        const postsTable = document.querySelector('#recent-posts-table tbody');
+        if (postsTable) {
+            postsTable.innerHTML = '';
+            if (data.recent_posts && data.recent_posts.length > 0) {
+                data.recent_posts.forEach(p => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><code style="font-size:12px;">${p.erid || '—'}</code></td>
+                        <td><a href="${p.link || '#'}" target="_blank" style="color: #4d6bfe;">Перейти</a></td>
+                        <td>${p.views || 0}</td>
+                        <td>${p.date ? new Date(p.date).toLocaleDateString('ru-RU') : '—'}</td>
+                    `;
+                    postsTable.appendChild(tr);
+                });
+            } else {
+                postsTable.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#888;">Нет постов с ERID</td></tr>';
+            }
+        }
+        // ===== КОНЕЦ НОВОГО БЛОКА =====
     }
 
+    // Кнопки переключения периода
+    document.getElementById('btn7d').addEventListener('click', () => {
+        document.querySelectorAll('.period-selector button').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn7d').classList.add('active');
+        loadData('7d');
+    });
+    document.getElementById('btn30d').addEventListener('click', () => {
+        document.querySelectorAll('.period-selector button').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn30d').classList.add('active');
+        loadData('30d');
+    });
+    document.getElementById('btnAll').addEventListener('click', () => {
+        document.querySelectorAll('.period-selector button').forEach(b => b.classList.remove('active'));
+        document.getElementById('btnAll').classList.add('active');
+        loadData('all');
+    });
+
+    // Функция запроса выплаты
     window.submitPayoutRequest = async function() {
         const details = document.getElementById('payout-details').value.trim();
         if (details.length < 10) {
@@ -339,22 +426,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         }
     };
 
-    document.getElementById('btn7d').addEventListener('click', () => {
-        document.querySelectorAll('.period-selector button').forEach(b => b.classList.remove('active'));
-        document.getElementById('btn7d').classList.add('active');
-        loadData('7d');
-    });
-    document.getElementById('btn30d').addEventListener('click', () => {
-        document.querySelectorAll('.period-selector button').forEach(b => b.classList.remove('active'));
-        document.getElementById('btn30d').classList.add('active');
-        loadData('30d');
-    });
-    document.getElementById('btnAll').addEventListener('click', () => {
-        document.querySelectorAll('.period-selector button').forEach(b => b.classList.remove('active'));
-        document.getElementById('btnAll').classList.add('active');
-        loadData('all');
-    });
-
+    // Первая загрузка
     loadData('30d');
 })();
 </script>
