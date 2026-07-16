@@ -112,22 +112,22 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <h2>🏆 Топ-5 товаров по публикациям</h2>
         <ol id="top-products"></ol>
     </div>
-</div>
 
-<div class="card">
-    <h2>📋 Последние посты для ОРД</h2>
-    <div style="overflow-x: auto;">
-        <table id="recent-posts-table">
-            <thead>
-                <tr>
-                    <th>ERID</th>
-                    <th>Ссылка</th>
-                    <th>Показы</th>
-                    <th>Дата</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+    <!-- Бета-функция: предпросмотр поста (скрыта по умолчанию) -->
+    <div id="preview-block" style="display: none;">
+        <div class="card">
+            <h2>👀 Предпросмотр поста (бета)</h2>
+            <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+                <button onclick="loadPreview()" class="btn">🎲 Случайный товар</button>
+                <button onclick="publishPost()" class="btn" style="background: #4caf50;">🚀 Опубликовать в канал</button>
+                <button onclick="document.getElementById('preview-content').innerHTML = ''; window._currentProductId = null;" class="btn" style="background: #555;">🧹 Очистить</button>
+            </div>
+            <div id="preview-container" style="background: #1e1e1e; border-radius: 12px; padding: 20px; border: 1px solid #333;">
+                <div id="preview-content" style="color: #ccc; text-align: center; padding: 40px 20px;">
+                    Нажмите «Случайный товар» для предпросмотра
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -507,6 +507,8 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     loadData('30d');
 })();
 </script>
+</body>
+</html>'''
 # ------------------------------------------------------------------------------
 # Шаблон чата выплат (пользователь)
 # ------------------------------------------------------------------------------
