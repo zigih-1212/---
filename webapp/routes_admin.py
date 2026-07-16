@@ -558,57 +558,10 @@ async def quarantine_delete(post_id: int, _: int = Depends(admin_required)):
     return RedirectResponse(url="/admin/quarantine", status_code=303)
 
 # ---------- Тарифы ----------
-@router.get("/tariffs", response_class=HTMLResponse)
-async def tariffs_list(request: Request, _: int = Depends(admin_required)):
-    conn = get_db()
-    try:
-        tariffs = conn.execute("SELECT * FROM tariffs ORDER BY id").fetchall()
-    finally:
-        conn.close()
-    return render("admin_tariffs.html", tariffs=tariffs, active_page='tariffs')
 
-@router.post("/tariffs/add", response_class=HTMLResponse)
-async def tariff_add(name: str = Form(...), days: int = Form(...), price_rub: float = Form(...),
-                     price_stars: int = Form(...), max_channels: int = Form(5),
-                     max_stores: int = Form(3), max_posts_per_day: int = Form(25),
-                     _: int = Depends(admin_required)):
-    conn = get_db()
-    conn.execute("INSERT INTO tariffs (name, days, price_rub, price_stars, max_channels, max_stores, max_posts_per_day, is_active) VALUES (?,?,?,?,?,?,?,1)",
-                 (name, days, price_rub, price_stars, max_channels, max_stores, max_posts_per_day))
-    conn.commit()
-    conn.close()
-    return RedirectResponse(url="/admin/tariffs", status_code=303)
 
-@router.get("/tariffs/edit/{tariff_id}", response_class=HTMLResponse)
-async def tariff_edit_form(tariff_id: int, request: Request, _: int = Depends(admin_required)):
-    conn = get_db()
-    try:
-        tariff = conn.execute("SELECT * FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
-        if not tariff:
-            return HTMLResponse("Тариф не найден", status_code=404)
-    finally:
-        conn.close()
-    return render("admin_tariff_edit.html", tariff=tariff, active_page='tariffs')
 
-@router.post("/tariffs/edit/{tariff_id}", response_class=HTMLResponse)
-async def tariff_edit_save(tariff_id: int, name: str = Form(...), days: int = Form(...),
-                           price_rub: float = Form(...), price_stars: int = Form(...),
-                           max_channels: int = Form(5), max_stores: int = Form(3),
-                           max_posts_per_day: int = Form(25), _: int = Depends(admin_required)):
-    conn = get_db()
-    conn.execute("UPDATE tariffs SET name=?, days=?, price_rub=?, price_stars=?, max_channels=?, max_stores=?, max_posts_per_day=? WHERE id=?",
-                 (name, days, price_rub, price_stars, max_channels, max_stores, max_posts_per_day, tariff_id))
-    conn.commit()
-    conn.close()
-    return RedirectResponse(url="/admin/tariffs", status_code=303)
 
-@router.get("/tariffs/delete/{tariff_id}")
-async def tariff_delete(tariff_id: int, _: int = Depends(admin_required)):
-    conn = get_db()
-    conn.execute("DELETE FROM tariffs WHERE id=?", (tariff_id,))
-    conn.commit()
-    conn.close()
-    return RedirectResponse(url="/admin/tariffs", status_code=303)
 
 # ---------- Рассылка ----------
 @router.get("/broadcast", response_class=HTMLResponse)
@@ -675,30 +628,7 @@ async def store_delivery_update(store: str = Form(...), delivery_text: str = For
     conn.close()
     return RedirectResponse(url="/admin/store_delivery", status_code=303)
 
-# ---------- Тестовые промокоды ----------
-@router.get("/test_promocodes", response_class=HTMLResponse)
-async def test_promocodes_list(request: Request, _: int = Depends(admin_required)):
-    conn = get_db()
-    promos = conn.execute("SELECT id, code, days, (SELECT COUNT(*) FROM promocode_activations WHERE UPPER(code)=UPPER(p.code)) as used_count FROM promocodes p ORDER BY id").fetchall()
-    formatted = [{"id": p["id"], "code": p["code"], "days": p["days"], "used": p["used_count"] > 0} for p in promos]
-    conn.close()
-    return render("admin_test_promocodes.html", promos=formatted, active_page='test_promo')
 
-@router.post("/test_promocodes/add", response_class=HTMLResponse)
-async def test_promocode_add(code: str = Form(...), days: int = Form(...), _: int = Depends(admin_required)):
-    conn = get_db()
-    conn.execute("INSERT INTO promocodes (code, days) VALUES (?,?)", (code.upper(), days))
-    conn.commit()
-    conn.close()
-    return RedirectResponse(url="/admin/test_promocodes", status_code=303)
-
-@router.get("/test_promocodes/delete/{id}")
-async def test_promocode_delete(id: int, _: int = Depends(admin_required)):
-    conn = get_db()
-    conn.execute("DELETE FROM promocodes WHERE id=?", (id,))
-    conn.commit()
-    conn.close()
-    return RedirectResponse(url="/admin/test_promocodes", status_code=303)
 
 # ---------- Массовые действия ----------
 @router.get("/bulk-actions", response_class=HTMLResponse)
