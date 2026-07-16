@@ -27,7 +27,7 @@ from aiogram.enums import ParseMode
 router = APIRouter()
 logger = logging.getLogger("autopost_bot.admin")
 # ---------- Загрузчик шаблонов ----------
-class DictLoader(BaseLoader):
+class DictLoader(BaseLoader):settings_edit_form 
     def __init__(self, mapping):
         self.mapping = mapping
     def get_source(self, environment, template):
@@ -663,9 +663,18 @@ async def bulk_actions_execute(request: Request, group: str = Form(...), action:
 async def settings_edit_form(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
     rows = conn.execute("SELECT key, value FROM settings").fetchall()
-    settings = {r['key']: r['value'] for r in rows}
+    settings_dict = {r['key']: r['value'] for r in rows}
     conn.close()
-    return render("admin_settings.html", settings=settings, active_page='settings')
+    
+    # Получаем статус бета-режима
+    beta_mode = settings_dict.get('beta_mode', 'off') == 'on'
+    beta_testers = get_beta_testers()
+    
+    return render("admin_settings.html", 
+                  settings=settings_dict, 
+                  beta_mode=beta_mode,
+                  beta_testers=beta_testers,
+                  active_page='settings')
 
 @router.post("/settings-edit/save", response_class=HTMLResponse)
 async def settings_edit_save(
