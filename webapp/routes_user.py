@@ -472,35 +472,43 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         }
     };
 
-    window.publishPost = async function() {
-        if (!window._currentProductId) {
-            alert('Сначала загрузите предпросмотр!');
-            return;
+window.publishPost = async function() {
+    if (!window._currentProductId) {
+        alert('Сначала загрузите предпросмотр!');
+        return;
+    }
+
+    if (!confirm('Опубликовать этот пост в ваш канал?')) return;
+
+    const container = document.getElementById('preview-content');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Публикация...</div>';
+
+    try {
+        const formData = new FormData();
+        formData.append('token', token);
+        formData.append('product_id', window._currentProductId);
+
+        const resp = await fetch('/my-stats/publish-post', { method: 'POST', body: formData });
+        const result = await resp.json();
+
+        if (result.ok) {
+            container.innerHTML = `
+                <div style="text-align:center; padding:20px; color:#4caf50;">
+                    ✅ Пост опубликован в канал!
+                </div>
+                <div style="text-align:center; padding:10px; font-size:12px; color:#888;">
+                    Кнопки предпросмотра временно скрыты. Загрузите новый товар.
+                </div>
+            `;
+            window._currentProductId = null;
+        } else {
+            container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка: ${result.error}</div>`;
         }
-        
-        if (!confirm('Опубликовать этот пост в ваш канал?')) return;
-        
-        const container = document.getElementById('preview-content');
-        if (!container) return;
-        container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Публикация...</div>';
-        
-        try {
-            const formData = new FormData();
-            formData.append('token', token);
-            formData.append('product_id', window._currentProductId);
-            
-            const resp = await fetch('/my-stats/publish-post', { method: 'POST', body: formData });
-            const result = await resp.json();
-            
-            if (result.ok) {
-                container.innerHTML = `<div style="text-align:center; padding:20px; color:#4caf50;">✅ Пост опубликован в канал!</div>`;
-            } else {
-                container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка: ${result.error}</div>`;
-            }
-        } catch (e) {
-            container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка публикации: ${e.message}</div>`;
-        }
-    };
+    } catch (e) {
+        container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка публикации: ${e.message}</div>`;
+    }
+};
     // ===== КОНЕЦ БЕТА-ФУНКЦИИ =====
 
     // Первая загрузка
