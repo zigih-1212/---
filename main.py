@@ -516,13 +516,17 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE admitad_transactions ADD COLUMN decline_reason TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass  
+    try:
+        cursor.execute("ALTER TABLE posts ADD COLUMN erid TEXT")
+    except sqlite3.OperationalError:
+        pass      
     # Добавляем колонку beta_tester для управления доступом к новым функциям
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN beta_tester INTEGER DEFAULT 0")
         logger.info("✅ Колонка beta_tester добавлена")
     except sqlite3.OperationalError as e:
         if "duplicate column name" not in str(e):
-            logger.warning(f"⚠️ Не удалось добавить beta_tester: {e}")      
+            logger.warning(f"⚠️ Не удалось добавить beta_tester: {e}")          
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована")
