@@ -956,8 +956,9 @@ async def show_user_cabinet(message: Message, user_id: int = None):
     role = user["role"]
 
 # Если оферта не принята – показываем только оферту
+    # ... внутри show_user_cabinet, если оферта не принята
     if not user["oferta_accepted"]:
-        privacy_link = "https://docs.google.com/document/d/ВАШ_GOOGLE_DOC/edit" # <-- Вставьте ссылку на Политику конфиденциальности
+        privacy_link = "https://docs.google.com/document/d/ВАШ_GOOGLE_DOC/edit"  # <-- замените на реальную ссылку
         
         if role == "saas":
             text_oferta = (
