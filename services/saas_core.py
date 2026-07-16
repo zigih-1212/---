@@ -135,7 +135,6 @@ async def publish_from_catalog(bot: Bot):
             SELECT u.user_id, u.tariff_id, u.role, u.post_interval_minutes, u.commission_rate
             FROM users u
             WHERE u.role IN ('saas', 'blogger') AND u.is_active = 1
-            AND (u.subscription_until > datetime('now') OR u.role = 'blogger')
         """).fetchall()
     finally:
         conn.close()
