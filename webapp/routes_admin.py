@@ -301,6 +301,23 @@ async def beta_remove(request: Request, user_id: int = Form(...), admin_id: int 
     except Exception as e:
         logger.error(f"Ошибка удаления бета-тестера: {e}")
         return HTMLResponse(f"<h1>Ошибка: {e}</h1>", status_code=500)
+
+@router.post("/admin/toggle-beta")
+async def toggle_beta(request: Request, admin_id: int = Depends(admin_required)):
+    """Включает/выключает глобальный режим бета-тестирования."""
+    conn = get_db()
+    try:
+        current = conn.execute("SELECT value FROM settings WHERE key = 'beta_mode'").fetchone()
+        new_value = "off" if current and current["value"] == "on" else "on"
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('beta_mode', ?)",
+            (new_value,)
+        )
+        conn.commit()
+        log_admin_action(admin_id, "toggle_beta", f"new state: {new_value}")
+    finally:
+        conn.close()
+    return RedirectResponse(url="/admin/settings-edit", status_code=303)
 # ---------- Дашборд ----------
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: int = Depends(admin_required)):
