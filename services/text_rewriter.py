@@ -74,14 +74,17 @@ def generate_post_text(title, price, currency, advertiser, erid, partner_url,
             discount_line=discount_line,
             link=link_text
         )
+        # Добавляем промокод с отступом
         if promocode:
-            caption += f"\n🎟 Промокод: <code>{promocode}</code>"
+            caption += f"\n\n🎟 Промокод: <code>{promocode}</code>"
+        # Добавляем доставку с отступом
         if delivery_info:
             short_delivery = delivery_info[:150].rstrip()
             if len(delivery_info) > 150:
                 short_delivery += '...'
-            caption += f"\n🚚 {short_delivery}"
-        caption += f"\n\nРеклама. {advertiser}"
+            caption += f"\n\n🚚 {short_delivery}"
+        # Рекламная метка с ERID (обязательно, компактно)
+        caption += f"\n\nРеклама. {advertiser} ｜ <code>{erid}</code>"
         if adult:
             caption = "🔞 18+\n" + caption
 
