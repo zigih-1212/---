@@ -1059,6 +1059,184 @@ async def collect_views_for_user(user_id: int, bot):
         logger.error(f"Ошибка в collect_views_for_user: {e}")
     finally:
         conn.close()
+
+# =============================================================================
+# === БЕТА-ФУНКЦИЯ: ПРЕДПРОСМОТР ПОСТА =======================================
+# =============================================================================
+
+@router.get("/preview-post")
+async def preview_post(token: str = Query(...), product_id: int = Query(None)):
+    try:
+        user_id = get_user_id_from_token(token)
+        
+        # Проверка доступа к бета-функции
+        if not await is_feature_available_async(user_id, "preview_post"):
+            return JSONResponse({"ok": False, "error": "Функция в режиме тестирования"})
+        
+        conn = get_db()
+        try:
+            if product_id:
+                product = conn.execute(
+                    "SELECT * FROM gdeslon_catalog WHERE id = ? AND user_id = ?",
+                    (product_id, user_id)
+                ).fetchone()
+            else:
+                product = conn.execute(
+                    """SELECT * FROM gdeslon_catalog 
+                       WHERE user_id = ? AND erid IS NOT NULL AND erid != ''
+                       ORDER BY RANDOM() LIMIT 1""",
+                    (user_id,)
+                ).fetchone()
+            
+            if not product:
+                return JSONResponse({"ok": False, "error": "Нет доступных товаров"})
+            
+            # Генерация текста по шаблону
+            from services.text_rewriter import generate_post_text
+            from services.admitad import get_delivery_for_store, get_random_promocode
+            
+            source = product["source"] or ""
+            delivery_info = get_delivery_for_store(source)
+            promocode = get_random_promocode(source)
+            
+            user_tmpl = conn.execute(
+                "SELECT product_template FROM users WHERE user_id = ?",
+                (user_id,)
+            ).fetchone()
+            custom_template = user_tmpl["product_template"] if user_tmpl else None
+            
+            caption = generate_post_text(
+                title=product["title"],
+                price=product["price"],
+                currency=product["currency"] or "₽",
+                advertiser=product["advertiser"] or "Рекламодатель",
+                erid=product["erid"],
+                partner_url=product["partner_url"] or "#",
+                adult=source in ["Розовый кролик"],
+                old_price=product["old_price"],
+                discount_percent=product["discount_percent"],
+                delivery_info=delivery_info,
+                promocode=promocode,
+                custom_template=custom_template
+            )
+            
+            return JSONResponse({
+                "ok": True,
+                "title": product["title"],
+                "image_url": product["image_url"],
+                "caption": caption,
+                "price": product["price"],
+                "currency": product["currency"] or "₽",
+                "advertiser": product["advertiser"] or "Рекламодатель",
+                "erid": product["erid"],
+                "source": source,
+                "product_id": product["id"],
+                "partner_url": product["partner_url"]
+            })
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка в preview_post: {e}")
+        return JSONResponse({"ok": False, "error": f"Внутренняя ошибка: {str(e)}"})
+
+@router.post("/publish-post")
+async def publish_post(request: Request, token: str = Form(...), product_id: int = Form(...)):
+    try:
+        user_id = get_user_id_from_token(token)
+        
+        # Проверка доступа к бета-функции
+        if not await is_feature_available_async(user_id, "preview_post"):
+            return JSONResponse({"ok": False, "error": "Функция в режиме тестирования"})
+        
+        bot = request.app.state.bot
+        
+        conn = get_db()
+        try:
+            product = conn.execute(
+                "SELECT * FROM gdeslon_catalog WHERE id = ? AND user_id = ?",
+                (product_id, user_id)
+            ).fetchone()
+            if not product:
+                return JSONResponse({"ok": False, "error": "Товар не найден"})
+            
+            # Помечаем как использованный
+            conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product_id,))
+            
+            channels = conn.execute(
+                "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
+                (user_id,)
+            ).fetchall()
+            if not channels:
+                return JSONResponse({"ok": False, "error": "Нет активных каналов"})
+            
+            from services.saas_core import publish_post_with_fallback
+            from services.text_rewriter import generate_post_text
+            from services.admitad import get_delivery_for_store, get_random_promocode
+            from handlers.saas import generate_subid2
+            
+            source = product["source"] or ""
+            delivery_info = get_delivery_for_store(source)
+            promocode = get_random_promocode(source)
+            user_tmpl = conn.execute(
+                "SELECT product_template FROM users WHERE user_id = ?",
+                (user_id,)
+            ).fetchone()
+            custom_template = user_tmpl["product_template"] if user_tmpl else None
+            
+            for ch in channels:
+                final_url = product["partner_url"]
+                if ch["sub_id"]:
+                    if '?' in final_url:
+                        final_url += '&subid=' + ch["sub_id"]
+                    else:
+                        final_url += '?subid=' + ch["sub_id"]
+                
+                subid2 = generate_subid2(user_id, ch["channel_id"])
+                if '?' in final_url:
+                    final_url += '&subid2=' + subid2
+                else:
+                    final_url += '?subid2=' + subid2
+                
+                caption = generate_post_text(
+                    title=product["title"],
+                    price=product["price"],
+                    currency=product["currency"] or "₽",
+                    advertiser=product["advertiser"] or "Рекламодатель",
+                    erid=product["erid"],
+                    partner_url=final_url,
+                    old_price=product["old_price"],
+                    discount_percent=product["discount_percent"],
+                    delivery_info=delivery_info,
+                    promocode=promocode,
+                    custom_template=custom_template
+                )
+                
+                msg = await publish_post_with_fallback(
+                    bot=bot,
+                    channel_id=ch["channel_id"],
+                    caption=caption,
+                    photo_url=product["image_url"],
+                    has_spoiler=source in ["Розовый кролик"]
+                )
+                
+                if msg:
+                    direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}"
+                    donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
+                    conn.execute(
+                        """INSERT INTO posts 
+                        (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
+                        (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], subid2, direct_link,
+                         product["erid"], datetime.now(timezone.utc).isoformat(), caption)
+                    )
+                    conn.commit()
+            
+            return JSONResponse({"ok": True})
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка в publish_post: {e}")
+        return JSONResponse({"ok": False, "error": f"Внутренняя ошибка: {str(e)}"})
 @router.get("/ord-report")
 async def download_ord_report(token: str = Query(...), request: Request = None):
     user_id = get_user_id_from_token(token)
