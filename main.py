@@ -115,7 +115,6 @@ def init_db() -> None:
     print("DEBUG: init_db done, starting bot...", flush=True, file=sys.stderr)
     conn = get_db()
     cursor = conn.cursor()
-
     cursor.execute("PRAGMA journal_mode=WAL;")
     cursor.execute("PRAGMA synchronous=NORMAL;")
   
