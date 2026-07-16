@@ -1044,6 +1044,60 @@ async def cmd_delete(message: Message):
         "Срок исполнения — 7 рабочих дней.\n\n"
         "Если вы захотите вернуться — просто напишите /start."
     )
+
+@router.message(Command("beta"))
+async def cmd_beta(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    
+    try:
+        args = message.text.split()
+        if len(args) < 2:
+            await message.answer(
+                "📋 Управление бета-тестерами:\n"
+                "/beta add USER_ID — добавить тестера\n"
+                "/beta remove USER_ID — убрать тестера\n"
+                "/beta list — список тестеров\n"
+                "/beta mode — статус бета-режима"
+            )
+            return
+        
+        from utils.feature_flags import add_beta_tester, remove_beta_tester, get_beta_testers, get_beta_mode, set_beta_mode
+        
+        action = args[1]
+        
+        if action == "add" and len(args) == 3:
+            user_id = int(args[2])
+            if add_beta_tester(user_id):
+                await message.answer(f"✅ Пользователь {user_id} добавлен в бета-тестеры")
+            else:
+                await message.answer(f"❌ Ошибка добавления {user_id}")
+        
+        elif action == "remove" and len(args) == 3:
+            user_id = int(args[2])
+            if remove_beta_tester(user_id):
+                await message.answer(f"✅ Пользователь {user_id} удалён из бета-тестеров")
+            else:
+                await message.answer(f"❌ Ошибка удаления {user_id}")
+        
+        elif action == "list":
+            testers = get_beta_testers()
+            if testers:
+                text = "👥 Бета-тестеры:\n"
+                for t in testers:
+                    text += f"- {t['user_id']} ({t['username'] or 'без username'})\n"
+                await message.answer(text)
+            else:
+                await message.answer("❌ Нет бета-тестеров")
+        
+        elif action == "mode":
+            mode = get_beta_mode()
+            await message.answer(f"🔬 Режим бета-тестирования: {'✅ ВКЛЮЧЁН' if mode else '❌ ВЫКЛЮЧЁН'}")
+        
+        else:
+            await message.answer("❌ Неизвестная команда. Используйте: add/remove/list/mode")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
 # ---------------------------------------------------------------------------
 # /cabinet
 # ---------------------------------------------------------------------------
