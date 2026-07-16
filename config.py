@@ -32,7 +32,6 @@ settings = load_settings()
 MIN_PAYOUT = float(settings["MIN_PAYOUT"])
 PAYOUT_FIXED_FEE = float(settings["PAYOUT_FIXED_FEE"])
 PAYOUT_BANK_PCT = float(settings["PAYOUT_BANK_PCT"])
-MAX_ACTIVE_PAYOUTS: int = 2
 ADMITAD_CLIENT_ID = os.getenv("ADMITAD_CLIENT_ID", "vQiCf6zVRa5E2MvG37HYWHHwb4uILL")
 ADMITAD_CLIENT_SECRET = os.getenv("ADMITAD_CLIENT_SECRET", "AsA0jCS7zq2O5k4ZAoMGKv7AokyXOE")
 WEBAPP_ADMIN_URL = os.getenv("WEBAPP_ADMIN_URL", "https://main-production-8221.up.railway.app/admin")
@@ -51,29 +50,7 @@ def is_night_time() -> bool:
     else:
         return now.time() >= start or now.time() <= end
 
-# --- Тарифы ---
-def load_tariffs():
-    conn = get_db()
-    try:
-        rows = conn.execute("SELECT * FROM tariffs WHERE is_active = 1 ORDER BY days").fetchall()
-        return [
-            {
-                "id": r["id"],
-                "name": r["name"],
-                "days": r["days"],
-                "price_rub": r["price_rub"],
-                "price_stars": r["price_stars"],
-                "max_channels": r["max_channels"] if "max_channels" in r.keys() else 5,
-                "max_posts_per_day": r["max_posts_per_day"] if "max_posts_per_day" in r.keys() else 25,
-                "max_categories": r["max_categories"] if "max_categories" in r.keys() else 3,
-                "min_cashback": r["min_cashback"] if "min_cashback" in r.keys() else 0,
-                "max_cashback": r["max_cashback"] if "max_cashback" in r.keys() else 0,
-                "max_stores": r["max_stores"] if "max_stores" in r.keys() else 3,  # ← добавлено
-            }
-            for r in rows
-        ]
-    finally:
-        conn.close()
+
 
 STORE_DELIVERY_INFO = {
     "Читай-город": "Бесплатная доставка от 3000 ₽",
@@ -91,13 +68,8 @@ ADMIN_IDS: list[int] = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split
 WEBAPP_ADMIN_URL: str = os.getenv("WEBAPP_ADMIN_URL", "")
 QUARANTINE_CHAT_ID: int = int(os.getenv("QUARANTINE_CHAT_ID", "0"))
 DEEPINFRA_API_KEY: str = os.getenv("DEEPINFRA_API_KEY", "")
-STARS_PROVIDER_TOKEN: str = os.getenv("STARS_PROVIDER_TOKEN", "")
 WEBAPP_HOST: str = os.getenv("WEBAPP_HOST", "0.0.0.0")
 WEBAPP_PORT: int = int(os.getenv("PORT", os.getenv("WEBAPP_PORT", "8000")))
-CARD_SBER: str = os.getenv("PAY_SBER", "2202 2081 0829 0025")
-CARD_TBANK: str = os.getenv("PAY_TBANK", "2200 7013 7009 3863")
-CARD_TON: str = os.getenv("PAY_CRYPTO_TON", "UQCua97IuHkQy5F5NPHBray_FJRJoWZa1OOLnq-geGIbGT")
-CARD_VISA_KG: str = os.getenv("PAY_VISA_KG", "4196720087839790")
 DB_PATH: str = "/app/data/autopost.db"
 
 CTA_PHRASES = [
