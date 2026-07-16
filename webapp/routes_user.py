@@ -733,6 +733,7 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             "clicks_labels": all_days,
             "clicks_counts": clicks_counts,
             "conversion_labels": all_days,
+            "recent_posts": [{"erid": p["erid"],"link": p["direct_link"],"views": p["views_count"] or 0,"date": p["published_at"]} for p in recent_posts]
             "conversion_values": conversion_values,
             "store_labels": [r["source"] or "Без названия" for r in store_rows],
             "store_values": [r["cnt"] for r in store_rows],
