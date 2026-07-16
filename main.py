@@ -30,11 +30,10 @@ from handlers.saas import router as saas_router
 from services.admitad import refill_admitad_catalogs, update_all_store_data_from_feed
 from webapp.auth import generate_admin_token, generate_user_token
 from config import (
-    settings, MIN_PAYOUT, PAYOUT_FIXED_FEE, PAYOUT_BANK_PCT, MAX_ACTIVE_PAYOUTS,
+    settings, MIN_PAYOUT, PAYOUT_FIXED_FEE, PAYOUT_BANK_PCT,
     is_night_time,
     BOT_TOKEN, ADMIN_IDS, WEBAPP_ADMIN_URL, WEBAPP_BASE_URL, QUARANTINE_CHAT_ID,
-    DEEPINFRA_API_KEY, WEBAPP_HOST, WEBAPP_PORT,
-    DB_PATH
+    DEEPINFRA_API_KEY, WEBAPP_HOST, WEBAPP_PORT, DB_PATH
 )
 from services.saas_core import (
     publish_post_with_fallback,
