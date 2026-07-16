@@ -38,11 +38,8 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
     <a href="/admin/dashboard" class="{{ 'active' if active_page == 'dashboard' }}">📊 Дашборд</a>
     <a href="/admin/users" class="{{ 'active' if active_page == 'users' }}">👥 Пользователи</a>
     <a href="/admin/posts" class="{{ 'active' if active_page == 'posts' }}">📬 Посты</a>
-    <a href="/admin/quarantine" class="{{ 'active' if active_page == 'quarantine' }}">🚨 Карантин</a>
-    <a href="/admin/tariffs" class="{{ 'active' if active_page == 'tariffs' }}">💎 Тарифы</a>
     <a href="/admin/promocodes" class="{{ 'active' if active_page == 'promocodes' }}">🎟 Купоны</a>
     <a href="/admin/store_delivery" class="{{ 'active' if active_page == 'delivery' }}">🚚 Доставка</a>
-    <a href="/admin/test_promocodes" class="{{ 'active' if active_page == 'test_promo' }}">🎁 Промокоды (тест)</a>
     <a href="/admin/broadcast" class="{{ 'active' if active_page == 'broadcast' }}">📣 Рассылка</a>
     <a href="/admin/payouts" class="{{ 'active' if active_page == 'payouts' }}">💰 Выплаты</a>
     <a href="/admin/bulk-actions" class="{{ 'active' if active_page == 'bulk' }}">👥 Массовые действия</a>
