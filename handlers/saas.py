@@ -544,6 +544,11 @@ async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, prod
                 conn_rec.commit()
             finally:
                 conn_rec.close()
+
+            # ===== АВТО-ЗАКРЕПЛЕНИЕ (если включено у пользователя) =====
+            from services.saas_core import pin_post_if_enabled
+            await pin_post_if_enabled(bot, user_id, ch["channel_id"], msg.message_id)
+
         await asyncio.sleep(1)
 
 @router.callback_query(F.data.startswith("force_confirm:"))
