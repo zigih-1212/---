@@ -333,9 +333,9 @@ async def publish_from_catalog(bot: Bot):
                     try:
                         conn_rec.execute(
                             """INSERT INTO posts 
-                            (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, status, published_at, caption)
-                            VALUES (?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
-                            (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link,
+                            (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, erid, status, published_at, caption)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
+                            (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link, erid,
                              datetime.now(timezone.utc).isoformat(), caption)
                         )
                         conn_rec.commit()
