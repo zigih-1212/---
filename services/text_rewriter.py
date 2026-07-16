@@ -81,7 +81,7 @@ def generate_post_text(title, price, currency, advertiser, erid, partner_url,
             if len(delivery_info) > 150:
                 short_delivery += '...'
             caption += f"\n🚚 {short_delivery}"
-        caption += f"\n\nРеклама. {advertiser}. Erid: {erid}"
+        caption += f"\n\nРеклама. {advertiser}"
         if adult:
             caption = "🔞 18+\n" + caption
 
