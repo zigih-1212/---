@@ -1118,9 +1118,7 @@ async def collect_views_for_user(user_id: int, bot):
         for post in posts:
             if not post["direct_link"]:
                 continue
-            # Извлекаем message_id из direct_link
             try:
-                # Формат: https://t.me/channel_name/123 или https://t.me/c/123456/123
                 parts = post["direct_link"].split("/")
                 msg_id = int(parts[-1])
                 chat_identifier = post["channel_id"]
@@ -1129,12 +1127,12 @@ async def collect_views_for_user(user_id: int, bot):
                 continue
             
             try:
-                # Пытаемся получить сообщение
-                msg = await bot.get_message(chat_id=chat_identifier, message_id=msg_id)
-                if msg and msg.views:
-                    conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (msg.views, post["id"]))
+                # Используем get_messages (работает в aiogram 3.x)
+                messages = await bot.get_messages(chat_id=chat_identifier, message_ids=[msg_id])
+                if messages and messages[0].views:
+                    conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (messages[0].views, post["id"]))
                     updated += 1
-                    logger.info(f"Обновлён просмотр для поста {post['id']}: {msg.views}")
+                    logger.info(f"Обновлён просмотр для поста {post['id']}: {messages[0].views}")
             except Exception as e:
                 logger.warning(f"Не удалось получить просмотры для поста {post['id']}: {e}")
         conn.commit()
@@ -1143,7 +1141,6 @@ async def collect_views_for_user(user_id: int, bot):
         logger.error(f"Ошибка в collect_views_for_user: {e}")
     finally:
         conn.close()
-
 # =============================================================================
 # === БЕТА-ФУНКЦИЯ: ПРЕДПРОСМОТР ПОСТА =======================================
 # =============================================================================
