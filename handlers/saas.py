@@ -281,6 +281,9 @@ async def cb_galaxy_city_selected(callback: CallbackQuery):
     finally:
         conn.close()
 
+    from services.admitad import fetch_admitad_catalog_for_user
+    await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)
+    
     await callback.answer(f"✅ Galaxy Store ({city_name}) добавлен в ваши магазины.")
     await cb_stores(callback)
 
