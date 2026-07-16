@@ -2153,7 +2153,9 @@ async def check_receipt_reminders(bot: Bot):
         conn.close()
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
+    logger.info("🔄 Настройка планировщика...")
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
+    
     scheduler.add_job(run_billing_check, trigger="interval", hours=1, kwargs={"bot": bot}, id="billing_check", replace_existing=True)
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
     scheduler.add_job(cleanup_old_posts, trigger="cron", hour=3, minute=0, id="cleanup_old_posts", replace_existing=True)
@@ -2166,9 +2168,10 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(check_rss_and_publish, trigger="interval", minutes=15, kwargs={"bot": bot}, id="check_rss", replace_existing=True)
     scheduler.add_job(check_receipt_reminders, trigger="interval", minutes=30, kwargs={"bot": bot}, id="receipt_reminders", replace_existing=True)
     scheduler.add_job(update_post_views, 'cron', hour=3, minute=30, kwargs={"bot": bot}, id="update_views", replace_existing=True)
-    scheduler.add_job(generate_monthly_ord_reports,trigger="cron",day=1,hour=0,minute=5,kwargs={"bot": bot},id="monthly_ord_reports",replace_existing=True)
+    scheduler.add_job(generate_monthly_ord_reports, trigger="cron", day=1, hour=0, minute=5, kwargs={"bot": bot}, id="monthly_ord_reports", replace_existing=True)
+    
+    logger.info("✅ Все задачи добавлены в планировщик")
     return scheduler
-
 # ---------------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------------
