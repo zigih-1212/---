@@ -395,6 +395,14 @@ def init_db() -> None:
             FOREIGN KEY(request_id) REFERENCES payout_requests(id)
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_consents (
+            user_id INTEGER PRIMARY KEY,
+            consent_given INTEGER DEFAULT 0,
+            consent_timestamp TIMESTAMP,
+            policy_version TEXT
+        )
+    """)  
     conn.commit()  
     # Миграции
     migrations = [
@@ -696,6 +704,32 @@ async def cb_blogger_post_interval(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
+@router.callback_query(F.data == "privacy:accept")
+async def cb_privacy_accept(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        conn.execute(
+            """INSERT OR REPLACE INTO user_consents 
+               (user_id, consent_given, consent_timestamp, policy_version) 
+               VALUES (?, 1, ?, '2026-07-20')""",
+            (user_id, datetime.now(timezone.utc).isoformat())
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    await callback.message.edit_text("✅ Спасибо! Теперь вы можете пользоваться ботом.")
+    await show_user_cabinet(callback.message, user_id=user_id)
+    await callback.answer()
+
+@router.callback_query(F.data == "privacy:decline")
+async def cb_privacy_decline(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "❌ Без согласия на обработку данных бот не может работать.\n"
+        "Если передумаете — напишите /start."
+    )
+    await callback.answer()
+
 @router.callback_query(F.data == "blogger_custom_interval")
 async def cb_blogger_custom_interval(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("✏️ Введите интервал в минутах (например, 45):")
@@ -923,7 +957,32 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
             )
     finally:
         conn.close()
-      
+
+@router.message(Command("privacy"))
+async def cmd_privacy(message: Message):
+    await message.answer(
+        "📄 Политика конфиденциальности:\n[ССЫЛКА НА ПОЛИТИКУ]",
+        disable_web_page_preview=True
+    )
+
+@router.message(Command("delete"))
+async def cmd_delete(message: Message):
+    user_id = message.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM channels WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM posts WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM user_consents WHERE user_id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    await message.answer(
+        "✅ Ваши данные удалены в соответствии со ст. 21 152-ФЗ.\n"
+        "Срок исполнения — 7 рабочих дней.\n\n"
+        "Если вы захотите вернуться — просто напишите /start."
+    )
+
 @router.message(Command("privacy"))
 async def cmd_privacy(message: Message):
     """Отправляет ссылку на политику конфиденциальности."""
@@ -1282,6 +1341,13 @@ async def cb_webstats(callback: CallbackQuery):
     )
     await callback.answer()
 
+@router.callback_query(F.data == "menu:privacy")
+async def cb_menu_privacy(callback: CallbackQuery):
+    await callback.message.answer(
+        "📄 Политика конфиденциальности:\n[ССЫЛКА НА ПОЛИТИКУ]",
+        disable_web_page_preview=True
+    )
+    await callback.answer()
 # ---------------------------------------------------------------------------
 # Настройки
 # ---------------------------------------------------------------------------
@@ -1637,6 +1703,14 @@ async def show_blogger_instruction(callback: CallbackQuery):
             [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
         ])
     )
+
+@router.callback_query(F.data == "menu:privacy")
+async def cb_menu_privacy(callback: CallbackQuery):
+    await callback.message.answer(
+        "📄 Политика конфиденциальности:\n[вставьте ссылку]",
+        disable_web_page_preview=True
+    )
+    await callback.answer()
 # ---------------------------------------------------------------------------
 # Административные команды
 # ---------------------------------------------------------------------------
