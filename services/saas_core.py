@@ -173,7 +173,11 @@ async def publish_from_catalog(bot: Bot):
 
         from services.admitad import STORE_ID_MAP, ADULT_STORES, STORES
         allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
-
+        
+        logger.info(f"[DEBUG] User {user_id}: store_ids = {store_ids}")
+        logger.info(f"[DEBUG] User {user_id}: allowed_sources = {allowed_sources}")
+        logger.info(f"[DEBUG] User {user_id}: role = {role}")
+        
         # Если пользователь не выбрал ни одного магазина — пропускаем публикацию
         if not allowed_sources:
             logger.info(f"[DEBUG] User {user_id}: нет выбранных магазинов, пропускаем")
