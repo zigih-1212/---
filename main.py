@@ -50,6 +50,7 @@ from utils import check_rss_and_publish
 from utils import generate_success_text
 from states import TaxStates 
 from keyboards.saas import kb_cabinet_menu
+from utils import collect_views_for_user
 
 logger = logging.getLogger("autopost_bot.referral")
 # ---------------------------------------------------------------------------
