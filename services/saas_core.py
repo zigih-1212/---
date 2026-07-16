@@ -326,7 +326,7 @@ async def publish_from_catalog(bot: Bot):
                     photo_url=photo_url,
                     has_spoiler=adult
                 )
-                     if msg:
+                if msg:
                     direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
                     donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
                     conn_rec = get_db()
