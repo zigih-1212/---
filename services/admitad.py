@@ -119,13 +119,13 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
 
     saved = 0
     for store_id, store_name in STORE_ID_MAP.items():
-        # Для SaaS – только выбранные магазины
-        if not is_blogger and store_id not in selected_ids:
+        # Если пользователь ничего не выбрал — загружаем ВСЕ магазины
+        if not selected_ids:
+            # Загружаем все магазины (пропускаем проверку)
+            pass
+        elif store_id not in selected_ids:
+            # Если выбраны конкретные магазины — загружаем только их
             continue
-        # Для блогера – если список выбранных НЕ пуст, проверяем выбор
-        if is_blogger and selected_ids and store_id not in selected_ids:
-            continue
-        # Если блогер и список пуст – загружаем все (условие выше пропускает)
 
         if store_name not in STORES:
             continue
