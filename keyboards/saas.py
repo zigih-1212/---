@@ -17,6 +17,7 @@ def kb_cabinet_menu(role: str = "saas"):
             [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
             [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="📜 Оферта", callback_data="menu:oferta")],
+            [InlineKeyboardButton(text="📄 Политика конфиденциальности", callback_data="menu:privacy")],
             [InlineKeyboardButton(text="🧾 Налоговый статус", callback_data="tax_status:change")],
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ]
@@ -30,6 +31,7 @@ def kb_cabinet_menu(role: str = "saas"):
             [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
             [InlineKeyboardButton(text="📖 Инструкция", callback_data="menu:instructions")],
             [InlineKeyboardButton(text="📜 Оферта", callback_data="menu:oferta")],
+            [InlineKeyboardButton(text="📄 Политика конфиденциальности", callback_data="menu:privacy")],
             [InlineKeyboardButton(text="📞 Поддержка", callback_data="support:contact")],
         ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
