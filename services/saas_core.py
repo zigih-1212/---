@@ -141,6 +141,8 @@ async def publish_from_catalog(bot: Bot):
         conn.close()
 
     logger.info(f"[DEBUG] Найдено активных пользователей: {len(users)}")
+    for u in users:
+        logger.info(f"[DEBUG] Пользователь {u['user_id']}, роль {u['role']}")
 
     for user in users:
         user_id = user["user_id"]
@@ -148,7 +150,9 @@ async def publish_from_catalog(bot: Bot):
         post_interval = user["post_interval_minutes"] or 60
         commission_rate = user["commission_rate"] or 0.95
 
-        # Проверка интервала для всех пользователей
+        logger.info(f"[DEBUG] Обработка пользователя {user_id}, роль {role}")
+
+        # Проверка интервала для ВСЕХ пользователей
         conn = get_db()
         try:
             last_post = conn.execute(
@@ -157,9 +161,12 @@ async def publish_from_catalog(bot: Bot):
             ).fetchone()[0]
             if last_post:
                 last_dt = datetime.fromisoformat(last_post.replace("Z", "+00:00"))
-                if (datetime.now(timezone.utc) - last_dt).total_seconds() < post_interval * 60:
-                    logger.info(f"[DEBUG] User {user_id}: интервал не вышел ({post_interval} мин), пропускаем")
+                seconds_since_last = (datetime.now(timezone.utc) - last_dt).total_seconds()
+                if seconds_since_last < post_interval * 60:
+                    logger.info(f"[DEBUG] User {user_id}: интервал {post_interval} мин, прошло {seconds_since_last:.0f} сек, пропускаем")
                     continue
+                else:
+                    logger.info(f"[DEBUG] User {user_id}: интервал прошёл, публикуем")
         finally:
             conn.close()
 
@@ -168,16 +175,14 @@ async def publish_from_catalog(bot: Bot):
         try:
             user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)).fetchall()
             store_ids = [r["category_id"] for r in user_stores]
+            logger.info(f"[DEBUG] User {user_id}: store_ids = {store_ids}")
         finally:
             conn.close()
 
         from services.admitad import STORE_ID_MAP, ADULT_STORES, STORES
         allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
-        
-        logger.info(f"[DEBUG] User {user_id}: store_ids = {store_ids}")
         logger.info(f"[DEBUG] User {user_id}: allowed_sources = {allowed_sources}")
-        logger.info(f"[DEBUG] User {user_id}: role = {role}")
-        
+
         # Если пользователь не выбрал ни одного магазина — пропускаем публикацию
         if not allowed_sources:
             logger.info(f"[DEBUG] User {user_id}: нет выбранных магазинов, пропускаем")
@@ -203,17 +208,28 @@ async def publish_from_catalog(bot: Bot):
         # Выбор товара
         conn = get_db()
         try:
+            # Сначала проверим, сколько всего товаров в каталоге для пользователя
+            total_count = conn.execute("SELECT COUNT(*) FROM gdeslon_catalog WHERE user_id = ?", (user_id,)).fetchone()[0]
+            unused_count = conn.execute("SELECT COUNT(*) FROM gdeslon_catalog WHERE user_id = ? AND used = 0", (user_id,)).fetchone()[0]
+            logger.info(f"[DEBUG] User {user_id}: всего товаров={total_count}, неиспользованных={unused_count}")
+
             if allowed_sources:
                 placeholders = ','.join('?' * len(allowed_sources))
-                product = conn.execute(
-                    f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
-                    (user_id, *allowed_sources, min_discount)
-                ).fetchone()
+                query = f"""
+                    SELECT * FROM gdeslon_catalog 
+                    WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL 
+                    AND source IN ({placeholders}) 
+                    AND (discount_percent IS NULL OR discount_percent >= ?) 
+                    ORDER BY RANDOM() LIMIT 1
+                """
+                logger.info(f"[DEBUG] User {user_id}: запрос с source IN ({placeholders})")
+                product = conn.execute(query, (user_id, *allowed_sources, min_discount)).fetchone()
             else:
                 product = None
 
             if not product:
                 if allowed_sources:
+                    # Сбрасываем used для всех товаров выбранных магазинов
                     conn.execute(
                         f"UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ? AND source IN ({placeholders})",
                         (user_id, *allowed_sources)
@@ -221,11 +237,10 @@ async def publish_from_catalog(bot: Bot):
                 else:
                     conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
                 conn.commit()
+                logger.info(f"[DEBUG] User {user_id}: сбросили used для всех товаров")
+
                 if allowed_sources:
-                    product = conn.execute(
-                        f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
-                        (user_id, *allowed_sources, min_discount)
-                    ).fetchone()
+                    product = conn.execute(query, (user_id, *allowed_sources, min_discount)).fetchone()
                 else:
                     product = conn.execute(
                         "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
@@ -235,13 +250,15 @@ async def publish_from_catalog(bot: Bot):
             if product:
                 conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
                 conn.commit()
+                logger.info(f"[DEBUG] User {user_id}: выбран товар id={product['id']}, source={product['source']}")
+            else:
+                logger.info(f"[DEBUG] User {user_id}: товар не найден после сброса used")
         finally:
             conn.close()
 
         if not product:
             logger.info(f"[DEBUG] User {user_id}: нет доступных товаров")
             if role == "blogger":
-                # Пополняем каталог, если он пуст
                 logger.info(f"[DEBUG] User {user_id}: запускаем экстренное пополнение каталога")
                 from services.admitad import fetch_admitad_catalog_for_user
                 await fetch_admitad_catalog_for_user(user_id, max_items_per_store=100)
@@ -252,13 +269,11 @@ async def publish_from_catalog(bot: Bot):
             try:
                 remaining = conn.execute("SELECT COUNT(*) FROM gdeslon_catalog WHERE user_id = ? AND used = 0", (user_id,)).fetchone()[0]
                 if remaining < 20:
-                    logger.info(f"[DEBUG] User {user_id}: мало товаров, запускаем пополнение")
+                    logger.info(f"[DEBUG] User {user_id}: мало товаров ({remaining}), запускаем пополнение")
                     from services.admitad import fetch_admitad_catalog_for_user
                     await fetch_admitad_catalog_for_user(user_id, max_items_per_store=100)
             finally:
                 conn.close()
-
-        logger.info(f"[DEBUG] User {user_id}: выбран товар id={product['id']}, source={product['source']}")
 
         partner_url = product['partner_url'] or ''
         title = product['title'] or ''
@@ -295,7 +310,6 @@ async def publish_from_catalog(bot: Bot):
                     final_url += '&subid=' + ch["sub_id"]
                 else:
                     final_url += '?subid=' + ch["sub_id"]
-            # Добавляем subid2 для детализации трафика
             subid2 = generate_subid2(user_id, ch["channel_id"])
             if '?' in final_url:
                 final_url += '&subid2=' + subid2
@@ -342,19 +356,14 @@ async def publish_from_catalog(bot: Bot):
                              erid, datetime.now(timezone.utc).isoformat(), caption)
                         )
                         conn_rec.commit()
+                        logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}, post_id={msg.message_id}")
+                        await pin_post_if_enabled(bot, user_id, ch["channel_id"], msg.message_id)
                     finally:
                         conn_rec.close()
-                    logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}, post_id={msg.message_id}")
-
-                    # ===== АВТО-ЗАКРЕПЛЕНИЕ (если включено у пользователя) =====
-                    from services.saas_core import pin_post_if_enabled
-                    await pin_post_if_enabled(bot, user_id, ch["channel_id"], msg.message_id)
-
                 else:
                     logger.warning(f"[DEBUG] Не удалось опубликовать в {ch['channel_id']}")
             except Exception as e:
                 logger.error(f"[DEBUG] Ошибка публикации в {ch['channel_id']}: {e}")
-                # Отправляем пост в карантин с причиной ошибки
                 conn_q = get_db()
                 try:
                     donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
