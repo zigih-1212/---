@@ -869,6 +869,34 @@ async def handle_payout_start(message: Message, state: FSMContext):
     )
     await state.set_state(PayoutStates.waiting_for_card)
 
+@router.callback_query(F.data == "oferta:accept")
+async def cb_oferta_accept(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET oferta_accepted=1 WHERE user_id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    await callback.answer("✅ Вы приняли условия Оферты.", show_alert=False)
+
+    # ПОСЛЕ ОФЕРТЫ ПОКАЗЫВАЕМ ПОЛИТИКУ И ЗАПРАШИВАЕМ СОГЛАСИЕ
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📄 Ознакомиться с политикой", url="[ССЫЛКА НА ПОЛИТИКУ]")],
+        [InlineKeyboardButton(text="✅ Согласен", callback_data="privacy:accept")],
+        [InlineKeyboardButton(text="❌ Не согласен", callback_data="privacy:decline")]
+    ])
+    await callback.message.edit_text(
+        "📋 **Согласие на обработку персональных данных**\n\n"
+        "Для продолжения работы с ботом необходимо ваше согласие на обработку персональных данных "
+        "в соответствии с 152-ФЗ.\n\n"
+        "Подробнее: [ССЫЛКА НА ПОЛИТИКУ]",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=kb
+    )
+    await state.clear()
+
 async def update_post_views(bot: Bot):
     """Обновляет количество просмотров для постов, опубликованных 30+ дней назад."""
     conn = get_db()
