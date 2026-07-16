@@ -265,6 +265,42 @@ async def get_receipt_file(path: str = Query(...), _: int = Depends(admin_requir
     if not os.path.exists(full_path):
         return HTMLResponse("Файл не найден", status_code=404)
     return FileResponse(full_path)
+
+@router.post("/settings/beta-toggle")
+async def beta_toggle(request: Request, enabled: str = Form(...), admin_id: int = Depends(admin_required)):
+    try:
+        is_enabled = enabled == "on"
+        from utils.feature_flags import set_beta_mode
+        set_beta_mode(is_enabled)
+        log_admin_action(admin_id, "beta_toggle", f"beta_mode={'on' if is_enabled else 'off'}")
+        return RedirectResponse(url="/admin/settings-edit", status_code=303)
+    except Exception as e:
+        logger.error(f"Ошибка переключения бета-режима: {e}")
+        return HTMLResponse(f"<h1>Ошибка: {e}</h1>", status_code=500)
+
+
+@router.post("/settings/beta-add")
+async def beta_add(request: Request, user_id: int = Form(...), admin_id: int = Depends(admin_required)):
+    try:
+        from utils.feature_flags import add_beta_tester
+        if add_beta_tester(user_id):
+            log_admin_action(admin_id, "beta_add", f"user_id={user_id}")
+        return RedirectResponse(url="/admin/settings-edit", status_code=303)
+    except Exception as e:
+        logger.error(f"Ошибка добавления бета-тестера: {e}")
+        return HTMLResponse(f"<h1>Ошибка: {e}</h1>", status_code=500)
+
+
+@router.post("/settings/beta-remove")
+async def beta_remove(request: Request, user_id: int = Form(...), admin_id: int = Depends(admin_required)):
+    try:
+        from utils.feature_flags import remove_beta_tester
+        if remove_beta_tester(user_id):
+            log_admin_action(admin_id, "beta_remove", f"user_id={user_id}")
+        return RedirectResponse(url="/admin/settings-edit", status_code=303)
+    except Exception as e:
+        logger.error(f"Ошибка удаления бета-тестера: {e}")
+        return HTMLResponse(f"<h1>Ошибка: {e}</h1>", status_code=500)
 # ---------- Дашборд ----------
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: int = Depends(admin_required)):
