@@ -2076,6 +2076,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(check_rss_and_publish, trigger="interval", minutes=15, kwargs={"bot": bot}, id="check_rss", replace_existing=True)
     scheduler.add_job(check_receipt_reminders, trigger="interval", minutes=30, kwargs={"bot": bot}, id="receipt_reminders", replace_existing=True)
     scheduler.add_job(update_post_views, 'cron', hour=3, minute=30, kwargs={"bot": bot}, id="update_views", replace_existing=True)
+    scheduler.add_job(generate_monthly_ord_reports,trigger="cron",day=1,hour=0,minute=5,kwargs={"bot": bot},id="monthly_ord_reports",replace_existing=True)
     return scheduler
 
 # ---------------------------------------------------------------------------
@@ -2151,7 +2152,78 @@ async def main() -> None:
         scheduler.shutdown()
         logger.info("Бот и планировщик остановлены")
 
+async def generate_monthly_ord_reports(bot: Bot):
+    """Генерирует отчёт ОРД для всех пользователей с постами за прошедший месяц и отправляет им в Telegram"""
+    conn = get_db()
+    try:
+        # Получаем всех пользователей, у которых есть опубликованные посты с ERID
+        users = conn.execute("""
+            SELECT DISTINCT user_id FROM posts 
+            WHERE status = 'published' AND erid IS NOT NULL AND erid != ''
+        """).fetchall()
+    finally:
+        conn.close()
 
+    for user_row in users:
+        user_id = user_row["user_id"]
+        try:
+            # Генерируем отчёт для пользователя
+            # Импортируем функцию из routes_user (нужно будет перенести или продублировать)
+            # Здесь мы можем вызвать ту же логику, что и в download_ord_report, но сохранить в файл
+            
+            # Собираем просмотры
+            await collect_views_for_user(user_id, bot)
+            
+            # Формируем Excel-файл
+            conn = get_db()
+            posts = conn.execute("""
+                SELECT p.published_at, p.erid, p.views_count, p.direct_link 
+                FROM posts p 
+                WHERE p.user_id = ? AND p.status = 'published' AND p.erid IS NOT NULL AND p.erid != ''
+                ORDER BY p.published_at DESC
+            """, (user_id,)).fetchall()
+            conn.close()
+            
+            if not posts:
+                continue
+            
+            # Создаём Excel
+            output = BytesIO()
+            workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+            worksheet = workbook.add_worksheet("ORD")
+            headers = ["erid", "Площадка", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания"]
+            for col, header in enumerate(headers):
+                worksheet.write(0, col, header)
+            row = 1
+            for p in posts:
+                views = p["views_count"] or 0
+                try:
+                    pub_date = datetime.fromisoformat(p["published_at"].replace("Z", "+00:00"))
+                    date_str = pub_date.strftime("%d.%m.%Y")
+                except:
+                    date_str = ""
+                worksheet.write(row, 0, p["erid"])
+                worksheet.write(row, 1, p["direct_link"] or "")
+                worksheet.write(row, 2, "Сайт/Приложение")
+                worksheet.write(row, 3, views)
+                worksheet.write(row, 4, 0)
+                worksheet.write(row, 5, 0)
+                worksheet.write(row, 6, date_str)
+                worksheet.write(row, 7, "")
+                row += 1
+            workbook.close()
+            output.seek(0)
+            
+            # Отправляем пользователю
+            filename = f"ORD_Report_{datetime.now().strftime('%Y%m')}.xlsx"
+            await bot.send_document(
+                chat_id=user_id,
+                document=("file.xlsx", output.getvalue()),
+                caption=f"📊 Ежемесячный отчёт для ОРД за {datetime.now().strftime('%B %Y')}\n\nВсего постов: {len(posts)}"
+            )
+            logger.info(f"Отчёт ОРД отправлен пользователю {user_id}")
+        except Exception as e:
+            logger.error(f"Ошибка генерации отчёта для user_id={user_id}: {e}")
 async def backup_database_to_telegram(bot: Bot):
     db_path = DB_PATH
     if not os.path.exists(db_path):
