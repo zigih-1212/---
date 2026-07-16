@@ -123,6 +123,9 @@ async def cb_toggle_store(callback: CallbackQuery):
     finally:
         conn.close()
 
+    from services.admitad import fetch_admitad_catalog_for_user
+    await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)    
+    
     await cb_stores(callback)
     await callback.answer()
 
