@@ -970,7 +970,10 @@ async def collect_views_for_user(user_id: int, bot):
 async def download_ord_report(token: str = Query(...), request: Request = None):
     user_id = get_user_id_from_token(token)
     
-    # Сбор просмотров из Telegram (ваша логика сохранена)
+    # Логирование для отладки
+    logger.info(f"Запрос отчёта ОРД для user_id={user_id}")
+    
+    # Сбор просмотров из Telegram
     bot = request.app.state.bot
     await collect_views_for_user(user_id, bot)
     
@@ -982,36 +985,44 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
             WHERE p.user_id = ? AND p.status = 'published' AND p.erid IS NOT NULL AND p.erid != ''
             ORDER BY p.published_at DESC
         """, (user_id,)).fetchall()
+        
+        logger.info(f"Найдено {len(posts)} постов для отчёта")
     finally:
         conn.close()
 
-    # Создаём Excel-файл в памяти
+    if not posts:
+        # Возвращаем Excel только с заголовками, но с уведомлением
+        output = BytesIO()
+        workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+        worksheet = workbook.add_worksheet("ORD")
+        headers = ["erid", "Площадка", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания"]
+        for col, header in enumerate(headers):
+            worksheet.write(0, col, header)
+        worksheet.set_column(0, 0, 30)
+        workbook.close()
+        output.seek(0)
+        filename = f"VK_ORD_Report_{user_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    # Создаём Excel-файл с данными
     output = BytesIO()
     workbook = xlsxwriter.Workbook(output, {'in_memory': True})
     worksheet = workbook.add_worksheet("ORD")
 
-    # Заголовки (строго по шаблону VK ОРД)
-    headers = [
-        "erid",
-        "Площадка",
-        "Тип площадки",
-        "Количество показов",
-        "Количество переходов",
-        "Сумма потраченная",
-        "Дата начала",
-        "Дата окончания"
-    ]
+    headers = ["erid", "Площадка", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания"]
     for col, header in enumerate(headers):
         worksheet.write(0, col, header)
 
-    # Заполнение данными
     row = 1
     for p in posts:
         erid = p["erid"]
         link = p["direct_link"] or ""
         views = p["views_count"] or 0
         
-        # Формат даты ДД.ММ.ГГГГ
         try:
             pub_date = datetime.fromisoformat(p["published_at"].replace("Z", "+00:00"))
             date_str = pub_date.strftime("%d.%m.%Y")
@@ -1020,23 +1031,16 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
 
         worksheet.write(row, 0, erid)
         worksheet.write(row, 1, link)
-        worksheet.write(row, 2, "Сайт/Приложение")  # тип площадки
+        worksheet.write(row, 2, "Сайт/Приложение")
         worksheet.write(row, 3, views)
-        worksheet.write(row, 4, 0)  # клики
-        worksheet.write(row, 5, 0)  # сумма
+        worksheet.write(row, 4, 0)
+        worksheet.write(row, 5, 0)
         worksheet.write(row, 6, date_str)
-        worksheet.write(row, 7, "")  # дата окончания
+        worksheet.write(row, 7, "")
         row += 1
 
-    # Автоширина колонок
     worksheet.set_column(0, 0, 30)
     worksheet.set_column(1, 1, 50)
-    worksheet.set_column(2, 2, 20)
-    worksheet.set_column(3, 3, 15)
-    worksheet.set_column(4, 4, 15)
-    worksheet.set_column(5, 5, 15)
-    worksheet.set_column(6, 6, 15)
-
     workbook.close()
     output.seek(0)
 
