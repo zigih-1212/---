@@ -347,62 +347,10 @@ QUARANTINE_TEMPLATE = '''{% extends "base.html" %}
 </div>
 {% endblock %}'''
 
-# ---------- TARIFFS ----------
-TARIFFS_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Тарифы{% endblock %}
-{% block content %}
-<h1>💎 Тарифы</h1>
-<div class="card">
-    <h2>Добавить</h2>
-    <form method="post" action="/admin/tariffs/add">
-        <input name="name" placeholder="Название" required>
-        <input name="days" placeholder="Дней" type="number" required>
-        <input name="price_rub" placeholder="Цена RUB" type="number" step="0.01" required>
-        <input name="price_stars" placeholder="Цена Stars" type="number" required>
-        <input name="max_channels" placeholder="Макс. каналов" type="number" value="5">
-        <input name="max_stores" placeholder="Макс. магазинов" type="number" value="3">
-        <input name="max_posts_per_day" placeholder="Постов в день" type="number" value="25">
-        <button type="submit">Создать</button>
-    </form>
-</div>
-<div class="card">
-    <h2>Список</h2>
-    <table>
-        <tr><th>Название</th><th>Дней</th><th>Цена RUB</th><th>Stars</th><th></th></tr>
-        {% for t in tariffs %}
-        <tr>
-            <td>{{ t['name'] }}</td>
-            <td>{{ t['days'] }}</td>
-            <td>{{ t['price_rub'] }}</td>
-            <td>{{ t['price_stars'] }}</td>
-            <td>
-                <a href="/admin/tariffs/edit/{{ t['id'] }}" class="btn">Ред.</a>
-                <a href="/admin/tariffs/delete/{{ t['id'] }}" class="btn">Удалить</a>
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-</div>
-{% endblock %}'''
 
-# ---------- TARIFF EDIT ----------
-TARIFF_EDIT_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Редактирование тарифа{% endblock %}
-{% block content %}
-<h1>✏️ Тариф "{{ tariff['name'] }}"</h1>
-<div class="card">
-    <form method="post" action="/admin/tariffs/edit/{{ tariff['id'] }}">
-        <input name="name" value="{{ tariff['name'] }}" required>
-        <input name="days" value="{{ tariff['days'] }}" type="number" required>
-        <input name="price_rub" value="{{ tariff['price_rub'] }}" type="number" step="0.01" required>
-        <input name="price_stars" value="{{ tariff['price_stars'] }}" type="number" required>
-        <input name="max_channels" value="{{ tariff['max_channels'] }}" type="number">
-        <input name="max_stores" value="{{ tariff['max_stores'] }}" type="number">
-        <input name="max_posts_per_day" value="{{ tariff['max_posts_per_day'] }}" type="number">
-        <button type="submit">Сохранить</button>
-    </form>
-</div>
-{% endblock %}'''
+
+
+
 
 # ---------- BROADCAST ----------
 BROADCAST_TEMPLATE = '''{% extends "base.html" %}
@@ -472,29 +420,7 @@ STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
 </div>
 {% endblock %}'''
 
-# ---------- TEST PROMOCODES ----------
-TEST_PROMOCODES_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Промокоды (тест){% endblock %}
-{% block content %}
-<h1>🎁 Промокоды (тестовый период)</h1>
-<div class="card">
-    <h2>Добавить</h2>
-    <form method="post" action="/admin/test_promocodes/add">
-        <input name="code" placeholder="Код" required>
-        <input name="days" placeholder="Дней" type="number" required>
-        <button type="submit">Создать</button>
-    </form>
-</div>
-<div class="card">
-    <h2>Список</h2>
-    <table>
-        <tr><th>Код</th><th>Дней</th><th>Использован?</th><th></th></tr>
-        {% for p in promos %}
-        <tr><td><code>{{ p['code'] }}</code></td><td>{{ p['days'] }}</td><td>{{ 'Да' if p['used'] else 'Нет' }}</td><td><a href="/admin/test_promocodes/delete/{{ p['id'] }}">Удалить</a></td></tr>
-        {% endfor %}
-    </table>
-</div>
-{% endblock %}'''
+
 
 # ---------- BULK ACTIONS ----------
 BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
