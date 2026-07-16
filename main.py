@@ -1098,57 +1098,7 @@ async def cmd_delete(message: Message):
         "Если вы захотите вернуться — просто напишите /start."
     )
 
-@router.message(Command("beta"))
-async def cmd_beta(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-    
-    args = message.text.split()
-    if len(args) < 2:
-        await message.answer(
-            "📋 Использование:\n"
-            "/beta add USER_ID — добавить тестера\n"
-            "/beta remove USER_ID — убрать тестера\n"
-            "/beta list — список тестеров"
-        )
-        return
-    
-    action = args[1]
-    conn = get_db()
-    try:
-        if action == "add":
-            if len(args) < 3:
-                await message.answer("❌ Укажите USER_ID")
-                return
-            user_id = int(args[2])
-            conn.execute("UPDATE users SET beta_tester = 1 WHERE user_id = ?", (user_id,))
-            conn.commit()
-            await message.answer(f"✅ Пользователь {user_id} добавлен в бета-тестеры")
-        elif action == "remove":
-            if len(args) < 3:
-                await message.answer("❌ Укажите USER_ID")
-                return
-            user_id = int(args[2])
-            conn.execute("UPDATE users SET beta_tester = 0 WHERE user_id = ?", (user_id,))
-            conn.commit()
-            await message.answer(f"✅ Пользователь {user_id} удалён из бета-тестеров")
-        elif action == "list":
-            rows = conn.execute("SELECT user_id, username FROM users WHERE beta_tester = 1").fetchall()
-            if rows:
-                text = "👥 Бета-тестеры:\n"
-                for r in rows:
-                    text += f"- {r['user_id']} ({r['username'] or 'без username'})\n"
-                await message.answer(text)
-            else:
-                await message.answer("❌ Нет бета-тестеров")
-        else:
-            await message.answer("❌ Неизвестное действие")
-    except ValueError:
-        await message.answer("❌ USER_ID должен быть числом")
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
-    finally:
-        conn.close()
+
 # ---------------------------------------------------------------------------
 # /cabinet
 # ---------------------------------------------------------------------------
@@ -2416,6 +2366,57 @@ async def backup_database_to_telegram(bot: Bot):
     except Exception as e:
         logger.error(f"Ошибка при отправке бэкапа: {e}")
 
+@router.message(Command("beta"))
+async def cmd_beta(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(
+            "📋 Использование:\n"
+            "/beta add USER_ID — добавить тестера\n"
+            "/beta remove USER_ID — убрать тестера\n"
+            "/beta list — список тестеров"
+        )
+        return
+    
+    action = args[1]
+    conn = get_db()
+    try:
+        if action == "add":
+            if len(args) < 3:
+                await message.answer("❌ Укажите USER_ID")
+                return
+            user_id = int(args[2])
+            conn.execute("UPDATE users SET beta_tester = 1 WHERE user_id = ?", (user_id,))
+            conn.commit()
+            await message.answer(f"✅ Пользователь {user_id} добавлен в бета-тестеры")
+        elif action == "remove":
+            if len(args) < 3:
+                await message.answer("❌ Укажите USER_ID")
+                return
+            user_id = int(args[2])
+            conn.execute("UPDATE users SET beta_tester = 0 WHERE user_id = ?", (user_id,))
+            conn.commit()
+            await message.answer(f"✅ Пользователь {user_id} удалён из бета-тестеров")
+        elif action == "list":
+            rows = conn.execute("SELECT user_id, username FROM users WHERE beta_tester = 1").fetchall()
+            if rows:
+                text = "👥 Бета-тестеры:\n"
+                for r in rows:
+                    text += f"- {r['user_id']} ({r['username'] or 'без username'})\n"
+                await message.answer(text)
+            else:
+                await message.answer("❌ Нет бета-тестеров")
+        else:
+            await message.answer("❌ Неизвестное действие")
+    except ValueError:
+        await message.answer("❌ USER_ID должен быть числом")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
