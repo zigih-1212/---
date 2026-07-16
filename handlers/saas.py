@@ -23,7 +23,7 @@ from services.admitad import get_random_promocode
 from states import SaasStates, PaymentFSM, PayoutStates, TaxStates
 
 logger = logging.getLogger("autopost_bot.saas")
-
+logger.info(f"cb_stores called for user {callback.from_user.id}")
 router = Router(name="saas")
 
 # ---------------------------------------------------------------------------
@@ -39,9 +39,10 @@ async def cb_stores(callback: CallbackQuery):
             (user_id,)
         ).fetchall()
         user_store_ids = {r["category_id"] for r in user_stores}
-        count = len(user_store_ids)
+        selected_count = len(user_store_ids)
     finally:
         conn.close()
+
     stores = [
         {"id": 1, "name": "AliExpress (пока недоступен)"},
         {"id": 2, "name": "Читай-город"},
@@ -54,14 +55,13 @@ async def cb_stores(callback: CallbackQuery):
         {"id": 9, "name": "Moulinex"},
         {"id": 10, "name": "Playtoday"},
         {"id": 11, "name": "SELA"},
-        {"id": 12, "name": "Galaxy Store (Pro/VIP)"},
+        {"id": 12, "name": "Galaxy Store"},
     ]
 
-    text = f"🏪 <b>Выберите магазины для постинга:</b> (выбрано {selected_count}/{max_stores})\n\n"
+    text = f"🏪 <b>Выберите магазины для постинга:</b> (выбрано {selected_count})\n\n"
     kb_rows = []
     for store in stores:
         emoji = "✅" if store["id"] in user_store_ids else "❌"
-        text += f"{emoji} {store['name']}\n"
         kb_rows.append([InlineKeyboardButton(
             text=f"{emoji} {store['name']}",
             callback_data=f"store_toggle:{store['id']}"
