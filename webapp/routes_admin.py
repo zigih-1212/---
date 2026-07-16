@@ -303,6 +303,7 @@ async def beta_remove(request: Request, user_id: int = Form(...), admin_id: int 
         return HTMLResponse(f"<h1>Ошибка: {e}</h1>", status_code=500)
 
 @router.post("/admin/toggle-beta")
+@router.post("/admin/toggle-beta")
 async def toggle_beta(request: Request, admin_id: int = Depends(admin_required)):
     """Включает/выключает глобальный режим бета-тестирования."""
     conn = get_db()
