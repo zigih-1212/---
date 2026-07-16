@@ -26,16 +26,15 @@ from logging.handlers import RotatingFileHandler
 from typing import Optional, Dict, Any, List
 from webapp import create_app
 import sys
-from keyboards.saas import kb_cabinet_menu, kb_tariffs, kb_payment_methods
 from handlers.saas import router as saas_router
 from services.admitad import refill_admitad_catalogs, update_all_store_data_from_feed
 from webapp.auth import generate_admin_token, generate_user_token
 from config import (
     settings, MIN_PAYOUT, PAYOUT_FIXED_FEE, PAYOUT_BANK_PCT, MAX_ACTIVE_PAYOUTS,
-    is_night_time, load_tariffs,
+    is_night_time,
     BOT_TOKEN, ADMIN_IDS, WEBAPP_ADMIN_URL, WEBAPP_BASE_URL, QUARANTINE_CHAT_ID,
-    DEEPINFRA_API_KEY, STARS_PROVIDER_TOKEN, WEBAPP_HOST, WEBAPP_PORT,
-    CARD_SBER, CARD_TBANK, CARD_TON, CARD_VISA_KG, DB_PATH
+    DEEPINFRA_API_KEY, WEBAPP_HOST, WEBAPP_PORT,
+    DB_PATH
 )
 from services.saas_core import (
     publish_post_with_fallback,
