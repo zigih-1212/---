@@ -148,13 +148,19 @@ async def generate_success_text(user_id: int, role: str = "blogger") -> str:
             WHERE user_id=? AND time >= strftime('%s', 'now', '-30 days')
         """, (user_id,)).fetchone()[0] or 0
 
-        # Перенесено внутрь try, чтобы соединение было открыто
+        # sub_id для реферальной ссылки
+        user_info = conn.execute("SELECT sub_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+        sub_id = user_info["sub_id"] if user_info else ""
+
+    finally:
+        conn.close()
+
+    # Формируем текст (вне блока try, так как данные уже получены)
     if role == "saas":
         role_text = "SaaS-клиент AutoPost"
     else:
         role_text = "Блогер AutoPost"
 
-    # sub_id уже получен внутри try
     lines = [
         f"🚀 Я зарабатываю с AutoPost Bot!",
         f"👤 {role_text}",
