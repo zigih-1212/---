@@ -5,6 +5,8 @@ import uuid
 import csv
 import io
 import logging
+import xlsxwriter
+from io import BytesIO
 from fastapi import APIRouter, Request, Query, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from services.db import get_db
@@ -974,7 +976,6 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
     
     conn = get_db()
     try:
-        # Добавил фильтр AND p.erid IS NOT NULL, чтобы в ОРД не летели пустые строки
         posts = conn.execute("""
             SELECT p.published_at, p.erid, p.views_count, p.direct_link 
             FROM posts p 
@@ -983,15 +984,14 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
         """, (user_id,)).fetchall()
     finally:
         conn.close()
-        
-    output = io.StringIO()
-    
-    # ВАЖНО: BOM-маркер, чтобы Excel в Windows не ломал русские буквы
-    output.write('\ufeff')
-    writer = csv.writer(output, delimiter=',', quoting=csv.QUOTE_MINIMAL)
-    
-    # Идеальные заголовки по шаблону VK ОРД
-    writer.writerow([
+
+    # Создаём Excel-файл в памяти
+    output = BytesIO()
+    workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+    worksheet = workbook.add_worksheet("ORD")
+
+    # Заголовки (строго по шаблону VK ОРД)
+    headers = [
         "erid",
         "Площадка",
         "Тип площадки",
@@ -1000,39 +1000,49 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
         "Сумма потраченная",
         "Дата начала",
         "Дата окончания"
-    ])
-    
+    ]
+    for col, header in enumerate(headers):
+        worksheet.write(0, col, header)
+
+    # Заполнение данными
+    row = 1
     for p in posts:
         erid = p["erid"]
         link = p["direct_link"] or ""
         views = p["views_count"] or 0
         
-        # VK ОРД требует дату в формате ДД.ММ.ГГГГ
+        # Формат даты ДД.ММ.ГГГГ
         try:
             pub_date = datetime.fromisoformat(p["published_at"].replace("Z", "+00:00"))
             date_str = pub_date.strftime("%d.%m.%Y")
         except Exception:
             date_str = ""
-            
-        writer.writerow([
-            erid,
-            link,
-            "Сайт/Приложение", # Стандарт для Telegram
-            views,
-            0,   # Клики (если не считаете отдельно)
-            "0", # Потраченная сумма
-            date_str,
-            ""   # Дата окончания
-        ])
-        
+
+        worksheet.write(row, 0, erid)
+        worksheet.write(row, 1, link)
+        worksheet.write(row, 2, "Сайт/Приложение")  # тип площадки
+        worksheet.write(row, 3, views)
+        worksheet.write(row, 4, 0)  # клики
+        worksheet.write(row, 5, 0)  # сумма
+        worksheet.write(row, 6, date_str)
+        worksheet.write(row, 7, "")  # дата окончания
+        row += 1
+
+    # Автоширина колонок
+    worksheet.set_column(0, 0, 30)
+    worksheet.set_column(1, 1, 50)
+    worksheet.set_column(2, 2, 20)
+    worksheet.set_column(3, 3, 15)
+    worksheet.set_column(4, 4, 15)
+    worksheet.set_column(5, 5, 15)
+    worksheet.set_column(6, 6, 15)
+
+    workbook.close()
     output.seek(0)
-    
-    # Название файла изменено для удобства
-    from datetime import datetime as dt
-    filename = f"VK_ORD_Report_{user_id}_{dt.now().strftime('%Y%m%d')}.csv"
-    
+
+    filename = f"VK_ORD_Report_{user_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     return StreamingResponse(
-        iter([output.getvalue()]), 
-        media_type="text/csv", 
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
