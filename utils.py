@@ -242,3 +242,49 @@ async def check_rss_and_publish(bot: Bot):
             conn.commit()
         finally:
             conn.close()
+
+# =============================================================================
+# === БЕТА-ФУНКЦИИ (FEATURE FLAGS) ============================================
+# =============================================================================
+
+async def is_beta_tester(user_id: int) -> bool:
+    """Проверяет, является ли пользователь бета-тестером."""
+    from services.db import get_db
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT beta_tester FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        return bool(row and row["beta_tester"] == 1)
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+async def is_beta_mode_enabled() -> bool:
+    """Проверяет, включён ли глобальный режим бета-тестирования."""
+    from services.db import get_db
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = 'beta_mode'").fetchone()
+        return row and row["value"] == "on"
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+def is_feature_available(user_id: int, feature_name: str = "preview_post") -> bool:
+    """
+    Проверяет, доступна ли функция пользователю.
+    Если beta_mode = off → доступно всем.
+    Если beta_mode = on → доступно только бета-тестерам.
+    """
+    # Синхронная обёртка для использования в обработчиках (вызываем через asyncio.run или делаем асинхронной)
+    # Но для простоты сделаем асинхронную версию:
+    pass
+
+# Асинхронная версия:
+async def is_feature_available_async(user_id: int, feature_name: str = "preview_post") -> bool:
+    beta_mode = await is_beta_mode_enabled()
+    if not beta_mode:
+        return True  # режим выключен → функция доступна всем
+    # Режим включён → доступно только тестерам
+    return await is_beta_tester(user_id)
