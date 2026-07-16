@@ -46,10 +46,10 @@ def generate_post_text(title, price, currency, advertiser, erid, partner_url,
                 discount_line=discount_line,
                 delivery_line=delivery_line,
                 promocode_line=promocode_line,
-                price_label="Цена"
+                price_label="Цена",
+                cta_phrase=""   # <-- ДОБАВИТЬ ЭТУ СТРОКУ
             )
         except KeyError as e:
-            # fallback to default
             logger.warning(f"Custom template error: {e}, using default")
             custom_template = None
 
