@@ -342,6 +342,11 @@ async def publish_from_catalog(bot: Bot):
                     finally:
                         conn_rec.close()
                     logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}, post_id={msg.message_id}")
+
+                    # ===== АВТО-ЗАКРЕПЛЕНИЕ (если включено у пользователя) =====
+                    from services.saas_core import pin_post_if_enabled
+                    await pin_post_if_enabled(bot, user_id, ch["channel_id"], msg.message_id)
+
                 else:
                     logger.warning(f"[DEBUG] Не удалось опубликовать в {ch['channel_id']}")
             except Exception as e:
