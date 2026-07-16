@@ -326,17 +326,17 @@ async def publish_from_catalog(bot: Bot):
                     photo_url=photo_url,
                     has_spoiler=adult
                 )
-                if msg:
+                     if msg:
                     direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}" if ch['channel_id'] else ""
                     donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
                     conn_rec = get_db()
                     try:
                         conn_rec.execute(
                             """INSERT INTO posts 
-                            (user_id, donor_post_id, channel_id, target_channel_id, subid1, direct_link, erid, status, published_at, caption)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
-                            (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], direct_link, erid,
-                             datetime.now(timezone.utc).isoformat(), caption)
+                            (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
+                            (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], subid2, direct_link,
+                             erid, datetime.now(timezone.utc).isoformat(), caption)
                         )
                         conn_rec.commit()
                     finally:
