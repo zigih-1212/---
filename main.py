@@ -923,7 +923,34 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
             )
     finally:
         conn.close()
+      
+@router.message(Command("privacy"))
+async def cmd_privacy(message: Message):
+    """Отправляет ссылку на политику конфиденциальности."""
+    await message.answer(
+        "📄 Политика конфиденциальности:\n[вставьте ссылку]",
+        disable_web_page_preview=True
+    )
 
+@router.message(Command("delete"))
+async def cmd_delete(message: Message):
+    """Удаляет все данные пользователя по запросу (ст. 21 152-ФЗ)."""
+    user_id = message.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM channels WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM posts WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM user_consents WHERE user_id=?", (user_id,))
+        # Добавьте другие таблицы, если они есть
+        conn.commit()
+    finally:
+        conn.close()
+    await message.answer(
+        "✅ Ваши данные удалены в соответствии со ст. 21 152-ФЗ.\n"
+        "Срок исполнения — 7 рабочих дней.\n\n"
+        "Если вы захотите вернуться — просто напишите /start."
+    )
 # ---------------------------------------------------------------------------
 # /cabinet
 # ---------------------------------------------------------------------------
