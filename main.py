@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Dict, Any, List
 from webapp import create_app
+from webapp.routes_user import collect_views_for_user
 import sys
 from handlers.saas import router as saas_router
 from services.admitad import refill_admitad_catalogs, update_all_store_data_from_feed
