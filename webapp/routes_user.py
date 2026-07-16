@@ -146,14 +146,12 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         const resp = await fetch(`/my-stats/data?token=${token}&period=${period}`);
         const data = await resp.json();
 
-        // Финансы
         document.getElementById('finance-balance').innerHTML = `
             <p>💳 Доступно к выводу: <b>${data.balance_available.toFixed(2)} ₽</b></p>
             <p>⏳ В ожидании: <b>${data.balance_pending.toFixed(2)} ₽</b></p>
             <p>📬 Постов за период: <b>${data.total_posts}</b> | 💵 Доход: <b>${data.total_revenue.toFixed(2)} ₽</b></p>
         `;
 
-        // Статус выплаты
         const statusResp = await fetch(`/my-stats/payout-status?token=${token}`);
         const statusData = await statusResp.json();
         const reqForm = document.getElementById('payout-request-form');
@@ -173,7 +171,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             }
         }
 
-        // Транзакции
         const txDiv = document.getElementById('finance-transactions');
         if (data.recent_transactions && data.recent_transactions.length > 0) {
             let html = '<h3>Последние транзакции</h3><table><tr><th>Сумма</th><th>Статус</th><th>Заказ</th><th>Дата</th></tr>';
@@ -191,7 +188,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             txDiv.innerHTML = '<p>Нет транзакций</p>';
         }
 
-        // График постов
         if (postsChart) postsChart.destroy();
         postsChart = new Chart(document.getElementById('postsChart'), {
             type: 'line',
@@ -211,7 +207,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             }
         });
 
-        // График дохода
         const revenueContainer = document.getElementById('revenue-chart-container');
         if (revenueChart) revenueChart.destroy();
         if (data.revenue_values && data.revenue_values.length > 0) {
@@ -238,7 +233,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             revenueChart = null;
         }
 
-        // График кликов и конверсии
         if (clicksChart) clicksChart.destroy();
         if (data.clicks_labels && data.clicks_labels.length > 0) {
             clicksChart = new Chart(document.getElementById('clicksChart'), {
@@ -294,7 +288,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             });
         }
 
-        // Круговая диаграмма магазинов
         if (storeChart) storeChart.destroy();
         if (data.store_labels && data.store_labels.length > 0) {
             storeChart = new Chart(document.getElementById('storeChart'), {
@@ -313,7 +306,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             });
         }
 
-        // Таблица каналов
         const table = document.getElementById('channels-table');
         table.innerHTML = '<tr><th>Канал</th><th>Постов</th><th>Кликов</th><th>Продаж</th><th>Доход</th><th>Конверсия</th></tr>';
         if (data.channels && data.channels.length > 0) {
@@ -332,7 +324,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             table.insertRow().innerHTML = '<td colspan="6">Нет данных</td>';
         }
 
-        // Топ-5 товаров
         const topList = document.getElementById('top-products');
         topList.innerHTML = '';
         if (data.top_products && data.top_products.length > 0) {
@@ -348,7 +339,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         // ===== НОВЫЙ БЛОК: Таблица последних постов для ОРД =====
         const postsTableBody = document.querySelector('#recent-posts-table tbody');
         if (!postsTableBody) {
-            // Если таблица не найдена, создадим её динамически
             const card = document.querySelector('.card:last-child')?.parentElement;
             if (card) {
                 const newCard = document.createElement('div');
@@ -367,22 +357,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
                 card.appendChild(newCard);
             }
         }
-<!-- Бета-функция: предпросмотр поста (скрыта по умолчанию) -->
-<div id="preview-block" style="display: none;">
-    <div class="card">
-        <h2>👀 Предпросмотр поста (бета)</h2>
-        <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
-            <button onclick="loadPreview()" class="btn">🎲 Случайный товар</button>
-            <button onclick="publishPost()" class="btn" style="background: #4caf50;">🚀 Опубликовать в канал</button>
-            <button onclick="document.getElementById('preview-content').innerHTML = ''; window._currentProductId = null;" class="btn" style="background: #555;">🧹 Очистить</button>
-        </div>
-        <div id="preview-container" style="background: #1e1e1e; border-radius: 12px; padding: 20px; border: 1px solid #333;">
-            <div id="preview-content" style="color: #ccc; text-align: center; padding: 40px 20px;">
-                Нажмите «Случайный товар» для предпросмотра
-            </div>
-        </div>
-    </div>
-</div>
 
         const postsTable = document.querySelector('#recent-posts-table tbody');
         if (postsTable) {
@@ -441,6 +415,92 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             document.getElementById('payout-msg').innerHTML = '❌ ' + result.error;
         }
     };
+
+    // ===== БЕТА-ФУНКЦИЯ: ПРЕДПРОСМОТР ПОСТА =====
+    const isBeta = {{ is_beta }};
+    if (isBeta) {
+        const previewBlock = document.getElementById('preview-block');
+        if (previewBlock) {
+            previewBlock.style.display = 'block';
+        }
+    }
+
+    window.loadPreview = async function(productId = null) {
+        const container = document.getElementById('preview-content');
+        if (!container) return;
+        container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Загрузка...</div>';
+        
+        try {
+            let url = `/my-stats/preview-post?token=${token}`;
+            if (productId) url += `&product_id=${productId}`;
+            
+            const resp = await fetch(url);
+            const data = await resp.json();
+            
+            if (!data.ok) {
+                container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ ${data.error}</div>`;
+                return;
+            }
+            
+            const adultBadge = data.source === 'Розовый кролик' 
+                ? '<div style="background:#ff4444; color:#fff; padding:4px 12px; border-radius:12px; font-size:12px; display:inline-block; margin-bottom:8px;">🔞 18+</div>' 
+                : '';
+            
+            const imageHtml = data.image_url 
+                ? `<div style="margin-bottom:12px;"><img src="${data.image_url}" style="max-width:100%; max-height:300px; border-radius:8px; object-fit:contain; background:#111;" onerror="this.style.display='none'"></div>` 
+                : '';
+            
+            container.innerHTML = `
+                <div style="background: #0f0f0f; border-radius:12px; padding:16px; max-width:500px; margin:0 auto; text-align:left; border:1px solid #2a2a2a;">
+                    ${adultBadge}
+                    ${imageHtml}
+                    <div style="font-size:14px; line-height:1.6; word-wrap:break-word; white-space:pre-wrap;">
+                        ${data.caption.replace(/\n/g, '<br>')}
+                    </div>
+                    <div style="margin-top:12px; padding-top:12px; border-top:1px solid #2a2a2a; font-size:12px; color:#888;">
+                        <span style="color:#4d6bfe;">💡 Нажмите «Опубликовать в канал», чтобы отправить этот пост</span>
+                    </div>
+                </div>
+            `;
+            
+            window._currentProductId = data.product_id;
+            window._currentPartnerUrl = data.partner_url;
+            
+        } catch (e) {
+            container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка загрузки: ${e.message}</div>`;
+        }
+    };
+
+    window.publishPost = async function() {
+        if (!window._currentProductId) {
+            alert('Сначала загрузите предпросмотр!');
+            return;
+        }
+        
+        if (!confirm('Опубликовать этот пост в ваш канал?')) return;
+        
+        const container = document.getElementById('preview-content');
+        if (!container) return;
+        container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Публикация...</div>';
+        
+        try {
+            const formData = new FormData();
+            formData.append('token', token);
+            formData.append('product_id', window._currentProductId);
+            
+            const resp = await fetch('/my-stats/publish-post', { method: 'POST', body: formData });
+            const result = await resp.json();
+            
+            if (result.ok) {
+                container.innerHTML = `<div style="text-align:center; padding:20px; color:#4caf50;">✅ Пост опубликован в канал!</div>`;
+            } else {
+                container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка: ${result.error}</div>`;
+            }
+        } catch (e) {
+            container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка публикации: ${e.message}</div>`;
+        }
+    };
+    // ===== КОНЕЦ БЕТА-ФУНКЦИИ =====
 
     // Первая загрузка
     loadData('30d');
