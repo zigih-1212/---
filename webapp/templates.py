@@ -472,24 +472,26 @@ SETTINGS_TEMPLATE = '''{% extends "base.html" %}
         <input name="payout_bank_pct" value="{{ settings.get('payout_bank_pct', '0.043') }}" step="0.001">
         <button type="submit">Сохранить</button>
     </form>
-<!-- Вставить внутри SETTINGS_TEMPLATE, после тега </form> или перед ним -->
-<hr style="margin: 30px 0; border-color: #333;">
-<h2>🔬 Бета-тестирование</h2>
-<form method="post" action="/admin/toggle-beta">
-    <p>
-        Текущий статус: 
-        <strong style="color: {{ '#4caf50' if settings.get('beta_mode') == 'on' else '#ff4444' }}">
-            {{ 'ВКЛЮЧЁН' if settings.get('beta_mode') == 'on' else 'ВЫКЛЮЧЕН' }}
-        </strong>
-    </p>
-    <button type="submit" style="background: {{ '#ff4444' if settings.get('beta_mode') == 'on' else '#4caf50' }};">
-        {{ 'Выключить' if settings.get('beta_mode') == 'on' else 'Включить' }}
-    </button>
-    <p style="font-size: 0.9em; color: #888; margin-top: 10px;">
-        Включение: новые функции видны только бета-тестерам.<br>
-        Выключение: новые функции доступны всем пользователям.
-    </p>
-</form>    
+</div>
+
+<!-- ===== НОВЫЙ БЛОК: Бета-тестирование ===== -->
+<div class="card">
+    <h2>🔬 Бета-тестирование</h2>
+    <form method="post" action="/admin/toggle-beta">
+        <p>
+            Текущий статус: 
+            <strong style="color: {{ '#4caf50' if settings.get('beta_mode') == 'on' else '#ff4444' }}">
+                {{ 'ВКЛЮЧЁН' if settings.get('beta_mode') == 'on' else 'ВЫКЛЮЧЕН' }}
+            </strong>
+        </p>
+        <button type="submit" style="background: {{ '#ff4444' if settings.get('beta_mode') == 'on' else '#4caf50' }};">
+            {{ 'Выключить' if settings.get('beta_mode') == 'on' else 'Включить' }}
+        </button>
+        <p style="font-size: 0.9em; color: #888; margin-top: 10px;">
+            Включение: новые функции видны только бета-тестерам.<br>
+            Выключение: новые функции доступны всем пользователям.
+        </p>
+    </form>
 </div>
 {% endblock %}'''
 
