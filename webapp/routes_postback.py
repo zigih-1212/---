@@ -3,7 +3,7 @@ import logging
 import re
 from fastapi import APIRouter, Request
 from services.db import get_db
-from utils import apply_referral_bonus
+from helpers import apply_referral_bonus, check_payout_threshold
 
 logger = logging.getLogger("autopost_bot.postback")
 
@@ -82,7 +82,6 @@ async def admitad_postback(request: Request):
         conn.commit()
 
         apply_referral_bonus(user_id, payment_sum, user_amount)
-        from utils import check_payout_threshold
         bot = request.app.state.bot
         await check_payout_threshold(user_id, bot)
         return {"ok": True}
