@@ -24,7 +24,7 @@ from webapp.templates import (
 from config import BOT_USERNAME
 from aiogram.enums import ParseMode
 from utils.feature_flags import get_beta_testers, get_beta_mode, toggle_beta_mode
-from utils import log_admin_action
+from helpers import log_admin_action
 
 router = APIRouter()
 logger = logging.getLogger("autopost_bot.admin")
