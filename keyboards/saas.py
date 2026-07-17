@@ -25,6 +25,7 @@ def kb_cabinet_menu(role: str = "saas"):
             [InlineKeyboardButton(text="🏪 Магазины", callback_data="menu:categories")],
             [InlineKeyboardButton(text="📢 Мои Telegram-каналы", callback_data="menu:my_channels")],
             [InlineKeyboardButton(text="⚙️ Периодичность постов", callback_data="blogger:post_interval")],
+            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
             [InlineKeyboardButton(text="🎥 Мои видео-каналы", callback_data="blogger:social_channels")],
             [InlineKeyboardButton(text="🔗 Реферальная ссылка", callback_data="blogger:referral")],
             [InlineKeyboardButton(text="📊 Веб-статистика", callback_data="menu:webstats")],
