@@ -17,7 +17,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from services.text_rewriter import generate_post_text
 from services.admitad import get_delivery_for_store, get_random_promocode
 from utils.feature_flags import is_feature_available_async, is_feature_enabled
-from utils import collect_views_for_user
+from helpers import collect_views_for_user
 
 router = APIRouter()
 logger = logging.getLogger("autopost_bot.user")
