@@ -59,6 +59,7 @@ from utils.feature_flags import (
 )
 from io import BytesIO
 from aiogram.types import BufferedInputFile
+from helpers import is_admin, get_block_reason
 
 logger = logging.getLogger("autopost_bot.referral")
 # ---------------------------------------------------------------------------
