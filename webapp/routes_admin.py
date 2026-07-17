@@ -23,6 +23,7 @@ from webapp.templates import (
 )
 from config import BOT_USERNAME
 from aiogram.enums import ParseMode
+from utils.feature_flags import get_beta_testers, get_beta_mode, toggle_beta_mode
 from utils import log_admin_action
 
 router = APIRouter()
@@ -304,21 +305,10 @@ async def beta_remove(request: Request, user_id: int = Form(...), admin_id: int 
         return HTMLResponse(f"<h1>Ошибка: {e}</h1>", status_code=500)
 
 @router.post("/admin/toggle-beta")
-@router.post("/admin/toggle-beta")
 async def toggle_beta(request: Request, admin_id: int = Depends(admin_required)):
     """Включает/выключает глобальный режим бета-тестирования."""
-    conn = get_db()
-    try:
-        current = conn.execute("SELECT value FROM settings WHERE key = 'beta_mode'").fetchone()
-        new_value = "off" if current and current["value"] == "on" else "on"
-        conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('beta_mode', ?)",
-            (new_value,)
-        )
-        conn.commit()
-        log_admin_action(admin_id, "toggle_beta", f"new state: {new_value}")
-    finally:
-        conn.close()
+    new_state = toggle_beta_mode()
+    log_admin_action(admin_id, "toggle_beta", f"new state: {'on' if new_state else 'off'}")
     return RedirectResponse(url="/admin/settings-edit", status_code=303)
 # ---------- Дашборд ----------
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -722,7 +712,7 @@ async def settings_edit_form(request: Request, _: int = Depends(admin_required))
     conn.close()
     
     # Получаем статус бета-режима
-    beta_mode = settings_dict.get('beta_mode', 'off') == 'on'
+    beta_mode = get_beta_mode()
     beta_testers = get_beta_testers()
     
     return render("admin_settings.html", 

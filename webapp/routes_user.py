@@ -16,7 +16,7 @@ from config import BOT_USERNAME, MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from services.text_rewriter import generate_post_text
 from services.admitad import get_delivery_for_store, get_random_promocode
-from utils import is_feature_available_async
+from utils.feature_flags import is_feature_available_async, is_feature_enabled
 from utils import collect_views_for_user
 
 router = APIRouter()
@@ -847,15 +847,10 @@ loadTemplates();
 @router.get("/", response_class=HTMLResponse)
 async def user_stats_page(token: str = Query(...)):
     user_id = get_user_id_from_token(token)
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT beta_tester FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        is_beta = bool(row and row["beta_tester"] == 1)
-    finally:
-        conn.close()
-    
+    preview_available = is_feature_enabled(user_id, "preview_post")
+
     html = USER_STATS_TEMPLATE.replace('{{ token }}', token)
-    html = html.replace('{{ is_beta }}', 'true' if is_beta else 'false')
+    html = html.replace('{{ is_beta }}', 'true' if preview_available else 'false')
     return HTMLResponse(content=html)
 
 @router.get("/data")

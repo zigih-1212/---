@@ -1,25 +1,27 @@
 # utils/feature_flags.py
+"""Единый модуль для beta-режима и feature flags."""
 import logging
 from services.db import get_db
 
 logger = logging.getLogger("autopost_bot.features")
 
-# Кэш для настроек (чтобы не ходить в БД каждый раз)
 _settings_cache = None
 _cache_time = None
 
 
+def _invalidate_cache() -> None:
+    global _settings_cache
+    _settings_cache = None
+
+
 def get_beta_mode() -> bool:
-    """
-    Возвращает, включён ли режим бета-тестирования глобально.
-    """
+    """Включён ли глобальный режим бета-тестирования."""
     global _settings_cache, _cache_time
     from datetime import datetime, timedelta
-    
-    # Кэш на 10 секунд, чтобы не нагружать БД
+
     if _settings_cache is not None and _cache_time and datetime.now() < _cache_time + timedelta(seconds=10):
         return _settings_cache
-    
+
     conn = get_db()
     try:
         row = conn.execute("SELECT value FROM settings WHERE key = 'beta_mode'").fetchone()
@@ -35,14 +37,12 @@ def get_beta_mode() -> bool:
 
 
 def is_beta_tester(user_id: int) -> bool:
-    """
-    Проверяет, является ли пользователь бета-тестером.
-    """
+    """Является ли пользователь бета-тестером."""
     conn = get_db()
     try:
         row = conn.execute(
             "SELECT beta_tester FROM users WHERE user_id = ?",
-            (user_id,)
+            (user_id,),
         ).fetchone()
         return bool(row and row["beta_tester"] == 1)
     except Exception as e:
@@ -52,37 +52,42 @@ def is_beta_tester(user_id: int) -> bool:
         conn.close()
 
 
-def is_feature_enabled(user_id: int, feature_name: str) -> bool:
+def is_feature_enabled(user_id: int, feature_name: str = "preview_post") -> bool:
     """
-    Проверяет, доступна ли функция пользователю.
-    Если бета-режим выключен — функция доступна всем.
-    Если бета-режим включён — функция доступна только бета-тестерам.
+    Доступна ли функция пользователю.
+    beta_mode=off → всем; beta_mode=on → только бета-тестерам.
+    feature_name зарезервирован для будущих per-feature флагов.
     """
-    try:
-        if not get_beta_mode():
-            return True  # бета-режим выключен → всем доступно
-        return is_beta_tester(user_id)  # бета-режим включён → только тестерам
-    except Exception as e:
-        logger.error(f"Ошибка в is_feature_enabled: {e}")
-        return False  # при ошибке — функция недоступна
+    del feature_name  # пока все beta-фичи используют один глобальный флаг
+    if not get_beta_mode():
+        return True
+    return is_beta_tester(user_id)
+
+
+async def is_feature_available_async(user_id: int, feature_name: str = "preview_post") -> bool:
+    """Async-обёртка для FastAPI/aiogram handlers."""
+    return is_feature_enabled(user_id, feature_name)
+
+
+def can_use_beta_commands(user_id: int, *, is_admin: bool = False) -> bool:
+    """Может ли пользователь вызывать beta-команды бота (/preview и т.п.)."""
+    if is_admin:
+        return True
+    return is_beta_tester(user_id)
 
 
 def set_beta_mode(enabled: bool) -> bool:
-    """
-    Включает или выключает глобальный режим бета-тестирования.
-    """
+    """Включить или выключить глобальный beta-режим."""
     conn = get_db()
     try:
         value = "on" if enabled else "off"
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('beta_mode', ?)",
-            (value,)
+            (value,),
         )
         conn.commit()
-        # Сбрасываем кэш
-        global _settings_cache
-        _settings_cache = None
-        logger.info(f"✅ Режим бета-тестирования: {'ВКЛЮЧЁН' if enabled else 'ВЫКЛЮЧЁН'}")
+        _invalidate_cache()
+        logger.info(f"✅ Режим бета-тестирования: {'ВКЛЮЧЁН' if enabled else 'ВЫКЛЮЧЕН'}")
         return True
     except Exception as e:
         logger.error(f"Ошибка установки beta_mode: {e}")
@@ -91,10 +96,14 @@ def set_beta_mode(enabled: bool) -> bool:
         conn.close()
 
 
+def toggle_beta_mode() -> bool:
+    """Переключить beta-режим. Возвращает новое состояние (True = включён)."""
+    new_state = not get_beta_mode()
+    set_beta_mode(new_state)
+    return new_state
+
+
 def add_beta_tester(user_id: int) -> bool:
-    """
-    Добавляет пользователя в список бета-тестеров.
-    """
     conn = get_db()
     try:
         conn.execute("UPDATE users SET beta_tester = 1 WHERE user_id = ?", (user_id,))
@@ -109,9 +118,6 @@ def add_beta_tester(user_id: int) -> bool:
 
 
 def remove_beta_tester(user_id: int) -> bool:
-    """
-    Удаляет пользователя из списка бета-тестеров.
-    """
     conn = get_db()
     try:
         conn.execute("UPDATE users SET beta_tester = 0 WHERE user_id = ?", (user_id,))
@@ -126,9 +132,6 @@ def remove_beta_tester(user_id: int) -> bool:
 
 
 def get_beta_testers() -> list:
-    """
-    Возвращает список всех бета-тестеров.
-    """
     conn = get_db()
     try:
         rows = conn.execute(

@@ -52,6 +52,13 @@ from utils import generate_success_text
 from states import TaxStates 
 from keyboards.saas import kb_cabinet_menu
 from utils import collect_views_for_user
+from utils.feature_flags import (
+    is_feature_enabled,
+    can_use_beta_commands,
+    add_beta_tester,
+    remove_beta_tester,
+    get_beta_testers,
+)
 from io import BytesIO
 from aiogram.types import BufferedInputFile
 
@@ -596,30 +603,6 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
         logger.error(f"Ошибка проверки админки в {channel_id}: {e}")
         return False
 
-async def is_beta_tester(user_id: int) -> bool:
-    """Проверяет, является ли пользователь бета-тестером."""
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT beta_tester FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        return bool(row and row["beta_tester"] == 1)
-    except Exception:
-        return False
-    finally:
-        conn.close()
-
-async def can_use_beta_commands(user_id: int) -> bool:
-    """Проверяет, может ли пользователь использовать бета-команды."""
-    if is_admin(user_id):
-        return True
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT beta_tester FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        return bool(row and row["beta_tester"] == 1)
-    except Exception:
-        return False
-    finally:
-        conn.close()
-      
 # =============================================================================
 # === КЛАВИАТУРЫ ==============================================================
 def kb_admin_panel() -> InlineKeyboardMarkup:
@@ -1026,9 +1009,8 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
 async def cmd_preview(message: Message):
     user_id = message.from_user.id
     
-    # Проверка: только бета-тестеры и админы
-    if not is_admin(user_id) and not await is_beta_tester(user_id):
-        await message.answer("❌ Эта команда доступна только бета-тестерам.")
+    if not is_admin(user_id) and not is_feature_enabled(user_id, "preview_post"):
+        await message.answer("⏳ Эта функция в бета-тесте. Скоро станет доступна всем!")
         return
     
     # Отправляем ссылку на веб-статистику с предпросмотром
@@ -2225,27 +2207,22 @@ async def main() -> None:
             logger.warning(f"Не удалось установить команды для админа {admin_id}: {e}")
 
     # ===== КОМАНДЫ ДЛЯ БЕТА-ТЕСТЕРОВ =====
-    conn = get_db()
-    try:
-        beta_users = conn.execute("SELECT user_id FROM users WHERE beta_tester = 1").fetchall()
-        for user in beta_users:
-            user_id = user["user_id"]
-            if user_id in ADMIN_IDS:
-                continue
-            try:
-                await bot.set_my_commands(
-                    commands=[
-                        BotCommand(command="start", description="Главное меню"),
-                        BotCommand(command="cabinet", description="Личный кабинет"),
-                        BotCommand(command="preview", description="Предпросмотр поста"),
-                    ],
-                    scope=BotCommandScopeChat(chat_id=user_id),
-                )
-                logger.info(f"Команды для бета-тестера {user_id} установлены")
-            except Exception as e:
-                logger.warning(f"Не удалось установить команды для {user_id}: {e}")
-    finally:
-        conn.close()
+    for tester in get_beta_testers():
+        user_id = tester["user_id"]
+        if user_id in ADMIN_IDS:
+            continue
+        try:
+            await bot.set_my_commands(
+                commands=[
+                    BotCommand(command="start", description="Главное меню"),
+                    BotCommand(command="cabinet", description="Личный кабинет"),
+                    BotCommand(command="preview", description="Предпросмотр поста"),
+                ],
+                scope=BotCommandScopeChat(chat_id=user_id),
+            )
+            logger.info(f"Команды для бета-тестера {user_id} установлены")
+        except Exception as e:
+            logger.warning(f"Не удалось установить команды для {user_id}: {e}")
 
     # ===== ЗАПУСК FASTAPI =====
     fastapi_app = create_app(bot)
@@ -2385,30 +2362,31 @@ async def cmd_beta(message: Message):
         return
     
     action = args[1]
-    conn = get_db()
     try:
         if action == "add":
             if len(args) < 3:
                 await message.answer("❌ Укажите USER_ID")
                 return
             user_id = int(args[2])
-            conn.execute("UPDATE users SET beta_tester = 1 WHERE user_id = ?", (user_id,))
-            conn.commit()
-            await message.answer(f"✅ Пользователь {user_id} добавлен в бета-тестеры")
+            if add_beta_tester(user_id):
+                await message.answer(f"✅ Пользователь {user_id} добавлен в бета-тестеры")
+            else:
+                await message.answer(f"❌ Не удалось добавить пользователя {user_id}")
         elif action == "remove":
             if len(args) < 3:
                 await message.answer("❌ Укажите USER_ID")
                 return
             user_id = int(args[2])
-            conn.execute("UPDATE users SET beta_tester = 0 WHERE user_id = ?", (user_id,))
-            conn.commit()
-            await message.answer(f"✅ Пользователь {user_id} удалён из бета-тестеров")
+            if remove_beta_tester(user_id):
+                await message.answer(f"✅ Пользователь {user_id} удалён из бета-тестеров")
+            else:
+                await message.answer(f"❌ Не удалось удалить пользователя {user_id}")
         elif action == "list":
-            rows = conn.execute("SELECT user_id, username FROM users WHERE beta_tester = 1").fetchall()
-            if rows:
+            testers = get_beta_testers()
+            if testers:
                 text = "👥 Бета-тестеры:\n"
-                for r in rows:
-                    text += f"- {r['user_id']} ({r['username'] or 'без username'})\n"
+                for t in testers:
+                    text += f"- {t['user_id']} ({t['username'] or 'без username'})\n"
                 await message.answer(text)
             else:
                 await message.answer("❌ Нет бета-тестеров")
@@ -2418,8 +2396,6 @@ async def cmd_beta(message: Message):
         await message.answer("❌ USER_ID должен быть числом")
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}")
-    finally:
-        conn.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
