@@ -47,11 +47,9 @@ from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, Payout
 from stats import get_saas_channels, get_saas_channel_stats_new, get_saas_overview, STAT_PERIODS
 from services.db import get_db
 from config import BOT_USERNAME
-from utils import check_rss_and_publish
-from utils import generate_success_text
 from states import TaxStates 
 from keyboards.saas import kb_cabinet_menu
-from utils import collect_views_for_user
+from helpers import check_rss_and_publish, generate_success_text, collect_views_for_user
 from utils.feature_flags import (
     is_feature_enabled,
     can_use_beta_commands,
