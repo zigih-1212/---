@@ -1,37 +1,52 @@
 # utils/feature_flags.py
-"""Единый модуль для beta-режима и feature flags."""
+"""Система управления фичами: per-feature флаги вместо глобального beta_mode."""
 import logging
 from services.db import get_db
+from datetime import datetime
 
 logger = logging.getLogger("autopost_bot.features")
 
-_settings_cache = None
+# Кэш для статусов фич (обновляется каждые 10 секунд)
+_features_cache = {}
 _cache_time = None
 
 
 def _invalidate_cache() -> None:
-    global _settings_cache
-    _settings_cache = None
+    """Очистить кэш фич."""
+    global _features_cache, _cache_time
+    _features_cache = {}
+    _cache_time = None
 
 
-def get_beta_mode() -> bool:
-    """Включён ли глобальный режим бета-тестирования."""
-    global _settings_cache, _cache_time
-    from datetime import datetime, timedelta
+def get_feature_status(feature_name: str) -> str:
+    """
+    Получить статус фичи: 'dev' | 'beta' | 'released'
+    dev      → никто не видит
+    beta     → видят только beta_tester=1
+    released → видят все
+    """
+    global _features_cache, _cache_time
+    from datetime import timedelta
 
-    if _settings_cache is not None and _cache_time and datetime.now() < _cache_time + timedelta(seconds=10):
-        return _settings_cache
+    # Проверяем кэш (10-секундный TTL)
+    if _cache_time and datetime.now() < _cache_time + timedelta(seconds=10):
+        if feature_name in _features_cache:
+            return _features_cache[feature_name]
 
     conn = get_db()
     try:
-        row = conn.execute("SELECT value FROM settings WHERE key = 'beta_mode'").fetchone()
-        value = row["value"] == "on" if row else False
-        _settings_cache = value
-        _cache_time = datetime.now()
-        return value
+        row = conn.execute(
+            "SELECT status FROM features WHERE name = ?",
+            (feature_name,),
+        ).fetchone()
+        status = row["status"] if row else "dev"  # по умолчанию "dev"
+        _features_cache[feature_name] = status
+        if not _cache_time:
+            _cache_time = datetime.now()
+        return status
     except Exception as e:
-        logger.error(f"Ошибка получения beta_mode: {e}")
-        return False
+        logger.error(f"Ошибка получения статуса фичи {feature_name}: {e}")
+        return "dev"  # по умолчанию скрыто
     finally:
         conn.close()
 
@@ -52,16 +67,25 @@ def is_beta_tester(user_id: int) -> bool:
         conn.close()
 
 
-def is_feature_enabled(user_id: int, feature_name: str = "preview_post") -> bool:
+def is_feature_enabled(user_id: int, feature_name: str) -> bool:
     """
-    Доступна ли функция пользователю.
-    beta_mode=off → всем; beta_mode=on → только бета-тестерам.
-    feature_name зарезервирован для будущих per-feature флагов.
+    Доступна ли конкретная фича пользователю?
+    
+    Логика:
+    - status='released' → доступна всем
+    - status='beta'     → доступна только бета-тестерам
+    - status='dev'      → никому не доступна (даже тестерам)
     """
-    del feature_name  # пока все beta-фичи используют один глобальный флаг
-    if not get_beta_mode():
+    status = get_feature_status(feature_name)
+    
+    if status == "released":
         return True
-    return is_beta_tester(user_id)
+    
+    if status == "beta":
+        return is_beta_tester(user_id)
+    
+    # status == "dev"
+    return False
 
 
 async def is_feature_available_async(user_id: int, feature_name: str = "preview_post") -> bool:
@@ -76,34 +100,74 @@ def can_use_beta_commands(user_id: int, *, is_admin: bool = False) -> bool:
     return is_beta_tester(user_id)
 
 
-def set_beta_mode(enabled: bool) -> bool:
-    """Включить или выключить глобальный beta-режим."""
+# ============================================================================
+# === УПРАВЛЕНИЕ ФИЧАМИ (для админов) ======================================
+# ============================================================================
+
+def set_feature_status(feature_name: str, status: str) -> bool:
+    """
+    Установить статус фичи.
+    status: 'dev' | 'beta' | 'released'
+    """
+    if status not in ("dev", "beta", "released"):
+        logger.error(f"Неверный статус: {status}")
+        return False
+
     conn = get_db()
     try:
-        value = "on" if enabled else "off"
-        conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('beta_mode', ?)",
-            (value,),
-        )
+        # Проверяем, есть ли уже такая фича
+        existing = conn.execute(
+            "SELECT name FROM features WHERE name = ?",
+            (feature_name,),
+        ).fetchone()
+
+        if existing:
+            conn.execute(
+                "UPDATE features SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?",
+                (status, feature_name),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO features (name, status) VALUES (?, ?)",
+                (feature_name, status),
+            )
+
         conn.commit()
         _invalidate_cache()
-        logger.info(f"✅ Режим бета-тестирования: {'ВКЛЮЧЁН' if enabled else 'ВЫКЛЮЧЕН'}")
+        logger.info(f"✅ Фича '{feature_name}' → статус '{status}'")
         return True
     except Exception as e:
-        logger.error(f"Ошибка установки beta_mode: {e}")
+        logger.error(f"Ошибка установки статуса фичи: {e}")
         return False
     finally:
         conn.close()
 
 
-def toggle_beta_mode() -> bool:
-    """Переключить beta-режим. Возвращает новое состояние (True = включён)."""
-    new_state = not get_beta_mode()
-    set_beta_mode(new_state)
-    return new_state
+def get_all_features() -> list:
+    """Получить все фичи со статусами."""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT name, status, created_at, updated_at FROM features ORDER BY name"
+        ).fetchall()
+        return [
+            {
+                "name": r["name"],
+                "status": r["status"],
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error(f"Ошибка получения списка фич: {e}")
+        return []
+    finally:
+        conn.close()
 
 
 def add_beta_tester(user_id: int) -> bool:
+    """Добавить пользователя в бета-тестеры."""
     conn = get_db()
     try:
         conn.execute("UPDATE users SET beta_tester = 1 WHERE user_id = ?", (user_id,))
@@ -118,6 +182,7 @@ def add_beta_tester(user_id: int) -> bool:
 
 
 def remove_beta_tester(user_id: int) -> bool:
+    """Удалить пользователя из бета-тестеров."""
     conn = get_db()
     try:
         conn.execute("UPDATE users SET beta_tester = 0 WHERE user_id = ?", (user_id,))
@@ -132,10 +197,11 @@ def remove_beta_tester(user_id: int) -> bool:
 
 
 def get_beta_testers() -> list:
+    """Получить список всех бета-тестеров."""
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT user_id, username FROM users WHERE beta_tester = 1"
+            "SELECT user_id, username FROM users WHERE beta_tester = 1 ORDER BY user_id"
         ).fetchall()
         return [{"user_id": r["user_id"], "username": r["username"]} for r in rows]
     except Exception as e:

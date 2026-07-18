@@ -267,6 +267,14 @@ def init_db() -> None:
         )
     """)
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS features (
+            name TEXT PRIMARY KEY,
+            status TEXT DEFAULT 'dev' CHECK(status IN ('dev', 'beta', 'released')),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS promocodes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             code TEXT UNIQUE NOT NULL,
@@ -539,6 +547,37 @@ def init_db() -> None:
         if "duplicate column name" not in str(e):
             logger.warning(f"⚠️ Не удалось добавить beta_tester: {e}")          
     conn.commit()
+    
+    # Инициализация фич (если их нет в БД)
+    try:
+        features_to_init = [
+            ("preview_post", "beta"),
+            ("my_posts_gallery", "dev"),
+            ("instructions", "released"),
+            ("announcements", "dev"),
+            ("admin_analytics", "released"),
+            ("smart_rotation", "dev"),
+            ("ab_testing", "dev"),
+            ("pwa", "dev"),
+            ("debug_mode", "dev"),
+            ("achievements", "dev"),
+        ]
+        
+        for feature_name, default_status in features_to_init:
+            existing = cursor.execute(
+                "SELECT name FROM features WHERE name = ?", 
+                (feature_name,)
+            ).fetchone()
+            if not existing:
+                cursor.execute(
+                    "INSERT INTO features (name, status) VALUES (?, ?)",
+                    (feature_name, default_status),
+                )
+                logger.info(f"✅ Фича '{feature_name}' инициализирована со статусом '{default_status}'")
+        conn.commit()
+    except Exception as e:
+        logger.warning(f"⚠️ Ошибка инициализации фич: {e}")
+    
     conn.close()
     logger.info("База данных инициализирована")
 

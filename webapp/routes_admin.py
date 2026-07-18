@@ -23,7 +23,10 @@ from webapp.templates import (
 )
 from config import BOT_USERNAME
 from aiogram.enums import ParseMode
-from utils.feature_flags import get_beta_testers, get_beta_mode, toggle_beta_mode
+from utils.feature_flags import (
+    get_beta_testers, get_all_features, set_feature_status,
+    add_beta_tester, remove_beta_tester
+)
 from helpers import log_admin_action
 
 router = APIRouter()
@@ -268,23 +271,21 @@ async def get_receipt_file(path: str = Query(...), _: int = Depends(admin_requir
         return HTMLResponse("Файл не найден", status_code=404)
     return FileResponse(full_path)
 
-@router.post("/settings/beta-toggle")
-async def beta_toggle(request: Request, enabled: str = Form(...), admin_id: int = Depends(admin_required)):
+@router.post("/settings/feature-status")
+async def set_feature_status_endpoint(request: Request, feature_name: str = Form(...), status: str = Form(...), admin_id: int = Depends(admin_required)):
+    """Установить статус фичи: dev | beta | released"""
     try:
-        is_enabled = enabled == "on"
-        from utils.feature_flags import set_beta_mode
-        set_beta_mode(is_enabled)
-        log_admin_action(admin_id, "beta_toggle", f"beta_mode={'on' if is_enabled else 'off'}")
+        if set_feature_status(feature_name, status):
+            log_admin_action(admin_id, "feature_status_changed", f"{feature_name}={status}")
         return RedirectResponse(url="/admin/settings-edit", status_code=303)
     except Exception as e:
-        logger.error(f"Ошибка переключения бета-режима: {e}")
+        logger.error(f"Ошибка изменения статуса фичи: {e}")
         return HTMLResponse(f"<h1>Ошибка: {e}</h1>", status_code=500)
 
 
 @router.post("/settings/beta-add")
 async def beta_add(request: Request, user_id: int = Form(...), admin_id: int = Depends(admin_required)):
     try:
-        from utils.feature_flags import add_beta_tester
         if add_beta_tester(user_id):
             log_admin_action(admin_id, "beta_add", f"user_id={user_id}")
         return RedirectResponse(url="/admin/settings-edit", status_code=303)
@@ -296,20 +297,12 @@ async def beta_add(request: Request, user_id: int = Form(...), admin_id: int = D
 @router.post("/settings/beta-remove")
 async def beta_remove(request: Request, user_id: int = Form(...), admin_id: int = Depends(admin_required)):
     try:
-        from utils.feature_flags import remove_beta_tester
         if remove_beta_tester(user_id):
             log_admin_action(admin_id, "beta_remove", f"user_id={user_id}")
         return RedirectResponse(url="/admin/settings-edit", status_code=303)
     except Exception as e:
         logger.error(f"Ошибка удаления бета-тестера: {e}")
         return HTMLResponse(f"<h1>Ошибка: {e}</h1>", status_code=500)
-
-@router.post("/admin/toggle-beta")
-async def toggle_beta(request: Request, admin_id: int = Depends(admin_required)):
-    """Включает/выключает глобальный режим бета-тестирования."""
-    new_state = toggle_beta_mode()
-    log_admin_action(admin_id, "toggle_beta", f"new state: {'on' if new_state else 'off'}")
-    return RedirectResponse(url="/admin/settings-edit", status_code=303)
 # ---------- Дашборд ----------
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: int = Depends(admin_required)):
@@ -711,13 +704,13 @@ async def settings_edit_form(request: Request, _: int = Depends(admin_required))
     settings_dict = {r['key']: r['value'] for r in rows}
     conn.close()
     
-    # Получаем статус бета-режима
-    beta_mode = get_beta_mode()
+    # Получаем список всех фич и бета-тестеров
+    features = get_all_features()
     beta_testers = get_beta_testers()
     
     return render("admin_settings.html", 
                   settings=settings_dict, 
-                  beta_mode=beta_mode,
+                  features=features,
                   beta_testers=beta_testers,
                   active_page='settings')
 

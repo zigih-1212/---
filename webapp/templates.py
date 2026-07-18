@@ -471,23 +471,71 @@ SETTINGS_TEMPLATE = '''{% extends "base.html" %}
     </form>
 </div>
 
-<!-- ===== НОВЫЙ БЛОК: Бета-тестирование ===== -->
+<!-- ===== НОВЫЙ БЛОК: Управление фичами ===== -->
 <div class="card">
-    <h2>🔬 Бета-тестирование</h2>
-    <form method="post" action="/admin/toggle-beta">
-        <p>
-            Текущий статус: 
-            <strong style="color: {{ '#4caf50' if settings.get('beta_mode') == 'on' else '#ff4444' }}">
-                {{ 'ВКЛЮЧЁН' if settings.get('beta_mode') == 'on' else 'ВЫКЛЮЧЕН' }}
-            </strong>
-        </p>
-        <button type="submit" style="background: {{ '#ff4444' if settings.get('beta_mode') == 'on' else '#4caf50' }};">
-            {{ 'Выключить' if settings.get('beta_mode') == 'on' else 'Включить' }}
-        </button>
-        <p style="font-size: 0.9em; color: #888; margin-top: 10px;">
-            Включение: новые функции видны только бета-тестерам.<br>
-            Выключение: новые функции доступны всем пользователям.
-        </p>
+    <h2>🎯 Управление фичами</h2>
+    <table>
+        <tr><th>Фича</th><th>Статус</th><th>Действия</th></tr>
+        {% for feature in features %}
+        <tr>
+            <td><b>{{ feature['name'] }}</b></td>
+            <td>
+                <span style="padding:4px 12px; border-radius:4px; font-weight:bold; 
+                    {% if feature['status'] == 'released' %}background:#4caf50; color:white;{% endif %}
+                    {% if feature['status'] == 'beta' %}background:#ff9800; color:white;{% endif %}
+                    {% if feature['status'] == 'dev' %}background:#999; color:white;{% endif %}
+                ">
+                    {{ feature['status'].upper() }}
+                </span>
+            </td>
+            <td>
+                <form method="post" action="/admin/settings/feature-status" style="display:flex; gap:5px;">
+                    <input type="hidden" name="feature_name" value="{{ feature['name'] }}">
+                    {% if feature['status'] != 'dev' %}
+                    <button type="submit" name="status" value="dev" style="background:#999; padding:5px 10px; font-size:0.9em;">→ Dev</button>
+                    {% endif %}
+                    {% if feature['status'] != 'beta' %}
+                    <button type="submit" name="status" value="beta" style="background:#ff9800; padding:5px 10px; font-size:0.9em;">→ Beta</button>
+                    {% endif %}
+                    {% if feature['status'] != 'released' %}
+                    <button type="submit" name="status" value="released" style="background:#4caf50; padding:5px 10px; font-size:0.9em;">→ Released</button>
+                    {% endif %}
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    <p style="font-size: 0.85em; color: #888; margin-top: 10px;">
+        <b>dev</b> — скрыто от всех<br>
+        <b>beta</b> — видят только бета-тестеры<br>
+        <b>released</b> — доступна всем пользователям
+    </p>
+</div>
+
+<!-- ===== БЛОК: Бета-тестеры ===== -->
+<div class="card">
+    <h2>🔬 Бета-тестеры</h2>
+    <p>Текущие бета-тестеры ({{ beta_testers|length }}):</p>
+    <table>
+        <tr><th>ID</th><th>Username</th><th></th></tr>
+        {% for tester in beta_testers %}
+        <tr>
+            <td>{{ tester['user_id'] }}</td>
+            <td>{{ tester['username'] or '—' }}</td>
+            <td>
+                <form method="post" action="/admin/settings/beta-remove" style="display:inline;">
+                    <input type="hidden" name="user_id" value="{{ tester['user_id'] }}">
+                    <button type="submit" style="background:#f44336; padding:5px 15px; font-size:0.9em;">Удалить</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    
+    <p style="margin-top: 20px;"><b>Добавить нового тестера:</b></p>
+    <form method="post" action="/admin/settings/beta-add" style="display:flex; gap:10px;">
+        <input type="number" name="user_id" placeholder="ID пользователя" required style="width:150px;">
+        <button type="submit">Добавить</button>
     </form>
 </div>
 {% endblock %}'''
