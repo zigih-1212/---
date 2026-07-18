@@ -485,20 +485,20 @@ SETTINGS_TEMPLATE = '''{% extends "base.html" %}
                     {% if feature['status'] == 'beta' %}background:#ff9800; color:white;{% endif %}
                     {% if feature['status'] == 'dev' %}background:#999; color:white;{% endif %}
                 ">
-                    {{ feature['status'].upper() }}
+                    {% if feature['status'] == 'released' %}Выпущено{% elif feature['status'] == 'beta' %}Бета{% else %}В разработке{% endif %}
                 </span>
             </td>
             <td>
                 <form method="post" action="/admin/settings/feature-status" style="display:flex; gap:5px;">
                     <input type="hidden" name="feature_name" value="{{ feature['name'] }}">
                     {% if feature['status'] != 'dev' %}
-                    <button type="submit" name="status" value="dev" style="background:#999; padding:5px 10px; font-size:0.9em;">→ Dev</button>
+                    <button type="submit" name="status" value="dev" style="background:#999; padding:5px 10px; font-size:0.9em;">→ В разработке</button>
                     {% endif %}
                     {% if feature['status'] != 'beta' %}
-                    <button type="submit" name="status" value="beta" style="background:#ff9800; padding:5px 10px; font-size:0.9em;">→ Beta</button>
+                    <button type="submit" name="status" value="beta" style="background:#ff9800; padding:5px 10px; font-size:0.9em;">→ Бета</button>
                     {% endif %}
                     {% if feature['status'] != 'released' %}
-                    <button type="submit" name="status" value="released" style="background:#4caf50; padding:5px 10px; font-size:0.9em;">→ Released</button>
+                    <button type="submit" name="status" value="released" style="background:#4caf50; padding:5px 10px; font-size:0.9em;">→ Выпущено</button>
                     {% endif %}
                 </form>
             </td>
@@ -506,9 +506,9 @@ SETTINGS_TEMPLATE = '''{% extends "base.html" %}
         {% endfor %}
     </table>
     <p style="font-size: 0.85em; color: #888; margin-top: 10px;">
-        <b>dev</b> — скрыто от всех<br>
-        <b>beta</b> — видят только бета-тестеры<br>
-        <b>released</b> — доступна всем пользователям
+        <b>В разработке</b> — скрыто от всех<br>
+        <b>Бета</b> — видят только бета-тестеры<br>
+        <b>Выпущено</b> — доступна всем пользователям
     </p>
 </div>
 
