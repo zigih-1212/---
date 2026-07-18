@@ -526,7 +526,7 @@ BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
     </form>
     {% if message %}<p class="success">{{ message }}</p>{% endif %}
 </div>
-{% endblock %}''' }
+{% endblock %}'''
 
 # ---------- SETTINGS ----------
 SETTINGS_TEMPLATE = '''{% extends "base.html" %}
