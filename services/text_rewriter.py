@@ -84,7 +84,8 @@ def generate_post_text(title, price, currency, advertiser, erid, partner_url,
                 short_delivery += '...'
             caption += f"\n\n🚚 {short_delivery}"
         # Рекламная метка с ERID (обязательно, компактно)
-        caption += f"\n\nРеклама. {advertiser} ｜ <code>{erid}</code>"
+        # Делаем текст более компактным и менее визуально выделяющимся, но сохраняя видимость
+        caption += f"\nРеклама: {advertiser} (ERID: {erid})"
         if adult:
             caption = "🔞 18+\n" + caption
 
