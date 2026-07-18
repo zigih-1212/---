@@ -1,6 +1,7 @@
+# -*- coding: utf-8 -*-
 # webapp/templates.py
 
-# ---------- CSS (общий) ----------
+# ---------- CSS (&#x43E;&#x431;&#x449;&#x438;&#x439;) ----------
 CSS_CONTENT = '''
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a1a; color: #e0e0e0; display: flex; min-height: 100vh; }
@@ -47,18 +48,18 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
 <style>''' + CSS_CONTENT + '''</style></head>
 <body>
 <div class="sidebar">
-    <h2 style="color:#ff4444; margin-bottom:20px;">⚡ AutoPost</h2>
-    <a href="/admin/dashboard" class="{{ 'active' if active_page == 'dashboard' }}">📊 Дашборд</a>
-    <a href="/admin/users" class="{{ 'active' if active_page == 'users' }}">👥 Пользователи</a>
-    <a href="/admin/posts" class="{{ 'active' if active_page == 'posts' }}">📬 Посты</a>
-    <a href="/admin/store_delivery" class="{{ 'active' if active_page == 'delivery' }}">🚚 Доставка</a>
-    <a href="/admin/broadcast" class="{{ 'active' if active_page == 'broadcast' }}">📣 Рассылка</a>
-    <a href="/admin/payouts" class="{{ 'active' if active_page == 'payouts' }}">💰 Выплаты</a>
-    <a href="/admin/bulk-actions" class="{{ 'active' if active_page == 'bulk' }}">👥 Массовые действия</a>
-    <a href="/admin/settings-edit" class="{{ 'active' if active_page == 'settings' }}">⚙️ Настройки</a>
-    <a href="/admin/audit" class="{{ 'active' if active_page == 'audit' }}">📜 Аудит</a>
-    <a href="/admin/reports" class="{{ 'active' if active_page == 'reports' }}">📁 Отчёты</a>
-    <a href="/admin/logout" class="logout">Выйти</a>
+    <h2 style="color:#ff4444; margin-bottom:20px;">&#x26A1; AutoPost</h2>
+    <a href="/admin/dashboard" class="{{ 'active' if active_page == 'dashboard' }}">&#x1F4CA; &#x414;&#x430;&#x448;&#x431;&#x43E;&#x440;&#x434;</a>
+    <a href="/admin/users" class="{{ 'active' if active_page == 'users' }}">&#x1F465; &#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x438;</a>
+    <a href="/admin/posts" class="{{ 'active' if active_page == 'posts' }}">&#x1F4EC; &#x41F;&#x43E;&#x441;&#x442;&#x44B;</a>
+    <a href="/admin/store_delivery" class="{{ 'active' if active_page == 'delivery' }}">&#x1F69A; &#x414;&#x43E;&#x441;&#x442;&#x430;&#x432;&#x43A;&#x430;</a>
+    <a href="/admin/broadcast" class="{{ 'active' if active_page == 'broadcast' }}">&#x1F4E3; &#x420;&#x430;&#x441;&#x441;&#x44B;&#x43B;&#x43A;&#x430;</a>
+    <a href="/admin/payouts" class="{{ 'active' if active_page == 'payouts' }}">&#x1F4B0; &#x412;&#x44B;&#x43F;&#x43B;&#x430;&#x442;&#x44B;</a>
+    <a href="/admin/bulk-actions" class="{{ 'active' if active_page == 'bulk' }}">&#x1F465; &#x41C;&#x430;&#x441;&#x441;&#x43E;&#x432;&#x44B;&#x435; &#x434;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x44F;</a>
+    <a href="/admin/settings-edit" class="{{ 'active' if active_page == 'settings' }}">&#x2699;&#xFE0F; &#x41D;&#x430;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x43A;&#x438;</a>
+    <a href="/admin/audit" class="{{ 'active' if active_page == 'audit' }}">&#x1F4DC; &#x410;&#x443;&#x434;&#x438;&#x442;</a>
+    <a href="/admin/reports" class="{{ 'active' if active_page == 'reports' }}">&#x1F4C1; &#x41E;&#x442;&#x447;&#x451;&#x442;&#x44B;</a>
+    <a href="/admin/logout" class="logout">&#x412;&#x44B;&#x439;&#x442;&#x438;</a>
 </div>
 <div class="main-content">
     {% block content %}{% endblock %}
@@ -69,40 +70,40 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
 # ---------- LOGIN ----------
 LOGIN_TEMPLATE = '''<!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="UTF-8"><title>Вход в админку</title>
+<head><meta charset="UTF-8"><title>&#x412;&#x445;&#x43E;&#x434; &#x432; &#x430;&#x434;&#x43C;&#x438;&#x43D;&#x43A;&#x443;</title>
 <style>''' + CSS_CONTENT + '''</style></head>
 <body style="justify-content:center; align-items:center; background:#1a1a1a;">
 <div class="card" style="width:400px; text-align:center;">
-    <h1>⚡ AutoPost</h1>
+    <h1>&#x26A1; AutoPost</h1>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
-    <p style="margin-bottom:20px;">Войдите по одноразовой ссылке из бота (<code>/admin</code>)</p>
+    <p style="margin-bottom:20px;">&#x412;&#x43E;&#x439;&#x434;&#x438;&#x442;&#x435; &#x43F;&#x43E; &#x43E;&#x434;&#x43D;&#x43E;&#x440;&#x430;&#x437;&#x43E;&#x432;&#x43E;&#x439; &#x441;&#x441;&#x44B;&#x43B;&#x43A;&#x435; &#x438;&#x437; &#x431;&#x43E;&#x442;&#x430; (<code>/admin</code>)</p>
 </div>
 </body>
 </html>'''
 
-# ---------- DASHBOARD (с аномалиями CTR) ----------
+# ---------- DASHBOARD (&#x441; &#x430;&#x43D;&#x43E;&#x43C;&#x430;&#x43B;&#x438;&#x44F;&#x43C;&#x438; CTR) ----------
 DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
-{% block title %}Дашборд{% endblock %}
+{% block title %}&#x414;&#x430;&#x448;&#x431;&#x43E;&#x440;&#x434;{% endblock %}
 {% block content %}
-<div class="top-bar"><h1>📊 Дашборд</h1></div>
+<div class="top-bar"><h1>&#x1F4CA; &#x414;&#x430;&#x448;&#x431;&#x43E;&#x440;&#x434;</h1></div>
 
 <div class="card">
-    <h2>Ключевые метрики</h2>
+    <h2>&#x41A;&#x43B;&#x44E;&#x447;&#x435;&#x432;&#x44B;&#x435; &#x43C;&#x435;&#x442;&#x440;&#x438;&#x43A;&#x438;</h2>
     <table>
-        <tr><td>SaaS активных</td><td><strong>{{ active_saas }}</strong></td></tr>
-        <tr><td>Блогеров активных</td><td><strong>{{ active_bloggers }}</strong></td></tr>
-        <tr><td>Постов сегодня</td><td><strong>{{ posts_today }}</strong></td></tr>
-        <tr><td>Постов за неделю</td><td><strong>{{ posts_week }}</strong></td></tr>
-        <tr><td>Ошибок сегодня</td><td><strong>{{ errors_today }}</strong></td></tr>
-        <tr><td>Ожидающих выплат</td><td><strong>{{ pending_payouts }}</strong></td></tr>
+        <tr><td>SaaS &#x430;&#x43A;&#x442;&#x438;&#x432;&#x43D;&#x44B;&#x445;</td><td><strong>{{ active_saas }}</strong></td></tr>
+        <tr><td>&#x411;&#x43B;&#x43E;&#x433;&#x435;&#x440;&#x43E;&#x432; &#x430;&#x43A;&#x442;&#x438;&#x432;&#x43D;&#x44B;&#x445;</td><td><strong>{{ active_bloggers }}</strong></td></tr>
+        <tr><td>&#x41F;&#x43E;&#x441;&#x442;&#x43E;&#x432; &#x441;&#x435;&#x433;&#x43E;&#x434;&#x43D;&#x44F;</td><td><strong>{{ posts_today }}</strong></td></tr>
+        <tr><td>&#x41F;&#x43E;&#x441;&#x442;&#x43E;&#x432; &#x437;&#x430; &#x43D;&#x435;&#x434;&#x435;&#x43B;&#x44E;</td><td><strong>{{ posts_week }}</strong></td></tr>
+        <tr><td>&#x41E;&#x448;&#x438;&#x431;&#x43E;&#x43A; &#x441;&#x435;&#x433;&#x43E;&#x434;&#x43D;&#x44F;</td><td><strong>{{ errors_today }}</strong></td></tr>
+        <tr><td>&#x41E;&#x436;&#x438;&#x434;&#x430;&#x44E;&#x449;&#x438;&#x445; &#x432;&#x44B;&#x43F;&#x43B;&#x430;&#x442;</td><td><strong>{{ pending_payouts }}</strong></td></tr>
     </table>
 </div>
 
 {% if ctr_alerts %}
 <div class="card" style="border: 2px solid #ff9800;">
-    <h2>⚠️ Аномальный CTR (выше 25%)</h2>
+    <h2>&#x26A0;&#xFE0F; &#x410;&#x43D;&#x43E;&#x43C;&#x430;&#x43B;&#x44C;&#x43D;&#x44B;&#x439; CTR (&#x432;&#x44B;&#x448;&#x435; 25%)</h2>
     <table>
-        <tr><th>Пользователь</th><th>Канал</th><th>SubID</th><th>Клики</th><th>Лиды</th><th>CTR</th></tr>
+        <tr><th>&#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44C;</th><th>&#x41A;&#x430;&#x43D;&#x430;&#x43B;</th><th>SubID</th><th>&#x41A;&#x43B;&#x438;&#x43A;&#x438;</th><th>&#x41B;&#x438;&#x434;&#x44B;</th><th>CTR</th></tr>
         {% for a in ctr_alerts %}
         <tr>
             <td>{{ a['username'] or a['user_id'] }}</td>
@@ -119,50 +120,50 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 
 <!-- Period Selector -->
 <div class="card">
-    <h2>📅 Период</h2>
+    <h2>&#x1F4C5; &#x41F;&#x435;&#x440;&#x438;&#x43E;&#x434;</h2>
     <div class="tabs">
-        <button class="tab-btn active" data-period="7d">7 дней</button>
-        <button class="tab-btn" data-period="30d">30 дней</button>
-        <button class="tab-btn" data-period="90d">90 дней</button>
-        <button class="tab-btn" data-period="all">Всё время</button>
+        <button class="tab-btn active" data-period="7d">7 &#x434;&#x43D;&#x435;&#x439;</button>
+        <button class="tab-btn" data-period="30d">30 &#x434;&#x43D;&#x435;&#x439;</button>
+        <button class="tab-btn" data-period="90d">90 &#x434;&#x43D;&#x435;&#x439;</button>
+        <button class="tab-btn" data-period="all">&#x412;&#x441;&#x451; &#x432;&#x440;&#x435;&#x43C;&#x44F;</button>
     </div>
 </div>
 
 <!-- Channel Filter -->
 <div class="card">
-    <h2>🔍 Фильтр по каналу</h2>
+    <h2>&#x1F50D; &#x424;&#x438;&#x43B;&#x44C;&#x442;&#x440; &#x43F;&#x43E; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x443;</h2>
     <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
-        <label style="font-weight:bold; margin-right:8px;">Канал:</label>
+        <label style="font-weight:bold; margin-right:8px;">&#x41A;&#x430;&#x43D;&#x430;&#x43B;:</label>
         <select id="channel-select" style="min-width:220px; padding:10px; background:#333; border:1px solid #555; color:#ddd; border-radius:8px;">
-            <option value="all">Все каналы</option>
+            <option value="all">&#x412;&#x441;&#x435; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x44B;</option>
             {% for ch in channels %}
             <option value="{{ ch['channel_id'] }}">{{ ch['channel_title'] or ch['channel_id'] }}</option>
             {% endfor %}
         </select>
-        <div style="margin-left:auto; color:#bbb;">Выбран канал: <span id="selected-channel-name">Все каналы</span></div>
+        <div style="margin-left:auto; color:#bbb;">&#x412;&#x44B;&#x431;&#x440;&#x430;&#x43D; &#x43A;&#x430;&#x43D;&#x430;&#x43B;: <span id="selected-channel-name">&#x412;&#x441;&#x435; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x44B;</span></div>
     </div>
 </div>
 
 <div class="card" id="channel-summary-card" style="display:none;">
-    <h2>📈 Статистика по выбранному каналу</h2>
+    <h2>&#x1F4C8; &#x421;&#x442;&#x430;&#x442;&#x438;&#x441;&#x442;&#x438;&#x43A;&#x430; &#x43F;&#x43E; &#x432;&#x44B;&#x431;&#x440;&#x430;&#x43D;&#x43D;&#x43E;&#x43C;&#x443; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x443;</h2>
     <div id="channel-summary" style="font-size:0.95em; color:#ddd;"></div>
 </div>
 
 <!-- Channel Performance Table -->
 <div class="card">
-    <h2>📊 Производительность каналов ({{ current_period_label }})</h2>
+    <h2>&#x1F4CA; &#x41F;&#x440;&#x43E;&#x438;&#x437;&#x432;&#x43E;&#x434;&#x438;&#x442;&#x435;&#x43B;&#x44C;&#x43D;&#x43E;&#x441;&#x442;&#x44C; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x43E;&#x432; ({{ current_period_label }})</h2>
     <div style="overflow-x:auto;">
         <table id="channel-table">
             <thead>
                 <tr>
-                    <th>Канал</th>
-                    <th>Владелец</th>
-                    <th>Постов</th>
-                    <th>Клики</th>
-                    <th>Лиды</th>
+                    <th>&#x41A;&#x430;&#x43D;&#x430;&#x43B;</th>
+                    <th>&#x412;&#x43B;&#x430;&#x434;&#x435;&#x43B;&#x435;&#x446;</th>
+                    <th>&#x41F;&#x43E;&#x441;&#x442;&#x43E;&#x432;</th>
+                    <th>&#x41A;&#x43B;&#x438;&#x43A;&#x438;</th>
+                    <th>&#x41B;&#x438;&#x434;&#x44B;</th>
                     <th>CTR</th>
-                    <th>Доход (₽)</th>
-                    <th>Конверсия</th>
+                    <th>&#x414;&#x43E;&#x445;&#x43E;&#x434; (&#x20BD;)</th>
+                    <th>&#x41A;&#x43E;&#x43D;&#x432;&#x435;&#x440;&#x441;&#x438;&#x44F;</th>
                     <th>SubID</th>
                 </tr>
             </thead>
@@ -187,19 +188,19 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 
 <!-- Traffic Sources (SubID2) -->
 <div class="card">
-    <h2>🎯 Источники трафика (SubID2) — {{ current_period_label }}</h2>
-    <p style="color:#aaa; margin-bottom:15px; font-size:0.9em;">SubID2 отслеживает отдельные посты. Показывает, какие конкретные публикации приносят клики и лиды.</p>
+    <h2>&#x1F3AF; &#x418;&#x441;&#x442;&#x43E;&#x447;&#x43D;&#x438;&#x43A;&#x438; &#x442;&#x440;&#x430;&#x444;&#x438;&#x43A;&#x430; (SubID2) &#x2014; {{ current_period_label }}</h2>
+    <p style="color:#aaa; margin-bottom:15px; font-size:0.9em;">SubID2 &#x43E;&#x442;&#x441;&#x43B;&#x435;&#x436;&#x438;&#x432;&#x430;&#x435;&#x442; &#x43E;&#x442;&#x434;&#x435;&#x43B;&#x44C;&#x43D;&#x44B;&#x435; &#x43F;&#x43E;&#x441;&#x442;&#x44B;. &#x41F;&#x43E;&#x43A;&#x430;&#x437;&#x44B;&#x432;&#x430;&#x435;&#x442;, &#x43A;&#x430;&#x43A;&#x438;&#x435; &#x43A;&#x43E;&#x43D;&#x43A;&#x440;&#x435;&#x442;&#x43D;&#x44B;&#x435; &#x43F;&#x443;&#x431;&#x43B;&#x438;&#x43A;&#x430;&#x446;&#x438;&#x438; &#x43F;&#x440;&#x438;&#x43D;&#x43E;&#x441;&#x44F;&#x442; &#x43A;&#x43B;&#x438;&#x43A;&#x438; &#x438; &#x43B;&#x438;&#x434;&#x44B;.</p>
     <div style="overflow-x:auto;">
         <table id="subid2-table">
             <thead>
                 <tr>
-                    <th>SubID2 (Пост)</th>
-                    <th>Канал</th>
-                    <th>Клики</th>
-                    <th>Лиды</th>
+                    <th>SubID2 (&#x41F;&#x43E;&#x441;&#x442;)</th>
+                    <th>&#x41A;&#x430;&#x43D;&#x430;&#x43B;</th>
+                    <th>&#x41A;&#x43B;&#x438;&#x43A;&#x438;</th>
+                    <th>&#x41B;&#x438;&#x434;&#x44B;</th>
                     <th>CTR</th>
-                    <th>Доход (₽)</th>
-                    <th>Статус</th>
+                    <th>&#x414;&#x43E;&#x445;&#x43E;&#x434; (&#x20BD;)</th>
+                    <th>&#x421;&#x442;&#x430;&#x442;&#x443;&#x441;</th>
                 </tr>
             </thead>
             <tbody id="subid2-table-body">
@@ -222,34 +223,34 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 <!-- Charts Row -->
 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
     <div class="card">
-        <h2>📝 Посты за {{ current_period_label }}</h2>
-        <p id="chart-scope" style="margin-top:8px; color:#aaa;">Показаны данные для всех каналов.</p>
+        <h2>&#x1F4DD; &#x41F;&#x43E;&#x441;&#x442;&#x44B; &#x437;&#x430; {{ current_period_label }}</h2>
+        <p id="chart-scope" style="margin-top:8px; color:#aaa;">&#x41F;&#x43E;&#x43A;&#x430;&#x437;&#x430;&#x43D;&#x44B; &#x434;&#x430;&#x43D;&#x43D;&#x44B;&#x435; &#x434;&#x43B;&#x44F; &#x432;&#x441;&#x435;&#x445; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x43E;&#x432;.</p>
         <canvas id="postsChart" width="400" height="200"></canvas>
     </div>
     <div class="card">
-        <h2>💰 Доход за {{ current_period_label }}</h2>
+        <h2>&#x1F4B0; &#x414;&#x43E;&#x445;&#x43E;&#x434; &#x437;&#x430; {{ current_period_label }}</h2>
         <canvas id="revenueChart" width="400" height="200"></canvas>
     </div>
 </div>
 
 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
     <div class="card">
-        <h2>🏪 Магазины по постам ({{ current_period_label }})</h2>
+        <h2>&#x1F3EA; &#x41C;&#x430;&#x433;&#x430;&#x437;&#x438;&#x43D;&#x44B; &#x43F;&#x43E; &#x43F;&#x43E;&#x441;&#x442;&#x430;&#x43C; ({{ current_period_label }})</h2>
         <canvas id="storeChart" width="400" height="200"></canvas>
     </div>
     <div class="card">
-        <h2>🏪 Магазины по доходам ({{ current_period_label }})</h2>
+        <h2>&#x1F3EA; &#x41C;&#x430;&#x433;&#x430;&#x437;&#x438;&#x43D;&#x44B; &#x43F;&#x43E; &#x434;&#x43E;&#x445;&#x43E;&#x434;&#x430;&#x43C; ({{ current_period_label }})</h2>
         <canvas id="storeRevenueChart" width="400" height="200"></canvas>
     </div>
 </div>
 
 <!-- Top Users -->
 <div class="card">
-    <h2>👑 Топ пользователей по доходу ({{ current_period_label }})</h2>
+    <h2>&#x1F451; &#x422;&#x43E;&#x43F; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x435;&#x439; &#x43F;&#x43E; &#x434;&#x43E;&#x445;&#x43E;&#x434;&#x443; ({{ current_period_label }})</h2>
     <div style="overflow-x:auto;">
         <table>
             <thead>
-                <tr><th>Пользователь</th><th>Роль</th><th>Доход (₽)</th><th>Транзакций</th><th>Постов</th></tr>
+                <tr><th>&#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44C;</th><th>&#x420;&#x43E;&#x43B;&#x44C;</th><th>&#x414;&#x43E;&#x445;&#x43E;&#x434; (&#x20BD;)</th><th>&#x422;&#x440;&#x430;&#x43D;&#x437;&#x430;&#x43A;&#x446;&#x438;&#x439;</th><th>&#x41F;&#x43E;&#x441;&#x442;&#x43E;&#x432;</th></tr>
             </thead>
             <tbody>
                 {% for u in top_users %}
@@ -293,11 +294,11 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
             channelSummaryCard.style.display = 'block';
             const summary = data.channel_summary;
             channelSummary.innerHTML = `
-                <p><b>Постов за период:</b> ${formatNumber(summary.posts_count)}</p>
-                <p><b>Клики:</b> ${formatNumber(summary.clicks)}</p>
-                <p><b>Лиды:</b> ${formatNumber(summary.leads)}</p>
-                <p><b>Доход:</b> ${formatMoney(summary.earnings)} ₽</p>
-                <p><b>Конверсия:</b> ${summary.conversion.toFixed(1)}%</p>
+                <p><b>&#x41F;&#x43E;&#x441;&#x442;&#x43E;&#x432; &#x437;&#x430; &#x43F;&#x435;&#x440;&#x438;&#x43E;&#x434;:</b> ${formatNumber(summary.posts_count)}</p>
+                <p><b>&#x41A;&#x43B;&#x438;&#x43A;&#x438;:</b> ${formatNumber(summary.clicks)}</p>
+                <p><b>&#x41B;&#x438;&#x434;&#x44B;:</b> ${formatNumber(summary.leads)}</p>
+                <p><b>&#x414;&#x43E;&#x445;&#x43E;&#x434;:</b> ${formatMoney(summary.earnings)} &#x20BD;</p>
+                <p><b>&#x41A;&#x43E;&#x43D;&#x432;&#x435;&#x440;&#x441;&#x438;&#x44F;:</b> ${summary.conversion.toFixed(1)}%</p>
             `;
         } else {
             channelSummaryCard.style.display = 'none';
@@ -319,11 +320,11 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
         const resp = await fetch(url);
         const data = await resp.json();
 
-        const title = data.selected_channel_title || 'Все каналы';
+        const title = data.selected_channel_title || '&#x412;&#x441;&#x435; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x44B;';
         selectedChannelName.textContent = title;
         chartScope.textContent = currentChannelId === 'all' || !currentChannelId
-            ? `Показаны данные для всех каналов (${data.period_label}).`
-            : `Показаны данные для канала: ${title} (${data.period_label}).`;
+            ? `&#x41F;&#x43E;&#x43A;&#x430;&#x437;&#x430;&#x43D;&#x44B; &#x434;&#x430;&#x43D;&#x43D;&#x44B;&#x435; &#x434;&#x43B;&#x44F; &#x432;&#x441;&#x435;&#x445; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x43E;&#x432; (${data.period_label}).`
+            : `&#x41F;&#x43E;&#x43A;&#x430;&#x437;&#x430;&#x43D;&#x44B; &#x434;&#x430;&#x43D;&#x43D;&#x44B;&#x435; &#x434;&#x43B;&#x44F; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x430;: ${title} (${data.period_label}).`;
 
         renderChannelSummary(data);
 
@@ -334,7 +335,7 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
             data: {
                 labels: data.posts_labels,
                 datasets: [{
-                    label: 'Посты',
+                    label: '&#x41F;&#x43E;&#x441;&#x442;&#x44B;',
                     data: data.posts_counts,
                     borderColor: '#ff4444',
                     backgroundColor: 'rgba(255,68,68,0.1)',
@@ -354,14 +355,14 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
                 labels: data.revenue_labels,
                 datasets: [
                     {
-                        label: 'Одобрено (₽)',
+                        label: '&#x41E;&#x434;&#x43E;&#x431;&#x440;&#x435;&#x43D;&#x43E; (&#x20BD;)',
                         data: data.revenue_approved,
                         borderColor: '#4caf50',
                         backgroundColor: 'rgba(76,175,80,0.1)',
                         fill: true,
                     },
                     {
-                        label: 'В ожидании (₽)',
+                        label: '&#x412; &#x43E;&#x436;&#x438;&#x434;&#x430;&#x43D;&#x438;&#x438; (&#x20BD;)',
                         data: data.revenue_pending,
                         borderColor: '#ff9800',
                         backgroundColor: 'rgba(255,152,0,0.1)',
@@ -381,7 +382,7 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
             data: {
                 labels: data.store_labels,
                 datasets: [{
-                    label: 'Постов',
+                    label: '&#x41F;&#x43E;&#x441;&#x442;&#x43E;&#x432;',
                     data: data.store_values,
                     backgroundColor: [
                         '#ff4444', '#4caf50', '#ff9800', '#2196f3', '#9c27b0',
@@ -398,11 +399,11 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
             data: {
                 labels: data.store_revenue_labels,
                 datasets: [{
-                    label: 'Доход (₽)',
+                    label: '&#x414;&#x43E;&#x445;&#x43E;&#x434; (&#x20BD;)',
                     data: data.store_revenue_values,
                     backgroundColor: '#4caf50',
                 }, {
-                    label: 'Транзакций',
+                    label: '&#x422;&#x440;&#x430;&#x43D;&#x437;&#x430;&#x43A;&#x446;&#x438;&#x439;',
                     data: data.store_revenue_transactions,
                     backgroundColor: '#2196f3',
                     yAxisID: 'y1',
@@ -437,20 +438,20 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 
 # ---------- USERS LIST ----------
 USERS_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Пользователи{% endblock %}
+{% block title %}&#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x438;{% endblock %}
 {% block content %}
-<h1>👥 Пользователи</h1>
+<h1>&#x1F465; &#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x438;</h1>
 <div class="card">
     <table>
-        <tr><th>ID</th><th>Роль</th><th>Подписка до</th><th>Тариф</th><th>Баланс</th><th>Действия</th></tr>
+        <tr><th>ID</th><th>&#x420;&#x43E;&#x43B;&#x44C;</th><th>&#x41F;&#x43E;&#x434;&#x43F;&#x438;&#x441;&#x43A;&#x430; &#x434;&#x43E;</th><th>&#x422;&#x430;&#x440;&#x438;&#x444;</th><th>&#x411;&#x430;&#x43B;&#x430;&#x43D;&#x441;</th><th>&#x414;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x44F;</th></tr>
         {% for u in users %}
         <tr>
             <td>{{ u['user_id'] }}</td>
             <td>{{ u['role'] }}</td>
-            <td>{{ u['subscription_until'] or '—' }}</td>
-            <td>{{ u['tariff_name'] or '—' }}</td>
-            <td>{{ u['balance_available'] or 0 }} ₽</td>
-            <td><a href="/admin/users/edit/{{ u['user_id'] }}" class="btn">Изменить</a></td>
+            <td>{{ u['subscription_until'] or '&#x2014;' }}</td>
+            <td>{{ u['tariff_name'] or '&#x2014;' }}</td>
+            <td>{{ u['balance_available'] or 0 }} &#x20BD;</td>
+            <td><a href="/admin/users/edit/{{ u['user_id'] }}" class="btn">&#x418;&#x437;&#x43C;&#x435;&#x43D;&#x438;&#x442;&#x44C;</a></td>
         </tr>
         {% endfor %}
     </table>
@@ -459,57 +460,57 @@ USERS_TEMPLATE = '''{% extends "base.html" %}
 
 # ---------- USER EDIT ----------
 USER_EDIT_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Редактирование пользователя{% endblock %}
+{% block title %}&#x420;&#x435;&#x434;&#x430;&#x43A;&#x442;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x43D;&#x438;&#x435; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44F;{% endblock %}
 {% block content %}
-<h1>✏️ Пользователь #{{ user['user_id'] }}</h1>
+<h1>&#x270F;&#xFE0F; &#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44C; #{{ user['user_id'] }}</h1>
 <div class="card">
     <form method="post" action="/admin/users/edit/{{ user['user_id'] }}">
-        <label>Роль:</label>
+        <label>&#x420;&#x43E;&#x43B;&#x44C;:</label>
         <select name="role">
             <option value="saas" {{ 'selected' if user['role'] == 'saas' }}>SaaS</option>
-            <option value="blogger" {{ 'selected' if user['role'] == 'blogger' }}>Блогер</option>
+            <option value="blogger" {{ 'selected' if user['role'] == 'blogger' }}>&#x411;&#x43B;&#x43E;&#x433;&#x435;&#x440;</option>
         </select>
-        <label>Подписка до (UTC, ГГГГ-ММ-ДД ЧЧ:ММ):</label>
+        <label>&#x41F;&#x43E;&#x434;&#x43F;&#x438;&#x441;&#x43A;&#x430; &#x434;&#x43E; (UTC, &#x413;&#x413;&#x413;&#x413;-&#x41C;&#x41C;-&#x414;&#x414; &#x427;&#x427;:&#x41C;&#x41C;):</label>
         <input name="subscription_until" value="{{ user['subscription_until'] or '' }}" placeholder="2026-12-31 23:59">
-        <label>Тариф:</label>
+        <label>&#x422;&#x430;&#x440;&#x438;&#x444;:</label>
         <select name="tariff_id">
-            <option value="0" {{ 'selected' if not user['tariff_id'] }}>Без тарифа</option>
+            <option value="0" {{ 'selected' if not user['tariff_id'] }}>&#x411;&#x435;&#x437; &#x442;&#x430;&#x440;&#x438;&#x444;&#x430;</option>
             {% for t in tariffs %}
             <option value="{{ t['id'] }}" {{ 'selected' if user['tariff_id'] == t['id'] }}>{{ t['name'] }}</option>
             {% endfor %}
         </select>
-        <label>Баланс доступный:</label>
+        <label>&#x411;&#x430;&#x43B;&#x430;&#x43D;&#x441; &#x434;&#x43E;&#x441;&#x442;&#x443;&#x43F;&#x43D;&#x44B;&#x439;:</label>
         <input name="balance_available" value="{{ user['balance_available'] or 0 }}" type="number" step="0.01">
-        <label>Баланс ожидающий:</label>
+        <label>&#x411;&#x430;&#x43B;&#x430;&#x43D;&#x441; &#x43E;&#x436;&#x438;&#x434;&#x430;&#x44E;&#x449;&#x438;&#x439;:</label>
         <input name="balance_pending" value="{{ user['balance_pending'] or 0 }}" type="number" step="0.01">
-        <button type="submit">Сохранить</button>
+        <button type="submit">&#x421;&#x43E;&#x445;&#x440;&#x430;&#x43D;&#x438;&#x442;&#x44C;</button>
     </form>
 </div>
 {% endblock %}'''
 
 # ---------- POSTS LIST ----------
 POSTS_TEMPLATE = r'''{% extends "base.html" %}
-{% block title %}Посты{% endblock %}
+{% block title %}&#x41F;&#x43E;&#x441;&#x442;&#x44B;{% endblock %}
 {% block content %}
-<h1>📬 Посты (последние 100 опубликованных)</h1>
+<h1>&#x1F4EC; &#x41F;&#x43E;&#x441;&#x442;&#x44B; (&#x43F;&#x43E;&#x441;&#x43B;&#x435;&#x434;&#x43D;&#x438;&#x435; 100 &#x43E;&#x43F;&#x443;&#x431;&#x43B;&#x438;&#x43A;&#x43E;&#x432;&#x430;&#x43D;&#x43D;&#x44B;&#x445;)</h1>
 <form method="get" action="/admin/posts" style="margin-bottom:20px;">
-    <label>Пользователь (ID):</label>
-    <input name="user_id" value="{{ request.query_params.get('user_id', '') }}" placeholder="ID пользователя">
-    <button type="submit">Фильтр</button>
+    <label>&#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44C; (ID):</label>
+    <input name="user_id" value="{{ request.query_params.get('user_id', '') }}" placeholder="ID &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44F;">
+    <button type="submit">&#x424;&#x438;&#x43B;&#x44C;&#x442;&#x440;</button>
 </form>
 <div class="card">
     <table id="posts-table">
-        <tr><th>ID</th><th>Пользователь</th><th>Канал</th><th>ERID</th><th>Ссылка</th><th>Статус</th><th>Дата</th></tr>
+        <tr><th>ID</th><th>&#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44C;</th><th>&#x41A;&#x430;&#x43D;&#x430;&#x43B;</th><th>ERID</th><th>&#x421;&#x441;&#x44B;&#x43B;&#x43A;&#x430;</th><th>&#x421;&#x442;&#x430;&#x442;&#x443;&#x441;</th><th>&#x414;&#x430;&#x442;&#x430;</th></tr>
         {% for p in posts %}
         <tr data-photo="{{ p['photo_url'] or '' }}" 
             data-caption="{{ p['caption_text'] or '' | e }}" 
-            data-channel="{{ p['channel_title'] or p['channel_id'] or '—' }}" 
+            data-channel="{{ p['channel_title'] or p['channel_id'] or '&#x2014;' }}" 
             style="cursor:pointer;">
             <td>{{ p['id'] }}</td>
             <td>{{ p['user_id'] }}</td>
-            <td>{{ p['channel_id'] or '—' }}</td>
-            <td>{{ p['erid'] or '—' }}</td>
-            <td>{% if p['direct_link'] %}<a href="{{ p['direct_link'] }}" target="_blank" style="color:#4d6bfe;">Открыть</a>{% else %}—{% endif %}</td>
+            <td>{{ p['channel_id'] or '&#x2014;' }}</td>
+            <td>{{ p['erid'] or '&#x2014;' }}</td>
+            <td>{% if p['direct_link'] %}<a href="{{ p['direct_link'] }}" target="_blank" style="color:#4d6bfe;">&#x41E;&#x442;&#x43A;&#x440;&#x44B;&#x442;&#x44C;</a>{% else %}&#x2014;{% endif %}</td>
             <td>{{ p['status'] }}</td>
             <td>{{ p['published_at'] or p['created_at'] }}</td>
         </tr>
@@ -519,10 +520,10 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
 
 <div id="post-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:center;">
     <div style="background:#0f0f0f; border-radius:12px; max-width:400px; width:90%; overflow:hidden; color:#fff; font-family: 'Segoe UI', sans-serif; position:relative;">
-        <span id="close-modal" style="position:absolute; top:8px; right:12px; color:#aaa; font-size:20px; cursor:pointer; z-index:10;">✕</span>
+        <span id="close-modal" style="position:absolute; top:8px; right:12px; color:#aaa; font-size:20px; cursor:pointer; z-index:10;">&#x2715;</span>
         <div style="background:#1a1a1a; padding:10px 15px; display:flex; align-items:center;">
             <div style="background:#ff4444; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold; font-size:14px;">#</div>
-            <div id="modal-channel-title" style="font-weight:600; font-size:15px;">Канал</div>
+            <div id="modal-channel-title" style="font-weight:600; font-size:15px;">&#x41A;&#x430;&#x43D;&#x430;&#x43B;</div>
         </div>
         <img id="modal-photo" src="" style="width:100%; display:none;" onerror="this.style.display='none'">
         <div id="modal-caption" style="padding:10px 15px 15px; font-size:14px; line-height:1.4; word-wrap:break-word;"></div>
@@ -540,14 +541,14 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
         row.addEventListener('click', () => {
             const photo = row.getAttribute('data-photo');
             const caption = row.getAttribute('data-caption');
-            const channel = row.getAttribute('data-channel') || 'Канал';
+            const channel = row.getAttribute('data-channel') || '&#x41A;&#x430;&#x43D;&#x430;&#x43B;';
             if (photo) {
                 modalPhoto.src = photo;
                 modalPhoto.style.display = 'block';
             } else {
                 modalPhoto.style.display = 'none';
             }
-            modalCaption.innerHTML = caption || '<i style="color:#888;">Текст поста отсутствует</i>';
+            modalCaption.innerHTML = caption || '<i style="color:#888;">&#x422;&#x435;&#x43A;&#x441;&#x442; &#x43F;&#x43E;&#x441;&#x442;&#x430; &#x43E;&#x442;&#x441;&#x443;&#x442;&#x441;&#x442;&#x432;&#x443;&#x435;&#x442;</i>';
             modalChannel.textContent = channel;
             modal.style.display = 'flex';
         });
@@ -571,26 +572,26 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
 
 # ---------- QUARANTINE ----------
 QUARANTINE_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Карантин{% endblock %}
+{% block title %}&#x41A;&#x430;&#x440;&#x430;&#x43D;&#x442;&#x438;&#x43D;{% endblock %}
 {% block content %}
-<h1>🚨 Карантин</h1>
+<h1>&#x1F6A8; &#x41A;&#x430;&#x440;&#x430;&#x43D;&#x442;&#x438;&#x43D;</h1>
 <div class="card">
     <table>
-        <tr><th>ID</th><th>Пользователь</th><th>Канал</th><th>ERID</th><th>Причина</th><th></th></tr>
+        <tr><th>ID</th><th>&#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44C;</th><th>&#x41A;&#x430;&#x43D;&#x430;&#x43B;</th><th>ERID</th><th>&#x41F;&#x440;&#x438;&#x447;&#x438;&#x43D;&#x430;</th><th></th></tr>
         {% for p in posts %}
         <tr>
             <td>{{ p['id'] }}</td>
             <td>{{ p['user_id'] }}</td>
-            <td>{{ p['channel_id'] or '—' }}</td>
-            <td>{{ p['erid'] or '—' }}</td>
+            <td>{{ p['channel_id'] or '&#x2014;' }}</td>
+            <td>{{ p['erid'] or '&#x2014;' }}</td>
             <td>{{ p['quarantine_reason'] }}</td>
             <td>
                 <form method="post" action="/admin/quarantine/approve/{{ p['id'] }}" style="display:inline;">
                     <input name="erid" placeholder="ERID" required>
-                    <input name="advertiser" placeholder="Рекламодатель">
-                    <button type="submit">Одобрить</button>
+                    <input name="advertiser" placeholder="&#x420;&#x435;&#x43A;&#x43B;&#x430;&#x43C;&#x43E;&#x434;&#x430;&#x442;&#x435;&#x43B;&#x44C;">
+                    <button type="submit">&#x41E;&#x434;&#x43E;&#x431;&#x440;&#x438;&#x442;&#x44C;</button>
                 </form>
-                <a href="/admin/quarantine/delete/{{ p['id'] }}" class="btn">Удалить</a>
+                <a href="/admin/quarantine/delete/{{ p['id'] }}" class="btn">&#x423;&#x434;&#x430;&#x43B;&#x438;&#x442;&#x44C;</a>
             </td>
         </tr>
         {% endfor %}
@@ -600,43 +601,43 @@ QUARANTINE_TEMPLATE = '''{% extends "base.html" %}
 
 # ---------- BROADCAST ----------
 BROADCAST_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Рассылка{% endblock %}
+{% block title %}&#x420;&#x430;&#x441;&#x441;&#x44B;&#x43B;&#x43A;&#x430;{% endblock %}
 {% block content %}
-<h1>📣 Массовая рассылка</h1>
+<h1>&#x1F4E3; &#x41C;&#x430;&#x441;&#x441;&#x43E;&#x432;&#x430;&#x44F; &#x440;&#x430;&#x441;&#x441;&#x44B;&#x43B;&#x43A;&#x430;</h1>
 <div class="card">
     {% if message %}<p class="success">{{ message }}</p>{% endif %}
     <form method="post" action="/admin/broadcast">
-        <textarea name="text" rows="5" placeholder="Текст сообщения..." required></textarea>
+        <textarea name="text" rows="5" placeholder="&#x422;&#x435;&#x43A;&#x441;&#x442; &#x441;&#x43E;&#x43E;&#x431;&#x449;&#x435;&#x43D;&#x438;&#x44F;..." required></textarea>
         <select name="role">
-            <option value="all">Всем</option>
+            <option value="all">&#x412;&#x441;&#x435;&#x43C;</option>
             <option value="saas">SaaS</option>
-            <option value="blogger">Блогерам</option>
+            <option value="blogger">&#x411;&#x43B;&#x43E;&#x433;&#x435;&#x440;&#x430;&#x43C;</option>
         </select>
-        <button type="submit">Отправить</button>
+        <button type="submit">&#x41E;&#x442;&#x43F;&#x440;&#x430;&#x432;&#x438;&#x442;&#x44C;</button>
     </form>
 </div>
 {% endblock %}'''
 
 # ---------- PROMOCODES (STORE) ----------
 PROMOCODES_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Купоны магазинов{% endblock %}
+{% block title %}&#x41A;&#x443;&#x43F;&#x43E;&#x43D;&#x44B; &#x43C;&#x430;&#x433;&#x430;&#x437;&#x438;&#x43D;&#x43E;&#x432;{% endblock %}
 {% block content %}
-<h1>🎟 Купоны магазинов</h1>
+<h1>&#x1F39F; &#x41A;&#x443;&#x43F;&#x43E;&#x43D;&#x44B; &#x43C;&#x430;&#x433;&#x430;&#x437;&#x438;&#x43D;&#x43E;&#x432;</h1>
 <div class="card">
-    <h2>Добавить</h2>
+    <h2>&#x414;&#x43E;&#x431;&#x430;&#x432;&#x438;&#x442;&#x44C;</h2>
     <form method="post" action="/admin/promocodes/add">
-        <input name="store" placeholder="Магазин" required>
-        <input name="promocode" placeholder="Промокод" required>
-        <input name="description" placeholder="Описание">
-        <button type="submit">Добавить</button>
+        <input name="store" placeholder="&#x41C;&#x430;&#x433;&#x430;&#x437;&#x438;&#x43D;" required>
+        <input name="promocode" placeholder="&#x41F;&#x440;&#x43E;&#x43C;&#x43E;&#x43A;&#x43E;&#x434;" required>
+        <input name="description" placeholder="&#x41E;&#x43F;&#x438;&#x441;&#x430;&#x43D;&#x438;&#x435;">
+        <button type="submit">&#x414;&#x43E;&#x431;&#x430;&#x432;&#x438;&#x442;&#x44C;</button>
     </form>
 </div>
 <div class="card">
-    <h2>Список</h2>
+    <h2>&#x421;&#x43F;&#x438;&#x441;&#x43E;&#x43A;</h2>
     <table>
-        <tr><th>Магазин</th><th>Код</th><th>Описание</th><th></th></tr>
+        <tr><th>&#x41C;&#x430;&#x433;&#x430;&#x437;&#x438;&#x43D;</th><th>&#x41A;&#x43E;&#x434;</th><th>&#x41E;&#x43F;&#x438;&#x441;&#x430;&#x43D;&#x438;&#x435;</th><th></th></tr>
         {% for p in promos %}
-        <tr><td>{{ p['store'] }}</td><td><code>{{ p['promocode'] }}</code></td><td>{{ p['description'] }}</td><td><a href="/admin/promocodes/delete/{{ p['id'] }}">Удалить</a></td></tr>
+        <tr><td>{{ p['store'] }}</td><td><code>{{ p['promocode'] }}</code></td><td>{{ p['description'] }}</td><td><a href="/admin/promocodes/delete/{{ p['id'] }}">&#x423;&#x434;&#x430;&#x43B;&#x438;&#x442;&#x44C;</a></td></tr>
         {% endfor %}
     </table>
 </div>
@@ -644,21 +645,21 @@ PROMOCODES_TEMPLATE = '''{% extends "base.html" %}
 
 # ---------- STORE DELIVERY ----------
 STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Доставка{% endblock %}
+{% block title %}&#x414;&#x43E;&#x441;&#x442;&#x430;&#x432;&#x43A;&#x430;{% endblock %}
 {% block content %}
-<h1>🚚 Доставка</h1>
+<h1>&#x1F69A; &#x414;&#x43E;&#x441;&#x442;&#x430;&#x432;&#x43A;&#x430;</h1>
 <div class="card">
-    <h2>Обновить</h2>
+    <h2>&#x41E;&#x431;&#x43D;&#x43E;&#x432;&#x438;&#x442;&#x44C;</h2>
     <form method="post" action="/admin/store_delivery/update">
-        <input name="store" placeholder="Магазин" required>
-        <input name="delivery_text" placeholder="Условия" required>
-        <button type="submit">Сохранить</button>
+        <input name="store" placeholder="&#x41C;&#x430;&#x433;&#x430;&#x437;&#x438;&#x43D;" required>
+        <input name="delivery_text" placeholder="&#x423;&#x441;&#x43B;&#x43E;&#x432;&#x438;&#x44F;" required>
+        <button type="submit">&#x421;&#x43E;&#x445;&#x440;&#x430;&#x43D;&#x438;&#x442;&#x44C;</button>
     </form>
 </div>
 <div class="card">
-    <h2>Текущие данные</h2>
+    <h2>&#x422;&#x435;&#x43A;&#x443;&#x449;&#x438;&#x435; &#x434;&#x430;&#x43D;&#x43D;&#x44B;&#x435;</h2>
     <table>
-        <tr><th>Магазин</th><th>Условия</th></tr>
+        <tr><th>&#x41C;&#x430;&#x433;&#x430;&#x437;&#x438;&#x43D;</th><th>&#x423;&#x441;&#x43B;&#x43E;&#x432;&#x438;&#x44F;</th></tr>
         {% for d in deliveries %}
         <tr><td>{{ d['store'] }}</td><td>{{ d['delivery_text'] }}</td></tr>
         {% endfor %}
@@ -668,45 +669,45 @@ STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
 
 # ---------- BULK ACTIONS ----------
 BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Массовые действия{% endblock %}
+{% block title %}&#x41C;&#x430;&#x441;&#x441;&#x43E;&#x432;&#x44B;&#x435; &#x434;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x44F;{% endblock %}
 {% block content %}
-<h1>👥 Массовые действия</h1>
+<h1>&#x1F465; &#x41C;&#x430;&#x441;&#x441;&#x43E;&#x432;&#x44B;&#x435; &#x434;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x44F;</h1>
 <div class="card">
     <form method="post" action="/admin/bulk-actions/execute">
-        <label>Группа пользователей:</label>
+        <label>&#x413;&#x440;&#x443;&#x43F;&#x43F;&#x430; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x435;&#x439;:</label>
         <select name="group">
-            <option value="all">Все</option>
+            <option value="all">&#x412;&#x441;&#x435;</option>
             <option value="saas">SaaS</option>
-            <option value="blogger">Блогеры</option>
-            <option value="active">Активные</option>
-            <option value="banned">Забаненные</option>
-            <option value="expired">Просроченные</option>
+            <option value="blogger">&#x411;&#x43B;&#x43E;&#x433;&#x435;&#x440;&#x44B;</option>
+            <option value="active">&#x410;&#x43A;&#x442;&#x438;&#x432;&#x43D;&#x44B;&#x435;</option>
+            <option value="banned">&#x417;&#x430;&#x431;&#x430;&#x43D;&#x435;&#x43D;&#x43D;&#x44B;&#x435;</option>
+            <option value="expired">&#x41F;&#x440;&#x43E;&#x441;&#x440;&#x43E;&#x447;&#x435;&#x43D;&#x43D;&#x44B;&#x435;</option>
         </select>
         <input type="hidden" name="action" id="bulk-action-input" value="activate">
         <div style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:10px; margin-top:10px;">
-            <button type="button" onclick="setBulkAction('activate')">Активировать</button>
-            <button type="button" onclick="setBulkAction('deactivate')">Деактивировать</button>
-            <button type="button" onclick="setBulkAction('reset_balance')">Обнулить баланс</button>
-            <button type="button" onclick="setBulkAction('add_beta')">Добавить в бета</button>
-            <button type="button" onclick="setBulkAction('remove_beta')">Убрать из бета</button>
-            <button type="button" onclick="setBulkAction('delete')" style="background:#c62828;">Удалить</button>
+            <button type="button" onclick="setBulkAction('activate')">&#x410;&#x43A;&#x442;&#x438;&#x432;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C;</button>
+            <button type="button" onclick="setBulkAction('deactivate')">&#x414;&#x435;&#x430;&#x43A;&#x442;&#x438;&#x432;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C;</button>
+            <button type="button" onclick="setBulkAction('reset_balance')">&#x41E;&#x431;&#x43D;&#x443;&#x43B;&#x438;&#x442;&#x44C; &#x431;&#x430;&#x43B;&#x430;&#x43D;&#x441;</button>
+            <button type="button" onclick="setBulkAction('add_beta')">&#x414;&#x43E;&#x431;&#x430;&#x432;&#x438;&#x442;&#x44C; &#x432; &#x431;&#x435;&#x442;&#x430;</button>
+            <button type="button" onclick="setBulkAction('remove_beta')">&#x423;&#x431;&#x440;&#x430;&#x442;&#x44C; &#x438;&#x437; &#x431;&#x435;&#x442;&#x430;</button>
+            <button type="button" onclick="setBulkAction('delete')" style="background:#c62828;">&#x423;&#x434;&#x430;&#x43B;&#x438;&#x442;&#x44C;</button>
         </div>
-        <p style="color:#aaa; font-size:0.95em;">Текущая операция: <span id="current-bulk-action">Активировать</span></p>
-        <label>Значение (для reset_balance):</label>
+        <p style="color:#aaa; font-size:0.95em;">&#x422;&#x435;&#x43A;&#x443;&#x449;&#x430;&#x44F; &#x43E;&#x43F;&#x435;&#x440;&#x430;&#x446;&#x438;&#x44F;: <span id="current-bulk-action">&#x410;&#x43A;&#x442;&#x438;&#x432;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C;</span></p>
+        <label>&#x417;&#x43D;&#x430;&#x447;&#x435;&#x43D;&#x438;&#x435; (&#x434;&#x43B;&#x44F; reset_balance):</label>
         <input name="value" value="0" type="number">
-        <button type="submit" style="margin-top:10px;">Выполнить</button>
+        <button type="submit" style="margin-top:10px;">&#x412;&#x44B;&#x43F;&#x43E;&#x43B;&#x43D;&#x438;&#x442;&#x44C;</button>
         <script>
             function setBulkAction(action) {
                 const actionInput = document.getElementById('bulk-action-input');
                 const current = document.getElementById('current-bulk-action');
                 actionInput.value = action;
                 const labels = {
-                    activate: 'Активировать',
-                    deactivate: 'Деактивировать',
-                    reset_balance: 'Обнулить баланс',
-                    add_beta: 'Добавить в бета',
-                    remove_beta: 'Убрать из бета',
-                    delete: 'Удалить'
+                    activate: '&#x410;&#x43A;&#x442;&#x438;&#x432;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C;',
+                    deactivate: '&#x414;&#x435;&#x430;&#x43A;&#x442;&#x438;&#x432;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C;',
+                    reset_balance: '&#x41E;&#x431;&#x43D;&#x443;&#x43B;&#x438;&#x442;&#x44C; &#x431;&#x430;&#x43B;&#x430;&#x43D;&#x441;',
+                    add_beta: '&#x414;&#x43E;&#x431;&#x430;&#x432;&#x438;&#x442;&#x44C; &#x432; &#x431;&#x435;&#x442;&#x430;',
+                    remove_beta: '&#x423;&#x431;&#x440;&#x430;&#x442;&#x44C; &#x438;&#x437; &#x431;&#x435;&#x442;&#x430;',
+                    delete: '&#x423;&#x434;&#x430;&#x43B;&#x438;&#x442;&#x44C;'
                 };
                 current.textContent = labels[action] || action;
             }
@@ -719,53 +720,53 @@ BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
 
 # ---------- SETTINGS ----------
 SETTINGS_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Глобальные настройки{% endblock %}
+{% block title %}&#x413;&#x43B;&#x43E;&#x431;&#x430;&#x43B;&#x44C;&#x43D;&#x44B;&#x435; &#x43D;&#x430;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x43A;&#x438;{% endblock %}
 {% block content %}
-<h1>⚙️ Глобальные настройки</h1>
+<h1>&#x2699;&#xFE0F; &#x413;&#x43B;&#x43E;&#x431;&#x430;&#x43B;&#x44C;&#x43D;&#x44B;&#x435; &#x43D;&#x430;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x43A;&#x438;</h1>
 <div class="card">
     <form method="post" action="/admin/settings-edit/save">
-        <label>Ночной режим, начало (HH:MM):</label>
+        <label>&#x41D;&#x43E;&#x447;&#x43D;&#x43E;&#x439; &#x440;&#x435;&#x436;&#x438;&#x43C;, &#x43D;&#x430;&#x447;&#x430;&#x43B;&#x43E; (HH:MM):</label>
         <input name="night_start" value="{{ settings.get('night_start', '23:00') }}">
-        <label>Ночной режим, конец (HH:MM):</label>
+        <label>&#x41D;&#x43E;&#x447;&#x43D;&#x43E;&#x439; &#x440;&#x435;&#x436;&#x438;&#x43C;, &#x43A;&#x43E;&#x43D;&#x435;&#x446; (HH:MM):</label>
         <input name="night_end" value="{{ settings.get('night_end', '08:00') }}">
-        <label>Интервал сканирования (сек):</label>
+        <label>&#x418;&#x43D;&#x442;&#x435;&#x440;&#x432;&#x430;&#x43B; &#x441;&#x43A;&#x430;&#x43D;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x43D;&#x438;&#x44F; (&#x441;&#x435;&#x43A;):</label>
         <input name="run_interval" value="{{ settings.get('run_interval', '900') }}" type="number">
-        <label>Минимальная выплата (RUB):</label>
+        <label>&#x41C;&#x438;&#x43D;&#x438;&#x43C;&#x430;&#x43B;&#x44C;&#x43D;&#x430;&#x44F; &#x432;&#x44B;&#x43F;&#x43B;&#x430;&#x442;&#x430; (RUB):</label>
         <input name="min_payout" value="{{ settings.get('min_payout', '2000') }}" type="number">
-        <label>Комиссия банка (%):</label>
+        <label>&#x41A;&#x43E;&#x43C;&#x438;&#x441;&#x441;&#x438;&#x44F; &#x431;&#x430;&#x43D;&#x43A;&#x430; (%):</label>
         <input name="payout_bank_pct" value="{{ settings.get('payout_bank_pct', '0.043') }}" step="0.001">
-        <button type="submit">Сохранить</button>
+        <button type="submit">&#x421;&#x43E;&#x445;&#x440;&#x430;&#x43D;&#x438;&#x442;&#x44C;</button>
     </form>
 </div>
 
-<!-- ===== НОВЫЙ БЛОК: Управление фичами ===== -->
+<!-- ===== &#x41D;&#x41E;&#x412;&#x42B;&#x419; &#x411;&#x41B;&#x41E;&#x41A;: &#x423;&#x43F;&#x440;&#x430;&#x432;&#x43B;&#x435;&#x43D;&#x438;&#x435; &#x444;&#x438;&#x447;&#x430;&#x43C;&#x438; ===== -->
 <div class="card">
-    <h2>🎯 Управление фичами</h2>
+    <h2>&#x1F3AF; &#x423;&#x43F;&#x440;&#x430;&#x432;&#x43B;&#x435;&#x43D;&#x438;&#x435; &#x444;&#x438;&#x447;&#x430;&#x43C;&#x438;</h2>
     <table>
-        <tr><th>Фича</th><th>Статус</th><th>Действия</th></tr>
+        <tr><th>&#x424;&#x438;&#x447;&#x430;</th><th>&#x421;&#x442;&#x430;&#x442;&#x443;&#x441;</th><th>&#x414;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x44F;</th></tr>
         {% for feature in features %}
         <tr>
             <td><b>{{ feature['name'] }}</b></td>
             <td>
                 <span style="padding:4px 12px; border-radius:4px; font-weight:bold; 
-                    {% if feature['status'] == 'released' %}background:#4caf50; color:white;{% endif %}
-                    {% if feature['status'] == 'beta' %}background:#ff9800; color:white;{% endif %}
-                    {% if feature['status'] == 'dev' %}background:#999; color:white;{% endif %}
+                    {{ '%' }} if feature['status'] == 'released' }}background:#4caf50; color:white;{{ '%' }}{% endif %}
+                    {{ '%' }} if feature['status'] == 'beta' }}background:#ff9800; color:white;{{ '%' }}{% endif %}
+                    {{ '%' }} if feature['status'] == 'dev' }}background:#999; color:white;{{ '%' }}{% endif %}
                 ">
-                    {% if feature['status'] == 'released' %}Выпущено{% elif feature['status'] == 'beta' %}Бета{% else %}В разработке{% endif %}
+                    {% if feature['status'] == 'released' %}&#x412;&#x44B;&#x43F;&#x443;&#x449;&#x435;&#x43D;&#x43E;{% elif feature['status'] == 'beta' %}&#x411;&#x435;&#x442;&#x430;{% else %}&#x412; &#x440;&#x430;&#x437;&#x440;&#x430;&#x431;&#x43E;&#x442;&#x43A;&#x435;{% endif %}
                 </span>
             </td>
             <td>
                 <form method="post" action="/admin/settings/feature-status" style="display:flex; gap:5px;">
                     <input type="hidden" name="feature_name" value="{{ feature['name'] }}">
                     {% if feature['status'] != 'dev' %}
-                    <button type="submit" name="status" value="dev" style="background:#999; padding:5px 10px; font-size:0.9em;">→ В разработке</button>
+                    <button type="submit" name="status" value="dev" style="background:#999; padding:5px 10px; font-size:0.9em;">&#x2192; &#x412; &#x440;&#x430;&#x437;&#x440;&#x430;&#x431;&#x43E;&#x442;&#x43A;&#x435;</button>
                     {% endif %}
                     {% if feature['status'] != 'beta' %}
-                    <button type="submit" name="status" value="beta" style="background:#ff9800; padding:5px 10px; font-size:0.9em;">→ Бета</button>
+                    <button type="submit" name="status" value="beta" style="background:#ff9800; padding:5px 10px; font-size:0.9em;">&#x2192; &#x411;&#x435;&#x442;&#x430;</button>
                     {% endif %}
                     {% if feature['status'] != 'released' %}
-                    <button type="submit" name="status" value="released" style="background:#4caf50; padding:5px 10px; font-size:0.9em;">→ Выпущено</button>
+                    <button type="submit" name="status" value="released" style="background:#4caf50; padding:5px 10px; font-size:0.9em;">&#x2192; &#x412;&#x44B;&#x43F;&#x443;&#x449;&#x435;&#x43D;&#x43E;</button>
                     {% endif %}
                 </form>
             </td>
@@ -773,48 +774,48 @@ SETTINGS_TEMPLATE = '''{% extends "base.html" %}
         {% endfor %}
     </table>
     <p style="font-size: 0.85em; color: #888; margin-top: 10px;">
-        <b>В разработке</b> — скрыто от всех<br>
-        <b>Бета</b> — видят только бета-тестеры<br>
-        <b>Выпущено</b> — доступна всем пользователям
+        <b>&#x412; &#x440;&#x430;&#x437;&#x440;&#x430;&#x431;&#x43E;&#x442;&#x43A;&#x435;</b> &#x2014; &#x441;&#x43A;&#x440;&#x44B;&#x442;&#x43E; &#x43E;&#x442; &#x432;&#x441;&#x435;&#x445;<br>
+        <b>&#x411;&#x435;&#x442;&#x430;</b> &#x2014; &#x432;&#x438;&#x434;&#x44F;&#x442; &#x442;&#x43E;&#x43B;&#x44C;&#x43A;&#x43E; &#x431;&#x435;&#x442;&#x430;-&#x442;&#x435;&#x441;&#x442;&#x435;&#x440;&#x44B;<br>
+        <b>&#x412;&#x44B;&#x43F;&#x443;&#x449;&#x435;&#x43D;&#x43E;</b> &#x2014; &#x434;&#x43E;&#x441;&#x442;&#x443;&#x43F;&#x43D;&#x430; &#x432;&#x441;&#x435;&#x43C; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44F;&#x43C;
     </p>
 </div>
 
-<!-- ===== БЛОК: Бета-тестеры ===== -->
+<!-- ===== &#x411;&#x41B;&#x41E;&#x41A;: &#x411;&#x435;&#x442;&#x430;-&#x442;&#x435;&#x441;&#x442;&#x435;&#x440;&#x44B; ===== -->
 <div class="card">
-    <h2>🔬 Бета-тестеры</h2>
-    <p>Текущие бета-тестеры ({{ beta_testers|length }}):</p>
+    <h2>&#x1F52C; &#x411;&#x435;&#x442;&#x430;-&#x442;&#x435;&#x441;&#x442;&#x435;&#x440;&#x44B;</h2>
+    <p>&#x422;&#x435;&#x43A;&#x443;&#x449;&#x438;&#x435; &#x431;&#x435;&#x442;&#x430;-&#x442;&#x435;&#x441;&#x442;&#x435;&#x440;&#x44B; ({{ beta_testers|length }}):</p>
     <table>
         <tr><th>ID</th><th>Username</th><th></th></tr>
         {% for tester in beta_testers %}
         <tr>
             <td>{{ tester['user_id'] }}</td>
-            <td>{{ tester['username'] or '—' }}</td>
+            <td>{{ tester['username'] or '&#x2014;' }}</td>
             <td>
                 <form method="post" action="/admin/settings/beta-remove" style="display:inline;">
                     <input type="hidden" name="user_id" value="{{ tester['user_id'] }}">
-                    <button type="submit" style="background:#f44336; padding:5px 15px; font-size:0.9em;">Удалить</button>
+                    <button type="submit" style="background:#f44336; padding:5px 15px; font-size:0.9em;">&#x423;&#x434;&#x430;&#x43B;&#x438;&#x442;&#x44C;</button>
                 </form>
             </td>
         </tr>
         {% endfor %}
     </table>
     
-    <p style="margin-top: 20px;"><b>Добавить нового тестера:</b></p>
+    <p style="margin-top: 20px;"><b>&#x414;&#x43E;&#x431;&#x430;&#x432;&#x438;&#x442;&#x44C; &#x43D;&#x43E;&#x432;&#x43E;&#x433;&#x43E; &#x442;&#x435;&#x441;&#x442;&#x435;&#x440;&#x430;:</b></p>
     <form method="post" action="/admin/settings/beta-add" style="display:flex; gap:10px;">
-        <input type="number" name="user_id" placeholder="ID пользователя" required style="width:150px;">
-        <button type="submit">Добавить</button>
+        <input type="number" name="user_id" placeholder="ID &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44F;" required style="width:150px;">
+        <button type="submit">&#x414;&#x43E;&#x431;&#x430;&#x432;&#x438;&#x442;&#x44C;</button>
     </form>
 </div>
 {% endblock %}'''
 
 # ---------- AUDIT ----------
 AUDIT_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Аудит{% endblock %}
+{% block title %}&#x410;&#x443;&#x434;&#x438;&#x442;{% endblock %}
 {% block content %}
-<h1>📜 Аудит (последние 200)</h1>
+<h1>&#x1F4DC; &#x410;&#x443;&#x434;&#x438;&#x442; (&#x43F;&#x43E;&#x441;&#x43B;&#x435;&#x434;&#x43D;&#x438;&#x435; 200)</h1>
 <div class="card">
     <table>
-        <tr><th>Админ</th><th>Действие</th><th>Детали</th><th>Дата</th></tr>
+        <tr><th>&#x410;&#x434;&#x43C;&#x438;&#x43D;</th><th>&#x414;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x435;</th><th>&#x414;&#x435;&#x442;&#x430;&#x43B;&#x438;</th><th>&#x414;&#x430;&#x442;&#x430;</th></tr>
         {% for a in audits %}
         <tr><td>{{ a['admin_id'] }}</td><td>{{ a['action'] }}</td><td>{{ a['details'] }}</td><td>{{ a['created_at'] }}</td></tr>
         {% endfor %}
@@ -824,65 +825,65 @@ AUDIT_TEMPLATE = '''{% extends "base.html" %}
 
 # ---------- REPORTS ----------
 REPORTS_TEMPLATE = '''{% extends "base.html" %}
-{% block title %}Ежедневные отчёты{% endblock %}
+{% block title %}&#x415;&#x436;&#x435;&#x434;&#x43D;&#x435;&#x432;&#x43D;&#x44B;&#x435; &#x43E;&#x442;&#x447;&#x451;&#x442;&#x44B;{% endblock %}
 {% block content %}
-<h1>📁 Отчёты</h1>
+<h1>&#x1F4C1; &#x41E;&#x442;&#x447;&#x451;&#x442;&#x44B;</h1>
 
 <div class="card">
-    <h2>Ежедневные файлы (CSV)</h2>
+    <h2>&#x415;&#x436;&#x435;&#x434;&#x43D;&#x435;&#x432;&#x43D;&#x44B;&#x435; &#x444;&#x430;&#x439;&#x43B;&#x44B; (CSV)</h2>
     <table>
-        <tr><th>Имя файла</th><th></th></tr>
+        <tr><th>&#x418;&#x43C;&#x44F; &#x444;&#x430;&#x439;&#x43B;&#x430;</th><th></th></tr>
         {% for f in files %}
-        <tr><td>{{ f }}</td><td><a href="/admin/reports/download/{{ f }}" class="btn">Скачать</a></td></tr>
+        <tr><td>{{ f }}</td><td><a href="/admin/reports/download/{{ f }}" class="btn">&#x421;&#x43A;&#x430;&#x447;&#x430;&#x442;&#x44C;</a></td></tr>
         {% endfor %}
     </table>
 </div>
 
 <div class="card" style="margin-top:30px;">
-    <h2>Финансовые и аналитические отчёты</h2>
-    <p><a href="/admin/payouts/csv" class="btn">Скачать историю выплат (CSV)</a></p>
-    <p><a href="/admin/subid-stats/csv" class="btn">Скачать статистику SubID (CSV)</a></p>
-    <p><a href="/admin/referrals/csv" class="btn">Скачать реферальные связи (CSV)</a></p>
+    <h2>&#x424;&#x438;&#x43D;&#x430;&#x43D;&#x441;&#x43E;&#x432;&#x44B;&#x435; &#x438; &#x430;&#x43D;&#x430;&#x43B;&#x438;&#x442;&#x438;&#x447;&#x435;&#x441;&#x43A;&#x438;&#x435; &#x43E;&#x442;&#x447;&#x451;&#x442;&#x44B;</h2>
+    <p><a href="/admin/payouts/csv" class="btn">&#x421;&#x43A;&#x430;&#x447;&#x430;&#x442;&#x44C; &#x438;&#x441;&#x442;&#x43E;&#x440;&#x438;&#x44E; &#x432;&#x44B;&#x43F;&#x43B;&#x430;&#x442; (CSV)</a></p>
+    <p><a href="/admin/subid-stats/csv" class="btn">&#x421;&#x43A;&#x430;&#x447;&#x430;&#x442;&#x44C; &#x441;&#x442;&#x430;&#x442;&#x438;&#x441;&#x442;&#x438;&#x43A;&#x443; SubID (CSV)</a></p>
+    <p><a href="/admin/referrals/csv" class="btn">&#x421;&#x43A;&#x430;&#x447;&#x430;&#x442;&#x44C; &#x440;&#x435;&#x444;&#x435;&#x440;&#x430;&#x43B;&#x44C;&#x43D;&#x44B;&#x435; &#x441;&#x432;&#x44F;&#x437;&#x438; (CSV)</a></p>
 </div>
 {% endblock %}'''
 
 # ---------- ADMIN PAYOUTS ----------
 ADMIN_PAYOUTS_TEMPLATE = r'''{% extends "base.html" %}
-{% block title %}Выплаты{% endblock %}
+{% block title %}&#x412;&#x44B;&#x43F;&#x43B;&#x430;&#x442;&#x44B;{% endblock %}
 {% block content %}
-<h1>💰 Выплаты</h1>
+<h1>&#x1F4B0; &#x412;&#x44B;&#x43F;&#x43B;&#x430;&#x442;&#x44B;</h1>
 
 <div class="card">
-    <h2>Запросы на выплату</h2>
+    <h2>&#x417;&#x430;&#x43F;&#x440;&#x43E;&#x441;&#x44B; &#x43D;&#x430; &#x432;&#x44B;&#x43F;&#x43B;&#x430;&#x442;&#x443;</h2>
     <table>
-        <tr><th>ID</th><th>Пользователь</th><th>Сумма</th><th>Статус</th><th></th></tr>
+        <tr><th>ID</th><th>&#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44C;</th><th>&#x421;&#x443;&#x43C;&#x43C;&#x430;</th><th>&#x421;&#x442;&#x430;&#x442;&#x443;&#x441;</th><th></th></tr>
         {% for r in requests %}
         <tr>
             <td>{{ r['id'] }}</td>
             <td>{{ r['user_id'] }}</td>
-            <td>{{ r['amount'] }} ₽</td>
+            <td>{{ r['amount'] }} &#x20BD;</td>
             <td>{{ r['status'] }}</td>
-            <td><a href="/admin/payouts/{{ r['id'] }}/chat" class="btn">💬 Чат</a></td>
+            <td><a href="/admin/payouts/{{ r['id'] }}/chat" class="btn">&#x1F4AC; &#x427;&#x430;&#x442;</a></td>
         </tr>
         {% endfor %}
     </table>
 </div>
 
 <div class="card">
-    <h2>Доступно к выплате</h2>
+    <h2>&#x414;&#x43E;&#x441;&#x442;&#x443;&#x43F;&#x43D;&#x43E; &#x43A; &#x432;&#x44B;&#x43F;&#x43B;&#x430;&#x442;&#x435;</h2>
     <table>
-        <tr><th>ID</th><th>Роль</th><th>Username</th><th>Доступно</th><th></th></tr>
+        <tr><th>ID</th><th>&#x420;&#x43E;&#x43B;&#x44C;</th><th>Username</th><th>&#x414;&#x43E;&#x441;&#x442;&#x443;&#x43F;&#x43D;&#x43E;</th><th></th></tr>
         {% for u in users %}
         <tr>
             <td>{{ u['user_id'] }}</td>
             <td>{{ u['role'] }}</td>
-            <td>{{ u['username'] or '—' }}</td>
-            <td>{{ u['balance_available'] }} ₽</td>
+            <td>{{ u['username'] or '&#x2014;' }}</td>
+            <td>{{ u['balance_available'] }} &#x20BD;</td>
             <td>
                 <form method="post" action="/admin/payouts/pay" style="display:inline;">
                     <input type="hidden" name="user_id" value="{{ u['user_id'] }}">
                     <input type="number" name="amount" value="{{ u['balance_available'] }}" step="0.01" style="width:100px;">
-                    <button type="submit">Выплатить</button>
+                    <button type="submit">&#x412;&#x44B;&#x43F;&#x43B;&#x430;&#x442;&#x438;&#x442;&#x44C;</button>
                 </form>
             </td>
         </tr>
@@ -891,12 +892,12 @@ ADMIN_PAYOUTS_TEMPLATE = r'''{% extends "base.html" %}
 </div>
 {% endblock %}'''
 
-# ---------- ADMIN CHAT (полная страница) ----------
+# ---------- ADMIN CHAT (&#x43F;&#x43E;&#x43B;&#x43D;&#x430;&#x44F; &#x441;&#x442;&#x440;&#x430;&#x43D;&#x438;&#x446;&#x430;) ----------
 ADMIN_CHAT_TEMPLATE = r'''<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Чат выплаты #{{ request_id }}</title>
+<title>&#x427;&#x430;&#x442; &#x432;&#x44B;&#x43F;&#x43B;&#x430;&#x442;&#x44B; #{{ request_id }}</title>
 <style>
     body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; margin: 0; }
     h1 { color: #ff4444; }
@@ -923,21 +924,21 @@ ADMIN_CHAT_TEMPLATE = r'''<!DOCTYPE html>
 </style>
 </head>
 <body>
-<a href="/admin/payouts" class="back-link">← Назад к списку выплат</a>
-<h1>💬 Чат по заявке #{{ request_id }} <span class="status-badge" id="status-badge">{{ status }}</span></h1>
-<div class="chat-box" id="chat-messages">Загрузка...</div>
+<a href="/admin/payouts" class="back-link">&#x2190; &#x41D;&#x430;&#x437;&#x430;&#x434; &#x43A; &#x441;&#x43F;&#x438;&#x441;&#x43A;&#x443; &#x432;&#x44B;&#x43F;&#x43B;&#x430;&#x442;</a>
+<h1>&#x1F4AC; &#x427;&#x430;&#x442; &#x43F;&#x43E; &#x437;&#x430;&#x44F;&#x432;&#x43A;&#x435; #{{ request_id }} <span class="status-badge" id="status-badge">{{ status }}</span></h1>
+<div class="chat-box" id="chat-messages">&#x417;&#x430;&#x433;&#x440;&#x443;&#x437;&#x43A;&#x430;...</div>
 <div class="chat-input">
-    <input type="text" id="message-text" placeholder="Введите сообщение...">
-    <button onclick="sendMessage()">📨</button>
+    <input type="text" id="message-text" placeholder="&#x412;&#x432;&#x435;&#x434;&#x438;&#x442;&#x435; &#x441;&#x43E;&#x43E;&#x431;&#x449;&#x435;&#x43D;&#x438;&#x435;...">
+    <button onclick="sendMessage()">&#x1F4E8;</button>
 </div>
 <div class="action-buttons">
-    <button id="send-money-btn" class="send-money" style="display:none;" onclick="sendMoney()">💸 Деньги отправлены</button>
-    <button id="decline-btn" class="decline" style="display:none;" onclick="declineRequest()">❌ Отклонить</button>
-    <button id="confirm-btn" class="confirm" style="display:none;" onclick="confirmReceipt()">✅ Подтвердить чек</button>
+    <button id="send-money-btn" class="send-money" style="display:none;" onclick="sendMoney()">&#x1F4B8; &#x414;&#x435;&#x43D;&#x44C;&#x433;&#x438; &#x43E;&#x442;&#x43F;&#x440;&#x430;&#x432;&#x43B;&#x435;&#x43D;&#x44B;</button>
+    <button id="decline-btn" class="decline" style="display:none;" onclick="declineRequest()">&#x274C; &#x41E;&#x442;&#x43A;&#x43B;&#x43E;&#x43D;&#x438;&#x442;&#x44C;</button>
+    <button id="confirm-btn" class="confirm" style="display:none;" onclick="confirmReceipt()">&#x2705; &#x41F;&#x43E;&#x434;&#x442;&#x432;&#x435;&#x440;&#x434;&#x438;&#x442;&#x44C; &#x447;&#x435;&#x43A;</button>
 </div>
 
     <div id="receipt-warning" style="display:none; margin-top:15px; padding:12px; background:#2a1a1a; border:1px solid #ff9800; border-radius:8px;">
-        ⚠️ <b>Внимание:</b> проверьте чек вручную — сверьте сумму, дату и ИНН получателя.
+        &#x26A0;&#xFE0F; <b>&#x412;&#x43D;&#x438;&#x43C;&#x430;&#x43D;&#x438;&#x435;:</b> &#x43F;&#x440;&#x43E;&#x432;&#x435;&#x440;&#x44C;&#x442;&#x435; &#x447;&#x435;&#x43A; &#x432;&#x440;&#x443;&#x447;&#x43D;&#x443;&#x44E; &#x2014; &#x441;&#x432;&#x435;&#x440;&#x44C;&#x442;&#x435; &#x441;&#x443;&#x43C;&#x43C;&#x443;, &#x434;&#x430;&#x442;&#x443; &#x438; &#x418;&#x41D;&#x41D; &#x43F;&#x43E;&#x43B;&#x443;&#x447;&#x430;&#x442;&#x435;&#x43B;&#x44F;.
     </div>
 
 <script>
@@ -946,7 +947,7 @@ const requestId = {{ request_id }};
 async function loadChat() {
     try {
         const resp = await fetch(`/admin/payouts/${requestId}/chat-data`);
-        if (!resp.ok) throw new Error('Ошибка сети');
+        if (!resp.ok) throw new Error('&#x41E;&#x448;&#x438;&#x431;&#x43A;&#x430; &#x441;&#x435;&#x442;&#x438;');
         const data = await resp.json();
 
         document.getElementById('status-badge').textContent = data.status;
@@ -954,7 +955,7 @@ async function loadChat() {
 
         const chatDiv = document.getElementById('chat-messages');
         if (!data.messages || data.messages.length === 0) {
-            chatDiv.innerHTML = '<p style="color:#888;">Сообщений пока нет</p>';
+            chatDiv.innerHTML = '<p style="color:#888;">&#x421;&#x43E;&#x43E;&#x431;&#x449;&#x435;&#x43D;&#x438;&#x439; &#x43F;&#x43E;&#x43A;&#x430; &#x43D;&#x435;&#x442;</p>';
         } else {
             chatDiv.innerHTML = data.messages.map(msg => {
                 const side = msg.sender_role === 'admin' ? 'admin' : 'user';
@@ -973,7 +974,7 @@ async function loadChat() {
         document.getElementById('confirm-btn').style.display = (data.status === 'receipt_uploaded') ? 'inline-block' : 'none';
         document.getElementById('receipt-warning').style.display = (data.status === 'receipt_uploaded') ? 'block' : 'none';        
     } catch(e) {
-        document.getElementById('chat-messages').innerHTML = '<p style="color:#ff4444;">Ошибка загрузки чата</p>';
+        document.getElementById('chat-messages').innerHTML = '<p style="color:#ff4444;">&#x41E;&#x448;&#x438;&#x431;&#x43A;&#x430; &#x437;&#x430;&#x433;&#x440;&#x443;&#x437;&#x43A;&#x438; &#x447;&#x430;&#x442;&#x430;</p>';
     }
 }
 
