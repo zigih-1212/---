@@ -927,33 +927,6 @@ async def handle_payout_start(message: Message, state: FSMContext):
     )
     await state.set_state(PayoutStates.waiting_for_card)
 
-@router.callback_query(F.data == "oferta:accept")
-async def cb_oferta_accept(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET oferta_accepted=1 WHERE user_id=?", (user_id,))
-        conn.commit()
-    finally:
-        conn.close()
-
-    await callback.answer("✅ Вы приняли условия Оферты.", show_alert=False)
-
-    # ПОСЛЕ ОФЕРТЫ ПОКАЗЫВАЕМ ПОЛИТИКУ И ЗАПРАШИВАЕМ СОГЛАСИЕ
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📄 Ознакомиться с политикой", url="https://teletype.in/@miliron/yYN0SEGfm5l")],
-        [InlineKeyboardButton(text="✅ Согласен", callback_data="privacy:accept")],
-        [InlineKeyboardButton(text="❌ Не согласен", callback_data="privacy:decline")]
-    ])
-    await callback.message.edit_text(
-        "📋 **Согласие на обработку персональных данных**\n\n"
-        "Для продолжения работы с ботом необходимо ваше согласие на обработку персональных данных "
-        "в соответствии с 152-ФЗ.\n\n"
-        "Подробнее: https://teletype.in/@miliron/yYN0SEGfm5l",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=kb
-    )
-    await state.clear()
 
 async def update_post_views(bot: Bot):
     """Обновляет количество просмотров для постов, опубликованных 30+ дней назад."""
@@ -1075,48 +1048,141 @@ async def cmd_privacy(message: Message):
 @router.message(Command("delete"))
 async def cmd_delete(message: Message):
     user_id = message.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM channels WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM posts WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM user_consents WHERE user_id=?", (user_id,))
-        conn.commit()
-    finally:
-        conn.close()
-    await message.answer(
-        "✅ Ваши данные удалены в соответствии со ст. 21 152-ФЗ.\n"
-        "Срок исполнения — 7 рабочих дней.\n\n"
-        "Если вы захотите вернуться — просто напишите /start."
+    username = message.from_user.username or "без username"
+    
+    # Подтверждение
+    confirm_msg = await message.answer(
+        "⚠️ <b>Внимание!</b>\n\n"
+        "Это действие удалит <b>все ваши данные</b> из бота:\n"
+        "• Профиль и подписка\n"
+        "• Каналы и посты\n"
+        "• Баланс и транзакции\n"
+        "• Шаблоны и настройки\n\n"
+        "Это действие <b>необратимо</b>.\n\n"
+        "Для подтверждения отправьте команду <code>/delete</code> ещё раз.",
+        parse_mode=ParseMode.HTML
     )
+    
+    # Проверяем, есть ли состояние ожидания подтверждения
+    state = message.state
+    if state:
+        data = await state.get_data()
+        if data.get("delete_confirmed"):
+            # Второй вызов — выполняем удаление
+            await state.clear()
+            conn = get_db()
+            try:
+                # Получаем все связанные данные перед удалением
+                user_sub_ids = [row["sub_id"] for row in conn.execute("SELECT sub_id FROM users WHERE user_id=?", (user_id,)).fetchall()]
+                channel_ids = [row["channel_id"] for row in conn.execute("SELECT channel_id FROM channels WHERE user_id=?", (user_id,)).fetchall()]
+                
+                # Удаляем из всех таблиц
+                conn.execute("DELETE FROM payout_chat WHERE request_id IN (SELECT id FROM payout_requests WHERE user_id=?)", (user_id,))
+                conn.execute("DELETE FROM payout_requests WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM payouts WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM saas_queue WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM night_queue WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM promocode_activations WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM user_category_preferences WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM gdeslon_catalog WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM admitad_transactions WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM social_channels WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM referrals WHERE referrer_id=? OR referral_id=?", (user_id, user_id))
+                conn.execute("DELETE FROM posts WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM channels WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM user_consents WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+                
+                # Удаляем связанные данные по sub_id
+                for sub_id in user_sub_ids:
+                    conn.execute("DELETE FROM transactions WHERE sub_id=?", (sub_id,))
+                    conn.execute("DELETE FROM subid_stats WHERE subid1=?", (sub_id,))
+                
+                # Удаляем закреплённые посты в каналах пользователя
+                for channel_id in channel_ids:
+                    conn.execute("DELETE FROM pinned_posts WHERE chat_id=?", (channel_id,))
+                
+                conn.commit()
+            finally:
+                conn.close()
+            
+            # Уведомление админам
+            for admin_id in ADMIN_IDS:
+                try:
+                    await message.bot.send_message(
+                        admin_id,
+                        f"🗑 <b>Пользователь удалил аккаунт</b>\n\n"
+                        f"User ID: <code>{user_id}</code>\n"
+                        f"Username: @{username}\n"
+                        f"Все данные удалены из базы.",
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                    logger.error(f"Не удалось уведомить админа {admin_id} об удалении пользователя: {e}")
+            
+            await message.answer(
+                "✅ Все ваши данные полностью удалены в соответствии со ст. 21 152-ФЗ.\n"
+                "Срок исполнения — 7 рабочих дней.\n\n"
+                "Если вы захотите вернуться — просто напишите /start."
+            )
+        else:
+            # Первый вызов — запоминаем и просим подтверждения
+            await state.set_data({"delete_confirmed": True})
+            return
+    else:
+        # Если state не доступен, сразу удаляем (fallback)
+        conn = get_db()
+        try:
+            user_sub_ids = [row["sub_id"] for row in conn.execute("SELECT sub_id FROM users WHERE user_id=?", (user_id,)).fetchall()]
+            channel_ids = [row["channel_id"] for row in conn.execute("SELECT channel_id FROM channels WHERE user_id=?", (user_id,)).fetchall()]
+            
+            conn.execute("DELETE FROM payout_chat WHERE request_id IN (SELECT id FROM payout_requests WHERE user_id=?)", (user_id,))
+            conn.execute("DELETE FROM payout_requests WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM payouts WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM saas_queue WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM night_queue WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM promocode_activations WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM user_category_preferences WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM gdeslon_catalog WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM admitad_transactions WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM social_channels WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM referrals WHERE referrer_id=? OR referral_id=?", (user_id, user_id))
+            conn.execute("DELETE FROM posts WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM channels WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM user_consents WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+            
+            for sub_id in user_sub_ids:
+                conn.execute("DELETE FROM transactions WHERE sub_id=?", (sub_id,))
+                conn.execute("DELETE FROM subid_stats WHERE subid1=?", (sub_id,))
+            
+            for channel_id in channel_ids:
+                conn.execute("DELETE FROM pinned_posts WHERE chat_id=?", (channel_id,))
+            
+            conn.commit()
+        finally:
+            conn.close()
+        
+        # Уведомление админам
+        for admin_id in ADMIN_IDS:
+            try:
+                await message.bot.send_message(
+                    admin_id,
+                    f"🗑 <b>Пользователь удалил аккаунт</b>\n\n"
+                    f"User ID: <code>{user_id}</code>\n"
+                    f"Username: @{username}\n"
+                    f"Все данные удалены из базы.",
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as e:
+                logger.error(f"Не удалось уведомить админа {admin_id} об удалении пользователя: {e}")
+        
+        await message.answer(
+            "✅ Все ваши данные полностью удалены в соответствии со ст. 21 152-ФЗ.\n"
+            "Срок исполнения — 7 рабочих дней.\n\n"
+            "Если вы захотите вернуться — просто напишите /start."
+        )
 
-@router.message(Command("privacy"))
-async def cmd_privacy(message: Message):
-    """Отправляет ссылку на политику конфиденциальности."""
-    await message.answer(
-        "📄 Политика конфиденциальности:\n[вставьте ссылку]",
-        disable_web_page_preview=True
-    )
-
-@router.message(Command("delete"))
-async def cmd_delete(message: Message):
-    """Удаляет все данные пользователя по запросу (ст. 21 152-ФЗ)."""
-    user_id = message.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM channels WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM posts WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM user_consents WHERE user_id=?", (user_id,))
-        # Добавьте другие таблицы, если они есть
-        conn.commit()
-    finally:
-        conn.close()
-    await message.answer(
-        "✅ Ваши данные удалены в соответствии со ст. 21 152-ФЗ.\n"
-        "Срок исполнения — 7 рабочих дней.\n\n"
-        "Если вы захотите вернуться — просто напишите /start."
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1152,7 +1218,7 @@ async def show_user_cabinet(message: Message, user_id: int = None):
 # Если оферта не принята – показываем только оферту
     # ... внутри show_user_cabinet, если оферта не принята
     if not user["oferta_accepted"]:
-        privacy_link = "https://docs.google.com/document/d/ВАШ_GOOGLE_DOC/edit"  # <-- замените на реальную ссылку
+        privacy_link = "https://teletype.in/@miliron/yYN0SEGfm5l"
         
         if role == "saas":
             text_oferta = (
@@ -1833,13 +1899,6 @@ async def show_blogger_instruction(callback: CallbackQuery):
         ])
     )
 
-@router.callback_query(F.data == "menu:privacy")
-async def cb_menu_privacy(callback: CallbackQuery):
-    await callback.message.answer(
-        "📄 Политика конфиденциальности:\n[вставьте ссылку]",
-        disable_web_page_preview=True
-    )
-    await callback.answer()
 # ---------------------------------------------------------------------------
 # Административные команды
 # ---------------------------------------------------------------------------

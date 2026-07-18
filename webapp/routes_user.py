@@ -63,6 +63,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     <div class="nav">
         <a href="/my-stats?token={{ token }}" class="active">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
     </div>
     <h1>📊 Статистика</h1>
     <div class="period-selector">
@@ -1304,52 +1305,115 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
         worksheet.set_column(0, 0, 30)
         workbook.close()
         output.seek(0)
-        filename = f"VK_ORD_Report_{user_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
-        return StreamingResponse(
-            output,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
-
-    # Создаём Excel-файл с данными
-    output = BytesIO()
-    workbook = xlsxwriter.Workbook(output, {'in_memory': True})
-    worksheet = workbook.add_worksheet("ORD")
-
-    headers = ["erid", "Площадка", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания"]
-    for col, header in enumerate(headers):
-        worksheet.write(0, col, header)
-
-    row = 1
-    for p in posts:
-        erid = p["erid"]
-        link = p["direct_link"] or ""
-        views = p["views_count"] or 0
-        
-        try:
-            pub_date = datetime.fromisoformat(p["published_at"].replace("Z", "+00:00"))
-            date_str = pub_date.strftime("%d.%m.%Y")
-        except Exception:
-            date_str = ""
-
-        worksheet.write(row, 0, erid)
-        worksheet.write(row, 1, link)
-        worksheet.write(row, 2, "Сайт/Приложение")
-        worksheet.write(row, 3, views)
-        worksheet.write(row, 4, 0)
-        worksheet.write(row, 5, 0)
-        worksheet.write(row, 6, date_str)
-        worksheet.write(row, 7, "")
-        row += 1
-
-    worksheet.set_column(0, 0, 30)
-    worksheet.set_column(1, 1, 50)
-    workbook.close()
-    output.seek(0)
-
     filename = f"VK_ORD_Report_{user_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+# ---------- Инструкция ----------
+GUIDE_TEMPLATE = r'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Инструкция</title>
+<style>
+    body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; }
+    h1 { color: #ff4444; }
+    .nav { margin-bottom: 20px; display: flex; gap: 15px; }
+    .nav a { color: #ff4444; text-decoration: none; padding: 8px 16px; border-radius: 8px; background: #333; }
+    .nav a.active { background: #ff4444; color: #fff; }
+    .container { max-width: 900px; margin: auto; }
+    .card { background: #1e1e1e; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .card h2 { color: #ff4444; margin-top: 0; }
+    .card h3 { color: #ff9800; }
+    .card ol, .card ul { padding-left: 20px; line-height: 1.8; }
+    .card li { margin-bottom: 8px; }
+    .card code { background: #333; padding: 2px 6px; border-radius: 4px; color: #4caf50; }
+    .warning { background: #2a1a1a; border-left: 4px solid #ff4444; padding: 12px; border-radius: 8px; margin: 10px 0; }
+    .success { background: #1a2a1a; border-left: 4px solid #4caf50; padding: 12px; border-radius: 8px; margin: 10px 0; }
+    a { color: #4d6bfe; }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="nav">
+        <a href="/my-stats?token={{ token }}">📊 Статистика</a>
+        <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/guide?token={{ token }}" class="active">📖 Инструкция</a>
+    </div>
+    <h1>📖 Инструкция</h1>
+
+    <div class="card">
+        <h2>🚀 Быстрый старт</h2>
+        <ol>
+            <li><b>Добавьте канал</b> — отправьте боту @username вашего Telegram-канала</li>
+            <li><b>Назначьте бота администратором</b> канала с правом публикации</li>
+            <li><b>Выберите магазины</b> в разделе «🏪 Магазины» в боте</li>
+            <li><b>Настройте интервал</b> публикаций в разделе «⚙️ Периодичность постов»</li>
+            <li><b>Готово!</b> Бот начнёт публиковать товары с партнёрскими ссылками</li>
+        </ol>
+    </div>
+
+    <div class="card">
+        <h2>💰 Как устроен доход</h2>
+        <p>Когда подписчик переходит по ссылке и покупает товар:</p>
+        <ul>
+            <li><b>«В ожидании»</b> — магазин проверяет заказ (30–90 дней)</li>
+            <li><b>«Доступно к выводу»</b> — деньги подтверждены</li>
+        </ul>
+        <p>Вы получаете <b>70%</b> от комиссии за каждую покупку.</p>
+    </div>
+
+    <div class="card">
+        <h2>💳 Вывод средств</h2>
+        <ol>
+            <li>Накопите <b>3000 ₽</b> в разделе «Доступно к выводу»</li>
+            <li>Оформите статус <b>Самозанятого</b> (бесплатно в приложении «Мой Налог») или <b>ИП</b></li>
+            <li>Нажмите «💸 Запросить выплату» на этой странице</li>
+            <li>Укажите реквизиты карты</li>
+            <li>После получения денег — <b>загрузите чек</b> из «Мой Налог» в течение 24 часов</li>
+        </ol>
+        <div class="warning">⚠️ Если не загрузить чек за 24 часа — аккаунт будет заблокирован</div>
+    </div>
+
+    <div class="card">
+        <h2>📊 Отчёт для ОРД (ЕРИР)</h2>
+        <p>Раз в месяц вам нужно подавать статистику по рекламным постам в ОРД:</p>
+        <ol>
+            <li>На странице статистики нажмите <b>«📥 Скачать отчёт»</b></li>
+            <li>Загрузите полученный Excel-файл в личный кабинет ОРД (например, VK ОРД)</li>
+            <li>Проверьте, что все ERID и показы совпадают</li>
+        </ol>
+        <div class="success">✅ Бот автоматически собирает просмотры и формирует отчёт</div>
+    </div>
+
+    <div class="card">
+        <h2>🔗 Реферальная программа</h2>
+        <p>Приглашайте других пользователей по реферальной ссылке и получайте <b>10%</b> от их дохода.</p>
+        <p>Ссылку можно найти в боте: «🔗 Реферальная ссылка» в личном кабинете.</p>
+    </div>
+
+    <div class="card">
+        <h2>🛡️ Юридическая информация</h2>
+        <ul>
+            <li>Все посты содержат обязательную маркировку <b>ERID</b> (ФЗ №38 «О рекламе»)</li>
+            <li>Товары без ERID не загружаются в каталог</li>
+            <li>Вы самостоятельно несёте ответственность за подачу статистики в ОРД</li>
+            <li><a href="https://teletype.in/@miliron/yYN0SEGfm5l" target="_blank">📄 Политика конфиденциальности</a></li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h2>📞 Поддержка</h2>
+        <p>По всем вопросам пишите: <a href="https://t.me/Zigih90" target="_blank">@Zigih90</a></p>
+    </div>
+</div>
+</body>
+</html>'''
+
+@router.get("/guide", response_class=HTMLResponse)
+async def user_guide(token: str = Query(...)):
+    html = GUIDE_TEMPLATE.replace('{{ token }}', token)
+    return HTMLResponse(content=html)
