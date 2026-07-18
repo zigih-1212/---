@@ -114,22 +114,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <ol id="top-products"></ol>
     </div>
 
-    <!-- Бета-функция: предпросмотр поста (скрыта по умолчанию) -->
-    <div id="preview-block" style="display: none;">
-        <div class="card">
-            <h2>👀 Предпросмотр поста (бета)</h2>
-            <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
-                <button onclick="loadPreview()" class="btn">🎲 Случайный товар</button>
-                <button onclick="publishPost()" class="btn" style="background: #4caf50;">🚀 Опубликовать в канал</button>
-                <button onclick="document.getElementById('preview-content').innerHTML = ''; window._currentProductId = null;" class="btn" style="background: #555;">🧹 Очистить</button>
-            </div>
-            <div id="preview-container" style="background: #1e1e1e; border-radius: 12px; padding: 20px; border: 1px solid #333;">
-                <div id="preview-content" style="color: #ccc; text-align: center; padding: 40px 20px;">
-                    Нажмите «Случайный товар» для предпросмотра
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -418,106 +402,12 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         }
     };
 
-    // ===== БЕТА-ФУНКЦИЯ: ПРЕДПРОСМОТР ПОСТА =====
-    const isBeta = {{ is_beta }};
-    if (isBeta) {
-        const previewBlock = document.getElementById('preview-block');
-        if (previewBlock) {
-            previewBlock.style.display = 'block';
-        }
-    }
-
-    window.loadPreview = async function(productId = null) {
-        const container = document.getElementById('preview-content');
-        if (!container) return;
-        container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Загрузка...</div>';
-        
-        try {
-            let url = `/my-stats/preview-post?token=${token}`;
-            if (productId) url += `&product_id=${productId}`;
-            
-            const resp = await fetch(url);
-            const data = await resp.json();
-            
-            if (!data.ok) {
-                container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ ${data.error}</div>`;
-                return;
-            }
-            
-            const adultBadge = data.source === 'Розовый кролик' 
-                ? '<div style="background:#ff4444; color:#fff; padding:4px 12px; border-radius:12px; font-size:12px; display:inline-block; margin-bottom:8px;">🔞 18+</div>' 
-                : '';
-            
-            const imageHtml = data.image_url 
-                ? `<div style="margin-bottom:12px;"><img src="${data.image_url}" style="max-width:100%; max-height:300px; border-radius:8px; object-fit:contain; background:#111;" onerror="this.style.display='none'"></div>` 
-                : '';
-            
-            container.innerHTML = `
-                <div style="background: #0f0f0f; border-radius:12px; padding:16px; max-width:500px; margin:0 auto; text-align:left; border:1px solid #2a2a2a;">
-                    ${adultBadge}
-                    ${imageHtml}
-                    <div style="font-size:14px; line-height:1.6; word-wrap:break-word; white-space:pre-wrap;">
-                        ${data.caption.replace(/\n/g, '<br>')}
-                    </div>
-                    <div style="margin-top:12px; padding-top:12px; border-top:1px solid #2a2a2a; font-size:12px; color:#888;">
-                        <span style="color:#4d6bfe;">💡 Нажмите «Опубликовать в канал», чтобы отправить этот пост</span>
-                    </div>
-                </div>
-            `;
-            
-            window._currentProductId = data.product_id;
-            window._currentPartnerUrl = data.partner_url;
-            
-        } catch (e) {
-            container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка загрузки: ${e.message}</div>`;
-        }
-    };
-
-window.publishPost = async function() {
-    if (!window._currentProductId) {
-        alert('Сначала загрузите предпросмотр!');
-        return;
-    }
-
-    if (!confirm('Опубликовать этот пост в ваш канал?')) return;
-
-    const container = document.getElementById('preview-content');
-    if (!container) return;
-    container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Публикация...</div>';
-
-    try {
-        const formData = new FormData();
-        formData.append('token', token);
-        formData.append('product_id', window._currentProductId);
-
-        const resp = await fetch('/my-stats/publish-post', { method: 'POST', body: formData });
-        const result = await resp.json();
-
-        if (result.ok) {
-            container.innerHTML = `
-                <div style="text-align:center; padding:20px; color:#4caf50;">
-                    ✅ Пост опубликован в канал!
-                </div>
-                <div style="text-align:center; padding:10px; font-size:12px; color:#888;">
-                    Кнопки предпросмотра временно скрыты. Загрузите новый товар.
-                </div>
-            `;
-            window._currentProductId = null;
-        } else {
-            container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка: ${result.error}</div>`;
-        }
-    } catch (e) {
-        container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка публикации: ${e.message}</div>`;
-    }
-};
-    // ===== КОНЕЦ БЕТА-ФУНКЦИИ =====
-
     // Первая загрузка
     loadData('30d');
 })();
 </script>
 </body>
-</html>'''
+</html>'''},{
 # ------------------------------------------------------------------------------
 # Шаблон чата выплат (пользователь)
 # ------------------------------------------------------------------------------
@@ -687,7 +577,7 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
             <div class="actions">
                 <button onclick="saveTemplate('product')">Сохранить</button>
                 <button onclick="resetTemplate('product')">Сбросить</button>
-                <button onclick="previewRealProduct()">Предпросмотр с товаром</button>
+                <button onclick="renderProductPreview()">Обновить предпросмотр</button>
             </div>
         </div>
         <div class="placeholders">
@@ -726,6 +616,7 @@ const placeholders = {
 };
 const defaultProduct = `🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}\n{promocode_line}{delivery_line}\n{cta_phrase}\n\nРеклама. {advertiser}. Erid: {erid}`;
 const defaultVideo = `🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href='{link}'>Смотреть</a>`;
+let previewDebounceTimer = null;
 
 if (isSaaS) {
     // Скрываем вкладку видео
@@ -768,65 +659,54 @@ function insertPlaceholder(type, placeholder) {
 }
 
 function updatePreview() {
-    const template = document.getElementById(`${currentTab}-template`).value;
-    const preview = document.getElementById('preview-content');
     if (currentTab === 'product') {
-        const testData = {
-            title: 'Пример товара',
-            price: '1990',
-            currency: '₽',
-            link: '<a href="#">Посмотреть</a>',
-            advertiser: 'Магазин',
-            erid: 'erid:XXX',
-            old_price: '2990',
-            discount_percent: '33',
-            discount_line: '\n🔥 Скидка 33%',
-            delivery_line: '\n🚚 Бесплатная доставка',
-            promocode_line: '\n🎟 Промокод: SALE',
-            price_label: 'Цена',
-            cta_phrase: '🔥 Количество товара по акции ограничено!'
-        };
-        preview.innerHTML = template.replace(/\{(\w+)\}/g, (match, key) => testData[key] || match);
+        scheduleProductPreview();
     } else {
-        const testData = {
-            title: 'Моё видео',
-            link: 'https://youtube.com/...',
-            description: 'Описание ролика'
-        };
-        preview.innerHTML = template.replace(/\{(\w+)\}/g, (match, key) => testData[key] || match);
+        renderVideoSample();
     }
 }
 
-async function saveTemplate(type) {
-    const template = document.getElementById(`${type}-template`).value;
-    const formData = new FormData();
-    formData.append('token', token);
-    formData.append('type', type);
-    formData.append('template', template);
-    await fetch('/my-stats/save-template', { method: 'POST', body: formData });
-    alert('Сохранено');
+function renderVideoSample() {
+    const template = document.getElementById('video-template').value;
+    const preview = document.getElementById('preview-content');
+    const testData = {
+        title: 'Моё видео',
+        link: 'https://youtube.com/...',
+        description: 'Описание ролика'
+    };
+    preview.innerHTML = template.replace(/\{(\w+)\}/g, (match, key) => testData[key] || match);
 }
 
-async function resetTemplate(type) {
-    const def = type === 'product' ? defaultProduct : defaultVideo;
-    document.getElementById(`${type}-template`).value = def;
-    updatePreview();
+function scheduleProductPreview() {
+    if (previewDebounceTimer) {
+        clearTimeout(previewDebounceTimer);
+    }
+    previewDebounceTimer = setTimeout(() => {
+        renderProductPreview();
+    }, 400);
 }
 
-async function previewRealProduct() {
+async function renderProductPreview() {
+    const template = document.getElementById('product-template').value;
     const container = document.getElementById('preview-content');
     if (!container) return;
-    container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Загрузка...</div>';
+    if (!template.trim()) {
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Введите шаблон, чтобы увидеть предпросмотр.</div>';
+        return;
+    }
+    container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Обновление предпросмотра...</div>';
+
     try {
         const formData = new FormData();
         formData.append('token', token);
-        formData.append('template', document.getElementById('product-template').value);
+        formData.append('template', template);
 
         const resp = await fetch('/my-stats/preview-post', { method: 'POST', body: formData });
         const data = await resp.json();
 
         if (!data.ok) {
             container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ ${data.error}</div>`;
+            window._currentProductId = null;
             return;
         }
 
@@ -844,9 +724,29 @@ async function previewRealProduct() {
                 </div>
             </div>
         `;
+
+        window._currentProductId = data.product_id;
+        window._currentPartnerUrl = data.partner_url;
     } catch (e) {
         container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка загрузки: ${e.message}</div>`;
+        window._currentProductId = null;
     }
+}
+
+async function saveTemplate(type) {
+    const template = document.getElementById(`${type}-template`).value;
+    const formData = new FormData();
+    formData.append('token', token);
+    formData.append('type', type);
+    formData.append('template', template);
+    await fetch('/my-stats/save-template', { method: 'POST', body: formData });
+    alert('Сохранено');
+}
+
+async function resetTemplate(type) {
+    const def = type === 'product' ? defaultProduct : defaultVideo;
+    document.getElementById(`${type}-template`).value = def;
+    updatePreview();
 }
 
 function switchTab(tab) {
@@ -873,10 +773,8 @@ loadTemplates();
 @router.get("/", response_class=HTMLResponse)
 async def user_stats_page(token: str = Query(...)):
     user_id = get_user_id_from_token(token)
-    preview_available = is_feature_enabled(user_id, "preview_post")
 
     html = USER_STATS_TEMPLATE.replace('{{ token }}', token)
-    html = html.replace('{{ is_beta }}', 'true' if preview_available else 'false')
     return HTMLResponse(content=html)
 
 @router.get("/data")
