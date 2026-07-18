@@ -748,7 +748,7 @@ SETTINGS_TEMPLATE = '''{% extends "base.html" %}
         <tr>
             <td><b>{{ feature['name'] }}</b></td>
             <td>
-                <span style="padding:4px 12px; border-radius:4px; font-weight:bold; 
+                <span style="padding:4px 12px; border-radius:4px; font-weight:bold;">
                     {{ '%' }} if feature['status'] == 'released' }}background:#4caf50; color:white;{{ '%' }}{% endif %}
                     {{ '%' }} if feature['status'] == 'beta' }}background:#ff9800; color:white;{{ '%' }}{% endif %}
                     {{ '%' }} if feature['status'] == 'dev' }}background:#999; color:white;{{ '%' }}{% endif %}
@@ -975,7 +975,23 @@ async function loadChat() {
         document.getElementById('receipt-warning').style.display = (data.status === 'receipt_uploaded') ? 'block' : 'none';        
     } catch(e) {
         document.getElementById('chat-messages').innerHTML = '<p style="color:#ff4444;">&#x41E;&#x448;&#x438;&#x431;&#x43A;&#x430; &#x437;&#x430;&#x433;&#x440;&#x443;&#x437;&#x43A;&#x438; &#x447;&#x430;&#x442;&#x430;</p>';
-    }
+ошибка
+   ...<7 lines>...
+    )
+  File "/app/webapp/templates.py", line 751
+Traceback (most recent call last):
+    <span style="padding:4px 12px; border-radius:4px; font-weight:bold; 
+                ^
+  File "/app/main.py", line 28, in <module>
+SyntaxError: unterminated string literal (detected at line 751)
+    from webapp import create_app
+  File "/app/webapp/__init__.py", line 2, in <module>
+    from webapp.routes_admin import router as admin_router
+  File "/app/webapp/routes_admin.py", line 14, in <module>
+    from webapp.templates import (
+Mounting volume on: /var/lib/containers/railwayapp/bind-mounts/f78647a1-d209-4114-a8bd-3c85dbe084a8/vol_ki3t1czschhupuni
+
+исправь все подобные ошибки    }
 }
 
 async function sendMessage() {
