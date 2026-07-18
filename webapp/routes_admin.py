@@ -540,21 +540,20 @@ async def complete_payout_request(request_id: int, admin_id: int = Depends(admin
 
 # ---------- Посты ----------
 @router.get("/posts", response_class=HTMLResponse)
-async def posts_list(request: Request, status: str = "", user_id: str = "", _: int = Depends(admin_required)):
+async def posts_list(request: Request, user_id: str = "", _: int = Depends(admin_required)):
     conn = get_db()
     query = """
         SELECT p.id, p.user_id, p.channel_id, p.status, p.published_at, p.created_at,
+               p.erid as erid,
+               p.direct_link as direct_link,
                g.image_url as photo_url,
                p.caption as caption_text,
                (SELECT channel_title FROM channels WHERE channel_id = p.channel_id AND user_id = p.user_id LIMIT 1) as channel_title
         FROM posts p
-        LEFT JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
-        WHERE 1=1
+        LEFT JOIN gdeslon_catalog g ON instr(p.donor_post_id, 'admitad_' || g.id || '_') = 1
+        WHERE p.status = 'published'
     """
     params = []
-    if status:
-        query += " AND p.status = ?"
-        params.append(status)
     if user_id:
         query += " AND p.user_id = ?"
         params.append(user_id)
@@ -675,7 +674,7 @@ async def bulk_actions_form(request: Request, _: int = Depends(admin_required)):
 
 @router.post("/bulk-actions/execute", response_class=HTMLResponse)
 async def bulk_actions_execute(request: Request, group: str = Form(...), action: str = Form(...),
-                               days: int = Form(7), _: int = Depends(admin_required)):
+                               value: int = Form(0), _: int = Depends(admin_required)):
     conn = get_db()
     cond = ""
     if group == "saas": cond = "WHERE role='saas'"
@@ -683,12 +682,16 @@ async def bulk_actions_execute(request: Request, group: str = Form(...), action:
     elif group == "active": cond = "WHERE is_active=1"
     elif group == "banned": cond = "WHERE is_active=0"
     elif group == "expired": cond = "WHERE subscription_until < datetime('now')"
-    if action == "extend":
-        conn.execute(f"UPDATE users SET subscription_until = datetime(subscription_until, '+{days} days') {cond}")
-    elif action == "ban":
-        conn.execute(f"UPDATE users SET is_active=0 {cond}")
-    elif action == "unban":
+    if action == "activate":
         conn.execute(f"UPDATE users SET is_active=1 {cond}")
+    elif action == "deactivate":
+        conn.execute(f"UPDATE users SET is_active=0 {cond}")
+    elif action == "reset_balance":
+        conn.execute(f"UPDATE users SET balance_available = 0 {cond}")
+    elif action == "add_beta":
+        conn.execute(f"UPDATE users SET beta_tester = 1 {cond}")
+    elif action == "remove_beta":
+        conn.execute(f"UPDATE users SET beta_tester = 0 {cond}")
     elif action == "delete":
         conn.execute(f"DELETE FROM users {cond}")
     conn.commit()
@@ -707,6 +710,15 @@ async def settings_edit_form(request: Request, _: int = Depends(admin_required))
     # Получаем список всех фич и бета-тестеров
     features = get_all_features()
     beta_testers = get_beta_testers()
+    feature_labels = {
+        'preview_post': 'Предпросмотр постов',
+        'ab_testing': 'A/B тестирование',
+        'achievements': 'Достижения',
+        'new_ui': 'Новый интерфейс',
+        'alpha_feature': 'Альфа-функция'
+    }
+    for feature in features:
+        feature['label'] = feature_labels.get(feature['name'], feature['name'])
     
     return render("admin_settings.html", 
                   settings=settings_dict, 

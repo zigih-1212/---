@@ -232,22 +232,15 @@ USER_EDIT_TEMPLATE = '''{% extends "base.html" %}
 POSTS_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}Посты{% endblock %}
 {% block content %}
-<h1>📬 Посты (последние 100)</h1>
+<h1>📬 Посты (последние 100 опубликованных)</h1>
 <form method="get" action="/admin/posts" style="margin-bottom:20px;">
-    <label>Статус:</label>
-    <select name="status">
-        <option value="">Все</option>
-        <option value="published" {{ 'selected' if request.query_params.get('status') == 'published' }}>Опубликован</option>
-        <option value="pending" {{ 'selected' if request.query_params.get('status') == 'pending' }}>Ожидает</option>
-        <option value="quarantine" {{ 'selected' if request.query_params.get('status') == 'quarantine' }}>Карантин</option>
-    </select>
     <label>Пользователь (ID):</label>
     <input name="user_id" value="{{ request.query_params.get('user_id', '') }}" placeholder="ID пользователя">
     <button type="submit">Фильтр</button>
 </form>
 <div class="card">
     <table id="posts-table">
-        <tr><th>ID</th><th>Пользователь</th><th>Канал</th><th>Статус</th><th>Дата</th></tr>
+        <tr><th>ID</th><th>Пользователь</th><th>Канал</th><th>ERID</th><th>Ссылка</th><th>Статус</th><th>Дата</th></tr>
         {% for p in posts %}
         <tr data-photo="{{ p['photo_url'] or '' }}" 
             data-caption="{{ p['caption_text'] or '' | e }}" 
@@ -256,6 +249,8 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
             <td>{{ p['id'] }}</td>
             <td>{{ p['user_id'] }}</td>
             <td>{{ p['channel_id'] or '—' }}</td>
+            <td>{{ p['erid'] or '—' }}</td>
+            <td>{% if p['direct_link'] %}<a href="{{ p['direct_link'] }}" target="_blank" style="color:#4d6bfe;">Открыть</a>{% else %}—{% endif %}</td>
             <td>{{ p['status'] }}</td>
             <td>{{ p['published_at'] or p['created_at'] }}</td>
         </tr>
@@ -433,17 +428,17 @@ BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
             <option value="blogger">Блогеры</option>
             <option value="active">Активные</option>
             <option value="banned">Забаненные</option>
-            <option value="expired">Истекшая подписка</option>
+            <option value="expired">Просроченные</option>
         </select>
         <label>Действие:</label>
         <select name="action">
-            <option value="extend">Продлить на N дней</option>
-            <option value="ban">Забанить</option>
-            <option value="unban">Разбанить</option>
+            <option value="activate">Сделать активными</option>
+            <option value="deactivate">Сделать неактивными</option>
+            <option value="reset_balance">Обнулить баланс</option>
+            <option value="add_beta">Добавить в бета</option>
+            <option value="remove_beta">Убрать из бета</option>
             <option value="delete">Удалить</option>
         </select>
-        <label>Дней (для продления):</label>
-        <input name="days" value="7" type="number">
         <button type="submit">Выполнить</button>
     </form>
     {% if message %}<p class="success">{{ message }}</p>{% endif %}
