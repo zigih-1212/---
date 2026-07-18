@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # webapp/templates.py
 
 # ---------- CSS (общий) ----------
@@ -49,16 +48,16 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
 <body>
 <div class="sidebar">
     <h2 style="color:#ff4444; margin-bottom:20px;">⚡ AutoPost</h2>
-    <a href="/admin/dashboard" class="{{ 'active' if active_page == 'dashboard' }}">&#x1F4CA; Дашборд</a>
-    <a href="/admin/users" class="{{ 'active' if active_page == 'users' }}">&#x1F465; Пользователи</a>
-    <a href="/admin/posts" class="{{ 'active' if active_page == 'posts' }}">&#x1F4EC; Посты</a>
-    <a href="/admin/store_delivery" class="{{ 'active' if active_page == 'delivery' }}">&#x1F69A; Доставка</a>
-    <a href="/admin/broadcast" class="{{ 'active' if active_page == 'broadcast' }}">&#x1F4E3; Рассылка</a>
-    <a href="/admin/payouts" class="{{ 'active' if active_page == 'payouts' }}">&#x1F4B0; Выплаты</a>
-    <a href="/admin/bulk-actions" class="{{ 'active' if active_page == 'bulk' }}">&#x1F465; Массовые действия</a>
+    <a href="/admin/dashboard" class="{{ 'active' if active_page == 'dashboard' }}">📊 Дашборд</a>
+    <a href="/admin/users" class="{{ 'active' if active_page == 'users' }}">👥 Пользователи</a>
+    <a href="/admin/posts" class="{{ 'active' if active_page == 'posts' }}">📬 Посты</a>
+    <a href="/admin/store_delivery" class="{{ 'active' if active_page == 'delivery' }}">🚚 Доставка</a>
+    <a href="/admin/broadcast" class="{{ 'active' if active_page == 'broadcast' }}">📣 Рассылка</a>
+    <a href="/admin/payouts" class="{{ 'active' if active_page == 'payouts' }}">💰 Выплаты</a>
+    <a href="/admin/bulk-actions" class="{{ 'active' if active_page == 'bulk' }}">👥 Массовые действия</a>
     <a href="/admin/settings-edit" class="{{ 'active' if active_page == 'settings' }}">⚙️ Настройки</a>
-    <a href="/admin/audit" class="{{ 'active' if active_page == 'audit' }}">&#x1F4DC; Аудит</a>
-    <a href="/admin/reports" class="{{ 'active' if active_page == 'reports' }}">&#x1F4C1; Отчёты</a>
+    <a href="/admin/audit" class="{{ 'active' if active_page == 'audit' }}">📜 Аудит</a>
+    <a href="/admin/reports" class="{{ 'active' if active_page == 'reports' }}">📁 Отчёты</a>
     <a href="/admin/logout" class="logout">Выйти</a>
 </div>
 <div class="main-content">
@@ -85,7 +84,7 @@ LOGIN_TEMPLATE = '''<!DOCTYPE html>
 DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}Дашборд{% endblock %}
 {% block content %}
-<div class="top-bar"><h1>&#x1F4CA; Дашборд</h1></div>
+<div class="top-bar"><h1>📊 Дашборд</h1></div>
 
 <div class="card">
     <h2>Ключевые метрики</h2>
@@ -120,7 +119,7 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 
 <!-- Period Selector -->
 <div class="card">
-    <h2>&#x1F4C5; Период</h2>
+    <h2>📅 Период</h2>
     <div class="tabs">
         <button class="tab-btn active" data-period="7d">7 дней</button>
         <button class="tab-btn" data-period="30d">30 дней</button>
@@ -131,7 +130,7 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 
 <!-- Channel Filter -->
 <div class="card">
-    <h2>&#x1F50D; Фильтр по каналу</h2>
+    <h2>🔍 Фильтр по каналу</h2>
     <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
         <label style="font-weight:bold; margin-right:8px;">Канал:</label>
         <select id="channel-select" style="min-width:220px; padding:10px; background:#333; border:1px solid #555; color:#ddd; border-radius:8px;">
@@ -145,13 +144,13 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 </div>
 
 <div class="card" id="channel-summary-card" style="display:none;">
-    <h2>&#x1F4C8; Статистика по выбранному каналу</h2>
+    <h2>📈 Статистика по выбранному каналу</h2>
     <div id="channel-summary" style="font-size:0.95em; color:#ddd;"></div>
 </div>
 
 <!-- Channel Performance Table -->
 <div class="card">
-    <h2>&#x1F4CA; Производительность каналов ({{ current_period_label }})</h2>
+    <h2>📊 Производительность каналов ({{ current_period_label }})</h2>
     <div style="overflow-x:auto;">
         <table id="channel-table">
             <thead>
@@ -188,7 +187,7 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 
 <!-- Traffic Sources (SubID2) -->
 <div class="card">
-    <h2>&#x1F3AF; Источники трафика (SubID2) — {{ current_period_label }}</h2>
+    <h2>🎯 Источники трафика (SubID2) — {{ current_period_label }}</h2>
     <p style="color:#aaa; margin-bottom:15px; font-size:0.9em;">SubID2 отслеживает отдельные посты. Показывает, какие конкретные публикации приносят клики и лиды.</p>
     <div style="overflow-x:auto;">
         <table id="subid2-table">
@@ -223,30 +222,30 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 <!-- Charts Row -->
 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
     <div class="card">
-        <h2>&#x1F4DD; Посты за {{ current_period_label }}</h2>
+        <h2>📝 Посты за {{ current_period_label }}</h2>
         <p id="chart-scope" style="margin-top:8px; color:#aaa;">Показаны данные для всех каналов.</p>
         <canvas id="postsChart" width="400" height="200"></canvas>
     </div>
     <div class="card">
-        <h2>&#x1F4B0; Доход за {{ current_period_label }}</h2>
+        <h2>💰 Доход за {{ current_period_label }}</h2>
         <canvas id="revenueChart" width="400" height="200"></canvas>
     </div>
 </div>
 
 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
     <div class="card">
-        <h2>&#x1F3EA; Магазины по постам ({{ current_period_label }})</h2>
+        <h2>🏪 Магазины по постам ({{ current_period_label }})</h2>
         <canvas id="storeChart" width="400" height="200"></canvas>
     </div>
     <div class="card">
-        <h2>&#x1F3EA; Магазины по доходам ({{ current_period_label }})</h2>
+        <h2>🏪 Магазины по доходам ({{ current_period_label }})</h2>
         <canvas id="storeRevenueChart" width="400" height="200"></canvas>
     </div>
 </div>
 
 <!-- Top Users -->
 <div class="card">
-    <h2>&#x1F451; Топ пользователей по доходу ({{ current_period_label }})</h2>
+    <h2>👑 Топ пользователей по доходу ({{ current_period_label }})</h2>
     <div style="overflow-x:auto;">
         <table>
             <thead>
@@ -440,7 +439,7 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 USERS_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Пользователи{% endblock %}
 {% block content %}
-<h1>&#x1F465; Пользователи</h1>
+<h1>👥 Пользователи</h1>
 <div class="card">
     <table>
         <tr><th>ID</th><th>Роль</th><th>Подписка до</th><th>Тариф</th><th>Баланс</th><th>Действия</th></tr>
@@ -492,7 +491,7 @@ USER_EDIT_TEMPLATE = '''{% extends "base.html" %}
 POSTS_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}Посты{% endblock %}
 {% block content %}
-<h1>&#x1F4EC; Посты (последние 100 опубликованных)</h1>
+<h1>📬 Посты (последние 100 опубликованных)</h1>
 <form method="get" action="/admin/posts" style="margin-bottom:20px;">
     <label>Пользователь (ID):</label>
     <input name="user_id" value="{{ request.query_params.get('user_id', '') }}" placeholder="ID пользователя">
@@ -574,7 +573,7 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
 QUARANTINE_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Карантин{% endblock %}
 {% block content %}
-<h1>&#x1F6A8; Карантин</h1>
+<h1>🚨 Карантин</h1>
 <div class="card">
     <table>
         <tr><th>ID</th><th>Пользователь</th><th>Канал</th><th>ERID</th><th>Причина</th><th></th></tr>
@@ -603,7 +602,7 @@ QUARANTINE_TEMPLATE = '''{% extends "base.html" %}
 BROADCAST_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Рассылка{% endblock %}
 {% block content %}
-<h1>&#x1F4E3; Массовая рассылка</h1>
+<h1>📣 Массовая рассылка</h1>
 <div class="card">
     {% if message %}<p class="success">{{ message }}</p>{% endif %}
     <form method="post" action="/admin/broadcast">
@@ -622,7 +621,7 @@ BROADCAST_TEMPLATE = '''{% extends "base.html" %}
 PROMOCODES_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Купоны магазинов{% endblock %}
 {% block content %}
-<h1>&#x1F39F; Купоны магазинов</h1>
+<h1>🎟 Купоны магазинов</h1>
 <div class="card">
     <h2>Добавить</h2>
     <form method="post" action="/admin/promocodes/add">
@@ -647,7 +646,7 @@ PROMOCODES_TEMPLATE = '''{% extends "base.html" %}
 STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Доставка{% endblock %}
 {% block content %}
-<h1>&#x1F69A; Доставка</h1>
+<h1>🚚 Доставка</h1>
 <div class="card">
     <h2>Обновить</h2>
     <form method="post" action="/admin/store_delivery/update">
@@ -671,7 +670,7 @@ STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
 BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Массовые действия{% endblock %}
 {% block content %}
-<h1>&#x1F465; Массовые действия</h1>
+<h1>👥 Массовые действия</h1>
 <div class="card">
     <form method="post" action="/admin/bulk-actions/execute">
         <label>Группа пользователей:</label>
@@ -741,7 +740,7 @@ SETTINGS_TEMPLATE = '''{% extends "base.html" %}
 
 <!-- ===== НОВЫЙ БЛОК: Управление фичами ===== -->
 <div class="card">
-    <h2>&#x1F3AF; Управление фичами</h2>
+    <h2>🎯 Управление фичами</h2>
     <table>
         <tr><th>Фича</th><th>Статус</th><th>Действия</th></tr>
         {% for feature in features %}
@@ -782,7 +781,7 @@ SETTINGS_TEMPLATE = '''{% extends "base.html" %}
 
 <!-- ===== БЛОК: Бета-тестеры ===== -->
 <div class="card">
-    <h2>&#x1F52C; Бета-тестеры</h2>
+    <h2>🔬 Бета-тестеры</h2>
     <p>Текущие бета-тестеры ({{ beta_testers|length }}):</p>
     <table>
         <tr><th>ID</th><th>Username</th><th></th></tr>
@@ -812,7 +811,7 @@ SETTINGS_TEMPLATE = '''{% extends "base.html" %}
 AUDIT_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Аудит{% endblock %}
 {% block content %}
-<h1>&#x1F4DC; Аудит (последние 200)</h1>
+<h1>📜 Аудит (последние 200)</h1>
 <div class="card">
     <table>
         <tr><th>Админ</th><th>Действие</th><th>Детали</th><th>Дата</th></tr>
@@ -827,7 +826,7 @@ AUDIT_TEMPLATE = '''{% extends "base.html" %}
 REPORTS_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Ежедневные отчёты{% endblock %}
 {% block content %}
-<h1>&#x1F4C1; Отчёты</h1>
+<h1>📁 Отчёты</h1>
 
 <div class="card">
     <h2>Ежедневные файлы (CSV)</h2>
@@ -851,7 +850,7 @@ REPORTS_TEMPLATE = '''{% extends "base.html" %}
 ADMIN_PAYOUTS_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}Выплаты{% endblock %}
 {% block content %}
-<h1>&#x1F4B0; Выплаты</h1>
+<h1>💰 Выплаты</h1>
 
 <div class="card">
     <h2>Запросы на выплату</h2>
@@ -863,7 +862,7 @@ ADMIN_PAYOUTS_TEMPLATE = r'''{% extends "base.html" %}
             <td>{{ r['user_id'] }}</td>
             <td>{{ r['amount'] }} ₽</td>
             <td>{{ r['status'] }}</td>
-            <td><a href="/admin/payouts/{{ r['id'] }}/chat" class="btn">&#x1F4AC; Чат</a></td>
+            <td><a href="/admin/payouts/{{ r['id'] }}/chat" class="btn">💬 Чат</a></td>
         </tr>
         {% endfor %}
     </table>
@@ -925,14 +924,14 @@ ADMIN_CHAT_TEMPLATE = r'''<!DOCTYPE html>
 </head>
 <body>
 <a href="/admin/payouts" class="back-link">← Назад к списку выплат</a>
-<h1>&#x1F4AC; Чат по заявке #{{ request_id }} <span class="status-badge" id="status-badge">{{ status }}</span></h1>
+<h1>💬 Чат по заявке #{{ request_id }} <span class="status-badge" id="status-badge">{{ status }}</span></h1>
 <div class="chat-box" id="chat-messages">Загрузка...</div>
 <div class="chat-input">
     <input type="text" id="message-text" placeholder="Введите сообщение...">
-    <button onclick="sendMessage()">&#x1F4E8;</button>
+    <button onclick="sendMessage()">📨</button>
 </div>
 <div class="action-buttons">
-    <button id="send-money-btn" class="send-money" style="display:none;" onclick="sendMoney()">&#x1F4B8; Деньги отправлены</button>
+    <button id="send-money-btn" class="send-money" style="display:none;" onclick="sendMoney()">💸 Деньги отправлены</button>
     <button id="decline-btn" class="decline" style="display:none;" onclick="declineRequest()">❌ Отклонить</button>
     <button id="confirm-btn" class="confirm" style="display:none;" onclick="confirmReceipt()">✅ Подтвердить чек</button>
 </div>
