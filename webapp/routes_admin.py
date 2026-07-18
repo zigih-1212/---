@@ -1,4 +1,3 @@
-  webapp/routes_admin.py
 import os
 import io, csv
 import logging
@@ -838,7 +837,9 @@ async def dashboard_data(
     try:
         # Определяем период
         period_days = {"7d": 7, "30d": 30, "90d": 90, "all": None}
+        period_labels = {"7d": "7 дней", "30d": "30 дней", "90d": "90 дней", "all": "Всё время"}
         days = period_days.get(period, 30)
+        current_period_label = period_labels.get(period, "30 дней")
         date_filter = f"AND p.published_at >= datetime('now', '-{days} days')" if days else ""
         date_filter_at = f"AND at.time >= strftime('%s', 'now', '-{days} days')" if days else ""
         date_filter_subid = f"AND s.updated_at >= datetime('now', '-{days} days')" if days else ""
@@ -1013,6 +1014,30 @@ async def dashboard_data(
             else:
                 selected_channel_title = channel_id
 
+        # --- 11. Статистика по SubID2 (отдельные посты) ---
+        # subid_stats не имеет subid2, поэтому клики/лиды берем из admitad_transactions
+        subid2_stats = conn.execute(f"""
+            SELECT 
+                p.subid2,
+                c.channel_id,
+                c.channel_title,
+                COUNT(DISTINCT at.id) as transactions,
+                COALESCE(SUM(CASE WHEN at.payment_status = 'approved' THEN at.payment_sum ELSE 0 END), 0) as earnings_approved,
+                COALESCE(SUM(CASE WHEN at.payment_status = 'pending' THEN at.payment_sum ELSE 0 END), 0) as earnings_pending,
+                COUNT(DISTINCT CASE WHEN at.payment_status IN ('approved', 'pending') THEN at.id END) as clicks,
+                COUNT(DISTINCT CASE WHEN at.payment_status = 'approved' THEN at.id END) as leads
+            FROM posts p
+            LEFT JOIN channels c ON c.channel_id = p.channel_id
+            LEFT JOIN admitad_transactions at ON at.subid2 = p.subid2
+            WHERE p.status = 'published'
+              {date_filter.replace('p.published_at', 'p.published_at')}
+              {channel_filter}
+            GROUP BY p.subid2, c.channel_id
+            HAVING clicks > 0 OR leads > 0 OR earnings_approved > 0 OR earnings_pending > 0
+            ORDER BY earnings_approved DESC
+            LIMIT 50
+        """, params).fetchall()
+
     finally:
         conn.close()
 
@@ -1029,8 +1054,28 @@ async def dashboard_data(
     revenue_map = {r["day"]: r["total"] for r in revenue_by_day}
     pending_map = {r["day"]: r["total"] for r in pending_by_day}
 
+    # Подготовка subid2_stats для шаблона
+    subid2_list = []
+    for s in subid2_stats:
+        clicks = s["clicks"] or 0
+        leads = s["leads"] or 0
+        ctr = round(leads / clicks * 100, 1) if clicks > 0 else 0
+        earnings = (s["earnings_approved"] or 0) + (s["earnings_pending"] or 0)
+        status = "✅ Одобрено" if s["earnings_approved"] > 0 else ("⏳ В ожидании" if s["earnings_pending"] > 0 else "—")
+        subid2_list.append({
+            "subid2": s["subid2"] or "—",
+            "channel_id": s["channel_id"],
+            "channel_title": s["channel_title"],
+            "clicks": clicks,
+            "leads": leads,
+            "ctr": ctr,
+            "earnings": earnings,
+            "status": status
+        })
+
     return {
         "period": period,
+        "current_period_label": current_period_label,
         "posts_labels": [r["day"] for r in posts_by_day],
         "posts_counts": [r["cnt"] for r in posts_by_day],
         "revenue_labels": all_revenue_dates,
@@ -1066,7 +1111,8 @@ async def dashboard_data(
                 "clicks": r["clicks"],
                 "leads": r["leads"],
                 "earnings": r["earnings"],
-                "conversion": round(r["leads"] / r["clicks"] * 100, 1) if r["clicks"] > 0 else 0
+                "conversion": round(r["leads"] / r["clicks"] * 100, 1) if r["clicks"] > 0 else 0,
+                "ctr": round(r["leads"] / r["clicks"] * 100, 1) if r["clicks"] > 0 else 0
             } for r in channel_stats
         ],
         "ctr_alerts": [
@@ -1088,4 +1134,5 @@ async def dashboard_data(
             "conversion": conversion
         } if channel_summary else None,
         "selected_channel_title": selected_channel_title,
+        "subid2_stats": subid2_list,
     }

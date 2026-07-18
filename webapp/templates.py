@@ -24,6 +24,19 @@ tr:hover { background: #2a2a2a; }
 .logout { background: transparent; border: 1px solid #ff4444; color: #ff4444; padding: 8px 20px; }
 .logout:hover { background: #ff4444; color: #fff; }
 .badge { background: #ff4444; color: #fff; border-radius: 12px; padding: 2px 10px; font-size: 0.9em; }
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.tab-btn { background: #333; border: 1px solid #555; color: #ddd; padding: 10px 20px; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+.tab-btn:hover { background: #444; }
+.tab-btn.active { background: #ff4444; color: #fff; border-color: #ff4444; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-top: 20px; }
+.stat-card { background: #2a2a2a; border-radius: 12px; padding: 20px; }
+.stat-card h3 { color: #aaa; font-size: 0.9em; margin-bottom: 8px; font-weight: 500; }
+.stat-card .value { font-size: 2em; font-weight: bold; color: #fff; }
+.stat-card .value.positive { color: #4caf50; }
+.stat-card .value.negative { color: #f44336; }
+.stat-card .value.warning { color: #ff9800; }
 '''
 
 # ---------- BASE ----------
@@ -104,8 +117,20 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 </div>
 {% endif %}
 
+<!-- Period Selector -->
 <div class="card">
-    <h2>Фильтр по каналу</h2>
+    <h2>📅 Период</h2>
+    <div class="tabs">
+        <button class="tab-btn active" data-period="7d">7 дней</button>
+        <button class="tab-btn" data-period="30d">30 дней</button>
+        <button class="tab-btn" data-period="90d">90 дней</button>
+        <button class="tab-btn" data-period="all">Всё время</button>
+    </div>
+</div>
+
+<!-- Channel Filter -->
+<div class="card">
+    <h2>🔍 Фильтр по каналу</h2>
     <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
         <label style="font-weight:bold; margin-right:8px;">Канал:</label>
         <select id="channel-select" style="min-width:220px; padding:10px; background:#333; border:1px solid #555; color:#ddd; border-radius:8px;">
@@ -117,37 +142,150 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
         <div style="margin-left:auto; color:#bbb;">Выбран канал: <span id="selected-channel-name">Все каналы</span></div>
     </div>
 </div>
+
 <div class="card" id="channel-summary-card" style="display:none;">
-    <h2>Статистика по выбранному каналу</h2>
+    <h2>📈 Статистика по выбранному каналу</h2>
     <div id="channel-summary" style="font-size:0.95em; color:#ddd;"></div>
 </div>
+
+<!-- Channel Performance Table -->
 <div class="card">
-    <h2>Посты за 30 дней</h2>
-    <p id="chart-scope" style="margin-top:8px; color:#aaa;">Показаны данные для всех каналов.</p>
-    <canvas id="postsChart" width="400" height="200"></canvas>
+    <h2>📊 Производительность каналов ({{ current_period_label }})</h2>
+    <div style="overflow-x:auto;">
+        <table id="channel-table">
+            <thead>
+                <tr>
+                    <th>Канал</th>
+                    <th>Владелец</th>
+                    <th>Постов</th>
+                    <th>Клики</th>
+                    <th>Лиды</th>
+                    <th>CTR</th>
+                    <th>Доход (₽)</th>
+                    <th>Конверсия</th>
+                    <th>SubID</th>
+                </tr>
+            </thead>
+            <tbody id="channel-table-body">
+                {% for ch in channel_stats %}
+                <tr>
+                    <td>{{ ch.channel_title or ch.channel_id }}</td>
+                    <td>{{ ch.username or ch.user_id }}</td>
+                    <td>{{ ch.posts_count }}</td>
+                    <td>{{ ch.clicks }}</td>
+                    <td>{{ ch.leads }}</td>
+                    <td>{{ "%.1f"|format(ch.ctr) if ch.clicks > 0 else "0" }}%</td>
+                    <td class="{% if ch.earnings > 0 %}positive{% elif ch.earnings < 0 %}negative{% endif %}">{{ "%.2f"|format(ch.earnings) }}</td>
+                    <td>{{ "%.1f"|format(ch.conversion) if ch.clicks > 0 else "0" }}%</td>
+                    <td><code>{{ ch.channel_id }}</code></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
+
+<!-- Traffic Sources (SubID2) -->
 <div class="card">
-    <h2>Доход за 30 дней</h2>
-    <canvas id="revenueChart" width="400" height="200"></canvas>
+    <h2>🎯 Источники трафика (SubID2) — {{ current_period_label }}</h2>
+    <p style="color:#aaa; margin-bottom:15px; font-size:0.9em;">SubID2 отслеживает отдельные посты. Показывает, какие конкретные публикации приносят клики и лиды.</p>
+    <div style="overflow-x:auto;">
+        <table id="subid2-table">
+            <thead>
+                <tr>
+                    <th>SubID2 (Пост)</th>
+                    <th>Канал</th>
+                    <th>Клики</th>
+                    <th>Лиды</th>
+                    <th>CTR</th>
+                    <th>Доход (₽)</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody id="subid2-table-body">
+                {% for s in subid2_stats %}
+                <tr>
+                    <td><code>{{ s.subid2 }}</code></td>
+                    <td>{{ s.channel_title or s.channel_id }}</td>
+                    <td>{{ s.clicks }}</td>
+                    <td>{{ s.leads }}</td>
+                    <td>{{ "%.1f"|format(s.ctr) if s.clicks > 0 else "0" }}%</td>
+                    <td>{{ "%.2f"|format(s.earnings) }}</td>
+                    <td>{{ s.status }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
+
+<!-- Charts Row -->
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+    <div class="card">
+        <h2>📝 Посты за {{ current_period_label }}</h2>
+        <p id="chart-scope" style="margin-top:8px; color:#aaa;">Показаны данные для всех каналов.</p>
+        <canvas id="postsChart" width="400" height="200"></canvas>
+    </div>
+    <div class="card">
+        <h2>💰 Доход за {{ current_period_label }}</h2>
+        <canvas id="revenueChart" width="400" height="200"></canvas>
+    </div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+    <div class="card">
+        <h2>🏪 Магазины по постам ({{ current_period_label }})</h2>
+        <canvas id="storeChart" width="400" height="200"></canvas>
+    </div>
+    <div class="card">
+        <h2>🏪 Магазины по доходам ({{ current_period_label }})</h2>
+        <canvas id="storeRevenueChart" width="400" height="200"></canvas>
+    </div>
+</div>
+
+<!-- Top Users -->
 <div class="card">
-    <h2>Магазины (30 дней)</h2>
-    <canvas id="storeChart" width="400" height="200"></canvas>
+    <h2>👑 Топ пользователей по доходу ({{ current_period_label }})</h2>
+    <div style="overflow-x:auto;">
+        <table>
+            <thead>
+                <tr><th>Пользователь</th><th>Роль</th><th>Доход (₽)</th><th>Транзакций</th><th>Постов</th></tr>
+            </thead>
+            <tbody>
+                {% for u in top_users %}
+                <tr>
+                    <td>{{ u.username or u.user_id }}</td>
+                    <td>{{ u.role }}</td>
+                    <td class="positive">{{ "%.2f"|format(u.total_revenue) }}</td>
+                    <td>{{ u.transactions }}</td>
+                    <td>{{ u.posts_count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-(async function() {
+(function() {
     const channelSelect = document.getElementById('channel-select');
     const channelSummary = document.getElementById('channel-summary');
     const channelSummaryCard = document.getElementById('channel-summary-card');
     const selectedChannelName = document.getElementById('selected-channel-name');
     const chartScope = document.getElementById('chart-scope');
+    const tabBtns = document.querySelectorAll('.tab-btn');
 
-    let postsChart, revenueChart, storeChart;
+    let postsChart, revenueChart, storeChart, storeRevenueChart;
+    let currentPeriod = '30d';
+    let currentChannelId = 'all';
 
     function formatNumber(value) {
         return value != null ? value.toLocaleString('ru-RU') : '0';
+    }
+
+    function formatMoney(value) {
+        return value != null ? value.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '0.00';
     }
 
     function renderChannelSummary(data) {
@@ -155,10 +293,10 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
             channelSummaryCard.style.display = 'block';
             const summary = data.channel_summary;
             channelSummary.innerHTML = `
-                <p><b>Постов за 30 дней:</b> ${formatNumber(summary.posts_count)}</p>
+                <p><b>Постов за период:</b> ${formatNumber(summary.posts_count)}</p>
                 <p><b>Клики:</b> ${formatNumber(summary.clicks)}</p>
                 <p><b>Лиды:</b> ${formatNumber(summary.leads)}</p>
-                <p><b>Доход:</b> ${formatNumber(summary.earnings)} ₽</p>
+                <p><b>Доход:</b> ${formatMoney(summary.earnings)} ₽</p>
                 <p><b>Конверсия:</b> ${summary.conversion.toFixed(1)}%</p>
             `;
         } else {
@@ -167,19 +305,29 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
         }
     }
 
-    async function loadData(channelId = 'all') {
-        const url = channelId === 'all' ? '/admin/dashboard/data' : `/admin/dashboard/data?channel_id=${encodeURIComponent(channelId)}`;
+    function updatePeriodTabs(period) {
+        tabBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.period === period);
+        });
+    }
+
+    async function loadData() {
+        const url = currentChannelId === 'all' 
+            ? `/admin/dashboard/data?period=${currentPeriod}`
+            : `/admin/dashboard/data?channel_id=${encodeURIComponent(currentChannelId)}&period=${currentPeriod}`;
+        
         const resp = await fetch(url);
         const data = await resp.json();
 
         const title = data.selected_channel_title || 'Все каналы';
         selectedChannelName.textContent = title;
-        chartScope.textContent = channelId === 'all' || !channelId
-            ? 'Показаны данные для всех каналов.'
-            : `Показаны данные для канала: ${title}`;
+        chartScope.textContent = currentChannelId === 'all' || !currentChannelId
+            ? `Показаны данные для всех каналов (${data.period_label}).`
+            : `Показаны данные для канала: ${title} (${data.period_label}).`;
 
         renderChannelSummary(data);
 
+        // Posts Chart
         if (postsChart) postsChart.destroy();
         postsChart = new Chart(document.getElementById('postsChart'), {
             type: 'line',
@@ -198,24 +346,35 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
             }
         });
 
+        // Revenue Chart
         if (revenueChart) revenueChart.destroy();
         revenueChart = new Chart(document.getElementById('revenueChart'), {
             type: 'line',
             data: {
                 labels: data.revenue_labels,
-                datasets: [{
-                    label: 'Доход (₽)',
-                    data: data.revenue_values,
-                    borderColor: '#4caf50',
-                    backgroundColor: 'rgba(76,175,80,0.1)',
-                    fill: true,
-                }]
+                datasets: [
+                    {
+                        label: 'Одобрено (₽)',
+                        data: data.revenue_approved,
+                        borderColor: '#4caf50',
+                        backgroundColor: 'rgba(76,175,80,0.1)',
+                        fill: true,
+                    },
+                    {
+                        label: 'В ожидании (₽)',
+                        data: data.revenue_pending,
+                        borderColor: '#ff9800',
+                        backgroundColor: 'rgba(255,152,0,0.1)',
+                        fill: true,
+                    }
+                ]
             },
             options: {
                 scales: { y: { beginAtZero: true } }
             }
         });
 
+        // Store Chart (by posts)
         if (storeChart) storeChart.destroy();
         storeChart = new Chart(document.getElementById('storeChart'), {
             type: 'doughnut',
@@ -231,10 +390,47 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
                 }]
             }
         });
+
+        // Store Revenue Chart
+        if (storeRevenueChart) storeRevenueChart.destroy();
+        storeRevenueChart = new Chart(document.getElementById('storeRevenueChart'), {
+            type: 'bar',
+            data: {
+                labels: data.store_revenue_labels,
+                datasets: [{
+                    label: 'Доход (₽)',
+                    data: data.store_revenue_values,
+                    backgroundColor: '#4caf50',
+                }, {
+                    label: 'Транзакций',
+                    data: data.store_revenue_transactions,
+                    backgroundColor: '#2196f3',
+                    yAxisID: 'y1',
+                }]
+            },
+            options: {
+                scales: {
+                    y: { beginAtZero: true, position: 'left' },
+                    y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } }
+                }
+            }
+        });
     }
 
-    channelSelect.addEventListener('change', () => loadData(channelSelect.value));
-    loadData('all');
+    channelSelect.addEventListener('change', () => {
+        currentChannelId = channelSelect.value;
+        loadData();
+    });
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentPeriod = btn.dataset.period;
+            updatePeriodTabs(currentPeriod);
+            loadData();
+        });
+    });
+
+    loadData();
 })();
 </script>
 {% endblock %}'''
@@ -400,12 +596,7 @@ QUARANTINE_TEMPLATE = '''{% extends "base.html" %}
         {% endfor %}
     </table>
 </div>
-{% endblock %}'''
-
-
-
-
-
+{% endblock %}'
 
 # ---------- BROADCAST ----------
 BROADCAST_TEMPLATE = '''{% extends "base.html" %}
@@ -474,8 +665,6 @@ STORE_DELIVERY_TEMPLATE = '''{% extends "base.html" %}
     </table>
 </div>
 {% endblock %}'''
-
-
 
 # ---------- BULK ACTIONS ----------
 BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
@@ -816,3 +1005,23 @@ loadChat();
 </script>
 </body>
 </html>'''
+
+# Export all templates
+TEMPLATES = {
+    "base.html": BASE_TEMPLATE,
+    "login.html": LOGIN_TEMPLATE,
+    "admin_dashboard.html": DASHBOARD_TEMPLATE,
+    "admin_users.html": USERS_TEMPLATE,
+    "admin_user_edit.html": USER_EDIT_TEMPLATE,
+    "admin_posts.html": POSTS_TEMPLATE,
+    "admin_quarantine.html": QUARANTINE_TEMPLATE,
+    "admin_broadcast.html": BROADCAST_TEMPLATE,
+    "admin_promocodes.html": PROMOCODES_TEMPLATE,
+    "admin_store_delivery.html": STORE_DELIVERY_TEMPLATE,
+    "admin_bulk_actions.html": BULK_ACTIONS_TEMPLATE,
+    "admin_settings.html": SETTINGS_TEMPLATE,
+    "admin_audit.html": AUDIT_TEMPLATE,
+    "admin_reports.html": REPORTS_TEMPLATE,
+    "admin_payouts.html": ADMIN_PAYOUTS_TEMPLATE,
+    "admin_chat.html": ADMIN_CHAT_TEMPLATE,
+}
