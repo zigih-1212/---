@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # webapp/templates.py
 
 # ---------- CSS (общий) ----------
@@ -602,7 +603,7 @@ QUARANTINE_TEMPLATE = '''{% extends "base.html" %}
 BROADCAST_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}Рассылка{% endblock %}
 {% block content %}
-<h1>📣 Массовая рассылка</h1>
+<h1>&#x1F4E3; Массовая рассылка</h1>
 <div class="card">
     {% if message %}<p class="success">{{ message }}</p>{% endif %}
     <form method="post" action="/admin/broadcast">
