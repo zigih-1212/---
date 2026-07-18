@@ -814,12 +814,38 @@ async function resetTemplate(type) {
 }
 
 async function previewRealProduct() {
-    const resp = await fetch(`/my-stats/preview-template?token=${token}&type=product`);
-    const data = await resp.json();
-    if (data.html) {
-        document.getElementById('preview-content').innerHTML = data.html;
-    } else {
-        alert('Нет доступных товаров для предпросмотра');
+    const container = document.getElementById('preview-content');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Загрузка...</div>';
+    try {
+        const formData = new FormData();
+        formData.append('token', token);
+        formData.append('template', document.getElementById('product-template').value);
+
+        const resp = await fetch('/my-stats/preview-post', { method: 'POST', body: formData });
+        const data = await resp.json();
+
+        if (!data.ok) {
+            container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ ${data.error}</div>`;
+            return;
+        }
+
+        const imageHtml = data.image_url
+            ? `<div style="margin-bottom:12px;"><img src="${data.image_url}" style="max-width:100%; max-height:300px; border-radius:8px; object-fit:contain; background:#111;" onerror="this.style.display='none'"></div>`
+            : '';
+        const captionHtml = `<div style="font-size:14px; line-height:1.6; word-wrap:break-word; white-space:pre-wrap;">${data.caption.replace(/\n/g, '<br>')}</div>`;
+
+        container.innerHTML = `
+            <div style="background: #0f0f0f; border-radius:12px; padding:16px; max-width:700px; margin:0 auto; text-align:left; border:1px solid #2a2a2a;">
+                ${imageHtml}
+                ${captionHtml}
+                <div style="margin-top:12px; padding-top:12px; border-top:1px solid #2a2a2a; font-size:12px; color:#888;">
+                    <span style="color:#4d6bfe;">💡 Предпросмотр на случайном товаре с текущим шаблоном</span>
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        container.innerHTML = `<div style="text-align:center; padding:20px; color:#ff4444;">❌ Ошибка загрузки: ${e.message}</div>`;
     }
 }
 
@@ -1109,9 +1135,15 @@ async def preview_template(token: str = Query(...), type: str = Query("product")
 # === БЕТА-ФУНКЦИЯ: ПРЕДПРОСМОТР ПОСТА =======================================
 # =============================================================================
 
-@router.get("/preview-post")
-async def preview_post(token: str = Query(...), product_id: int = Query(None)):
+@router.api_route("/preview-post", methods=["GET", "POST"])
+async def preview_post(
+    request: Request,
+    token: str = Form(None),
+    product_id: int = Query(None),
+    template: str = Form(None)
+):
     try:
+        token = token or request.query_params.get("token")
         user_id = get_user_id_from_token(token)
         
         # Проверка доступа к бета-функции
@@ -1144,11 +1176,14 @@ async def preview_post(token: str = Query(...), product_id: int = Query(None)):
             delivery_info = get_delivery_for_store(source)
             promocode = get_random_promocode(source)
             
-            user_tmpl = conn.execute(
-                "SELECT product_template FROM users WHERE user_id = ?",
-                (user_id,)
-            ).fetchone()
-            custom_template = user_tmpl["product_template"] if user_tmpl else None
+            if template and template.strip():
+                custom_template = template
+            else:
+                user_tmpl = conn.execute(
+                    "SELECT product_template FROM users WHERE user_id = ?",
+                    (user_id,)
+                ).fetchone()
+                custom_template = user_tmpl["product_template"] if user_tmpl else None
             
             caption = generate_post_text(
                 title=product["title"],
