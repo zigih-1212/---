@@ -38,7 +38,6 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
     <a href="/admin/dashboard" class="{{ 'active' if active_page == 'dashboard' }}">📊 Дашборд</a>
     <a href="/admin/users" class="{{ 'active' if active_page == 'users' }}">👥 Пользователи</a>
     <a href="/admin/posts" class="{{ 'active' if active_page == 'posts' }}">📬 Посты</a>
-    <a href="/admin/promocodes" class="{{ 'active' if active_page == 'promocodes' }}">🎟 Купоны</a>
     <a href="/admin/store_delivery" class="{{ 'active' if active_page == 'delivery' }}">🚚 Доставка</a>
     <a href="/admin/broadcast" class="{{ 'active' if active_page == 'broadcast' }}">📣 Рассылка</a>
     <a href="/admin/payouts" class="{{ 'active' if active_page == 'payouts' }}">💰 Выплаты</a>
@@ -106,7 +105,25 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 {% endif %}
 
 <div class="card">
+    <h2>Фильтр по каналу</h2>
+    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+        <label style="font-weight:bold; margin-right:8px;">Канал:</label>
+        <select id="channel-select" style="min-width:220px; padding:10px; background:#333; border:1px solid #555; color:#ddd; border-radius:8px;">
+            <option value="all">Все каналы</option>
+            {% for ch in channels %}
+            <option value="{{ ch['channel_id'] }}">{{ ch['channel_title'] or ch['channel_id'] }}</option>
+            {% endfor %}
+        </select>
+        <div style="margin-left:auto; color:#bbb;">Выбран канал: <span id="selected-channel-name">Все каналы</span></div>
+    </div>
+</div>
+<div class="card" id="channel-summary-card" style="display:none;">
+    <h2>Статистика по выбранному каналу</h2>
+    <div id="channel-summary" style="font-size:0.95em; color:#ddd;"></div>
+</div>
+<div class="card">
     <h2>Посты за 30 дней</h2>
+    <p id="chart-scope" style="margin-top:8px; color:#aaa;">Показаны данные для всех каналов.</p>
     <canvas id="postsChart" width="400" height="200"></canvas>
 </div>
 <div class="card">
@@ -121,57 +138,103 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 (async function() {
-    const resp = await fetch('/admin/dashboard/data');
-    const data = await resp.json();
+    const channelSelect = document.getElementById('channel-select');
+    const channelSummary = document.getElementById('channel-summary');
+    const channelSummaryCard = document.getElementById('channel-summary-card');
+    const selectedChannelName = document.getElementById('selected-channel-name');
+    const chartScope = document.getElementById('chart-scope');
 
-    new Chart(document.getElementById('postsChart'), {
-        type: 'line',
-        data: {
-            labels: data.posts_labels,
-            datasets: [{
-                label: 'Посты',
-                data: data.posts_counts,
-                borderColor: '#ff4444',
-                backgroundColor: 'rgba(255,68,68,0.1)',
-                fill: true,
-            }]
-        },
-        options: {
-            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
-        }
-    });
+    let postsChart, revenueChart, storeChart;
 
-    new Chart(document.getElementById('revenueChart'), {
-        type: 'line',
-        data: {
-            labels: data.revenue_labels,
-            datasets: [{
-                label: 'Доход (₽)',
-                data: data.revenue_values,
-                borderColor: '#4caf50',
-                backgroundColor: 'rgba(76,175,80,0.1)',
-                fill: true,
-            }]
-        },
-        options: {
-            scales: { y: { beginAtZero: true } }
-        }
-    });
+    function formatNumber(value) {
+        return value != null ? value.toLocaleString('ru-RU') : '0';
+    }
 
-    new Chart(document.getElementById('storeChart'), {
-        type: 'doughnut',
-        data: {
-            labels: data.store_labels,
-            datasets: [{
-                label: 'Постов',
-                data: data.store_values,
-                backgroundColor: [
-                    '#ff4444', '#4caf50', '#ff9800', '#2196f3', '#9c27b0',
-                    '#00bcd4', '#ffeb3b', '#e91e63', '#8bc34a', '#607d8b'
-                ],
-            }]
+    function renderChannelSummary(data) {
+        if (data.channel_summary) {
+            channelSummaryCard.style.display = 'block';
+            const summary = data.channel_summary;
+            channelSummary.innerHTML = `
+                <p><b>Постов за 30 дней:</b> ${formatNumber(summary.posts_count)}</p>
+                <p><b>Клики:</b> ${formatNumber(summary.clicks)}</p>
+                <p><b>Лиды:</b> ${formatNumber(summary.leads)}</p>
+                <p><b>Доход:</b> ${formatNumber(summary.earnings)} ₽</p>
+                <p><b>Конверсия:</b> ${summary.conversion.toFixed(1)}%</p>
+            `;
+        } else {
+            channelSummaryCard.style.display = 'none';
+            channelSummary.innerHTML = '';
         }
-    });
+    }
+
+    async function loadData(channelId = 'all') {
+        const url = channelId === 'all' ? '/admin/dashboard/data' : `/admin/dashboard/data?channel_id=${encodeURIComponent(channelId)}`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        const title = data.selected_channel_title || 'Все каналы';
+        selectedChannelName.textContent = title;
+        chartScope.textContent = channelId === 'all' || !channelId
+            ? 'Показаны данные для всех каналов.'
+            : `Показаны данные для канала: ${title}`;
+
+        renderChannelSummary(data);
+
+        if (postsChart) postsChart.destroy();
+        postsChart = new Chart(document.getElementById('postsChart'), {
+            type: 'line',
+            data: {
+                labels: data.posts_labels,
+                datasets: [{
+                    label: 'Посты',
+                    data: data.posts_counts,
+                    borderColor: '#ff4444',
+                    backgroundColor: 'rgba(255,68,68,0.1)',
+                    fill: true,
+                }]
+            },
+            options: {
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+            }
+        });
+
+        if (revenueChart) revenueChart.destroy();
+        revenueChart = new Chart(document.getElementById('revenueChart'), {
+            type: 'line',
+            data: {
+                labels: data.revenue_labels,
+                datasets: [{
+                    label: 'Доход (₽)',
+                    data: data.revenue_values,
+                    borderColor: '#4caf50',
+                    backgroundColor: 'rgba(76,175,80,0.1)',
+                    fill: true,
+                }]
+            },
+            options: {
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+
+        if (storeChart) storeChart.destroy();
+        storeChart = new Chart(document.getElementById('storeChart'), {
+            type: 'doughnut',
+            data: {
+                labels: data.store_labels,
+                datasets: [{
+                    label: 'Постов',
+                    data: data.store_values,
+                    backgroundColor: [
+                        '#ff4444', '#4caf50', '#ff9800', '#2196f3', '#9c27b0',
+                        '#00bcd4', '#ffeb3b', '#e91e63', '#8bc34a', '#607d8b'
+                    ],
+                }]
+            }
+        });
+    }
+
+    channelSelect.addEventListener('change', () => loadData(channelSelect.value));
+    loadData('all');
 })();
 </script>
 {% endblock %}'''
@@ -430,20 +493,40 @@ BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
             <option value="banned">Забаненные</option>
             <option value="expired">Просроченные</option>
         </select>
-        <label>Действие:</label>
-        <select name="action">
-            <option value="activate">Сделать активными</option>
-            <option value="deactivate">Сделать неактивными</option>
-            <option value="reset_balance">Обнулить баланс</option>
-            <option value="add_beta">Добавить в бета</option>
-            <option value="remove_beta">Убрать из бета</option>
-            <option value="delete">Удалить</option>
-        </select>
-        <button type="submit">Выполнить</button>
+        <input type="hidden" name="action" id="bulk-action-input" value="activate">
+        <div style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:10px; margin-top:10px;">
+            <button type="button" onclick="setBulkAction('activate')">Активировать</button>
+            <button type="button" onclick="setBulkAction('deactivate')">Деактивировать</button>
+            <button type="button" onclick="setBulkAction('reset_balance')">Обнулить баланс</button>
+            <button type="button" onclick="setBulkAction('add_beta')">Добавить в бета</button>
+            <button type="button" onclick="setBulkAction('remove_beta')">Убрать из бета</button>
+            <button type="button" onclick="setBulkAction('delete')" style="background:#c62828;">Удалить</button>
+        </div>
+        <p style="color:#aaa; font-size:0.95em;">Текущая операция: <span id="current-bulk-action">Активировать</span></p>
+        <label>Значение (для reset_balance):</label>
+        <input name="value" value="0" type="number">
+        <button type="submit" style="margin-top:10px;">Выполнить</button>
+        <script>
+            function setBulkAction(action) {
+                const actionInput = document.getElementById('bulk-action-input');
+                const current = document.getElementById('current-bulk-action');
+                actionInput.value = action;
+                const labels = {
+                    activate: 'Активировать',
+                    deactivate: 'Деактивировать',
+                    reset_balance: 'Обнулить баланс',
+                    add_beta: 'Добавить в бета',
+                    remove_beta: 'Убрать из бета',
+                    delete: 'Удалить'
+                };
+                current.textContent = labels[action] || action;
+            }
+            setBulkAction('activate');
+        </script>
     </form>
     {% if message %}<p class="success">{{ message }}</p>{% endif %}
 </div>
-{% endblock %}'''
+{% endblock %}''' }
 
 # ---------- SETTINGS ----------
 SETTINGS_TEMPLATE = '''{% extends "base.html" %}

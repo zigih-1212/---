@@ -316,6 +316,7 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
         posts_week = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published' AND published_at >= ?", (week_ago,)).fetchone()[0]
         errors_today = conn.execute("SELECT COUNT(*) FROM posts WHERE status='error' AND DATE(created_at)=?", (today,)).fetchone()[0]
         pending_payouts = conn.execute("SELECT COUNT(*) FROM payouts WHERE status='pending'").fetchone()[0]
+        channels = conn.execute("SELECT DISTINCT channel_id, channel_title FROM channels ORDER BY channel_title").fetchall()
         last_users = conn.execute("SELECT user_id, role, created_at FROM users ORDER BY created_at DESC LIMIT 5").fetchall()
         last_posts = conn.execute("SELECT id, channel_id, status, published_at, created_at FROM posts ORDER BY id DESC LIMIT 5").fetchall()
         
@@ -339,6 +340,7 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
                   posts_today=posts_today, posts_week=posts_week,
                   errors_today=errors_today, pending_payouts=pending_payouts,
                   last_users=last_users, last_posts=last_posts,
+                  channels=channels,
                   ctr_alerts=ctr_alerts,
                   active_page='dashboard')
 
@@ -546,18 +548,18 @@ async def posts_list(request: Request, user_id: str = "", _: int = Depends(admin
         SELECT p.id, p.user_id, p.channel_id, p.status, p.published_at, p.created_at,
                p.erid as erid,
                p.direct_link as direct_link,
-               g.image_url as photo_url,
-               p.caption as caption_text,
+               MAX(g.image_url) as photo_url,
+               MAX(p.caption) as caption_text,
                (SELECT channel_title FROM channels WHERE channel_id = p.channel_id AND user_id = p.user_id LIMIT 1) as channel_title
         FROM posts p
-        LEFT JOIN gdeslon_catalog g ON instr(p.donor_post_id, 'admitad_' || g.id || '_') = 1
+        LEFT JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
         WHERE p.status = 'published'
     """
     params = []
     if user_id:
         query += " AND p.user_id = ?"
         params.append(user_id)
-    query += " ORDER BY p.id DESC LIMIT 100"
+    query += " GROUP BY p.id ORDER BY p.id DESC LIMIT 100"
     try:
         posts = conn.execute(query, params).fetchall()
     finally:
@@ -687,7 +689,10 @@ async def bulk_actions_execute(request: Request, group: str = Form(...), action:
     elif action == "deactivate":
         conn.execute(f"UPDATE users SET is_active=0 {cond}")
     elif action == "reset_balance":
-        conn.execute(f"UPDATE users SET balance_available = 0 {cond}")
+        if value and value > 0:
+            conn.execute(f"UPDATE users SET balance_available = ? {cond}", (value,))
+        else:
+            conn.execute(f"UPDATE users SET balance_available = 0 {cond}")
     elif action == "add_beta":
         conn.execute(f"UPDATE users SET beta_tester = 1 {cond}")
     elif action == "remove_beta":
@@ -823,34 +828,55 @@ async def reports_download(fname: str, _: int = Depends(admin_required)):
     return HTMLResponse("Файл не найден", status_code=404)
 
 @router.get("/dashboard/data")
-async def dashboard_data(_: int = Depends(admin_required)):
+async def dashboard_data(channel_id: str = Query(None), _: int = Depends(admin_required)):
     conn = get_db()
     try:
+        channel_filter = ""
+        params = []
+        if channel_id and channel_id != 'all':
+            channel_filter = "AND p.channel_id = ?"
+            params.append(channel_id)
+
         # Посты по дням за последние 30 дней
-        posts_by_day = conn.execute("""
+        posts_by_day = conn.execute(f"""
             SELECT DATE(published_at) as day, COUNT(*) as cnt
-            FROM posts
-            WHERE status='published' AND published_at >= datetime('now', '-30 days')
+            FROM posts p
+            WHERE p.status='published' AND p.published_at >= datetime('now', '-30 days')
+            {channel_filter}
             GROUP BY day
             ORDER BY day
-        """).fetchall()
+        """, params).fetchall()
         # Доход по дням (сумма payment_sum) за последние 30 дней
-        revenue_by_day = conn.execute("""
-            SELECT DATE(time, 'unixepoch') as day, SUM(payment_sum) as total
-            FROM admitad_transactions
-            WHERE time >= strftime('%s', 'now', '-30 days')
-            GROUP BY day
-            ORDER BY day
-        """).fetchall()
+        if channel_filter:
+            revenue_by_day = conn.execute(f"""
+                SELECT DATE(at.time, 'unixepoch') as day, SUM(at.payment_sum) as total
+                FROM admitad_transactions at
+                LEFT JOIN channels c ON c.sub_id = at.subid1
+                WHERE at.time >= strftime('%s', 'now', '-30 days')
+                  AND at.payment_status = 'approved'
+                  AND c.channel_id = ?
+                GROUP BY day
+                ORDER BY day
+            """, (channel_id,)).fetchall()
+        else:
+            revenue_by_day = conn.execute("""
+                SELECT DATE(time, 'unixepoch') as day, SUM(payment_sum) as total
+                FROM admitad_transactions
+                WHERE time >= strftime('%s', 'now', '-30 days')
+                  AND payment_status = 'approved'
+                GROUP BY day
+                ORDER BY day
+            """).fetchall()
         # Распределение по магазинам за последние 30 дней (по количеству постов)
-        store_distribution = conn.execute("""
+        store_distribution = conn.execute(f"""
             SELECT g.source, COUNT(*) as cnt
             FROM posts p
             JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
             WHERE p.status='published' AND p.published_at >= datetime('now', '-30 days')
+            {channel_filter}
             GROUP BY g.source
             ORDER BY cnt DESC
-        """).fetchall()
+        """, params).fetchall()
         # Аномалии CTR (пользователи, у которых средний CTR > 25% за 7 дней)
         ctr_alerts = conn.execute("""
             SELECT s.subid1, s.clicks_count, s.leads_count,
@@ -864,8 +890,32 @@ async def dashboard_data(_: int = Depends(admin_required)):
             ORDER BY ctr DESC
             LIMIT 10
         """).fetchall()
+
+        channel_summary = None
+        selected_channel_title = None
+        if channel_id and channel_id != 'all':
+            channel_summary = conn.execute("""
+                SELECT c.channel_title,
+                       COUNT(DISTINCT p.id) as posts_count,
+                       COALESCE(SUM(s.clicks_count), 0) as clicks,
+                       COALESCE(SUM(s.leads_count), 0) as leads,
+                       COALESCE(SUM(s.earnings_approved), 0) as earnings
+                FROM channels c
+                LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.status = 'published' AND p.published_at >= datetime('now', '-30 days')
+                LEFT JOIN subid_stats s ON s.subid1 = c.sub_id
+                WHERE c.channel_id = ?
+                GROUP BY c.channel_id
+            """, (channel_id,)).fetchone()
+            if channel_summary:
+                selected_channel_title = channel_summary['channel_title'] or channel_id
+            else:
+                selected_channel_title = channel_id
     finally:
         conn.close()
+
+    conversion = 0.0
+    if channel_summary and channel_summary['clicks'] > 0:
+        conversion = round(channel_summary['leads'] / channel_summary['clicks'] * 100, 1)
 
     return {
         "posts_labels": [r["day"] for r in posts_by_day],
@@ -885,4 +935,12 @@ async def dashboard_data(_: int = Depends(admin_required)):
                 "ctr": r["ctr"]
             } for r in ctr_alerts
         ],
+        "channel_summary": {
+            "posts_count": channel_summary["posts_count"],
+            "clicks": channel_summary["clicks"],
+            "leads": channel_summary["leads"],
+            "earnings": channel_summary["earnings"],
+            "conversion": conversion
+        } if channel_summary else None,
+        "selected_channel_title": selected_channel_title,
     }
