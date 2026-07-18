@@ -1,4 +1,4 @@
-# webapp/routes_admin.py
+  webapp/routes_admin.py
 import os
 import io, csv
 import logging
@@ -828,56 +828,137 @@ async def reports_download(fname: str, _: int = Depends(admin_required)):
     return HTMLResponse("Файл не найден", status_code=404)
 
 @router.get("/dashboard/data")
-async def dashboard_data(channel_id: str = Query(None), _: int = Depends(admin_required)):
+async def dashboard_data(
+    channel_id: str = Query(None),
+    period: str = Query("30d"),
+    _: int = Depends(admin_required)
+):
+    """Расширенный API дашборда с выбором периода и детальной статистикой."""
     conn = get_db()
     try:
+        # Определяем период
+        period_days = {"7d": 7, "30d": 30, "90d": 90, "all": None}
+        days = period_days.get(period, 30)
+        date_filter = f"AND p.published_at >= datetime('now', '-{days} days')" if days else ""
+        date_filter_at = f"AND at.time >= strftime('%s', 'now', '-{days} days')" if days else ""
+        date_filter_subid = f"AND s.updated_at >= datetime('now', '-{days} days')" if days else ""
+
         channel_filter = ""
         params = []
         if channel_id and channel_id != 'all':
             channel_filter = "AND p.channel_id = ?"
             params.append(channel_id)
 
-        # Посты по дням за последние 30 дней
+        # --- 1. Посты по дням ---
         posts_by_day = conn.execute(f"""
             SELECT DATE(published_at) as day, COUNT(*) as cnt
             FROM posts p
-            WHERE p.status='published' AND p.published_at >= datetime('now', '-30 days')
+            WHERE p.status='published' {date_filter.replace('p.published_at', 'published_at')}
             {channel_filter}
             GROUP BY day
             ORDER BY day
         """, params).fetchall()
-        # Доход по дням (сумма payment_sum) за последние 30 дней
-        if channel_filter:
+
+        # --- 2. Доход approved по дням ---
+        if channel_id and channel_id != 'all':
             revenue_by_day = conn.execute(f"""
                 SELECT DATE(at.time, 'unixepoch') as day, SUM(at.payment_sum) as total
                 FROM admitad_transactions at
                 LEFT JOIN channels c ON c.sub_id = at.subid1
-                WHERE at.time >= strftime('%s', 'now', '-30 days')
-                  AND at.payment_status = 'approved'
+                WHERE at.payment_status = 'approved'
+                  {date_filter_at.replace('at.time', 'at.time')}
                   AND c.channel_id = ?
                 GROUP BY day
                 ORDER BY day
             """, (channel_id,)).fetchall()
         else:
-            revenue_by_day = conn.execute("""
+            revenue_by_day = conn.execute(f"""
                 SELECT DATE(time, 'unixepoch') as day, SUM(payment_sum) as total
                 FROM admitad_transactions
-                WHERE time >= strftime('%s', 'now', '-30 days')
-                  AND payment_status = 'approved'
+                WHERE payment_status = 'approved'
+                  {date_filter_at.replace('at.time', 'time')}
                 GROUP BY day
                 ORDER BY day
             """).fetchall()
-        # Распределение по магазинам за последние 30 дней (по количеству постов)
+
+        # --- 3. Доход pending по дням ---
+        if channel_id and channel_id != 'all':
+            pending_by_day = conn.execute(f"""
+                SELECT DATE(at.time, 'unixepoch') as day, SUM(at.payment_sum) as total
+                FROM admitad_transactions at
+                LEFT JOIN channels c ON c.sub_id = at.subid1
+                WHERE at.payment_status = 'pending'
+                  {date_filter_at.replace('at.time', 'at.time')}
+                  AND c.channel_id = ?
+                GROUP BY day
+                ORDER BY day
+            """, (channel_id,)).fetchall()
+        else:
+            pending_by_day = conn.execute(f"""
+                SELECT DATE(time, 'unixepoch') as day, SUM(payment_sum) as total
+                FROM admitad_transactions
+                WHERE payment_status = 'pending'
+                  {date_filter_at.replace('at.time', 'time')}
+                GROUP BY day
+                ORDER BY day
+            """).fetchall()
+
+        # --- 4. Магазины по доходам (approved) ---
+        store_revenue = conn.execute(f"""
+            SELECT COALESCE(g.source, 'Другой') as store,
+                   COUNT(DISTINCT at.id) as transactions,
+                   SUM(at.payment_sum) as revenue,
+                   COUNT(DISTINCT p.id) as posts_count
+            FROM admitad_transactions at
+            LEFT JOIN posts p ON p.donor_post_id LIKE '%' || at.admitad_id || '%' AND p.status='published'
+            LEFT JOIN gdeslon_catalog g ON g.partner_url = p.donor_post_id
+            WHERE at.payment_status = 'approved'
+              {date_filter_at.replace('at.time', 'at.time')}
+            GROUP BY store
+            ORDER BY revenue DESC
+            LIMIT 15
+        """).fetchall()
+
+        # --- 5. Топ-пользователей по доходу ---
+        top_users = conn.execute(f"""
+            SELECT u.user_id, u.username, u.role,
+                   COALESCE(SUM(at.payment_sum), 0) as total_revenue,
+                   COUNT(DISTINCT at.id) as transactions,
+                   COUNT(DISTINCT p.id) as posts_count
+            FROM users u
+            LEFT JOIN admitad_transactions at ON at.user_id = u.user_id AND at.payment_status = 'approved'
+              {date_filter_at.replace('at.time', '')}
+            LEFT JOIN posts p ON p.user_id = u.user_id AND p.status='published'
+              {date_filter.replace('p.published_at', 'p.published_at')}
+            GROUP BY u.user_id
+            HAVING total_revenue > 0 OR posts_count > 0
+            ORDER BY total_revenue DESC
+            LIMIT 20
+        """).fetchall()
+
+        # --- 6. Общая статистика ---
+        total_stats = conn.execute(f"""
+            SELECT
+                COALESCE(SUM(CASE WHEN at.payment_status='approved' THEN at.payment_sum ELSE 0 END), 0) as total_approved,
+                COALESCE(SUM(CASE WHEN at.payment_status='pending' THEN at.payment_sum ELSE 0 END), 0) as total_pending,
+                COUNT(DISTINCT CASE WHEN at.payment_status='approved' THEN at.id END) as approved_count,
+                COUNT(DISTINCT CASE WHEN at.payment_status='pending' THEN at.id END) as pending_count
+            FROM admitad_transactions at
+            WHERE 1=1 {date_filter_at.replace('at.time', 'at.time')}
+        """).fetchone()
+
+        # --- 7. Магазины по постам (как было) ---
         store_distribution = conn.execute(f"""
             SELECT g.source, COUNT(*) as cnt
             FROM posts p
             JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
-            WHERE p.status='published' AND p.published_at >= datetime('now', '-30 days')
+            WHERE p.status='published' {date_filter.replace('p.published_at', 'p.published_at')}
             {channel_filter}
             GROUP BY g.source
             ORDER BY cnt DESC
         """, params).fetchall()
-        # Аномалии CTR (пользователи, у которых средний CTR > 25% за 7 дней)
+
+        # --- 8. Аномалии CTR ---
         ctr_alerts = conn.execute("""
             SELECT s.subid1, s.clicks_count, s.leads_count,
                    ROUND(CAST(s.leads_count AS REAL) / NULLIF(s.clicks_count, 0) * 100, 1) as ctr,
@@ -891,17 +972,38 @@ async def dashboard_data(channel_id: str = Query(None), _: int = Depends(admin_r
             LIMIT 10
         """).fetchall()
 
+        # --- 9. Статистика по каналам ---
+        channel_stats = conn.execute(f"""
+            SELECT c.channel_id, c.channel_title, c.user_id, u.username,
+                   COUNT(DISTINCT p.id) as posts_count,
+                   COALESCE(SUM(s.clicks_count), 0) as clicks,
+                   COALESCE(SUM(s.leads_count), 0) as leads,
+                   COALESCE(SUM(s.earnings_approved), 0) as earnings
+            FROM channels c
+            LEFT JOIN users u ON u.user_id = c.user_id
+            LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.status='published'
+              {date_filter.replace('p.published_at', 'p.published_at')}
+            LEFT JOIN subid_stats s ON s.subid1 = c.sub_id
+            WHERE c.is_active = 1
+            GROUP BY c.channel_id
+            HAVING posts_count > 0 OR clicks > 0
+            ORDER BY earnings DESC
+            LIMIT 20
+        """).fetchall()
+
+        # --- 10. Сводка по выбранному каналу ---
         channel_summary = None
         selected_channel_title = None
         if channel_id and channel_id != 'all':
-            channel_summary = conn.execute("""
+            channel_summary = conn.execute(f"""
                 SELECT c.channel_title,
                        COUNT(DISTINCT p.id) as posts_count,
                        COALESCE(SUM(s.clicks_count), 0) as clicks,
                        COALESCE(SUM(s.leads_count), 0) as leads,
                        COALESCE(SUM(s.earnings_approved), 0) as earnings
                 FROM channels c
-                LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.status = 'published' AND p.published_at >= datetime('now', '-30 days')
+                LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.status = 'published'
+                  {date_filter.replace('p.published_at', 'p.published_at')}
                 LEFT JOIN subid_stats s ON s.subid1 = c.sub_id
                 WHERE c.channel_id = ?
                 GROUP BY c.channel_id
@@ -910,6 +1012,7 @@ async def dashboard_data(channel_id: str = Query(None), _: int = Depends(admin_r
                 selected_channel_title = channel_summary['channel_title'] or channel_id
             else:
                 selected_channel_title = channel_id
+
     finally:
         conn.close()
 
@@ -917,13 +1020,55 @@ async def dashboard_data(channel_id: str = Query(None), _: int = Depends(admin_r
     if channel_summary and channel_summary['clicks'] > 0:
         conversion = round(channel_summary['leads'] / channel_summary['clicks'] * 100, 1)
 
+    # Собираем все даты для графика доходов (approved + pending)
+    all_revenue_dates = sorted(set(
+        [r["day"] for r in revenue_by_day] +
+        [r["day"] for r in pending_by_day]
+    ))
+
+    revenue_map = {r["day"]: r["total"] for r in revenue_by_day}
+    pending_map = {r["day"]: r["total"] for r in pending_by_day}
+
     return {
+        "period": period,
         "posts_labels": [r["day"] for r in posts_by_day],
         "posts_counts": [r["cnt"] for r in posts_by_day],
-        "revenue_labels": [r["day"] for r in revenue_by_day],
-        "revenue_values": [r["total"] for r in revenue_by_day],
+        "revenue_labels": all_revenue_dates,
+        "revenue_approved": [revenue_map.get(d, 0) for d in all_revenue_dates],
+        "revenue_pending": [pending_map.get(d, 0) for d in all_revenue_dates],
         "store_labels": [r["source"] or "Неизвестно" for r in store_distribution],
         "store_values": [r["cnt"] for r in store_distribution],
+        "store_revenue_labels": [r["store"] for r in store_revenue],
+        "store_revenue_values": [r["revenue"] for r in store_revenue],
+        "store_revenue_posts": [r["posts_count"] for r in store_revenue],
+        "store_revenue_transactions": [r["transactions"] for r in store_revenue],
+        "top_users": [
+            {
+                "user_id": r["user_id"],
+                "username": r["username"],
+                "role": r["role"],
+                "total_revenue": r["total_revenue"],
+                "transactions": r["transactions"],
+                "posts_count": r["posts_count"]
+            } for r in top_users
+        ],
+        "total_approved": total_stats["total_approved"],
+        "total_pending": total_stats["total_pending"],
+        "approved_count": total_stats["approved_count"],
+        "pending_count": total_stats["pending_count"],
+        "channel_stats": [
+            {
+                "channel_id": r["channel_id"],
+                "channel_title": r["channel_title"],
+                "user_id": r["user_id"],
+                "username": r["username"],
+                "posts_count": r["posts_count"],
+                "clicks": r["clicks"],
+                "leads": r["leads"],
+                "earnings": r["earnings"],
+                "conversion": round(r["leads"] / r["clicks"] * 100, 1) if r["clicks"] > 0 else 0
+            } for r in channel_stats
+        ],
         "ctr_alerts": [
             {
                 "user_id": r["user_id"],
