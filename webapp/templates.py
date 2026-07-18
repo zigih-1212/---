@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # webapp/templates.py
 
 # ---------- CSS (общий) ----------
