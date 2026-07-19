@@ -115,7 +115,8 @@ class ErrorLoggingMiddleware(BaseMiddleware):
             return await handler(event, data)
         except Exception as e:
             logger.exception(f"Ошибка при обработке события: {e}")
-            raise
+            # НЕ перевыбрасываем исключение — один сбойный хендлер не должен валить весь бот
+            return
 
 
 # =============================================================================
@@ -2495,4 +2496,12 @@ async def cmd_beta(message: Message):
         await message.answer(f"❌ Ошибка: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    while True:
+        try:
+            asyncio.run(main())
+        except Exception as e:
+            logger.critical(f"Критическая ошибка: {e}. Перезапуск через 5 секунд...")
+            import time as _time
+            _time.sleep(5)
+            continue
+        break
