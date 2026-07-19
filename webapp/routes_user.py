@@ -89,6 +89,12 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <div id="finance-transactions" style="margin-top:20px;"></div>
     </div>
 
+    <div class="card" id="ord-section">
+        <h2>📄 Отчёт для ОРД</h2>
+        <p style="margin-bottom:10px;">Скачайте Excel-файл со всеми публикациями и количеством просмотров для подачи в ЕРИР.</p>
+        <a id="ord-report-link" href="#" class="btn">📥 Скачать отчёт для ОРД (XLSX)</a>
+    </div>
+
     <div class="grid">
         <div><canvas id="postsChart"></canvas></div>
         <div id="revenue-chart-container"><canvas id="revenueChart"></canvas></div>
@@ -133,6 +139,8 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     let postsChart, revenueChart, clicksChart, storeChart;
 
     const channelSelect = document.getElementById('channel-select');
+
+    document.getElementById('ord-report-link').href = `/my-stats/ord-report?token=${token}`;
 
     function populateChannelOptions(channels) {
         if (!channelSelect || !channels) return;
