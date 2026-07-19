@@ -2382,7 +2382,8 @@ async def generate_monthly_ord_reports(bot: Bot):
             
             # Создаём Excel
             output = BytesIO()
-            workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+            # remove_timezone: xlsxwriter сам снимает tzinfo с datetime (Excel не поддерживает часовые пояса)
+            workbook = xlsxwriter.Workbook(output, {'in_memory': True, 'remove_timezone': True})
             worksheet = workbook.add_worksheet("ORD")
             headers = ["erid", "Площадка", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания"]
             for col, header in enumerate(headers):
@@ -2392,6 +2393,9 @@ async def generate_monthly_ord_reports(bot: Bot):
                 views = p["views_count"] or 0
                 try:
                     pub_date = datetime.fromisoformat(p["published_at"].replace("Z", "+00:00"))
+                    # Приводим к наивному datetime (Excel не поддерживает tz), затем форматируем в строку
+                    if pub_date.tzinfo is not None:
+                        pub_date = pub_date.replace(tzinfo=None)
                     date_str = pub_date.strftime("%d.%m.%Y")
                 except:
                     date_str = ""

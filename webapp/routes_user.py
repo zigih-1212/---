@@ -1251,7 +1251,8 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
 
         # Всегда создаём Excel с данными (или пустыми заголовками)
         output = BytesIO()
-        workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+        # remove_timezone: xlsxwriter сам снимает tzinfo с datetime (Excel не поддерживает часовые пояса)
+        workbook = xlsxwriter.Workbook(output, {'in_memory': True, 'remove_timezone': True})
         worksheet = workbook.add_worksheet("ORD")
         
         headers = ["ERID", "Площадка (Telegram)", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания"]
@@ -1262,7 +1263,13 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
         date_format = workbook.add_format({'num_format': 'dd.mm.yyyy'})
         
         for row_idx, post in enumerate(posts, start=1):
-            pub_date = datetime.fromisoformat(post["published_at"]) if post["published_at"] else datetime.now()
+            # xlsxwriter не поддерживает timezone-aware datetime, поэтому убираем tzinfo
+            if post["published_at"]:
+                pub_date = datetime.fromisoformat(post["published_at"].replace("Z", "+00:00"))
+                if pub_date.tzinfo is not None:
+                    pub_date = pub_date.replace(tzinfo=None)
+            else:
+                pub_date = datetime.now()
             worksheet.write(row_idx, 0, post["erid"] or "")
             worksheet.write(row_idx, 1, "Telegram")
             worksheet.write(row_idx, 2, "Канал")
