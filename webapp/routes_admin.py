@@ -549,11 +549,17 @@ async def posts_list(request: Request, user_id: str = "", _: int = Depends(admin
         SELECT p.id, p.user_id, p.channel_id, p.status, p.published_at, p.created_at,
                p.erid as erid,
                p.direct_link as direct_link,
-               MAX(g.image_url) as photo_url,
-               MAX(p.caption) as caption_text,
+               COALESCE(g.image_url, '') as photo_url,
+               COALESCE(p.caption, '') as caption_text,
                (SELECT channel_title FROM channels WHERE channel_id = p.channel_id AND user_id = p.user_id LIMIT 1) as channel_title
         FROM posts p
-        LEFT JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%'
+        LEFT JOIN gdeslon_catalog g ON g.id = CAST(
+            CASE 
+                WHEN p.donor_post_id LIKE 'admitad\_%' ESCAPE '\' 
+                THEN substr(p.donor_post_id, 9, instr(substr(p.donor_post_id, 9), '_') - 1)
+                ELSE NULL
+            END AS INTEGER
+        ) AND g.user_id = p.user_id
         WHERE p.status = 'published'
     """
     params = []

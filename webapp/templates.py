@@ -530,6 +530,7 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
         <tr data-photo="{{ p['photo_url'] or '' }}" 
             data-caption="{{ p['caption_text'] or '' | e }}" 
             data-channel="{{ p['channel_title'] or p['channel_id'] or '&#x2014;' }}" 
+            data-link="{{ p['direct_link'] or '' }}" 
             style="cursor:pointer;">
             <td>{{ p['id'] }}</td>
             <td>{{ p['user_id'] }}</td>
@@ -546,6 +547,7 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
 <div id="post-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:center;">
     <div style="background:#0f0f0f; border-radius:12px; max-width:400px; width:90%; overflow:hidden; color:#fff; font-family: 'Segoe UI', sans-serif; position:relative;">
         <span id="close-modal" style="position:absolute; top:8px; right:12px; color:#aaa; font-size:20px; cursor:pointer; z-index:10;">&#x2715;</span>
+        <a id="modal-post-link" href="#" target="_blank" style="position:absolute; top:8px; right:40px; color:#4d6bfe; font-size:14px; cursor:pointer; z-index:10; text-decoration:none;">&#x1F517; Открыть</a>
         <div style="background:#1a1a1a; padding:10px 15px; display:flex; align-items:center;">
             <div style="background:#ff4444; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold; font-size:14px;">#</div>
             <div id="modal-channel-title" style="font-weight:600; font-size:15px;">&#x41A;&#x430;&#x43D;&#x430;&#x43B;</div>
@@ -562,11 +564,16 @@ POSTS_TEMPLATE = r'''{% extends "base.html" %}
     const modalChannel = document.getElementById('modal-channel-title');
     const closeBtn = document.getElementById('close-modal');
 
+    const modalLink = document.getElementById('modal-post-link');
+
     document.querySelectorAll('#posts-table tr[data-photo]').forEach(row => {
         row.addEventListener('click', () => {
             const photo = row.getAttribute('data-photo');
             const caption = row.getAttribute('data-caption');
             const channel = row.getAttribute('data-channel') || '&#x41A;&#x430;&#x43D;&#x430;&#x43B;';
+            const link = row.getAttribute('data-link') || '';
+            modalLink.href = link || '#';
+            modalLink.style.display = link ? 'block' : 'none';
             if (photo) {
                 modalPhoto.src = photo;
                 modalPhoto.style.display = 'block';

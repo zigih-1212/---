@@ -244,7 +244,7 @@ async def check_rss_and_publish(bot: Bot):
             conn.close()
 
 async def collect_views_for_user(user_id: int, bot):
-    """Собирает просмотры для всех опубликованных постов пользователя"""
+    """Собирает просмотры для всех опубликованных постов пользователя (обновляет все, не только с views_count=0)"""
     from services.db import get_db
     import logging
     logger = logging.getLogger("autopost_bot")
@@ -254,10 +254,10 @@ async def collect_views_for_user(user_id: int, bot):
         posts = conn.execute("""
             SELECT p.id, p.channel_id, p.direct_link 
             FROM posts p 
-            WHERE p.user_id = ? AND p.status = 'published' AND p.views_count = 0
+            WHERE p.user_id = ? AND p.status = 'published' AND p.direct_link IS NOT NULL AND p.direct_link != ''
         """, (user_id,)).fetchall()
         
-        logger.info(f"Сбор просмотров для user_id={user_id}, найдено {len(posts)} постов без просмотров")
+        logger.info(f"Сбор просмотров для user_id={user_id}, всего постов: {len(posts)}")
         
         updated = 0
         for post in posts:
@@ -268,15 +268,14 @@ async def collect_views_for_user(user_id: int, bot):
                 msg_id = int(parts[-1])
                 chat_identifier = post["channel_id"]
             except Exception as e:
-                logger.warning(f"Не удалось разобрать direct_link: {e}")
+                logger.warning(f"Не удалось разобрать direct_link для поста {post['id']}: {e}")
                 continue
             
             try:
                 messages = await bot.get_messages(chat_id=chat_identifier, message_ids=[msg_id])
-                if messages and messages[0].views:
+                if messages and messages[0].views is not None:
                     conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (messages[0].views, post["id"]))
                     updated += 1
-                    logger.info(f"Обновлён просмотр для поста {post['id']}: {messages[0].views}")
             except Exception as e:
                 logger.warning(f"Не удалось получить просмотры для поста {post['id']}: {e}")
         conn.commit()
