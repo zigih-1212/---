@@ -990,8 +990,8 @@ async function loadChat() {
         } else {
             chatDiv.innerHTML = data.messages.map(msg => {
                 const side = msg.sender_role === 'admin' ? 'admin' : 'user';
-                let text = '';
-                if (msg.file_path) {
+ o none               let text = '';
+ o none               if (msg.file_path) {
                     text = `<a href="/admin/receipt-file?path=${encodeURIComponent(msg.file_path)}" target="_blank"><img src="/admin/receipt-file?path=${encodeURIComponent(msg.file_path)}" style="max-width:150px; border-radius:8px;"></a>`;
                 }
                 if (msg.message) text += msg.message.replace(/\n/g, '<br>');

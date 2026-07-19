@@ -545,30 +545,45 @@ async def complete_payout_request(request_id: int, admin_id: int = Depends(admin
 @router.get("/posts", response_class=HTMLResponse)
 async def posts_list(request: Request, user_id: str = "", _: int = Depends(admin_required)):
     conn = get_db()
-    query = """
-        SELECT p.id, p.user_id, p.channel_id, p.status, p.published_at, p.created_at,
-               p.erid as erid,
-               p.direct_link as direct_link,
-               COALESCE(g.image_url, '') as photo_url,
-               COALESCE(p.caption, '') as caption_text,
-               (SELECT channel_title FROM channels WHERE channel_id = p.channel_id AND user_id = p.user_id LIMIT 1) as channel_title
-        FROM posts p
-        LEFT JOIN gdeslon_catalog g ON g.id = CAST(
-            CASE 
-                WHEN p.donor_post_id LIKE 'admitad\_%' ESCAPE '\' 
-                THEN substr(p.donor_post_id, 9, instr(substr(p.donor_post_id, 9), '_') - 1)
-                ELSE NULL
-            END AS INTEGER
-        ) AND g.user_id = p.user_id
-        WHERE p.status = 'published'
-    """
-    params = []
-    if user_id:
-        query += " AND p.user_id = ?"
-        params.append(user_id)
-    query += " GROUP BY p.id ORDER BY p.id DESC LIMIT 100"
     try:
+        # Сначала получаем посты
+        query = """
+            SELECT p.id, p.user_id, p.channel_id, p.status, p.published_at, p.created_at,
+                   p.erid as erid,
+                   p.direct_link as direct_link,
+                   p.donor_post_id,
+                   p.caption as caption_text,
+                   (SELECT channel_title FROM channels WHERE channel_id = p.channel_id AND user_id = p.user_id LIMIT 1) as channel_title
+            FROM posts p
+            WHERE p.status = 'published'
+        """
+        params = []
+        if user_id:
+            query += " AND p.user_id = ?"
+            params.append(user_id)
+        query += " ORDER BY p.id DESC LIMIT 100"
         posts = conn.execute(query, params).fetchall()
+        
+        # Получаем фото отдельным запросом для каждого поста
+        for post in posts:
+            donor_id = post["donor_post_id"]
+            if donor_id and donor_id.startswith("admitad_"):
+                try:
+                    import re
+                    match = re.match(r"admitad_(\d+)_", donor_id)
+                    if match:
+                        product_id = int(match.group(1))
+                        product = conn.execute(
+                            "SELECT image_url FROM gdeslon_catalog WHERE id = ? AND user_id = ?",
+                            (product_id, post["user_id"])
+                        ).fetchone()
+                        if product:
+                            post["photo_url"] = product["image_url"] or ""
+                except Exception as e:
+                    logger.warning(f"Не удалось получить фото для поста {post['id']}: {e}")
+    except Exception as e:
+        logger.error(f"Ошибка в posts_list: {e}")
+        posts = []
     finally:
         conn.close()
     response = render("admin_posts.html", posts=posts, request=request, active_page='posts')
