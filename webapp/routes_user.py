@@ -25,6 +25,30 @@ logger = logging.getLogger("autopost_bot.user")
 UPLOAD_DIR = "/app/data/receipts"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+
+def build_ord_report_rows(posts_rows):
+    """Подготавливает строки для Excel-отчёта ОРД с корректными полями."""
+    result = []
+    for post in posts_rows:
+        post_link = post.get("direct_link") or ""
+        channel_title = post.get("channel_title") or ""
+        channel_id = post.get("channel_id") or ""
+        display_channel = channel_title or channel_id or "Telegram"
+        channel_username = post.get("channel_username") or ""
+        channel_link = post.get("channel_link") or ""
+        result.append({
+            "erid": post.get("erid") or "",
+            "platform": post_link or "Telegram",
+            "channel_type": display_channel,
+            "views_count": post.get("views_count") or 0,
+            "post_link": post_link,
+            "channel_title": channel_title,
+            "channel_username": channel_username,
+            "channel_link": channel_link,
+            "published_at": post.get("published_at"),
+        })
+    return result
+
 # ------------------------------------------------------------------------------
 # Шаблон главной страницы статистики
 # ------------------------------------------------------------------------------
@@ -1239,8 +1263,12 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
         conn = get_db()
         try:
             posts = conn.execute("""
-                SELECT p.published_at, p.erid, p.views_count, p.direct_link 
-                FROM posts p 
+                SELECT p.published_at, p.erid, p.views_count, p.direct_link, p.channel_id,
+                       COALESCE(c.channel_title, '') AS channel_title,
+                       COALESCE(c.channel_id, '') AS channel_username,
+                       CASE WHEN COALESCE(c.channel_id, '') != '' THEN 'https://t.me/' || trim(c.channel_id, '@') ELSE '' END AS channel_link
+                FROM posts p
+                LEFT JOIN channels c ON c.user_id = p.user_id AND c.channel_id = p.channel_id
                 WHERE p.user_id = ? AND p.status = 'published' AND p.erid IS NOT NULL AND p.erid != ''
                 ORDER BY p.published_at DESC
             """, (user_id,)).fetchall()
@@ -1255,29 +1283,46 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
         workbook = xlsxwriter.Workbook(output, {'in_memory': True, 'remove_timezone': True})
         worksheet = workbook.add_worksheet("ORD")
         
-        headers = ["ERID", "Площадка (Telegram)", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания"]
+        headers = ["ERID", "Площадка (Telegram)", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания", "Ссылка на пост", "Название канала", "Username канала", "Ссылка на канал"]
         for col, header in enumerate(headers):
             worksheet.write(0, col, header)
         
         # Формат для дат
         date_format = workbook.add_format({'num_format': 'dd.mm.yyyy'})
+        report_rows = build_ord_report_rows([
+            {
+                "erid": post["erid"],
+                "views_count": post["views_count"],
+                "direct_link": post["direct_link"],
+                "channel_title": post["channel_title"],
+                "channel_id": post["channel_id"],
+                "channel_username": post.get("channel_username", ""),
+                "channel_link": post.get("channel_link", ""),
+                "published_at": post["published_at"],
+            }
+            for post in posts
+        ])
         
-        for row_idx, post in enumerate(posts, start=1):
+        for row_idx, row in enumerate(report_rows, start=1):
             # xlsxwriter не поддерживает timezone-aware datetime, поэтому убираем tzinfo
-            if post["published_at"]:
-                pub_date = datetime.fromisoformat(post["published_at"].replace("Z", "+00:00"))
+            if row["published_at"]:
+                pub_date = datetime.fromisoformat(row["published_at"].replace("Z", "+00:00"))
                 if pub_date.tzinfo is not None:
                     pub_date = pub_date.replace(tzinfo=None)
             else:
                 pub_date = datetime.now()
-            worksheet.write(row_idx, 0, post["erid"] or "")
-            worksheet.write(row_idx, 1, "Telegram")
-            worksheet.write(row_idx, 2, "Канал")
-            worksheet.write(row_idx, 3, post["views_count"] or 0)
+            worksheet.write(row_idx, 0, row["erid"] or "")
+            worksheet.write(row_idx, 1, row["platform"] or "Telegram")
+            worksheet.write(row_idx, 2, row["channel_type"] or "Telegram")
+            worksheet.write(row_idx, 3, row["views_count"] or 0)
             worksheet.write(row_idx, 4, 0)  # переходы — нет точных данных
             worksheet.write(row_idx, 5, 0)  # сумма — не применимо
             worksheet.write_datetime(row_idx, 6, pub_date, date_format)
             worksheet.write_datetime(row_idx, 7, pub_date, date_format)
+            worksheet.write(row_idx, 8, row["post_link"] or "")
+            worksheet.write(row_idx, 9, row["channel_title"] or "")
+            worksheet.write(row_idx, 10, row["channel_username"] or "")
+            worksheet.write(row_idx, 11, row["channel_link"] or "")
         
         worksheet.set_column(0, 0, 30)
         worksheet.set_column(1, 2, 18)
