@@ -149,9 +149,9 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
     <div id="channel-summary" style="font-size:0.95em; color:#ddd;"></div>
 </div>
 
-<!-- Channel Performance Table -->
+<!-- Channel Performance Table (заполняется через JS) -->
 <div class="card">
-    <h2>&#x1F4CA; &#x41F;&#x440;&#x43E;&#x438;&#x437;&#x432;&#x43E;&#x434;&#x438;&#x442;&#x435;&#x43B;&#x44C;&#x43D;&#x43E;&#x441;&#x442;&#x44C; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x43E;&#x432; ({{ current_period_label }})</h2>
+    <h2>&#x1F4CA; &#x41F;&#x440;&#x43E;&#x438;&#x437;&#x432;&#x43E;&#x434;&#x438;&#x442;&#x435;&#x43B;&#x44C;&#x43D;&#x43E;&#x441;&#x442;&#x44C; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x43E;&#x432; (<span id="channel-period-label">30 &#x434;&#x43D;&#x435;&#x439;</span>)</h2>
     <div style="overflow-x:auto;">
         <table id="channel-table">
             <thead>
@@ -168,28 +168,15 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
                 </tr>
             </thead>
             <tbody id="channel-table-body">
-                {% for ch in channel_stats %}
-                <tr>
-                    <td>{{ ch.channel_title or ch.channel_id }}</td>
-                    <td>{{ ch.username or ch.user_id }}</td>
-                    <td>{{ ch.posts_count }}</td>
-                    <td>{{ ch.clicks }}</td>
-                    <td>{{ ch.leads }}</td>
-                    <td>{{ "%.1f"|format(ch.ctr) if ch.clicks > 0 else "0" }}%</td>
-                    <td class="{% if ch.earnings > 0 %}positive{% elif ch.earnings < 0 %}negative{% endif %}">{{ "%.2f"|format(ch.earnings) }}</td>
-                    <td>{{ "%.1f"|format(ch.conversion) if ch.clicks > 0 else "0" }}%</td>
-                    <td><code>{{ ch.channel_id }}</code></td>
-                </tr>
-                {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
 
-<!-- Traffic Sources (SubID2) -->
+<!-- Traffic Sources (SubID2) (заполняется через JS) -->
 <div class="card">
-    <h2>&#x1F3AF; &#x418;&#x441;&#x442;&#x43E;&#x447;&#x43D;&#x438;&#x43A;&#x438; &#x442;&#x440;&#x430;&#x444;&#x438;&#x43A;&#x430; (SubID2) &#x2014; {{ current_period_label }}</h2>
-    <p style="color:#aaa; margin-bottom:15px; font-size:0.9em;">SubID2 &#x43E;&#x442;&#x441;&#x43B;&#x435;&#x436;&#x438;&#x432;&#x430;&#x435;&#x442; &#x43E;&#x442;&#x434;&#x435;&#x43B;&#x44C;&#x43D;&#x44B;&#x435; &#x43F;&#x43E;&#x441;&#x442;&#x44B;. &#x41F;&#x43E;&#x43A;&#x430;&#x437;&#x44B;&#x432;&#x430;&#x435;&#x442;, &#x43A;&#x430;&#x43A;&#x438;&#x435; &#x43A;&#x43E;&#x43D;&#x43A;&#x440;&#x435;&#x442;&#x43D;&#x44B;&#x435; &#x43F;&#x443;&#x431;&#x43B;&#x438;&#x43A;&#x430;&#x446;&#x438;&#x438; &#x43F;&#x440;&#x438;&#x43D;&#x43E;&#x441;&#x44F;&#x442; &#x43A;&#x43B;&#x438;&#x43A;&#x438; &#x438; &#x43B;&#x438;&#x434;&#x44B;.</p>
+    <h2>&#x1F3AF; &#x418;&#x441;&#x442;&#x43E;&#x447;&#x43D;&#x438;&#x43A;&#x438; &#x442;&#x440;&#x430;&#x444;&#x438;&#x43A;&#x430; (SubID2) &#x2014; <span id="subid2-period-label">30 &#x434;&#x43D;&#x435;&#x439;</span></h2>
+    <p style="color:#aaa; margin-bottom:15px; font-size:0.9em;">SubID2 &#x43E;&#x442;&#x441;&#x43B;&#x435;&#x436;&#x438;&#x432;&#x430;&#x435;&#x442; &#x43E;&#x442;&#x434;&#x435;&#x43B;&#x44C;&#x43D;&#x44B;&#x435; &#x43F;&#x443;&#x431;&#x43B;&#x438;&#x43A;&#x430;&#x446;&#x438;&#x438;. &#x41F;&#x43E;&#x43A;&#x430;&#x437;&#x44B;&#x432;&#x430;&#x435;&#x442;, &#x43A;&#x430;&#x43A;&#x438;&#x435; &#x43A;&#x43E;&#x43D;&#x43A;&#x440;&#x435;&#x442;&#x43D;&#x44B;&#x435; &#x43F;&#x443;&#x431;&#x43B;&#x438;&#x43A;&#x430;&#x446;&#x438;&#x438; &#x43F;&#x440;&#x438;&#x43D;&#x43E;&#x441;&#x44F;&#x442; &#x43A;&#x43B;&#x438;&#x43A;&#x438; &#x438; &#x43B;&#x438;&#x434;&#x44B;.</p>
     <div style="overflow-x:auto;">
         <table id="subid2-table">
             <thead>
@@ -204,17 +191,6 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
                 </tr>
             </thead>
             <tbody id="subid2-table-body">
-                {% for s in subid2_stats %}
-                <tr>
-                    <td><code>{{ s.subid2 }}</code></td>
-                    <td>{{ s.channel_title or s.channel_id }}</td>
-                    <td>{{ s.clicks }}</td>
-                    <td>{{ s.leads }}</td>
-                    <td>{{ "%.1f"|format(s.ctr) if s.clicks > 0 else "0" }}%</td>
-                    <td>{{ "%.2f"|format(s.earnings) }}</td>
-                    <td>{{ s.status }}</td>
-                </tr>
-                {% endfor %}
             </tbody>
         </table>
     </div>
@@ -244,24 +220,15 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
     </div>
 </div>
 
-<!-- Top Users -->
+<!-- Top Users (заполняется через JS) -->
 <div class="card">
-    <h2>&#x1F451; &#x422;&#x43E;&#x43F; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x435;&#x439; &#x43F;&#x43E; &#x434;&#x43E;&#x445;&#x43E;&#x434;&#x443; ({{ current_period_label }})</h2>
+    <h2>&#x1F451; &#x422;&#x43E;&#x43F; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x435;&#x439; &#x43F;&#x43E; &#x434;&#x43E;&#x445;&#x43E;&#x434;&#x443; (<span id="topusers-period-label">30 &#x434;&#x43D;&#x435;&#x439;</span>)</h2>
     <div style="overflow-x:auto;">
-        <table>
+        <table id="top-users-table">
             <thead>
                 <tr><th>&#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44C;</th><th>&#x420;&#x43E;&#x43B;&#x44C;</th><th>&#x414;&#x43E;&#x445;&#x43E;&#x434; (&#x20BD;)</th><th>&#x422;&#x440;&#x430;&#x43D;&#x437;&#x430;&#x43A;&#x446;&#x438;&#x439;</th><th>&#x41F;&#x43E;&#x441;&#x442;&#x43E;&#x432;</th></tr>
             </thead>
-            <tbody>
-                {% for u in top_users %}
-                <tr>
-                    <td>{{ u.username or u.user_id }}</td>
-                    <td>{{ u.role }}</td>
-                    <td class="positive">{{ "%.2f"|format(u.total_revenue) }}</td>
-                    <td>{{ u.transactions }}</td>
-                    <td>{{ u.posts_count }}</td>
-                </tr>
-                {% endfor %}
+            <tbody id="top-users-body">
             </tbody>
         </table>
     </div>
@@ -322,9 +289,67 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 
         const title = data.selected_channel_title || '&#x412;&#x441;&#x435; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x44B;';
         selectedChannelName.textContent = title;
+        const label = data.current_period_label || data.period_label || '30 &#x434;&#x43D;&#x435;&#x439;';
         chartScope.textContent = currentChannelId === 'all' || !currentChannelId
-            ? `&#x41F;&#x43E;&#x43A;&#x430;&#x437;&#x430;&#x43D;&#x44B; &#x434;&#x430;&#x43D;&#x43D;&#x44B;&#x435; &#x434;&#x43B;&#x44F; &#x432;&#x441;&#x435;&#x445; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x43E;&#x432; (${data.period_label}).`
-            : `&#x41F;&#x43E;&#x43A;&#x430;&#x437;&#x430;&#x43D;&#x44B; &#x434;&#x430;&#x43D;&#x43D;&#x44B;&#x435; &#x434;&#x43B;&#x44F; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x430;: ${title} (${data.period_label}).`;
+            ? `&#x41F;&#x43E;&#x43A;&#x430;&#x437;&#x430;&#x43D;&#x44B; &#x434;&#x430;&#x43D;&#x43D;&#x44B;&#x435; &#x434;&#x43B;&#x44F; &#x432;&#x441;&#x435;&#x445; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x43E;&#x432; (${label}).`
+            : `&#x41F;&#x43E;&#x43A;&#x430;&#x437;&#x430;&#x43D;&#x44B; &#x434;&#x430;&#x43D;&#x43D;&#x44B;&#x435; &#x434;&#x43B;&#x44F; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x430;: ${title} (${label}).`;
+
+        // &#x41E;&#x431;&#x43D;&#x43E;&#x432;&#x43B;&#x44F;&#x435;&#x43C; &#x43F;&#x43E;&#x434;&#x43F;&#x438;&#x441;&#x438; &#x43F;&#x435;&#x440;&#x438;&#x43E;&#x434;&#x43E;&#x432; &#x432; &#x442;&#x430;&#x431;&#x43B;&#x438;&#x446;&#x430;&#x445;
+        document.getElementById('channel-period-label').textContent = label;
+        document.getElementById('subid2-period-label').textContent = label;
+        document.getElementById('topusers-period-label').textContent = label;
+
+        // &#x41E;&#x431;&#x43D;&#x43E;&#x432;&#x43B;&#x44F;&#x435;&#x43C; &#x442;&#x430;&#x431;&#x43B;&#x438;&#x446;&#x443; &#x43A;&#x430;&#x43D;&#x430;&#x43B;&#x43E;&#x432;
+        const channelBody = document.getElementById('channel-table-body');
+        if (channelBody && data.channel_stats) {
+            channelBody.innerHTML = data.channel_stats.map(ch => {
+                const ctr = ch.clicks > 0 ? ch.ctr.toFixed(1) : '0';
+                const conv = ch.clicks > 0 ? ch.conversion.toFixed(1) : '0';
+                const earningsClass = ch.earnings > 0 ? 'positive' : (ch.earnings < 0 ? 'negative' : '');
+                return `<tr>
+                    <td>${ch.channel_title || ch.channel_id}</td>
+                    <td>${ch.username || ch.user_id}</td>
+                    <td>${ch.posts_count}</td>
+                    <td>${ch.clicks}</td>
+                    <td>${ch.leads}</td>
+                    <td>${ctr}%</td>
+                    <td class="${earningsClass}">${ch.earnings.toFixed(2)}</td>
+                    <td>${conv}%</td>
+                    <td><code>${ch.channel_id}</code></td>
+                </tr>`;
+            }).join('');
+        }
+
+        // &#x41E;&#x431;&#x43D;&#x43E;&#x432;&#x43B;&#x44F;&#x435;&#x43C; &#x442;&#x430;&#x431;&#x43B;&#x438;&#x446;&#x443; SubID2
+        const subid2Body = document.getElementById('subid2-table-body');
+        if (subid2Body && data.subid2_stats) {
+            subid2Body.innerHTML = data.subid2_stats.map(s => {
+                const ctr = s.clicks > 0 ? s.ctr.toFixed(1) : '0';
+                return `<tr>
+                    <td><code>${s.subid2}</code></td>
+                    <td>${s.channel_title || s.channel_id}</td>
+                    <td>${s.clicks}</td>
+                    <td>${s.leads}</td>
+                    <td>${ctr}%</td>
+                    <td>${s.earnings.toFixed(2)}</td>
+                    <td>${s.status}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // &#x41E;&#x431;&#x43D;&#x43E;&#x432;&#x43B;&#x44F;&#x435;&#x43C; &#x442;&#x430;&#x431;&#x43B;&#x438;&#x446;&#x443; &#x442;&#x43E;&#x43F;-&#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x435;&#x439;
+        const topUsersBody = document.getElementById('top-users-body');
+        if (topUsersBody && data.top_users) {
+            topUsersBody.innerHTML = data.top_users.map(u => {
+                return `<tr>
+                    <td>${u.username || u.user_id}</td>
+                    <td>${u.role}</td>
+                    <td class="positive">${u.total_revenue.toFixed(2)}</td>
+                    <td>${u.transactions}</td>
+                    <td>${u.posts_count}</td>
+                </tr>`;
+            }).join('');
+        }
 
         renderChannelSummary(data);
 

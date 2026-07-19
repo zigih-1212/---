@@ -341,6 +341,8 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
                   last_users=last_users, last_posts=last_posts,
                   channels=channels,
                   ctr_alerts=ctr_alerts,
+                  current_period_label='30 дней',
+                  period='30d',
                   active_page='dashboard')
 
 @router.get("/payouts/{request_id}/chat-data")
@@ -912,7 +914,7 @@ async def dashboard_data(
                    COUNT(DISTINCT p.id) as posts_count
             FROM admitad_transactions at
             LEFT JOIN posts p ON p.donor_post_id LIKE '%' || at.admitad_id || '%' AND p.status='published'
-            LEFT JOIN gdeslon_catalog g ON g.partner_url = p.donor_post_id
+            LEFT JOIN gdeslon_catalog g ON g.id = CAST(substr(p.donor_post_id, 9, instr(substr(p.donor_post_id, 9), '_') - 1) AS INTEGER)
             WHERE at.payment_status = 'approved'
               {date_filter_at.replace('at.time', 'at.time')}
             GROUP BY store
@@ -1015,7 +1017,6 @@ async def dashboard_data(
                 selected_channel_title = channel_id
 
         # --- 11. Статистика по SubID2 (отдельные посты) ---
-        # subid_stats не имеет subid2, поэтому клики/лиды берем из admitad_transactions
         subid2_stats = conn.execute(f"""
             SELECT 
                 p.subid2,
