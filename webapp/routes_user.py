@@ -89,12 +89,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <div id="finance-transactions" style="margin-top:20px;"></div>
     </div>
 
-    <div class="card" id="ord-section">
-        <h2>📄 Отчёт для ОРД</h2>
-        <p style="margin-bottom:10px;">Скачайте CSV-файл со всеми публикациями и количеством просмотров для подачи в ЕРИР.</p>
-        <a id="ord-report-link" href="#" class="btn">📥 Скачать отчёт (CSV)</a>
-    </div>
-
     <div class="grid">
         <div><canvas id="postsChart"></canvas></div>
         <div id="revenue-chart-container"><canvas id="revenueChart"></canvas></div>
@@ -120,7 +114,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <h2>📈 Метрики выбранного канала</h2>
         <p id="channel-summary">Выберите канал выше, чтобы увидеть подробную статистику.</p>
     </div>
-    <div id="recent-posts-container"></div>
 
     <div class="card">
         <h2>🏆 Топ-5 товаров по публикациям</h2>
@@ -139,15 +132,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     let currentPeriod = '30d';
     let postsChart, revenueChart, clicksChart, storeChart;
 
-    const userRole = '{{ role }}';
-    const showOrdSections = userRole !== 'saas' && userRole !== 'blogger';
     const channelSelect = document.getElementById('channel-select');
-
-    document.getElementById('ord-report-link').href = `/my-stats/ord-report?token=${token}`;
-    if (!showOrdSections) {
-        const ordSection = document.getElementById('ord-section');
-        if (ordSection) ordSection.style.display = 'none';
-    }
 
     function populateChannelOptions(channels) {
         if (!channelSelect || !channels) return;
@@ -374,49 +359,6 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
             });
         } else {
             topList.innerHTML = '<li>Нет данных</li>';
-        }
-
-        if (showOrdSections) {
-            const postsTableBody = document.querySelector('#recent-posts-table tbody');
-            if (!postsTableBody) {
-                const container = document.getElementById('recent-posts-container');
-                if (container) {
-                    const newCard = document.createElement('div');
-                    newCard.className = 'card';
-                    newCard.id = 'recent-posts-card';
-                    newCard.innerHTML = `
-                        <h2>📋 Последние посты для ОРД</h2>
-                        <div style="overflow-x: auto;">
-                            <table id="recent-posts-table">
-                                <thead>
-                                    <tr><th>ERID</th><th>Ссылка</th><th>Показы</th><th>Дата</th></tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
-                    `;
-                    container.appendChild(newCard);
-                }
-            }
-
-            const postsTable = document.querySelector('#recent-posts-table tbody');
-            if (postsTable) {
-                postsTable.innerHTML = '';
-                if (data.recent_posts && data.recent_posts.length > 0) {
-                    data.recent_posts.forEach(p => {
-                        const tr = document.createElement('tr');
-                        tr.innerHTML = `
-                            <td><code style="font-size:12px;">${p.erid || '—'}</code></td>
-                            <td><a href="${p.link || '#'}" target="_blank" style="color: #4d6bfe;">Перейти</a></td>
-                            <td>${p.views || 0}</td>
-                            <td>${p.date ? new Date(p.date).toLocaleDateString('ru-RU') : '—'}</td>
-                        `;
-                        postsTable.appendChild(tr);
-                    });
-                } else {
-                    postsTable.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#888;">Нет постов с ERID</td></tr>';
-                }
-            }
         }
     }
 
@@ -863,7 +805,6 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
         channel_rows = conn.execute("""SELECT c.channel_title, c.channel_id, COUNT(p.id) as posts_cnt, COALESCE(s.clicks_count, 0) as clicks, COALESCE(s.leads_count, 0) as leads, COALESCE(s.earnings_approved, 0) as earnings FROM channels c LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.user_id = c.user_id AND p.status='published' AND p.published_at >= ? LEFT JOIN subid_stats s ON s.subid1 = c.sub_id WHERE c.user_id = ? AND c.is_active = 1 GROUP BY c.channel_id ORDER BY earnings DESC""", (since, user_id)).fetchall()
         top_products = conn.execute("""SELECT g.title, COUNT(*) as cnt FROM posts p JOIN gdeslon_catalog g ON p.donor_post_id LIKE 'admitad_' || g.id || '_%' WHERE p.user_id = ? AND p.status='published' AND p.published_at >= ? GROUP BY g.title ORDER BY cnt DESC LIMIT 5""", (user_id, since)).fetchall()
         transactions = conn.execute("""SELECT payment_sum, currency, payment_status, order_id, action, time, decline_reason FROM admitad_transactions WHERE user_id = ? ORDER BY time DESC LIMIT 10""", (user_id,)).fetchall()
-        recent_posts = conn.execute("""SELECT erid, direct_link, views_count, published_at FROM posts WHERE user_id = ? AND status = 'published' AND erid IS NOT NULL AND erid != '' ORDER BY published_at DESC LIMIT 20""", (user_id,)).fetchall()
         return JSONResponse({
             "posts_labels": [r["day"] for r in post_rows],
             "posts_counts": [r["count"] for r in post_rows],
@@ -872,7 +813,6 @@ async def user_stats_data(token: str = Query(...), period: str = Query("30d")):
             "clicks_labels": all_days,
             "clicks_counts": clicks_counts,
             "conversion_labels": all_days,
-            "recent_posts": [{"erid": p["erid"],"link": p["direct_link"],"views": p["views_count"] or 0,"date": p["published_at"]} for p in recent_posts],
             "conversion_values": conversion_values,
             "store_labels": [r["source"] or "Без названия" for r in store_rows],
             "store_values": [r["cnt"] for r in store_rows],
@@ -1270,11 +1210,11 @@ async def publish_post(request: Request, token: str = Form(...), product_id: int
     except Exception as e:
         logger.error(f"Ошибка в publish_post: {e}")
         return JSONResponse({"ok": False, "error": f"Внутренняя ошибка: {str(e)}"})
+
 @router.get("/ord-report")
 async def download_ord_report(token: str = Query(...), request: Request = None):
     user_id = get_user_id_from_token(token)
     
-    # Логирование для отладки
     logger.info(f"Запрос отчёта ОРД для user_id={user_id}")
     
     # Сбор просмотров из Telegram
@@ -1294,18 +1234,38 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
     finally:
         conn.close()
 
-    if not posts:
-        # Возвращаем Excel только с заголовками, но с уведомлением
-        output = BytesIO()
-        workbook = xlsxwriter.Workbook(output, {'in_memory': True})
-        worksheet = workbook.add_worksheet("ORD")
-        headers = ["erid", "Площадка", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания"]
-        for col, header in enumerate(headers):
-            worksheet.write(0, col, header)
-        worksheet.set_column(0, 0, 30)
-        workbook.close()
-        output.seek(0)
-    filename = f"VK_ORD_Report_{user_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    # Всегда создаём Excel с данными (или пустыми заголовками)
+    output = BytesIO()
+    workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+    worksheet = workbook.add_worksheet("ORD")
+    
+    headers = ["ERID", "Площадка (Telegram)", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания"]
+    for col, header in enumerate(headers):
+        worksheet.write(0, col, header)
+    
+    # Формат для дат
+    date_format = workbook.add_format({'num_format': 'dd.mm.yyyy'})
+    
+    for row_idx, post in enumerate(posts, start=1):
+        pub_date = datetime.fromisoformat(post["published_at"]) if post["published_at"] else datetime.now()
+        worksheet.write(row_idx, 0, post["erid"] or "")
+        worksheet.write(row_idx, 1, "Telegram")
+        worksheet.write(row_idx, 2, "Канал")
+        worksheet.write(row_idx, 3, post["views_count"] or 0)
+        worksheet.write(row_idx, 4, 0)  # переходы — нет точных данных
+        worksheet.write(row_idx, 5, 0)  # сумма — не применимо
+        worksheet.write_datetime(row_idx, 6, pub_date, date_format)
+        worksheet.write_datetime(row_idx, 7, pub_date, date_format)
+    
+    worksheet.set_column(0, 0, 30)
+    worksheet.set_column(1, 2, 18)
+    worksheet.set_column(3, 5, 20)
+    worksheet.set_column(6, 7, 14)
+    
+    workbook.close()
+    output.seek(0)
+    
+    filename = f"AutoPost_ORD_Report_{user_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
