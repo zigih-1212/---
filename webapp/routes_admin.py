@@ -607,33 +607,104 @@ async def bulk_actions_form(request: Request, _: int = Depends(admin_required)):
 
 @router.post("/bulk-actions/execute", response_class=HTMLResponse)
 async def bulk_actions_execute(request: Request, group: str = Form(...), action: str = Form(...),
-                               value: int = Form(0), _: int = Depends(admin_required)):
+                               value: float = Form(0), _: int = Depends(admin_required)):
     conn = get_db()
-    cond = ""
-    if group == "saas": cond = "WHERE role='saas'"
-    elif group == "blogger": cond = "WHERE role='blogger'"
-    elif group == "active": cond = "WHERE is_active=1"
-    elif group == "banned": cond = "WHERE is_active=0"
-    elif group == "expired": cond = "WHERE subscription_until < datetime('now')"
-    if action == "activate":
-        conn.execute(f"UPDATE users SET is_active=1 {cond}")
-    elif action == "deactivate":
-        conn.execute(f"UPDATE users SET is_active=0 {cond}")
-    elif action == "reset_balance":
-        if value and value > 0:
-            conn.execute(f"UPDATE users SET balance_available = ? {cond}", (value,))
-        else:
-            conn.execute(f"UPDATE users SET balance_available = 0 {cond}")
-    elif action == "add_beta":
-        conn.execute(f"UPDATE users SET beta_tester = 1 {cond}")
-    elif action == "remove_beta":
-        conn.execute(f"UPDATE users SET beta_tester = 0 {cond}")
-    elif action == "delete":
-        conn.execute(f"DELETE FROM users {cond}")
-    conn.commit()
-    count = conn.total_changes
-    conn.close()
+    try:
+        cond = ""
+        if group == "saas": cond = "WHERE role='saas'"
+        elif group == "blogger": cond = "WHERE role='blogger'"
+        elif group == "active": cond = "WHERE is_active=1"
+        elif group == "banned": cond = "WHERE is_active=0"
+        elif group == "with_balance": cond = "WHERE balance_available > 0"
+        elif group == "no_posts": cond = f"WHERE user_id NOT IN (SELECT DISTINCT user_id FROM posts WHERE status='published')"
+        elif group == "beta": cond = "WHERE beta_tester=1"
+
+        if action == "activate":
+            conn.execute(f"UPDATE users SET is_active=1 {cond}")
+        elif action == "deactivate":
+            conn.execute(f"UPDATE users SET is_active=0 {cond}")
+        elif action == "reset_balance":
+            conn.execute(f"UPDATE users SET balance_available=0, balance_pending=0 {cond}")
+        elif action == "add_balance":
+            if value > 0:
+                conn.execute(f"UPDATE users SET balance_available = balance_available + ? {cond}", (value,))
+        elif action == "set_commission":
+            if 0 < value <= 1:
+                conn.execute(f"UPDATE users SET commission_rate = ? {cond}", (value,))
+        elif action == "add_beta":
+            conn.execute(f"UPDATE users SET beta_tester=1 {cond}")
+        elif action == "remove_beta":
+            conn.execute(f"UPDATE users SET beta_tester=0 {cond}")
+        elif action == "delete":
+            conn.execute(f"DELETE FROM users {cond}")
+        conn.commit()
+        count = conn.total_changes
+    finally:
+        conn.close()
     return render("admin_bulk_actions.html", message=f"Выполнено. Затронуто строк: {count}", active_page='bulk')
+
+@router.post("/bulk-actions/send-message", response_class=HTMLResponse)
+async def bulk_send_message(request: Request, group: str = Form(...), text: str = Form(...),
+                            _: int = Depends(admin_required)):
+    bot = request.app.state.bot
+    conn = get_db()
+    try:
+        cond = ""
+        if group == "saas": cond = "WHERE role='saas'"
+        elif group == "blogger": cond = "WHERE role='blogger'"
+        elif group == "active": cond = "WHERE is_active=1"
+        elif group == "with_balance": cond = "WHERE balance_available > 0"
+        elif group == "no_posts": cond = f"WHERE user_id NOT IN (SELECT DISTINCT user_id FROM posts WHERE status='published')"
+        elif group == "beta": cond = "WHERE beta_tester=1"
+
+        users = conn.execute(f"SELECT user_id FROM users {cond}").fetchall()
+        sent = 0
+        for u in users:
+            try:
+                await bot.send_message(chat_id=u["user_id"], text=text)
+                sent += 1
+            except Exception:
+                pass
+    finally:
+        conn.close()
+    return render("admin_bulk_actions.html", message=f"Сообщение отправлено {sent} из {len(users)} пользователям", active_page='bulk')
+
+@router.get("/bulk-actions/export-csv")
+async def bulk_export_csv(group: str = Query("all"), _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        cond = ""
+        if group == "saas": cond = "WHERE role='saas'"
+        elif group == "blogger": cond = "WHERE role='blogger'"
+        elif group == "active": cond = "WHERE is_active=1"
+        elif group == "banned": cond = "WHERE is_active=0"
+        elif group == "with_balance": cond = "WHERE balance_available > 0"
+        elif group == "no_posts": cond = f"WHERE user_id NOT IN (SELECT DISTINCT user_id FROM posts WHERE status='published')"
+        elif group == "beta": cond = "WHERE beta_tester=1"
+
+        users = conn.execute(f"""
+            SELECT user_id, username, role, is_active, balance_available, balance_pending,
+                   commission_rate, beta_tester, created_at
+            FROM users {cond}
+            ORDER BY user_id
+        """).fetchall()
+    finally:
+        conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["user_id", "username", "role", "active", "balance_available", "balance_pending",
+                      "commission_rate", "beta_tester", "created_at"])
+    for u in users:
+        writer.writerow([u["user_id"], u["username"] or "", u["role"], u["is_active"],
+                         u["balance_available"], u["balance_pending"], u["commission_rate"],
+                         u["beta_tester"], u["created_at"]])
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=users_{group}_{datetime.now().strftime('%Y%m%d')}.csv"}
+    )
 
 # ---------- Глобальные настройки ----------
 @router.get("/settings-edit", response_class=HTMLResponse)

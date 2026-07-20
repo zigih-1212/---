@@ -704,7 +704,10 @@ BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
 {% block title %}&#x41C;&#x430;&#x441;&#x441;&#x43E;&#x432;&#x44B;&#x435; &#x434;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x44F;{% endblock %}
 {% block content %}
 <h1>&#x1F465; &#x41C;&#x430;&#x441;&#x441;&#x43E;&#x432;&#x44B;&#x435; &#x434;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x44F;</h1>
+
+<!-- Основные массовые действия -->
 <div class="card">
+    <h2>&#x2699;&#xFE0F; &#x414;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x44F; &#x441; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44F;&#x43C;&#x438;</h2>
     <form method="post" action="/admin/bulk-actions/execute">
         <label>&#x413;&#x440;&#x443;&#x43F;&#x43F;&#x430; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x435;&#x439;:</label>
         <select name="group">
@@ -713,41 +716,87 @@ BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
             <option value="blogger">&#x411;&#x43B;&#x43E;&#x433;&#x435;&#x440;&#x44B;</option>
             <option value="active">&#x410;&#x43A;&#x442;&#x438;&#x432;&#x43D;&#x44B;&#x435;</option>
             <option value="banned">&#x417;&#x430;&#x431;&#x430;&#x43D;&#x435;&#x43D;&#x43D;&#x44B;&#x435;</option>
-            <option value="expired">&#x41F;&#x440;&#x43E;&#x441;&#x440;&#x43E;&#x447;&#x435;&#x43D;&#x43D;&#x44B;&#x435;</option>
+            <option value="with_balance">&#x421; &#x431;&#x430;&#x43B;&#x430;&#x43D;&#x441;&#x43E;&#x43C;</option>
+            <option value="no_posts">&#x411;&#x435;&#x437; &#x43F;&#x43E;&#x441;&#x442;&#x43E;&#x432;</option>
+            <option value="beta">&#x411;&#x435;&#x442;&#x430;-&#x442;&#x435;&#x441;&#x442;&#x435;&#x440;&#x44B;</option>
         </select>
         <input type="hidden" name="action" id="bulk-action-input" value="activate">
         <div style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:10px; margin-top:10px;">
             <button type="button" onclick="setBulkAction('activate')">&#x410;&#x43A;&#x442;&#x438;&#x432;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C;</button>
             <button type="button" onclick="setBulkAction('deactivate')">&#x414;&#x435;&#x430;&#x43A;&#x442;&#x438;&#x432;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C;</button>
             <button type="button" onclick="setBulkAction('reset_balance')">&#x41E;&#x431;&#x43D;&#x443;&#x43B;&#x438;&#x442;&#x44C; &#x431;&#x430;&#x43B;&#x430;&#x43D;&#x441;</button>
+            <button type="button" onclick="setBulkAction('add_balance')">&#x41D;&#x430;&#x447;&#x438;&#x441;&#x43B;&#x438;&#x442;&#x44C; &#x431;&#x430;&#x43B;&#x430;&#x43D;&#x441;</button>
+            <button type="button" onclick="setBulkAction('set_commission')">&#x423;&#x441;&#x442;&#x430;&#x43D;&#x43E;&#x432;&#x438;&#x442;&#x44C; &#x43A;&#x43E;&#x43C;&#x438;&#x441;&#x441;&#x438;&#x44E;</button>
             <button type="button" onclick="setBulkAction('add_beta')">&#x414;&#x43E;&#x431;&#x430;&#x432;&#x438;&#x442;&#x44C; &#x432; &#x431;&#x435;&#x442;&#x430;</button>
-            <button type="button" onclick="setBulkAction('remove_beta')">&#x423;&#x431;&#x440;&#x430;&#x442;&#x44C; &#x438;&#x437; &#x431;&#x435;&#x442;&#x430;</button>
+            <button type="button" onclick="setBulkAction('remove_beta')">&#x423;&#x431;&#x440;&#x430;&#x442;&#x438;&#x442;&#x44C; &#x438;&#x437; &#x431;&#x435;&#x442;&#x430;</button>
             <button type="button" onclick="setBulkAction('delete')" style="background:#c62828;">&#x423;&#x434;&#x430;&#x43B;&#x438;&#x442;&#x44C;</button>
         </div>
         <p style="color:#aaa; font-size:0.95em;">&#x422;&#x435;&#x43A;&#x443;&#x449;&#x430;&#x44F; &#x43E;&#x43F;&#x435;&#x440;&#x430;&#x446;&#x438;&#x44F;: <span id="current-bulk-action">&#x410;&#x43A;&#x442;&#x438;&#x432;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C;</span></p>
-        <label>&#x417;&#x43D;&#x430;&#x447;&#x435;&#x43D;&#x438;&#x435; (&#x434;&#x43B;&#x44F; reset_balance):</label>
-        <input name="value" value="0" type="number">
+        <div id="value-section">
+            <label>&#x417;&#x43D;&#x430;&#x447;&#x435;&#x43D;&#x438;&#x435; (&#x441;&#x443;&#x43C;&#x43BC;&#x430; &#x434;&#x43B;&#x44F; &#x431;&#x430;&#x43B;&#x430;&#x43D;&#x441;&#x430;, 0&#x2013;1 &#x434;&#x43B;&#x44F; &#x43A;&#x43E;&#x43C;&#x438;&#x441;&#x441;&#x438;&#x438;):</label>
+            <input name="value" id="bulk-value-input" value="0" type="number" step="0.01">
+        </div>
         <button type="submit" style="margin-top:10px;">&#x412;&#x44B;&#x43F;&#x43E;&#x43B;&#x43D;&#x438;&#x442;&#x44C;</button>
-        <script>
-            function setBulkAction(action) {
-                const actionInput = document.getElementById('bulk-action-input');
-                const current = document.getElementById('current-bulk-action');
-                actionInput.value = action;
-                const labels = {
-                    activate: '&#x410;&#x43A;&#x442;&#x438;&#x432;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C;',
-                    deactivate: '&#x414;&#x435;&#x430;&#x43A;&#x442;&#x438;&#x432;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C;',
-                    reset_balance: '&#x41E;&#x431;&#x43D;&#x443;&#x43B;&#x438;&#x442;&#x44C; &#x431;&#x430;&#x43B;&#x430;&#x43D;&#x441;',
-                    add_beta: '&#x414;&#x43E;&#x431;&#x430;&#x432;&#x438;&#x442;&#x44C; &#x432; &#x431;&#x435;&#x442;&#x430;',
-                    remove_beta: '&#x423;&#x431;&#x440;&#x430;&#x442;&#x44C; &#x438;&#x437; &#x431;&#x435;&#x442;&#x430;',
-                    delete: '&#x423;&#x434;&#x430;&#x43B;&#x438;&#x442;&#x44C;'
-                };
-                current.textContent = labels[action] || action;
-            }
-            setBulkAction('activate');
-        </script>
     </form>
-    {% if message %}<p class="success">{{ message }}</p>{% endif %}
 </div>
+
+<!-- Отправка сообщения группе -->
+<div class="card">
+    <h2>&#x1F4AC; &#x41E;&#x442;&#x43F;&#x440;&#x430;&#x432;&#x438;&#x442;&#x44C; &#x441;&#x43E;&#x43E;&#x431;&#x449;&#x435;&#x43D;&#x438;&#x435; &#x433;&#x440;&#x443;&#x43F;&#x43F;&#x435;</h2>
+    <form method="post" action="/admin/bulk-actions/send-message">
+        <label>&#x413;&#x440;&#x443;&#x43F;&#x43F;&#x430;:</label>
+        <select name="group">
+            <option value="all">&#x412;&#x441;&#x435;</option>
+            <option value="saas">SaaS</option>
+            <option value="blogger">&#x411;&#x43B;&#x43E;&#x433;&#x435;&#x440;&#x44B;</option>
+            <option value="active">&#x410;&#x43A;&#x442;&#x438;&#x432;&#x43D;&#x44B;&#x435;</option>
+            <option value="with_balance">&#x421; &#x431;&#x430;&#x43B;&#x430;&#x43D;&#x441;&#x43E;&#x43C;</option>
+            <option value="no_posts">&#x411;&#x435;&#x437; &#x43F;&#x43E;&#x441;&#x442;&#x43E;&#x432;</option>
+            <option value="beta">&#x411;&#x435;&#x442;&#x430;-&#x442;&#x435;&#x441;&#x442;&#x435;&#x440;&#x44B;</option>
+        </select>
+        <label>&#x422;&#x435;&#x43A;&#x441;&#x442; &#x441;&#x43E;&#x43E;&#x431;&#x449;&#x435;&#x43D;&#x438;&#x44F;:</label>
+        <textarea name="text" rows="3" style="width:100%; background:#1a1a2e; color:#fff; border:1px solid #333; border-radius:6px; padding:8px;" placeholder="Введите сообщение..."></textarea>
+        <button type="submit" style="margin-top:10px;">&#x1F4E4; &#x41E;&#x442;&#x43F;&#x440;&#x430;&#x432;&#x438;&#x442;&#x44C;</button>
+    </form>
+</div>
+
+<!-- Экспорт CSV -->
+<div class="card">
+    <h2>&#x1F4E5; &#x42D;&#x43A;&#x441;&#x43F;&#x43E;&#x440;&#x442; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x435;&#x439; (CSV)</h2>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="/admin/bulk-actions/export-csv?group=all" class="button">&#x412;&#x441;&#x435;</a>
+        <a href="/admin/bulk-actions/export-csv?group=saas" class="button">SaaS</a>
+        <a href="/admin/bulk-actions/export-csv?group=blogger" class="button">&#x411;&#x43B;&#x43E;&#x433;&#x435;&#x440;&#x44B;</a>
+        <a href="/admin/bulk-actions/export-csv?group=active" class="button">&#x410;&#x43A;&#x442;&#x438;&#x432;&#x43D;&#x44B;&#x435;</a>
+        <a href="/admin/bulk-actions/export-csv?group=with_balance" class="button">&#x421; &#x431;&#x430;&#x43B;&#x430;&#x43D;&#x441;&#x43E;&#x43C;</a>
+        <a href="/admin/bulk-actions/export-csv?group=no_posts" class="button">&#x411;&#x435;&#x437; &#x43F;&#x43E;&#x441;&#x442;&#x43E;&#x432;</a>
+        <a href="/admin/bulk-actions/export-csv?group=beta" class="button">&#x411;&#x435;&#x442;&#x430;</a>
+    </div>
+</div>
+
+{% if message %}<div class="card" style="border:1px solid #4caf50;"><p style="color:#4caf50;">{{ message }}</p></div>{% endif %}
+
+<script>
+function setBulkAction(action) {
+    const actionInput = document.getElementById('bulk-action-input');
+    const current = document.getElementById('current-bulk-action');
+    const valueSection = document.getElementById('value-section');
+    actionInput.value = action;
+    const labels = {
+        activate: 'Активировать',
+        deactivate: 'Деактивировать',
+        reset_balance: 'Обнулить баланс',
+        add_balance: 'Начислить баланс',
+        set_commission: 'Установить комиссию',
+        add_beta: 'Добавить в бета',
+        remove_beta: 'Убрать из бета',
+        delete: 'Удалить'
+    };
+    current.textContent = labels[action] || action;
+    valueSection.style.display = (action === 'add_balance' || action === 'set_commission') ? 'block' : 'none';
+}
+setBulkAction('activate');
+</script>
 {% endblock %}'''
 
 # ---------- SETTINGS ----------
