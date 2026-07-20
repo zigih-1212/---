@@ -119,8 +119,9 @@ async def get_recent_posts(bot: Bot, channel_id: str, limit: int = 5) -> List[Di
 # =============================================================================
 async def publish_test_post(bot: Bot, channel_id: str, text: str,
                           photo_url: Optional[str] = None,
-                          check_permissions: bool = True) -> Optional[int]:
-    """Publishes post to channel with optional permission check.
+                          check_permissions: bool = True,
+                          max_retries: int = 3) -> Optional[int]:
+    """Publishes post to channel with retries and enhanced error handling.
     
     Args:
         bot: Bot instance
@@ -128,7 +129,8 @@ async def publish_test_post(bot: Bot, channel_id: str, text: str,
         text: Post text
         photo_url: Optional photo URL
         check_permissions: Verify bot has posting rights
-    
+        max_retries: Maximum attempts to publish
+        
     Returns:
         message_id if successful, None otherwise
     """
@@ -141,6 +143,32 @@ async def publish_test_post(bot: Bot, channel_id: str, text: str,
         except TelegramAPIError as e:
             logger.error(f"Permission check failed for {channel_id}: {e}")
             return None
+
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            from aiogram.enums import ParseMode
+            if photo_url:
+                msg = await bot.send_photo(
+                    chat_id=channel_id,
+                    photo=photo_url,
+                    caption=text[:1024],  # Telegram caption limit
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                msg = await bot.send_message(
+                    chat_id=channel_id,
+                    text=text,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=False
+                )
+            logger.info(f"Successfully published to {channel_id} (attempt {attempt})")
+            return msg.message_id
+        except TelegramAPIError as e:
+            last_error = str(e)
+            logger.warning(f"Publish attempt {attempt} failed for {channel_id}: {e}")
+            if attempt < max_retries:
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
     """
     Публикует пост в канал (требует админских прав).
     Возвращает message_id или None при ошибке.

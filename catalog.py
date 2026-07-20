@@ -48,33 +48,44 @@ def extract_erid(url: str) -> str | None:
     return parsed.get('erid', [None])[0]
 
 async def fetch_products(city_key: str, limit: int = 5) -> list[dict]:
-    """Возвращает список товаров (до limit) в виде словарей {name, price, url, erid}"""
+    """Fetch products from catalog with improved error handling and validation.
+    
+    Returns:
+        List of product dicts with keys: name, price, url, erid, image (if available)
+    """
     feed_url = get_feed_url(city_key)
     parser = XMLPullParser(['end'])
     products = []
+    
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             async with client.stream('GET', feed_url) as resp:
                 if resp.status_code != 200:
+                    logger.error(f"Failed to fetch catalog {city_key}. Status: {resp.status_code}")
                     return []
+                
                 async for chunk in resp.aiter_bytes():
-                    parser.feed(chunk)
-                    for event, elem in parser.read_events():
-                        if elem.tag == 'offer':
-                            name = elem.findtext('name', '')
-                            price = elem.findtext('price', '')
-                            url = elem.findtext('url', '')
-                            erid = extract_erid(url)
-                            products.append({
-                                'name': name,
-                                'price': price,
-                                'url': url,
-                                'erid': erid
-                            })
-                            elem.clear()
-                            if len(products) >= limit:
-                                return products
-        return products
+                    try:
+                        parser.feed(chunk)
+                        for event, elem in parser.read_events():
+                            if elem.tag == 'offer' and len(products) < limit:
+                                product = {
+                                    'name': elem.findtext('name', '').strip(),
+                                    'price': float(elem.findtext('price', '0')),
+                                    'url': elem.findtext('url', '').strip(),
+                                    'erid': extract_erid(elem.findtext('url', '')),
+                                    'image': elem.findtext('picture', '').strip()
+                                }
+                                # Validate required fields
+                                if product['name'] and product['url'] and product['erid']:
+                                    products.append(product)
+                                elem.clear()
+                    except Exception as parse_error:
+                        logger.warning(f"XML parse error: {parse_error}")
+                        continue
+                
+                logger.info(f"Fetched {len(products)} products for {city_key}")
+                return products
     except Exception as e:
-        print(f"[Catalog Error] {e}")
+        logger.error(f"Catalog fetch failed for {city_key}: {str(e)}")
         return []
