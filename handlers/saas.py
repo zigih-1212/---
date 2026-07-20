@@ -23,7 +23,7 @@ from services.admitad import get_random_promocode
 from states import SaasStates, PaymentFSM, PayoutStates, TaxStates
 from helpers import generate_success_text, show_user_cabinet, open_saas_settings
 from config import MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
-from keyboards.saas import open_saas_settings
+from helpers import open_saas_settings
 
 logger = logging.getLogger("autopost_bot.saas")
 
