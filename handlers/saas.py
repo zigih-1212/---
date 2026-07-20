@@ -21,7 +21,7 @@ from keyboards.saas import kb_cabinet_menu
 from services.text_rewriter import generate_post_text
 from services.admitad import get_random_promocode
 from states import SaasStates, PaymentFSM, PayoutStates, TaxStates
-from helpers import generate_success_text, show_user_cabinet
+from helpers import generate_success_text, show_user_cabinet, show_user_cabinet
 from config import MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
 from keyboards.saas import open_saas_settings
 
@@ -75,7 +75,7 @@ async def cb_stores(callback: CallbackQuery):
             text=f"{emoji} {store['name']}",
             callback_data=f"store_toggle:{store['id']}"
         )])
-    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
+    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data=__CABINET_OPEN__)])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
@@ -217,7 +217,7 @@ async def process_promocode_input(message: Message, state: FSMContext):
                 text=ch["channel_title"] or ch["channel_id"],
                 callback_data=f"promo_channel:{ch['channel_id']}"
             )])
-        kb_rows.append([InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")])
+        kb_rows.append([InlineKeyboardButton(text="🔙 Отмена", callback_data=__CABINET_OPEN__)])
         await message.answer(
             "🎯 Выберите канал для активации промокода:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
@@ -865,7 +865,7 @@ async def cb_discount_filter(callback: CallbackQuery):
         [InlineKeyboardButton(text="от 20%", callback_data="discount_set:20"),
          InlineKeyboardButton(text="от 30%", callback_data="discount_set:30")],
         [InlineKeyboardButton(text="от 50%", callback_data="discount_set:50")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+        [InlineKeyboardButton(text="🔙 Назад", callback_data=__CABINET_OPEN__)]
     ])
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
@@ -974,7 +974,7 @@ async def cb_finance(callback: CallbackQuery):
         else:
             kb_buttons.append([InlineKeyboardButton(text="❌ Недостаточно средств для вывода", callback_data="none")])
     kb_buttons.append([InlineKeyboardButton(text="📢 Поделиться успехом", callback_data="share_success")])
-    kb_buttons.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")])
+    kb_buttons.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data=__CABINET_OPEN__)])
 
     try:
         await callback.message.edit_text(full_text, parse_mode=ParseMode.HTML,
@@ -1159,11 +1159,11 @@ async def cb_menu_oferta(callback: CallbackQuery):
     if not accepted:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✅ Принимаю", callback_data="oferta:accept")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+            [InlineKeyboardButton(text="🔙 Назад", callback_data=__CABINET_OPEN__)]
         ])
     else:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+            [InlineKeyboardButton(text="🔙 Назад", callback_data=__CABINET_OPEN__)]
         ])
 
     await callback.message.edit_text(text_oferta, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -1232,7 +1232,7 @@ async def cb_change_tax_status(callback: CallbackQuery, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🧾 Я Самозанятый / ИП", callback_data="tax:business")],
         [InlineKeyboardButton(text="👤 Обычное физлицо", callback_data="tax:individual")],
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data=__CABINET_OPEN__)]
     ])
     await callback.message.edit_text(
         f"Ваш текущий налоговый статус: <b>{current_text}</b>\n\n"
