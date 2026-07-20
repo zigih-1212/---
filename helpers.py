@@ -284,3 +284,187 @@ async def collect_views_for_user(user_id: int, bot):
         logger.error(f"Ошибка в collect_views_for_user: {e}")
     finally:
         conn.close()
+
+# ===== ВЫНЕСЕННЫЕ ФУНКЦИИ ИЗ main.py =====
+from aiogram.types import Message
+from aiogram.enums import ParseMode
+from keyboards.saas import kb_cabinet_menu
+from services.db import get_db
+from datetime import datetime, timezone, timedelta
+from config import BOT_USERNAME
+
+async def show_user_cabinet(message: Message, user_id: int = None):
+    """Отображает личный кабинет пользователя."""
+    if user_id is None:
+        user_id = message.from_user.id
+
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT role, subscription_until, username, balance_pending, balance_available, oferta_accepted, tax_status "
+            "FROM users WHERE user_id=?",
+            (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not user:
+        await message.answer("Пожалуйста, начните с команды /start")
+        return
+
+    role = user["role"]
+
+    # Если оферта не принята – показываем только оферту
+    if not user["oferta_accepted"]:
+        privacy_link = "https://teletype.in/@miliron/yYN0SEGfm5l"
+        
+        if role == "saas":
+            text_oferta = (
+                "📜 <b>Публичная оферта (SaaS-клиент)</b>\n\n"
+                "Нажимая «Принимаю», вы соглашаетесь с условиями Соглашения и Политикой обработки персональных данных.\n\n"
+                "<b>1. Статус сторон</b>\n"
+                "Сервис предоставляет исключительно <b>Технический инструмент (ПО)</b> для автоматизации публикаций. "
+                "Пользователь является самостоятельным Рекламораспространителем.\n\n"
+                "<b>2. Финансовая модель и Учёт</b>\n"
+                "• Доход от заказов распределяется: 70% – Пользователю, 30% – Сервису.\n"
+                "• Данные о заказах поступают из CPA-сети Admitad по вашему уникальному SubID.\n"
+                "• «В ожидании» – заказы на проверке у рекламодателя (30–90 дней).\n"
+                "• «Доступно к выводу» – подтверждённые заказы.\n\n"
+                "<b>3. Трансфер средств и Налоги</b>\n"
+                "Вывод средств доступен только пользователям со статусом Самозанятого или ИП. "
+                "Сервис не является налоговым агентом. Переводы ограничены суммами, реально полученными Сервисом от CPA-сети.\n"
+                "⚠️ В течение 24 часов после получения средств Пользователь обязан предоставить "
+                "<b>официальную ссылку на чек</b> из сервиса «Мой Налог». При непредставлении чека аккаунт блокируется.\n\n"
+                "<b>4. Маркировка рекламы (ФЗ №38)</b>\n"
+                "Бот автоматически подставляет токен (erid), однако <b>вся юридическая ответственность</b> за подачу "
+                "статистики показов в ОРД лежит исключительно на Пользователе. Сервис отчеты за Пользователя не сдает.\n\n"
+                "<b>5. Реферальная программа</b>\n"
+                "Приглашая других пользователей, вы получаете 10% от суммы их чистого заработка (удерживается из дохода реферала).\n\n"
+                "<b>6. Запрещено (Фрод)</b>\n"
+                "Спам, накрутка, самовыкупы, мотивированный трафик, размещение ссылок вне заявленных каналов. "
+                "При подтверждении фрода со стороны CPA-сети баланс аннулируется без права на выплату."
+            )
+        else:  # blogger
+            text_oferta = (
+                "📜 <b>Публичная оферта (Блогер / Партнёр)</b>\n\n"
+                "Нажимая «Принимаю», вы соглашаетесь с условиями Соглашения и Политикой обработки персональных данных.\n\n"
+                "<b>1. Статус сторон</b>\n"
+                "Сервис предоставляет исключительно <b>Технический инструмент (ПО)</b> для автоматизации публикаций. "
+                "Пользователь является самостоятельным Рекламораспространителем.\n\n"
+                "<b>2. Финансовая модель и Учёт</b>\n"
+                "• Доход распределяется: 70% – Блогеру, 30% – Сервису.\n"
+                "• Единственный источник данных о заказах – статистика CPA-сети Admitad по вашему SubID.\n"
+                "• «В ожидании» – заказы на верификации (30–90 дней).\n"
+                "• «Доступно к выводу» – фактически оплаченные заказы (минимум 3000 ₽).\n\n"
+                "<b>3. Трансфер средств и Налоги</b>\n"
+                "Вывод средств доступен только Самозанятым или ИП. Сервис не является вашим налоговым агентом.\n"
+                "⚠️ Обязательным условием является предоставление <b>официальной ссылки на чек</b> "
+                "из приложения «Мой Налог» в течение 24 часов после перевода. В случае нарушения Сервис вправе заблокировать аккаунт.\n\n"
+                "<b>4. Маркировка рекламы (ФЗ №38)</b>\n"
+                "Бот вшивает токен (erid), но <b>полная юридическая ответственность</b> за ежемесячное "
+                "предоставление статистики в ОРД лежит на Блогере. Сервис лишь помогает собирать сырые данные.\n\n"
+                "<b>5. Реферальная программа</b>\n"
+                "Приглашая блогеров, вы получаете 10% от их чистого заработка (удерживается из дохода привлеченного блогера).\n\n"
+                "<b>6. Запрещенный трафик</b>\n"
+                "Спам, клик-фрод, мотивированный трафик, брендовая реклама. При блокировке аккаунта в CPA-сети "
+                "из-за фрода, баланс нарушителя аннулируется."
+            )
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Политика конф. (ФЗ-152)", url=privacy_link)],
+            [InlineKeyboardButton(text="✅ Принимаю условия", callback_data="oferta:accept")],
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="start")]
+        ])
+        await message.answer(text_oferta, parse_mode=ParseMode.HTML, reply_markup=kb)
+        return
+
+    # Статус подписки
+    if role in ("blogger", "saas"):
+        status_text = "♾️ Бессрочный доступ"
+    else:
+        sub_until = user["subscription_until"]
+        if sub_until:
+            try:
+                end_dt = datetime.fromisoformat(sub_until.replace("Z", "+00:00"))
+                now_dt = datetime.now(timezone.utc)
+                if now_dt < end_dt:
+                    diff = end_dt - now_dt
+                    days = diff.days
+                    hours = diff.seconds // 3600
+                    status_text = f"✅ Активна • <b>{days} дн. {hours} ч.</b>"
+                else:
+                    status_text = "❌ Подписка истекла"
+            except Exception:
+                status_text = "⚠️ Ошибка чтения даты"
+        else:
+            status_text = "❌ Подписка не активирована"
+
+    # Финансовый блок
+    finance_text = ""
+    pending = user["balance_pending"] or 0.0
+    available = user["balance_available"] or 0.0
+    if role in ("saas", "blogger"):
+        finance_text = (
+            f"\n\n💰 <b>Баланс</b>\n"
+            f"⏳ В ожидании: <b>{pending:.2f} ₽</b>\n"
+            f"💳 Доступно к выводу: <b>{available:.2f} ₽</b>"
+        )
+
+    tax_status_display = ""
+    if user["tax_status"] == "business":
+        tax_status_display = "🧾 Самозанятый / ИП"
+    elif user["tax_status"] == "individual":
+        tax_status_display = "👤 Физическое лицо"
+    else:
+        tax_status_display = "❓ Не указан"
+
+    text = (
+        f"💼 <b>Личный кабинет</b>\n\n"
+        f"👤 Роль: <b>{role.upper()}</b>\n"
+        f"📅 Статус подписки: {status_text}\n"
+        f"🆔 ID: <code>{user_id}</code>\n"
+        f"📌 Налоговый статус: {tax_status_display}"
+        f"{finance_text}"
+    )
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_cabinet_menu(role))
+
+
+async def open_saas_settings(callback):
+    """Отображает настройки SaaS-аккаунта (используется в saas.py и main.py)."""
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT api_key, auto_pin, force_preview_confirmed FROM users WHERE user_id=?", (user_id,)).fetchone()
+    finally:
+        conn.close()
+    if not user:
+        await callback.answer("❌ Ошибка загрузки настроек", show_alert=True)
+        return
+
+    auto_pin = bool(user["auto_pin"] if user["auto_pin"] is not None else 1)
+    preview_confirmed = bool(user["force_preview_confirmed"]) if user else False
+    preview_text = "✅ Предпросмотр включен (посты сразу)" if preview_confirmed else "🔍 Предпросмотр выключен (показывается каждый раз)"
+    preview_callback = "saas_toggle:force_preview_reset" if preview_confirmed else "saas_toggle:force_preview_enable"
+
+    text = (
+        "⚙️ <b>Настройки SaaS-аккаунта</b>\n\n"
+        "📦 <b>Товары поступают автоматически из магазинов-партнёров Admitad.</b>\n"
+        "Вы выбираете магазины в разделе «🏪 Магазины». Бот сам пополняет каталог и публикует посты с маркировкой ERID.\n\n"
+        "🔑 Ручной ввод API-ключей не требуется.\n\n"
+        "⚡ Дополнительные возможности:"
+    )
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="ℹ️ Об источнике товаров", callback_data="saas_set:gdeslon_apikey")],
+        [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
+        [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
+        [InlineKeyboardButton(text=f"🔄 {preview_text}", callback_data=preview_callback)],
+        [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        # Если не удалось отредактировать — отправляем новое сообщение
+        await callback.message.answer(text, reply_markup=kb, parse_mode=ParseMode.HTML)
