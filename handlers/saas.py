@@ -310,34 +310,85 @@ async def cb_cancel_galaxy_city(callback: CallbackQuery):
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
+    """Обработчик кнопки принудительной публикации"""
     user_id = callback.from_user.id
+    
     conn = get_db()
     try:
-        user = conn.execute("SELECT force_preview_confirmed FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        # Проверяем настройки пользователя
+        user = conn.execute(
+            "SELECT force_preview_confirmed FROM users WHERE user_id = ?", 
+            (user_id,)
+        ).fetchone()
         preview_confirmed = bool(user["force_preview_confirmed"]) if user else False
+        
+        # Проверяем наличие каналов
+        channels_count = conn.execute(
+            "SELECT COUNT(*) FROM channels WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        ).fetchone()[0]
+        
+        if channels_count == 0:
+            await callback.answer("❌ Нет активных каналов", show_alert=True)
+            return
     finally:
         conn.close()
 
     if preview_confirmed:
         await callback.answer("🚀 Публикую пост...", show_alert=True)
         await _force_post_immediate(callback, bot, user_id)
-        return
+    else:
+        await callback.answer("🔍 Подбираю товар для предпросмотра...", show_alert=False)
+        await _force_post_preview(callback, bot, user_id)
 
-    await callback.answer("🔍 Подбираю товар для предпросмотра...", show_alert=False)
-    await _force_post_preview(callback, bot, user_id)
 
-
-async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int) -> None:
+async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int, channel_id: str = None) -> None:
+    """Публикация поста сразу без предпросмотра"""
     conn = get_db()
     try:
-        user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id = ?", (user_id,)).fetchall()
+        # Получаем настройки пользователя
+        user_stores = conn.execute(
+            "SELECT category_id FROM user_category_preferences WHERE user_id = ?", 
+            (user_id,)
+        ).fetchall()
         store_ids = [r["category_id"] for r in user_stores]
-        user_tmpl = conn.execute("SELECT product_template FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        custom_template = user_tmpl["product_template"] if user_tmpl and user_tmpl["product_template"] else None
-        min_disc = conn.execute("SELECT min_discount FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        
+        user_tmpl = conn.execute(
+            "SELECT product_template FROM users WHERE user_id = ?", 
+            (user_id,)
+        ).fetchone()
+        custom_template = user_tmpl["product_template"] if user_tmpl else None
+        
+        min_disc = conn.execute(
+            "SELECT min_discount FROM users WHERE user_id = ?", 
+            (user_id,)
+        ).fetchone()
         min_discount = min_disc["min_discount"] if min_disc else 0
-    finally:
-        conn.close()
+        
+        # Получаем список каналов
+        channels = conn.execute(
+            "SELECT channel_id, channel_title FROM channels WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        ).fetchall()
+        
+        if not channels:
+            await callback.answer("❌ Нет активных каналов", show_alert=True)
+            return
+            
+        # Если канал не выбран, но их несколько - предлагаем выбор
+        if not channel_id and len(channels) > 1:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=ch["channel_title"] or ch["channel_id"], 
+                    callback_data=f"force_channel:{ch['channel_id']}"
+                )] for ch in channels
+            ])
+            await callback.message.answer(
+                "📢 Выберите канал для публикации:",
+                reply_markup=kb
+            )
+            await callback.answer()
+            return
 
     allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
 
@@ -571,31 +622,44 @@ async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, prod
 
         await asyncio.sleep(1)
 
+@router.callback_query(F.data.startswith("force_channel:"))
+async def cb_force_channel_select(callback: CallbackQuery, bot: Bot):
+    """Обработчик выбора канала для принудительной публикации"""
+    channel_id = callback.data.split(":")[1]
+    await _force_post_immediate(callback, bot, callback.from_user.id, channel_id)
+    await callback.message.delete()
+    await callback.answer()
+
 @router.callback_query(F.data.startswith("force_confirm:"))
 async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
+    """Подтверждение публикации с предпросмотром"""
     product_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
 
     conn = get_db()
     try:
-        product = conn.execute("SELECT * FROM gdeslon_catalog WHERE id = ? AND user_id = ?", (product_id, user_id)).fetchone()
+        # Получаем товар
+        product = conn.execute(
+            "SELECT * FROM gdeslon_catalog WHERE id = ? AND user_id = ?", 
+            (product_id, user_id)
+        ).fetchone()
         if not product:
-            await callback.answer("❌ Товар не найден.", show_alert=True)
+            await callback.answer("❌ Товар не найден", show_alert=True)
             return
+            
         if product["used"] == 1:
-            await callback.answer("❌ Этот товар уже был опубликован.", show_alert=True)
+            await callback.answer("⚠️ Этот товар уже публиковался", show_alert=True)
             await callback.message.delete()
             return
 
         # Помечаем как использованный
-        conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product_id,))
+        conn.execute(
+            "UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", 
+            (product_id,)
+        )
         conn.commit()
-    finally:
-        conn.close()
-
-    # Публикация во все активные каналы
-    conn = get_db()
-    try:
+        
+        # Получаем каналы пользователя
         channels = conn.execute(
             "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
             (user_id,)
@@ -604,8 +668,11 @@ async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
         conn.close()
 
     if not channels:
-        await callback.answer("❌ Нет активных каналов.", show_alert=True)
+        await callback.answer("❌ Нет активных каналов", show_alert=True)
         return
+        
+    # Логируем действие
+    logger.info(f"User {user_id} force-publishing product {product_id} to {len(channels)} channels")
 
     partner_url = product['partner_url'] or ''
     title = product['title'] or ''
