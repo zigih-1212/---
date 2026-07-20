@@ -1,5 +1,6 @@
 # services/admitad_subnetwork.py
 import time
+import re
 import logging
 import base64
 import httpx
@@ -146,10 +147,13 @@ async def get_website_connection_status(advcampaign_id: int, website_ids: list[i
 
 async def register_channel_as_website(channel_id: str, channel_name: str) -> Optional[int]:
     clean_name = channel_name.lstrip("@") or channel_id.lstrip("@")
-    url = f"https://t.me/{clean_name}"
+    # Удаляем недопустимые символы из имени и URL
+    safe_name = re.sub(r'[^\w\s\-]', '', clean_name)[:180]
+    url_clean = re.sub(r'[^\w\-]', '', clean_name)
+    url = f"https://t.me/{url_clean}" if url_clean else f"https://t.me/channel_{channel_id}"
 
     result = await create_subnetwork_website(
-        name=f"TG: {clean_name}",
+        name=f"TG - {safe_name}",
         url=url,
         region=["RU"],
         native_kind="social_network_other"
