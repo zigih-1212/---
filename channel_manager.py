@@ -118,7 +118,29 @@ async def get_recent_posts(bot: Bot, channel_id: str, limit: int = 5) -> List[Di
 # === ПУБЛИКАЦИЯ ТЕСТОВОГО ПОСТА =============================================
 # =============================================================================
 async def publish_test_post(bot: Bot, channel_id: str, text: str,
-                            photo_url: Optional[str] = None) -> Optional[int]:
+                          photo_url: Optional[str] = None,
+                          check_permissions: bool = True) -> Optional[int]:
+    """Publishes post to channel with optional permission check.
+    
+    Args:
+        bot: Bot instance
+        channel_id: Target channel ID
+        text: Post text
+        photo_url: Optional photo URL
+        check_permissions: Verify bot has posting rights
+    
+    Returns:
+        message_id if successful, None otherwise
+    """
+    if check_permissions:
+        try:
+            member = await bot.get_chat_member(channel_id, bot.id)
+            if not getattr(member, 'can_post_messages', False):
+                logger.warning(f"No posting rights in channel {channel_id}")
+                return None
+        except TelegramAPIError as e:
+            logger.error(f"Permission check failed for {channel_id}: {e}")
+            return None
     """
     Публикует пост в канал (требует админских прав).
     Возвращает message_id или None при ошибке.

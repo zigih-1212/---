@@ -37,7 +37,11 @@ def get_city_name(key: str) -> str:
     return CITY_DATA[key][0]
 
 def get_feed_url(key: str) -> str:
-    return BASE_FEED_URL.format(feed_id=CITY_DATA[key][1])
+    if key == 'vk_zen':
+        return "https://api.zen.yandex.ru/v1/feed"
+    elif key in CITY_DATA:
+        return BASE_FEED_URL.format(feed_id=CITY_DATA[key][1])
+    raise ValueError(f"Unknown city key: {key}")
 
 def extract_erid(url: str) -> str | None:
     parsed = parse_qs(urlparse(url).query)
