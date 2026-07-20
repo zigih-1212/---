@@ -186,7 +186,7 @@ async def publish_from_catalog(bot: Bot):
         user_id = user["user_id"]
         role = user["role"]
         post_interval = user["post_interval_minutes"] or 60
-        commission_rate = user["commission_rate"] or 0.95
+        commission_rate = user["commission_rate"] or 0.70
 
         logger.info(f"[DEBUG] Обработка пользователя {user_id}, роль {role}")
 

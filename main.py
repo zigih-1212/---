@@ -468,7 +468,7 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass
     try:
-        cursor.execute("ALTER TABLE users ADD COLUMN commission_rate REAL DEFAULT 0.95")
+        cursor.execute("ALTER TABLE users ADD COLUMN commission_rate REAL DEFAULT 0.70")
     except sqlite3.OperationalError:
         pass
     try:
@@ -1613,10 +1613,7 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
             "INSERT INTO users (user_id, username, sub_id, role, referrer_id) VALUES (?, ?, ?, ?, ?)",
             (user_id, callback.from_user.username, sub_id, role, referrer_id)
         )
-        if role == "blogger":
-            conn.execute("UPDATE users SET commission_rate = 0.70 WHERE user_id = ?", (user_id,))
-        else:
-            conn.execute("UPDATE users SET commission_rate = 0.95 WHERE user_id = ?", (user_id,))
+        conn.execute("UPDATE users SET commission_rate = 0.70 WHERE user_id = ?", (user_id,))
         # Реферальная связь
         if referrer_id:
             conn.execute("""

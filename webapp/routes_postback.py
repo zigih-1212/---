@@ -31,7 +31,7 @@ async def admitad_postback(request: Request):
         user = conn.execute("SELECT commission_rate FROM users WHERE user_id = ?", (user_id,)).fetchone()
         if not user:
             return {"ok": False, "error": "user not found"}
-        commission_rate = user["commission_rate"] or 0.95
+        commission_rate = user["commission_rate"] or 0.70
 
         user_amount = round(payment_sum * commission_rate, 2)
 

@@ -2,7 +2,7 @@ import os
 import datetime                 # <-- модуль datetime
 from datetime import timedelta, timezone
 
-from services.db import get_db
+DB_PATH: str = "/app/data/autopost.db"
 
 # --- Загрузка настроек ---
 def load_settings():
@@ -14,6 +14,7 @@ def load_settings():
         "min_payout": os.getenv("PAYOUT_FIXED_FEE", "35"),
         "payout_bank_pct": os.getenv("PAYOUT_BANK_PCT", "0.043"),
     }
+    from services.db import get_db
     conn = get_db()
     try:
         rows = conn.execute("SELECT key, value FROM settings").fetchall()
@@ -58,7 +59,6 @@ ADMIN_IDS: list[int] = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split
 QUARANTINE_CHAT_ID: int = int(os.getenv("QUARANTINE_CHAT_ID", "0"))
 DEEPINFRA_API_KEY: str = os.getenv("DEEPINFRA_API_KEY", "")
 WEBAPP_HOST: str = os.getenv("WEBAPP_HOST", "0.0.0.0")
-DB_PATH: str = "/app/data/autopost.db"
 
 CTA_PHRASES = [
     "🔥 Количество товара по акции ограничено!",
