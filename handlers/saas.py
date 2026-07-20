@@ -37,29 +37,30 @@ async def cb_stores(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
     try:
+        # Получаем выбранные пользователем магазины
         user_stores = conn.execute(
             "SELECT category_id FROM user_category_preferences WHERE user_id = ?",
             (user_id,)
         ).fetchall()
         user_store_ids = {r["category_id"] for r in user_stores}
         selected_count = len(user_store_ids)
+        
+        # Получаем список всех доступных магазинов
+        from services.admitad import STORE_ID_MAP, get_available_stores
+        available_stores = get_available_stores()
+        
+        stores = []
+        for store_id, store_name in STORE_ID_MAP.items():
+            store_info = available_stores.get(store_name, {})
+            stores.append({
+                "id": store_id,
+                "name": store_name,
+                "available": store_info.get("available", False),
+                "adult": store_info.get("adult", False),
+                "requires_city": store_name == "Galaxy Store"
+            })
     finally:
         conn.close()
-
-    stores = [
-        {"id": 1, "name": "AliExpress (пока недоступен)"},
-        {"id": 2, "name": "Читай-город"},
-        {"id": 3, "name": "Аквафор (пока недоступен)"},
-        {"id": 4, "name": "Розовый кролик (18+)"},
-        {"id": 5, "name": "Love Republic (пока недоступен)"},
-        {"id": 6, "name": "Hi Store RU"},
-        {"id": 7, "name": "KANZLER"},
-        {"id": 8, "name": "KIKO MILANO"},
-        {"id": 9, "name": "Moulinex"},
-        {"id": 10, "name": "Playtoday"},
-        {"id": 11, "name": "SELA"},
-        {"id": 12, "name": "Galaxy Store"},
-    ]
 
     text = f"🏪 <b>Выберите магазины для постинга:</b> (выбрано {selected_count})\n\n"
     kb_rows = []
@@ -79,8 +80,21 @@ async def cb_toggle_store(callback: CallbackQuery):
     store_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
 
-    # Galaxy Store (id=12) — проверяем, что пользователь выбрал город
-    if store_id == 12:
+    from services.admitad import STORE_ID_MAP, get_available_stores
+    store_name = STORE_ID_MAP.get(store_id)
+    if not store_name:
+        await callback.answer("❌ Магазин не найден", show_alert=True)
+        return
+
+    store_info = get_available_stores().get(store_name, {})
+    
+    # Проверка доступности магазина
+    if not store_info.get("available", False):
+        await callback.answer(f"❌ {store_name} временно недоступен", show_alert=True)
+        return
+
+    # Для Galaxy Store проверяем выбор города
+    if store_name == "Galaxy Store":
         conn = get_db()
         try:
             existing = conn.execute(
@@ -93,17 +107,6 @@ async def cb_toggle_store(callback: CallbackQuery):
             await show_city_selection(callback.message, user_id)
             await callback.answer()
             return
-
-    # Остальные магазины
-    if store_id == 1:
-        await callback.answer("❌ AliExpress временно недоступен.", show_alert=True)
-        return
-    if store_id == 3:
-        await callback.answer("❌ Аквафор временно недоступен.", show_alert=True)
-        return
-    if store_id == 5:
-        await callback.answer("❌ Love Republic временно недоступен.", show_alert=True)
-        return
 
     conn = get_db()
     try:
@@ -127,7 +130,12 @@ async def cb_toggle_store(callback: CallbackQuery):
         conn.close()
 
     from services.admitad import fetch_admitad_catalog_for_user
-    await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)    
+    try:
+        await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)
+        await callback.answer(f"🔄 Каталог {store_name} обновлён")
+    except Exception as e:
+        logger.error(f"Ошибка обновления каталога для {user_id}: {e}")
+        await callback.answer("⚠️ Ошибка обновления каталога. Попробуйте позже.", show_alert=True)
     
     await cb_stores(callback)
     await callback.answer()
