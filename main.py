@@ -2189,6 +2189,13 @@ async def main() -> None:
     scheduler.start()
     logger.info("Планировщик (APScheduler) запущен")
 
+    # Бэктейл существующих каналов в Admitad subnetwork
+    try:
+        from services.admitad_subnetwork import backfill_existing_channels
+        asyncio.create_task(backfill_existing_channels())
+    except Exception as e:
+        logger.warning(f"⚠️ Запуск бэктейла subnetwork отложен: {e}")
+
     # ===== КОМАНДЫ ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ =====
     await bot.set_my_commands(
         commands=[

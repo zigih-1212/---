@@ -157,3 +157,34 @@ async def register_channel_as_website(channel_id: str, channel_name: str) -> Opt
             conn.close()
         return website_id
     return None
+
+
+async def backfill_existing_channels():
+    """Регистрирует подплощадки для всех каналов без admitad_website_id."""
+    conn = get_db()
+    try:
+        channels = conn.execute(
+            "SELECT channel_id, channel_title FROM channels WHERE admitad_website_id IS NULL"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not channels:
+        logger.info("✅ Все каналы уже имеют admitad_website_id")
+        return
+
+    logger.info(f"🔄 Бэктейл: найдено {len(channels)} каналов без подплощадки")
+    registered = 0
+    failed = 0
+    for ch in channels:
+        ch_id = ch["channel_id"]
+        ch_name = ch["channel_title"] or ch_id
+        website_id = await register_channel_as_website(ch_id, ch_name)
+        if website_id:
+            registered += 1
+            logger.info(f"  ✅ {ch_id} → website_id={website_id}")
+        else:
+            failed += 1
+            logger.warning(f"  ❌ {ch_id} — не удалось зарегистрировать")
+
+    logger.info(f"📊 Бэктейл завершён: {registered} создано, {failed} ошибок")
