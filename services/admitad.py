@@ -65,7 +65,11 @@ STORES = {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=25773&last_import=",
         "adult": False,
         "website_id": "15488",
-        "available": True
+        "available": True,
+        "description": "Французский бренд кухонной техники",
+        "categories": ["Кухонная техника", "Бытовая техника"],
+        "avg_discount": 15,
+        "min_order": 3000  # минимальная сумма заказа для получения кэшбэка
     },
     "Playtoday": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=26222&last_import=",
@@ -127,6 +131,7 @@ def extract_erid_from_url(url: str) -> str:
 
 
 async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int = 50) -> int:
+    """Обновляет каталог товаров для пользователя, проверяя доступность фидов"""
     conn = get_db()
     try:
         selected_rows = conn.execute(
@@ -163,11 +168,19 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
         parser = XMLPullParser(['end'])
 
         try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
-                async with client.stream("GET", feed_url) as resp:
-                    if resp.status_code != 200:
-                        logger.error(f"Admitad фид {store_name} недоступен: {resp.status_code}")
-                        continue
+            # Проверка доступности фида
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                head_resp = await client.head(feed_url)
+                if head_resp.status_code != 200:
+                    logger.error(f"Admitad фид {store_name} недоступен (HEAD): {head_resp.status_code}")
+                    continue
+                
+                # Полная загрузка если фид доступен
+                async with httpx.AsyncClient(timeout=45.0) as client:
+                    async with client.stream("GET", feed_url) as resp:
+                        if resp.status_code != 200:
+                            logger.error(f"Admitad фид {store_name} недоступен: {resp.status_code}")
+                            continue
 
                     async for chunk in resp.aiter_bytes(chunk_size=128*1024):
                         try:

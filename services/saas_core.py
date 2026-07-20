@@ -356,6 +356,12 @@ async def publish_from_catalog(bot: Bot):
             adult = source in ADULT_STORES
             delivery_info = get_delivery_for_store(source)
             promocode = get_random_promocode(source)
+            
+            # Особые условия для Moulinex
+            if source == "Moulinex":
+                delivery_info = "🚚 Бесплатная доставка от 3000₽ | 1-3 дня"
+                if not (product["price"] or 0) >= 3000:
+                    delivery_info += "\n⚠️ Для кэшбэка минимальный заказ 3000₽"
 
             caption = generate_post_text(
                 title=title,
