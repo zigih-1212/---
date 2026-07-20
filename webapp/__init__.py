@@ -8,5 +8,5 @@ def create_app(bot) -> FastAPI:
     app.state.bot = bot
     app.include_router(admin_router, prefix="/admin", tags=["admin"])
     app.include_router(user_router, prefix="/my-stats", tags=["user"])
-    app.include_router(postback_router, prefix="/postback", tags=["postback"])
+    app.include_router(postback_router, tags=["postback"])
     return app
