@@ -10,7 +10,7 @@ def load_settings():
         "NIGHT_START": os.getenv("NIGHT_START", "23:00"),
         "NIGHT_END": os.getenv("NIGHT_END", "08:00"),
         "RUN_INTERVAL_SECONDS": os.getenv("RUN_INTERVAL_SECONDS", "900"),
-        "MIN_PAYOUT": os.getenv("MIN_PAYOUT", "2000"),
+
         "PAYOUT_FIXED_FEE": os.getenv("PAYOUT_FIXED_FEE", "35"),
         "PAYOUT_BANK_PCT": os.getenv("PAYOUT_BANK_PCT", "0.043"),
     }
@@ -29,7 +29,7 @@ def load_settings():
 settings = load_settings()
 
 # --- Глобальные переменные ---
-MIN_PAYOUT = float(settings["MIN_PAYOUT"])
+MIN_PAYOUT = 3000
 PAYOUT_FIXED_FEE = float(settings["PAYOUT_FIXED_FEE"])
 PAYOUT_BANK_PCT = float(settings["PAYOUT_BANK_PCT"])
 ADMITAD_CLIENT_ID = os.getenv("ADMITAD_CLIENT_ID", "vQiCf6zVRa5E2MvG37HYWHHwb4uILL")

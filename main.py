@@ -649,7 +649,6 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌐 Открыть Web-админку", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))],
         [InlineKeyboardButton(text="📣 Рассылка всем", callback_data="admin:broadcast")],
-        [InlineKeyboardButton(text="💰 Запустить биллинг-чек", callback_data="admin:billing_check")],
         [InlineKeyboardButton(text="🔧 Продлить подписку", callback_data="admin:extend_sub")],
     ])
 
@@ -1731,14 +1730,7 @@ async def show_blogger_instruction(callback: CallbackQuery):
 # ---------------------------------------------------------------------------
 # Административные команды
 # ---------------------------------------------------------------------------
-@router.message(Command("force_trial"))
-async def force_trial(message: Message):
-    new_date = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
-    conn = get_db()
-    conn.execute("UPDATE users SET subscription_until = ? WHERE user_id = ?", (new_date, message.from_user.id))
-    conn.commit()
-    conn.close()
-    await message.answer("✅ Тестовый период принудительно установлен на 3 дня.")
+
 
 @router.message(Command("debug_sub"))
 async def debug_subscription(message: Message):
@@ -1764,11 +1756,7 @@ async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
         await call.answer("⛔ Нет доступа", show_alert=True)
         return
     action = call.data.split(":")[1]
-    if action == "billing_check":
-        await call.answer("⏳ Запускаю биллинг-чек...")
-        await run_billing_check(call.message.bot)
-        await call.message.answer("✅ Биллинг-чек завершён")
-    elif action == "broadcast":
+    if action == "broadcast":
         await call.answer()
         await state.set_state(AdminStates.broadcast_text)
         await call.message.answer("✏️ Введи текст рассылки:")
@@ -1894,28 +1882,7 @@ async def cb_open_cabinet(callback: CallbackQuery):
 # ---------------------------------------------------------------------------
 # Планировщик и периодические задачи
 # ---------------------------------------------------------------------------
-async def run_billing_check(bot: Bot):
-    conn = get_db()
-    try:
-        now = datetime.now(timezone.utc).isoformat()
-        expired_users = conn.execute(
-            "SELECT user_id FROM users WHERE role='saas' AND subscription_until < ? AND is_active=1 AND 1=0",
-            (now,)
-        ).fetchall()
-        for row in expired_users:
-            user_id = row["user_id"]
-            conn.execute("UPDATE users SET is_active=0 WHERE user_id=?", (user_id,))
-            try:
-                await bot.send_message(
-                    chat_id=user_id,
-                    text="⚠️ <b>Ваша подписка истекла!</b>\n\nБот приостановил работу с вашими каналами. Продлите подписку в /cabinet.",
-                    parse_mode="HTML"
-                )
-            except Exception as e:
-                logger.error(f"Не удалось уведомить об истечении подписки: {e}")
-        conn.commit()
-    finally:
-        conn.close()
+
 
 async def unpin_old_messages(bot: Bot):
     conn = get_db()
@@ -2000,35 +1967,7 @@ async def daily_report(bot: Bot):
         except Exception as e:
             logger.error(f"Ошибка отправки ежедневного отчёта: {e}")
 
-async def send_subscription_reminders(bot: Bot):
-    now_utc = datetime.now(timezone.utc)
-    target_date = now_utc + timedelta(days=3)
-    target_iso = target_date.strftime("%Y-%m-%d")
-    conn = get_db()
-    try:
-        rows = conn.execute("""
-            SELECT user_id FROM users
-            WHERE role='saas'
-            AND is_active=1
-            AND subscription_until IS NOT NULL
-            AND DATE(subscription_until) = ?
-            AND 1=0
-        """, (target_iso,)).fetchall()
-        for row in rows:
-            user_id = row["user_id"]
-            try:
-                await bot.send_message(
-                    chat_id=user_id,
-                    text="⏰ <b>Напоминание</b>\n\n"
-                         "Ваша подписка истекает <b>через 3 дня</b>. "
-                         "Чтобы не потерять доступ к авто-постингу, продлите подписку в /cabinet.",
-                    parse_mode="HTML"
-                )
-                logger.info(f"Отправлено напоминание пользователю {user_id}")
-            except Exception as e:
-                logger.error(f"Не удалось отправить напоминание {user_id}: {e}")
-    finally:
-        conn.close()
+
 async def check_receipt_reminders(bot: Bot):
     """Напоминает блогерам о необходимости загрузить чек через 12 часов после отправки денег."""
     conn = get_db()
@@ -2064,14 +2003,12 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     logger.info("🔄 Настройка планировщика...")
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     
-    scheduler.add_job(run_billing_check, trigger="interval", hours=1, kwargs={"bot": bot}, id="billing_check", replace_existing=True)
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
     scheduler.add_job(cleanup_old_posts, trigger="cron", hour=3, minute=0, id="cleanup_old_posts", replace_existing=True)
     scheduler.add_job(backup_database_to_telegram, trigger="cron", hour=3, minute=0, kwargs={"bot": bot}, id="backup_database", replace_existing=True)
     scheduler.add_job(publish_from_catalog, trigger="interval", minutes=10, jitter=30, kwargs={"bot": bot}, id="publish_catalog", replace_existing=True)
     scheduler.add_job(refill_admitad_catalogs, trigger="interval", minutes=15, id="refill_admitad", replace_existing=True)
     scheduler.add_job(daily_report, trigger="cron", hour=9, minute=0, kwargs={"bot": bot}, id="daily_report", replace_existing=True)
-    scheduler.add_job(send_subscription_reminders, trigger="cron", hour=10, minute=0, kwargs={"bot": bot}, id="subscription_reminders", replace_existing=True)
     scheduler.add_job(update_all_store_data_from_feed, trigger="cron", hour=4, minute=0, id="update_coupons_feed", replace_existing=True)
     scheduler.add_job(check_rss_and_publish, trigger="interval", minutes=15, kwargs={"bot": bot}, id="check_rss", replace_existing=True)
     scheduler.add_job(check_receipt_reminders, trigger="interval", minutes=30, kwargs={"bot": bot}, id="receipt_reminders", replace_existing=True)

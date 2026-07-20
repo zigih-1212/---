@@ -264,7 +264,6 @@ async def refill_admitad_catalogs(bot=None):
         users = conn.execute("""
             SELECT user_id FROM users
             WHERE is_active = 1
-            AND (role = 'blogger' OR (role = 'saas' AND subscription_until > datetime('now')))
         """).fetchall()
     finally:
         conn.close()
