@@ -1247,10 +1247,9 @@ async def publish_post(request: Request, token: str = Form(...), product_id: int
 async def download_ord_report(token: str = Query(...), request: Request = None):
     try:
         user_id = get_user_id_from_token(token)
-        
         logger.info(f"Запрос отчёта ОРД для user_id={user_id}")
-        
-        # Сбор просмотров из Telegram (с защитой)
+
+        # 1. Собираем просмотры (если бот доступен)
         bot = None
         if request and hasattr(request.app.state, 'bot'):
             bot = request.app.state.bot
@@ -1259,92 +1258,101 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
                 await collect_views_for_user(user_id, bot)
             except Exception as e:
                 logger.error(f"Ошибка сбора просмотров для user_id={user_id}: {e}")
-        
+
+        # 2. Получаем посты с ERID
         conn = get_db()
         try:
             posts = conn.execute("""
                 SELECT p.published_at, p.erid, p.views_count, p.direct_link, p.channel_id,
-                       COALESCE(c.channel_title, '') AS channel_title,
-                       COALESCE(c.channel_id, '') AS channel_username,
-                       CASE WHEN COALESCE(c.channel_id, '') != '' THEN 'https://t.me/' || trim(c.channel_id, '@') ELSE '' END AS channel_link
+                       COALESCE(c.channel_title, '') AS channel_title
                 FROM posts p
                 LEFT JOIN channels c ON c.user_id = p.user_id AND c.channel_id = p.channel_id
                 WHERE p.user_id = ? AND p.status = 'published' AND p.erid IS NOT NULL AND p.erid != ''
                 ORDER BY p.published_at DESC
             """, (user_id,)).fetchall()
-            
             logger.info(f"Найдено {len(posts)} постов для отчёта")
         finally:
             conn.close()
 
-        # Всегда создаём Excel с данными (или пустыми заголовками)
+        # 3. Создаём Excel-файл
         output = BytesIO()
-        # remove_timezone: xlsxwriter сам снимает tzinfo с datetime (Excel не поддерживает часовые пояса)
         workbook = xlsxwriter.Workbook(output, {'in_memory': True, 'remove_timezone': True})
         worksheet = workbook.add_worksheet("ORD")
-        
-        headers = ["ERID", "Площадка (Telegram)", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания", "Ссылка на пост", "Название канала", "Username канала", "Ссылка на канал"]
+
+        # Заголовки (расширенные)
+        headers = [
+            "ERID",
+            "Площадка (Telegram)",
+            "Тип площадки",
+            "Количество показов",
+            "Количество переходов",
+            "Сумма потраченная",
+            "Дата начала",
+            "Дата окончания",
+            "Ссылка на пост",
+            "Название канала"
+        ]
         for col, header in enumerate(headers):
             worksheet.write(0, col, header)
-        
-        # Формат для дат
+
         date_format = workbook.add_format({'num_format': 'dd.mm.yyyy'})
-        report_rows = build_ord_report_rows([
-            {
-                "erid": post["erid"],
-                "views_count": post["views_count"],
-                "direct_link": post["direct_link"],
-                "channel_title": post["channel_title"],
-                "channel_id": post["channel_id"],
-                "channel_username": post.get("channel_username", ""),
-                "channel_link": post.get("channel_link", ""),
-                "published_at": post["published_at"],
-            }
-            for post in posts
-        ])
-        
-        for row_idx, row in enumerate(report_rows, start=1):
-            # xlsxwriter не поддерживает timezone-aware datetime, поэтому убираем tzinfo
-            if row["published_at"]:
-                pub_date = datetime.fromisoformat(row["published_at"].replace("Z", "+00:00"))
+
+        row_idx = 1
+        for post in posts:
+            erid = post["erid"] or ""
+            views = post["views_count"] or 0
+            direct_link = post["direct_link"] or ""
+            channel_title = post["channel_title"] or "Telegram"
+            published_at = post["published_at"]
+
+            # Обработка даты (снимаем часовой пояс)
+            try:
+                pub_date = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
                 if pub_date.tzinfo is not None:
                     pub_date = pub_date.replace(tzinfo=None)
-            else:
+            except Exception:
                 pub_date = datetime.now()
-            worksheet.write(row_idx, 0, row["erid"] or "")
-            worksheet.write(row_idx, 1, row["platform"] or "Telegram")
-            worksheet.write(row_idx, 2, row["channel_type"] or "Telegram")
-            worksheet.write(row_idx, 3, row["views_count"] or 0)
-            worksheet.write(row_idx, 4, 0)  # переходы — нет точных данных
-            worksheet.write(row_idx, 5, 0)  # сумма — не применимо
+
+            worksheet.write(row_idx, 0, erid)
+            worksheet.write(row_idx, 1, "Telegram")
+            worksheet.write(row_idx, 2, channel_title)
+            worksheet.write(row_idx, 3, views)
+            worksheet.write(row_idx, 4, 0)  # переходы – нет точных данных
+            worksheet.write(row_idx, 5, 0)  # сумма – не применимо
             worksheet.write_datetime(row_idx, 6, pub_date, date_format)
             worksheet.write_datetime(row_idx, 7, pub_date, date_format)
-            worksheet.write(row_idx, 8, row["post_link"] or "")
-            worksheet.write(row_idx, 9, row["channel_title"] or "")
-            worksheet.write(row_idx, 10, row["channel_username"] or "")
-            worksheet.write(row_idx, 11, row["channel_link"] or "")
-        
+            worksheet.write(row_idx, 8, direct_link)
+            worksheet.write(row_idx, 9, channel_title)
+            row_idx += 1
+
+        # Автоширина
         worksheet.set_column(0, 0, 30)
         worksheet.set_column(1, 2, 18)
         worksheet.set_column(3, 5, 20)
         worksheet.set_column(6, 7, 14)
-        
+        worksheet.set_column(8, 9, 40)
+
         workbook.close()
         output.seek(0)
-        
+
         filename = f"AutoPost_ORD_Report_{user_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
         return StreamingResponse(
             output,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
+
     except Exception as e:
-        logger.error(f"Критическая ошибка в ord-report для token={token}: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Ошибка в ord-report: {error_details}")
         return HTMLResponse(
-            f"<h2>❌ Ошибка формирования отчёта</h2><p>{str(e)}</p><a href='javascript:history.back()'>Вернуться</a>",
+            f"<h2>❌ Ошибка формирования отчёта</h2>"
+            f"<pre style='color:#ff4444;'>{str(e)}</pre>"
+            f"<details><summary>Подробности</summary><pre>{error_details}</pre></details>"
+            f"<br><a href='javascript:history.back()'>Вернуться</a>",
             status_code=500
         )
-
 # ---------- Инструкция ----------
 GUIDE_TEMPLATE = r'''<!DOCTYPE html>
 <html lang="ru">
