@@ -21,7 +21,7 @@ from keyboards.saas import kb_cabinet_menu
 from services.text_rewriter import generate_post_text
 from services.admitad import get_random_promocode
 from states import SaasStates, PaymentFSM, PayoutStates, TaxStates
-from helpers import generate_success_text, show_user_cabinet, open_saas_settings
+from helpers import generate_success_text, show_user_cabinet, open_saas_settings, safe_edit
 from config import MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
 from helpers import open_saas_settings
 
@@ -86,11 +86,7 @@ async def cb_stores(callback: CallbackQuery):
 
     # Пояснительный текст под кнопками
     footer = "\n\n* — требуется выбор города\n⛔ — магазин временно не работает\n🔞 — контент для взрослых"
-    await callback.message.edit_text(
-        text + footer,
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb
-    )
+    await safe_edit(callback.message, text + footer, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("store_toggle:"))
@@ -153,14 +149,11 @@ async def cb_toggle_store(callback: CallbackQuery):
                 [InlineKeyboardButton(text="🔞 Да, я подтверждаю", callback_data=f"store_confirm_adult:{store_id}")],
                 [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:categories")]
             ])
-            await callback.message.edit_text(
-                "⚠️ <b>Внимание!</b>\n\n"
+            await safe_edit(callback.message, "⚠️ <b>Внимание!</b>\n\n"
                 "Магазин «Розовый кролик» содержит товары для взрослых (18+).\n"
                 "Убедитесь, что ваш канал соответствует возрастным ограничениям.\n\n"
                 "Вы уверены, что хотите добавить этот магазин?",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb
-            )
+                reply_markup=kb, parse_mode=ParseMode.HTML)
             await callback.answer()
             return
         else:
@@ -239,11 +232,9 @@ async def cb_cyclic_schedules(callback: CallbackQuery):
             [InlineKeyboardButton(text="🏪 Сначала выберите магазины", callback_data="menu:categories")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
         ])
-        await callback.message.edit_text(
-            "⏰ <b>Циклический постинг</b>\n\n"
+        await safe_edit(callback.message, "⏰ <b>Циклический постинг</b>\n\n"
             "Сначала выберите хотя бы один магазин в разделе «🏪 Магазины».",
-            reply_markup=kb, parse_mode=ParseMode.HTML
-        )
+            reply_markup=kb, parse_mode=ParseMode.HTML)
         await callback.answer()
         return
 
@@ -273,7 +264,7 @@ async def cb_cyclic_schedules(callback: CallbackQuery):
 
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("cyclic_set:"))
@@ -324,7 +315,7 @@ async def cb_cyclic_set(callback: CallbackQuery):
 
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:cyclic")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("cyclic_apply:"))
@@ -501,11 +492,7 @@ async def show_city_selection(message: Message, user_id: int):
     rows = [buttons[i:i+2] for i in range(0, len(buttons), 2)]
     rows.append([InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_galaxy_city")])
     markup = InlineKeyboardMarkup(inline_keyboard=rows)
-    await message.edit_text(
-        "🏙 <b>Выберите ваш город для Galaxy Store:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=markup
-    )
+    await safe_edit(message, "🏙 <b>Выберите ваш город для Galaxy Store:</b>", reply_markup=markup, parse_mode=ParseMode.HTML)
 
 
 @router.callback_query(F.data.startswith("galaxy_city:"))
@@ -1045,7 +1032,7 @@ async def cb_saas_set_source(callback: CallbackQuery) -> None:
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Назад в настройки", callback_data="menu:settings")]
     ])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 AUTO_DELETE_OPTIONS = [
@@ -1083,7 +1070,7 @@ async def cb_saas_set_autodelete(callback: CallbackQuery):
         kb_rows.append([InlineKeyboardButton(text=f"{marker}{label}", callback_data=f"autodelete_set:{hours}")])
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:settings")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("autodelete_set:"))
@@ -1143,9 +1130,7 @@ async def promo_channel_selected(callback: CallbackQuery, state: FSMContext):
     finally:
         conn.close()
 
-    await callback.message.edit_text(
-        f"✅ Промокод активирован!\nПодписка продлена на {days} дн. до {new_until.strftime('%d.%m.%Y %H:%M')} (UTC)."
-    )
+    await safe_edit(callback.message, f"✅ Промокод активирован!\nПодписка продлена на {days} дн. до {new_until.strftime('%d.%m.%Y %H:%M')} (UTC).")
     await state.clear()
     await callback.answer("Готово!", show_alert=True)
 
@@ -1173,7 +1158,7 @@ async def cb_discount_filter(callback: CallbackQuery):
         [InlineKeyboardButton(text="от 50%", callback_data="discount_set:50")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data=__CABINET_OPEN__)]
     ])
-    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 
@@ -1282,12 +1267,7 @@ async def cb_finance(callback: CallbackQuery):
     kb_buttons.append([InlineKeyboardButton(text="📢 Поделиться успехом", callback_data="share_success")])
     kb_buttons.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data=__CABINET_OPEN__)])
 
-    try:
-        await callback.message.edit_text(full_text, parse_mode=ParseMode.HTML,
-                                          reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
-    except Exception:
-        await callback.message.answer(full_text, parse_mode=ParseMode.HTML,
-                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
+    await safe_edit(callback.message, full_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons), parse_mode=ParseMode.HTML)
     await callback.answer()
 @router.callback_query(F.data.startswith("receipt:upload:"))
 async def cb_receipt_upload(callback: CallbackQuery, state: FSMContext):
@@ -1472,7 +1452,7 @@ async def cb_menu_oferta(callback: CallbackQuery):
             [InlineKeyboardButton(text="🔙 Назад", callback_data=__CABINET_OPEN__)]
         ])
 
-    await callback.message.edit_text(text_oferta, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await safe_edit(callback.message, text_oferta, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 # handlers/saas.py — замените существующий @router.callback_query(F.data == "oferta:accept")
@@ -1540,12 +1520,9 @@ async def cb_change_tax_status(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="👤 Обычное физлицо", callback_data="tax:individual")],
         [InlineKeyboardButton(text="🔙 Отмена", callback_data=__CABINET_OPEN__)]
     ])
-    await callback.message.edit_text(
-        f"Ваш текущий налоговый статус: <b>{current_text}</b>\n\n"
+    await safe_edit(callback.message, f"Ваш текущий налоговый статус: <b>{current_text}</b>\n\n"
         "Выберите новый статус:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb
-    )
+        reply_markup=kb, parse_mode=ParseMode.HTML)
     await state.set_state(TaxStates.waiting_tax_status)
     await callback.answer()
 

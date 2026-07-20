@@ -9,6 +9,7 @@ from services.db import get_db
 from states import TemplateStates
 from services.text_rewriter import generate_post_text
 from services.admitad import get_delivery_for_store, get_random_promocode
+from helpers import safe_edit
 
 logger = logging.getLogger("autopost_bot.templates")
 router = Router(name="templates")
@@ -58,7 +59,7 @@ async def cb_menu_templates(callback: CallbackQuery):
         "<b>Для товаров:</b> {title}, {price}, {currency}, {link}, {advertiser}, {erid}, {old_price}, {discount_percent}, {delivery_line}, {promocode_line}\n"
         "<b>Для видео:</b> {title}, {link}, {description}"
     )
-    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=get_template_preview_buttons())
+    await safe_edit(callback.message, text, reply_markup=get_template_preview_buttons(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
 # --- Установка шаблона товара ---
@@ -163,7 +164,7 @@ async def cb_reset_templates(callback: CallbackQuery):
         conn.commit()
     finally:
         conn.close()
-    await callback.message.edit_text("✅ Шаблоны сброшены до стандартных.", reply_markup=get_template_preview_buttons())
+    await safe_edit(callback.message, "✅ Шаблоны сброшены до стандартных.", reply_markup=get_template_preview_buttons())
     await callback.answer()
 
 # --- Предпросмотр товара ---

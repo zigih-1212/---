@@ -15,6 +15,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 from services.db import get_db
 from config import BOT_USERNAME
+from helpers import safe_edit
 
 logger = logging.getLogger("autopost_bot.social")
 
@@ -50,13 +51,10 @@ async def cb_social_main(callback: CallbackQuery):
             await callback.answer("❌ Эта функция доступна только блогерам", show_alert=True)
             return
             
-        await callback.message.edit_text(
-            "🎥 <b>Мои видео-каналы</b>\n\n"
+        await safe_edit(callback.message, "🎥 <b>Мои видео-каналы</b>\n\n"
             "Здесь можно подключить YouTube, Rutube, VK Video или Dzen каналы — бот будет автоматически анонсировать новые видео.\n"
             "Для TikTok и Instagram используйте ручную отправку ссылки.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb_social_main()
-        )
+            reply_markup=kb_social_main(), parse_mode=ParseMode.HTML)
     finally:
         conn.close()
     await callback.answer()
@@ -185,7 +183,7 @@ async def cb_list_channels(callback: CallbackQuery):
             callback_data=f"social:delete:{ch['id']}"
         )])
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="social:main")])
-    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
+    await safe_edit(callback.message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows), parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("social:delete:"))

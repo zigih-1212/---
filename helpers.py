@@ -2,6 +2,7 @@
 import logging
 import feedparser
 from aiogram import Bot
+from aiogram.types import Message, InlineKeyboardMarkup
 from services.db import get_db
 from config import ADMIN_IDS
 from config import MIN_PAYOUT
@@ -9,6 +10,18 @@ from config import BOT_USERNAME
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 logger = logging.getLogger("autopost_bot.referral")
+
+
+async def safe_edit(message: Message, text: str, reply_markup: InlineKeyboardMarkup = None, parse_mode: str = ParseMode.HTML):
+    """Перезаписывает сообщение с fallback на delete+send."""
+    try:
+        await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except Exception:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
 
 def log_admin_action(admin_id: int, action: str, details: str = ""):
     conn = get_db()
@@ -478,8 +491,4 @@ async def open_saas_settings(callback):
         [InlineKeyboardButton(text=f"🔄 {preview_text}", callback_data=preview_callback)],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
     ])
-    try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        # Если не удалось отредактировать — отправляем новое сообщение
-        await callback.message.answer(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)

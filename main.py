@@ -60,7 +60,7 @@ from utils.feature_flags import (
 from io import BytesIO
 from aiogram.types import BufferedInputFile
 from helpers import is_admin, get_block_reason
-from helpers import show_user_cabinet, open_saas_settings
+from helpers import show_user_cabinet, open_saas_settings, safe_edit
 
 logger = logging.getLogger("autopost_bot.referral")
 # ---------------------------------------------------------------------------
@@ -782,13 +782,10 @@ async def cb_blogger_post_interval(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="✏️ Свой интервал", callback_data="blogger_custom_interval")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")],
     ])
-    await callback.message.edit_text(
-        f"⚙️ <b>Периодичность постов</b>\n\n"
+    await safe_edit(callback.message, f"⚙️ <b>Периодичность постов</b>\n\n"
         f"Сейчас: <b>{interval} минут</b>\n\n"
         "Выберите частоту публикаций:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb
-    )
+        reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @router.callback_query(F.data == "privacy:accept")
@@ -805,13 +802,13 @@ async def cb_privacy_accept(callback: CallbackQuery):
         conn.commit()
     finally:
         conn.close()
-    await callback.message.edit_text("✅ Спасибо! Теперь вы можете пользоваться ботом.")
+    await safe_edit(callback.message, "✅ Спасибо! Теперь вы можете пользоваться ботом.")
     await show_user_cabinet(callback.message, user_id=user_id)
     await callback.answer()
 
 @router.callback_query(F.data == "privacy:decline")
 async def cb_privacy_decline(callback: CallbackQuery):
-    await callback.message.edit_text(
+    await safe_edit(callback.message,
         "❌ Без согласия на обработку данных бот не может работать.\n"
         "Если передумаете — напишите /start."
     )
@@ -884,13 +881,13 @@ async def cb_blogger_referral(callback: CallbackQuery):
         invite_text = "Приглашайте других SaaS-клиентов по этой ссылке.\nКогда они начнут зарабатывать, вы будете получать 10% от их дохода (эта сумма вычитается из их заработка)."
     else:
         invite_text = "Приглашайте других блогеров по этой ссылке.\nКогда они начнут зарабатывать, вы будете получать 10% от их дохода (эта сумма вычитается из их заработка)."
-    await callback.message.edit_text(
+    await safe_edit(callback.message,
         f"🔗 <b>Ваша реферальная ссылка:</b>\n\n"
         f"<code>{ref_link}</code>\n\n{invite_text}",
-        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
-        ])
+        ]),
+        parse_mode=ParseMode.HTML
     )
     await callback.answer()
 
@@ -1266,7 +1263,7 @@ async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
         ])
 
     try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
         await state.set_state(OnboardingStates.waiting_saas_tg_channel)
     except Exception:
         pass
@@ -1323,7 +1320,7 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
         ])
-        await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
         return
 
     channel_idx = max(0, min(channel_idx, len(channels) - 1))
@@ -1364,8 +1361,7 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
     kb.append(period_row)
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")])
 
-    await callback.message.edit_text(text, parse_mode=ParseMode.HTML,
-                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await safe_edit(callback.message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data.startswith("saas_stats:"))
 async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
@@ -1643,12 +1639,12 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
             logger.error(f"Не удалось уведомить реферера {referrer_id}: {e}")
 
     if role == "saas":
-        await callback.message.edit_text(
+        await safe_edit(callback.message,
             "👋 Добро пожаловать! Для начала работы отправьте @username вашего Telegram-канала."
         )
         await state.set_state(OnboardingStates.waiting_saas_tg_channel)
     else:  # blogger
-        await callback.message.edit_text(
+        await safe_edit(callback.message,
             "👋 Добро пожаловать, блогер! Для начала отправьте @username вашего Telegram-канала."
         )
         await state.set_state(OnboardingStates.waiting_saas_tg_channel)  # то же состояние, но без лимитов
@@ -1675,12 +1671,11 @@ async def cb_support_contact(callback: CallbackQuery):
         "Откройте «Кабинет» → «Магазины» — там весь список.\n\n"
         "<i>Стаюсь отвечать быстро</i>"
     )
-    await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
+    await safe_edit(callback.message, text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
-        ])
+        ]),
+        parse_mode=ParseMode.HTML
     )
     await callback.answer()
 
@@ -1731,12 +1726,11 @@ async def show_saas_instruction(callback: CallbackQuery):
         "─ Вы можете приглашать других пользователей по реферальной ссылке и получать 10% от их дохода.\n\n"
         "<i>По всем вопросам обращайтесь к администратору.</i>"
     )
-    await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
+    await safe_edit(callback.message, text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
-        ])
+        ]),
+        parse_mode=ParseMode.HTML
     )
 async def show_blogger_instruction(callback: CallbackQuery):
     text = (
@@ -1778,12 +1772,11 @@ async def show_blogger_instruction(callback: CallbackQuery):
         "─ Переходы засчитываются 30 дней (кука Admitad), даже после удаления поста.\n\n"
         "По вопросам пишите: 👉 <a href='https://t.me/Zigih90'>@Zigih90</a>"
     )
-    await callback.message.edit_text(
-        text,
-        parse_mode=ParseMode.HTML,
+    await safe_edit(callback.message, text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
-        ])
+        ]),
+        parse_mode=ParseMode.HTML
     )
 
 # ---------------------------------------------------------------------------
