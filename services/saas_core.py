@@ -89,8 +89,8 @@ async def download_image(url: str) -> Optional[bytes]:
 async def publish_post_with_fallback(
     bot: Bot, 
     channel_id: str,
-    user_id: int = None,  # Добавляем необязательный user_id
     caption: str,
+    user_id: int = None,  # Добавляем необязательный user_id
     photo_url: Optional[str] = None,
     video_url: Optional[str] = None,
     reply_markup: Optional[InlineKeyboardMarkup] = None,

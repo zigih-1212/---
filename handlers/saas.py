@@ -35,7 +35,7 @@ router = Router(name="saas")
 @router.callback_query(F.data == "menu:categories")
 async def cb_stores(callback: CallbackQuery):
     try:
-    user_id = callback.from_user.id
+        user_id = callback.from_user.id
     conn = get_db()
     try:
         # Получаем выбранные пользователем магазины
