@@ -335,7 +335,16 @@ async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int)
         if allowed_sources:
             placeholders = ','.join('?' * len(allowed_sources))
             product = conn.execute(
-                f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                f"""SELECT * FROM gdeslon_catalog 
+                WHERE user_id = ? AND used = 0 
+                AND erid != '' AND erid IS NOT NULL 
+                AND source IN ({placeholders}) 
+                AND (discount_percent IS NULL OR discount_percent >= ?)
+                ORDER BY 
+                    CASE WHEN discount_percent >= 30 THEN 0  -- Приоритет товарам со скидкой 30%+
+                    ELSE 1 END,
+                    RANDOM()
+                LIMIT 1""",
                 (user_id, *allowed_sources, min_discount)
             ).fetchone()
         else:
