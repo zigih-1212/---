@@ -577,6 +577,22 @@ def init_db() -> None:
         )
     """)
     conn.commit()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admitad_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            access_token TEXT NOT NULL,
+            expires_at REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+
+    try:
+        cursor.execute("ALTER TABLE channels ADD COLUMN admitad_website_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
+    conn.commit()
     
     # Инициализация фич (если их нет в БД)
     try:
@@ -1582,6 +1598,21 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
             return
         finally:
             conn.close()
+
+        # Регистрация подплощадки в Admitad (subnetwork)
+        try:
+            from services.admitad_subnetwork import register_channel_as_website
+            channel_id_str = channel_username if channel_username else str(tg_chat_id)
+            website_id = await register_channel_as_website(
+                channel_id=channel_id_str,
+                channel_name=tg_title or channel_username or str(tg_chat_id)
+            )
+            if website_id:
+                logger.info(f"✅ Подплощадка Admitad создана: website_id={website_id} для канала {channel_id_str}")
+            else:
+                logger.warning(f"⚠️ Не удалось создать подплощадку для канала {channel_id_str}")
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка создания подплощадки: {e}")
 
         display_name = channel_username if channel_username else tg_title
         await message.answer(
