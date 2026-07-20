@@ -1051,63 +1051,12 @@ async def cmd_delete(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username or "без username"
     
-    # Подтверждение
-    confirm_msg = await message.answer(
-        "⚠️ <b>Внимание!</b>\n\n"
-        "Это действие удалит <b>все ваши данные</b> из бота:\n"
-        "• Профиль и подписка\n"
-        "• Каналы и посты\n"
-        "• Баланс и транзакции\n"
-        "• Шаблоны и настройки\n\n"
-        "Это действие <b>необратимо</b>.\n\n"
-        "Для подтверждения отправьте команду <code>/delete</code> ещё раз.",
-        parse_mode=ParseMode.HTML
-    )
-    
-    # Проверяем, есть ли состояние ожидания подтверждения
     state = message.state
     if state:
         data = await state.get_data()
         if data.get("delete_confirmed"):
-            # Второй вызов — выполняем удаление
             await state.clear()
-            conn = get_db()
-            try:
-                # Получаем все связанные данные перед удалением
-                user_sub_ids = [row["sub_id"] for row in conn.execute("SELECT sub_id FROM users WHERE user_id=?", (user_id,)).fetchall()]
-                channel_ids = [row["channel_id"] for row in conn.execute("SELECT channel_id FROM channels WHERE user_id=?", (user_id,)).fetchall()]
-                
-                # Удаляем из всех таблиц
-                conn.execute("DELETE FROM payout_chat WHERE request_id IN (SELECT id FROM payout_requests WHERE user_id=?)", (user_id,))
-                conn.execute("DELETE FROM payout_requests WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM payouts WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM saas_queue WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM night_queue WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM promocode_activations WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM user_category_preferences WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM gdeslon_catalog WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM admitad_transactions WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM social_channels WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM referrals WHERE referrer_id=? OR referral_id=?", (user_id, user_id))
-                conn.execute("DELETE FROM posts WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM channels WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM user_consents WHERE user_id=?", (user_id,))
-                conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
-                
-                # Удаляем связанные данные по sub_id
-                for sub_id in user_sub_ids:
-                    conn.execute("DELETE FROM transactions WHERE sub_id=?", (sub_id,))
-                    conn.execute("DELETE FROM subid_stats WHERE subid1=?", (sub_id,))
-                
-                # Удаляем закреплённые посты в каналах пользователя
-                for channel_id in channel_ids:
-                    conn.execute("DELETE FROM pinned_posts WHERE chat_id=?", (channel_id,))
-                
-                conn.commit()
-            finally:
-                conn.close()
-            
-            # Уведомление админам
+            _delete_user_data(user_id)
             for admin_id in ADMIN_IDS:
                 try:
                     await message.bot.send_message(
@@ -1119,52 +1068,28 @@ async def cmd_delete(message: Message):
                         parse_mode=ParseMode.HTML
                     )
                 except Exception as e:
-                    logger.error(f"Не удалось уведомить админа {admin_id} об удалении пользователя: {e}")
+                    logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
             
             await message.answer(
-                "✅ Все ваши данные полностью удалены в соответствии со ст. 21 152-ФЗ.\n"
-                "Срок исполнения — 7 рабочих дней.\n\n"
+                "✅ Все ваши данные удалены в соответствии со ст. 21 152-ФЗ.\n\n"
                 "Если вы захотите вернуться — просто напишите /start."
             )
         else:
-            # Первый вызов — запоминаем и просим подтверждения
             await state.set_data({"delete_confirmed": True})
+            confirm_msg = await message.answer(
+                "⚠️ <b>Внимание!</b>\n\n"
+                "Это действие удалит <b>все ваши данные</b> из бота:\n"
+                "• Профиль и подписка\n"
+                "• Каналы и посты\n"
+                "• Баланс и транзакции\n"
+                "• Шаблоны и настройки\n\n"
+                "Это действие <b>необратимо</b>.\n\n"
+                "Для подтверждения отправьте команду <code>/delete</code> ещё раз.",
+                parse_mode=ParseMode.HTML
+            )
             return
     else:
-        # Если state не доступен, сразу удаляем (fallback)
-        conn = get_db()
-        try:
-            user_sub_ids = [row["sub_id"] for row in conn.execute("SELECT sub_id FROM users WHERE user_id=?", (user_id,)).fetchall()]
-            channel_ids = [row["channel_id"] for row in conn.execute("SELECT channel_id FROM channels WHERE user_id=?", (user_id,)).fetchall()]
-            
-            conn.execute("DELETE FROM payout_chat WHERE request_id IN (SELECT id FROM payout_requests WHERE user_id=?)", (user_id,))
-            conn.execute("DELETE FROM payout_requests WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM payouts WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM saas_queue WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM night_queue WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM promocode_activations WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM user_category_preferences WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM gdeslon_catalog WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM admitad_transactions WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM social_channels WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM referrals WHERE referrer_id=? OR referral_id=?", (user_id, user_id))
-            conn.execute("DELETE FROM posts WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM channels WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM user_consents WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
-            
-            for sub_id in user_sub_ids:
-                conn.execute("DELETE FROM transactions WHERE sub_id=?", (sub_id,))
-                conn.execute("DELETE FROM subid_stats WHERE subid1=?", (sub_id,))
-            
-            for channel_id in channel_ids:
-                conn.execute("DELETE FROM pinned_posts WHERE chat_id=?", (channel_id,))
-            
-            conn.commit()
-        finally:
-            conn.close()
-        
-        # Уведомление админам
+        _delete_user_data(user_id)
         for admin_id in ADMIN_IDS:
             try:
                 await message.bot.send_message(
@@ -1176,13 +1101,50 @@ async def cmd_delete(message: Message):
                     parse_mode=ParseMode.HTML
                 )
             except Exception as e:
-                logger.error(f"Не удалось уведомить админа {admin_id} об удалении пользователя: {e}")
+                logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
         
         await message.answer(
-            "✅ Все ваши данные полностью удалены в соответствии со ст. 21 152-ФЗ.\n"
-            "Срок исполнения — 7 рабочих дней.\n\n"
+            "✅ Все ваши данные удалены в соответствии со ст. 21 152-ФЗ.\n\n"
             "Если вы захотите вернуться — просто напишите /start."
         )
+
+
+def _delete_user_data(user_id: int) -> None:
+    conn = get_db()
+    try:
+        user_sub_ids = [row["sub_id"] for row in conn.execute("SELECT sub_id FROM users WHERE user_id=?", (user_id,)).fetchall()]
+        channel_ids = [row["channel_id"] for row in conn.execute("SELECT channel_id FROM channels WHERE user_id=?", (user_id,)).fetchall()]
+
+        for table, col in [
+            ("payout_chat", None),
+            ("payout_requests", "user_id"),
+            ("payouts", "user_id"),
+            ("saas_queue", "user_id"),
+            ("night_queue", "user_id"),
+            ("promocode_activations", "user_id"),
+            ("user_category_preferences", "user_id"),
+            ("gdeslon_catalog", "user_id"),
+            ("admitad_transactions", "user_id"),
+            ("social_channels", "user_id"),
+        ]:
+            if col:
+                conn.execute(f"DELETE FROM {table} WHERE {col}=?", (user_id,))
+
+        conn.execute("DELETE FROM referrals WHERE referrer_id=? OR referral_id=?", (user_id, user_id))
+        conn.execute("DELETE FROM posts WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM channels WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM user_consents WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+
+        for sub_id in user_sub_ids:
+            conn.execute("DELETE FROM transactions WHERE sub_id=?", (sub_id,))
+            conn.execute("DELETE FROM subid_stats WHERE subid1=?", (sub_id,))
+        for channel_id in channel_ids:
+            conn.execute("DELETE FROM pinned_posts WHERE chat_id=?", (channel_id,))
+
+        conn.commit()
+    finally:
+        conn.close()
 
 
 
@@ -1902,14 +1864,34 @@ async def unpin_old_messages(bot: Bot):
 async def cleanup_old_posts() -> None:
     conn = get_db()
     try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        conn.execute("DELETE FROM posts WHERE created_at < ?", (cutoff,))
+        draft_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        published_cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+        conn.execute("DELETE FROM posts WHERE status != 'published' AND created_at < ?", (draft_cutoff,))
+        draft_count = conn.execute("SELECT changes()").fetchone()[0]
+        conn.execute("DELETE FROM posts WHERE status = 'published' AND created_at < ?", (published_cutoff,))
+        pub_count = conn.execute("SELECT changes()").fetchone()[0]
+        conn.execute("DELETE FROM subid_stats WHERE subid1 NOT IN (SELECT DISTINCT subid1 FROM posts WHERE subid1 IS NOT NULL AND subid1 != '')")
+        orphan_count = conn.execute("SELECT changes()").fetchone()[0]
         conn.commit()
-        logger.info("Очистка: удалены посты старше 30 дней")
+        logger.info(f"Очистка: {draft_count} черновиков, {pub_count} опубликованных, {orphan_count} orphan subid_stats")
     except Exception as e:
         logger.error(f"Ошибка очистки: {e}")
     finally:
         conn.close()
+
+async def cleanup_old_report_files() -> None:
+    import pathlib
+    reports_dir = pathlib.Path("/app/data/reports")
+    if not reports_dir.exists():
+        return
+    cutoff = datetime.now() - timedelta(days=90)
+    removed = 0
+    for f in reports_dir.iterdir():
+        if f.is_file() and datetime.fromtimestamp(f.stat().st_mtime) < cutoff:
+            f.unlink()
+            removed += 1
+    if removed:
+        logger.info(f"Очистка отчётов: удалено {removed} файлов старше 90 дней")
 
 async def daily_report(bot: Bot):
     import csv, os as _os, pathlib
@@ -2005,7 +1987,8 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
     scheduler.add_job(cleanup_old_posts, trigger="cron", hour=3, minute=0, id="cleanup_old_posts", replace_existing=True)
-    scheduler.add_job(backup_database_to_telegram, trigger="cron", hour=3, minute=0, kwargs={"bot": bot}, id="backup_database", replace_existing=True)
+    scheduler.add_job(cleanup_old_report_files, trigger="cron", hour=3, minute=5, id="cleanup_report_files", replace_existing=True)
+    scheduler.add_job(backup_database_to_telegram, trigger="cron", hour=3, minute=10, kwargs={"bot": bot}, id="backup_database", replace_existing=True)
     scheduler.add_job(publish_from_catalog, trigger="interval", minutes=10, jitter=30, kwargs={"bot": bot}, id="publish_catalog", replace_existing=True)
     scheduler.add_job(refill_admitad_catalogs, trigger="interval", minutes=15, id="refill_admitad", replace_existing=True)
     scheduler.add_job(daily_report, trigger="cron", hour=9, minute=0, kwargs={"bot": bot}, id="daily_report", replace_existing=True)
@@ -2059,7 +2042,6 @@ async def main() -> None:
                     BotCommand(command="start", description="Панель администратора"),
                     BotCommand(command="cabinet", description="Панель администратора"),
                     BotCommand(command="debug_sub", description="Проверить подписку пользователя"),
-                    BotCommand(command="force_trial", description="Выдать тестовые 3 дня"),
                     BotCommand(command="fix_channels", description="Удалить дубликаты каналов"),
                     BotCommand(command="beta", description="Управление бета-тестерами"),
                     BotCommand(command="preview", description="Предпросмотр поста"),

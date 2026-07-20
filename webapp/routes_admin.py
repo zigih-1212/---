@@ -2,6 +2,16 @@ import os
 import io, csv
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+
+def _safe_path(base_dir: str, user_path: str) -> str | None:
+    """Resolve user_path inside base_dir; return None if traversal detected."""
+    base = Path(base_dir).resolve()
+    full = (base / user_path).resolve()
+    if not str(full).startswith(str(base)):
+        return None
+    return str(full)
 from fastapi import APIRouter, Request, Form, Depends, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse, StreamingResponse, JSONResponse
 from jinja2 import Environment, BaseLoader, TemplateNotFound
@@ -244,8 +254,8 @@ async def payout_request_status(request_id: int, _: int = Depends(admin_required
 
 @router.get("/receipt-file")
 async def get_receipt_file(path: str = Query(...), _: int = Depends(admin_required)):
-    full_path = os.path.join("/app/data/receipts", path)
-    if not os.path.exists(full_path):
+    full_path = _safe_path("/app/data/receipts", path)
+    if not full_path or not os.path.exists(full_path):
         return HTMLResponse("Файл не найден", status_code=404)
     return FileResponse(full_path)
 
@@ -713,7 +723,7 @@ async def bulk_send_message(request: Request, group: str = Form(...), text: str 
     return render("admin_bulk_actions.html", message=f"Сообщение отправлено {sent} из {len(users)} пользователям", active_page='bulk')
 
 @router.get("/bulk-actions/export-csv")
-async def bulk_export_csv(group: str = Query("all"), _: int = Depends(admin_required)):
+async def bulk_export_csv(group: str = Query("all"), admin_id: int = Depends(admin_required)):
     conn = get_db()
     try:
         cond = ""
@@ -743,6 +753,7 @@ async def bulk_export_csv(group: str = Query("all"), _: int = Depends(admin_requ
                          u["balance_available"], u["balance_pending"], u["commission_rate"],
                          u["beta_tester"], u["created_at"]])
     output.seek(0)
+    log_admin_action(admin_id, "export_users_csv", f"group={group}, {len(users)} users")
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
@@ -805,21 +816,22 @@ async def settings_edit_save(
     return RedirectResponse(url="/admin/settings-edit", status_code=303)
 
 @router.get("/payouts/csv")
-async def download_payouts_csv(_: int = Depends(admin_required)):
+async def download_payouts_csv(admin_id: int = Depends(admin_required)):
     conn = get_db()
     try:
         rows = conn.execute("""
-            SELECT id, user_id, amount, message, status, receipt_photo, created_at
+            SELECT id, user_id, amount, status, created_at
             FROM payout_requests
             ORDER BY id DESC
         """).fetchall()
     finally:
         conn.close()
-    csv_content = generate_csv(rows, ["id", "user_id", "amount", "message", "status", "receipt_photo", "created_at"])
+    log_admin_action(admin_id, "export_payouts_csv", f"{len(rows)} rows")
+    csv_content = generate_csv(rows, ["id", "user_id", "amount", "status", "created_at"])
     return StreamingResponse(io.StringIO(csv_content), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=payouts.csv"})
 
 @router.get("/subid-stats/csv")
-async def download_subid_stats_csv(_: int = Depends(admin_required)):
+async def download_subid_stats_csv(admin_id: int = Depends(admin_required)):
     conn = get_db()
     try:
         rows = conn.execute("""
@@ -832,11 +844,12 @@ async def download_subid_stats_csv(_: int = Depends(admin_required)):
         """).fetchall()
     finally:
         conn.close()
+    log_admin_action(admin_id, "export_subid_csv", f"{len(rows)} rows")
     csv_content = generate_csv(rows, ["subid1", "clicks_count", "leads_count", "earnings_pending", "earnings_approved", "channel_title", "username"])
     return StreamingResponse(io.StringIO(csv_content), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=subid_stats.csv"})
 
 @router.get("/referrals/csv")
-async def download_referrals_csv(_: int = Depends(admin_required)):
+async def download_referrals_csv(admin_id: int = Depends(admin_required)):
     conn = get_db()
     try:
         rows = conn.execute("""
@@ -848,6 +861,7 @@ async def download_referrals_csv(_: int = Depends(admin_required)):
         """).fetchall()
     finally:
         conn.close()
+    log_admin_action(admin_id, "export_referrals_csv", f"{len(rows)} rows")
     csv_content = generate_csv(rows, ["referrer_id", "referrer_name", "referral_id", "referral_name", "total_brought_profit"])
     return StreamingResponse(io.StringIO(csv_content), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=referrals.csv"})
 # ---------- Аудит ----------
@@ -867,10 +881,10 @@ async def reports_list(request: Request, _: int = Depends(admin_required)):
 
 @router.get("/reports/download/{fname}")
 async def reports_download(fname: str, _: int = Depends(admin_required)):
-    path = os.path.join("/app/data/reports", fname)
-    if os.path.isfile(path):
-        return FileResponse(path, media_type='text/csv', filename=fname)
-    return HTMLResponse("Файл не найден", status_code=404)
+    full_path = _safe_path("/app/data/reports", fname)
+    if not full_path or not os.path.isfile(full_path):
+        return HTMLResponse("Файл не найден", status_code=404)
+    return FileResponse(full_path, media_type='text/csv', filename=fname)
 
 @router.get("/dashboard/data")
 async def dashboard_data(

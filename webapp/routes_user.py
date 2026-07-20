@@ -7,6 +7,7 @@ import io
 import logging
 import xlsxwriter
 from io import BytesIO
+from pathlib import Path
 from fastapi import APIRouter, Request, Query, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from services.db import get_db
@@ -24,6 +25,14 @@ logger = logging.getLogger("autopost_bot.user")
 
 UPLOAD_DIR = "/app/data/receipts"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def _safe_path(base_dir: str, user_path: str) -> str | None:
+    base = Path(base_dir).resolve()
+    full = (base / user_path).resolve()
+    if not str(full).startswith(str(base)):
+        return None
+    return str(full)
 
 
 # ------------------------------------------------------------------------------
@@ -964,10 +973,10 @@ async def upload_receipt(
 @router.get("/receipt-file")
 async def get_receipt_file(path: str = Query(...), token: str = Query(...)):
     get_user_id_from_token(token)
-    full_path = os.path.join(UPLOAD_DIR, path)
-    if not os.path.exists(full_path):
+    safe = _safe_path(UPLOAD_DIR, path)
+    if not safe or not os.path.exists(safe):
         return HTMLResponse("Файл не найден", status_code=404)
-    return FileResponse(full_path)
+    return FileResponse(safe)
 
 # ---------- Шаблоны ----------
 @router.get("/templates", response_class=HTMLResponse)
@@ -1312,7 +1321,7 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
         workbook.close()
         output.seek(0)
 
-        filename = f"AutoPost_ORD_Report_{user_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        filename = f"AutoPost_ORD_Report_{datetime.now().strftime('%Y%m%d')}.xlsx"
         return StreamingResponse(
             output,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

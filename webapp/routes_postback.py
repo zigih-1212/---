@@ -57,7 +57,7 @@ async def admitad_postback(request: Request):
 
         # Обновление статистики по subid
         if subid1:
-            if action in ('click', 'lead', 'sale'):
+            if action == 'click':
                 conn.execute("""
                     INSERT INTO subid_stats (subid1, clicks_count) VALUES (?, 1)
                     ON CONFLICT(subid1) DO UPDATE SET clicks_count = clicks_count + 1
