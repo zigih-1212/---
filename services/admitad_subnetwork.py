@@ -61,7 +61,7 @@ async def get_access_token() -> Optional[str]:
                 headers={"Authorization": auth_header},
                 data={
                     "grant_type": "client_credentials",
-                    "scope": "advcampaigns manage_websites advcampaigns_for_website"
+                    "scope": "advcampaigns websites manage_websites advcampaigns_for_website"
                 }
             )
             if resp.status_code != 200:
@@ -218,7 +218,7 @@ async def get_website_campaigns(website_id: int) -> list:
             resp = await client.get(
                 f"https://api.admitad.com/advcampaigns/website/{website_id}/",
                 headers={"Authorization": f"Bearer {token}"},
-                params={"limit": 200}
+                params={"limit": 500}
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -261,4 +261,27 @@ async def search_all_cpc_campaigns(query: str = "", limit: int = 50) -> list:
             return cpc_campaigns
         except Exception as e:
             logger.error(f"❌ search_all_cpc exception: {e}")
+            return []
+
+
+async def get_all_websites() -> list:
+    """Возвращает все площадки аккаунта (основную + подплощадки)."""
+    token = await get_access_token()
+    if not token:
+        return []
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(
+                "https://api.admitad.com/websites/",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"limit": 100}
+            )
+            if resp.status_code != 200:
+                logger.error(f"❌ get_all_websites error {resp.status_code}: {resp.text[:200]}")
+                return []
+            data = resp.json()
+            return data.get("results", [])
+        except Exception as e:
+            logger.error(f"❌ get_all_websites exception: {e}")
             return []

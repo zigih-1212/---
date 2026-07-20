@@ -1378,27 +1378,31 @@ async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
 
 @router.message(Command("test_cpc"))
 async def cmd_test_cpc(message: Message):
-    from services.admitad_subnetwork import get_website_campaigns
-    conn = get_db()
-    try:
-        channels = conn.execute("SELECT channel_id, channel_title, admitad_website_id FROM channels WHERE admitad_website_id IS NOT NULL").fetchall()
-    finally:
-        conn.close()
-
-    if not channels:
-        await message.answer("❌ Нет каналов с admitad_website_id")
-        return
+    from services.admitad_subnetwork import get_website_campaigns, get_all_websites
+    websites = await get_all_websites()
+    
+    # На случай, если API не сработал — fallback на БД
+    if not websites:
+        conn = get_db()
+        try:
+            channels = conn.execute("SELECT channel_id, channel_title, admitad_website_id FROM channels WHERE admitad_website_id IS NOT NULL").fetchall()
+        finally:
+            conn.close()
+        if not channels:
+            await message.answer("❌ Нет площадок. Возможно, scope `websites` не включён в настройках приложения Admitad.")
+            return
+        website_list = [(ch["channel_title"] or ch["channel_id"], ch["admitad_website_id"]) for ch in channels]
+    else:
+        website_list = [(w.get("name", f"ID {w['id']}"), w["id"]) for w in websites]
 
     parts = []
-    for ch in channels[:3]:
-        ch_name = ch["channel_title"] or ch["channel_id"]
-        wid = ch["admitad_website_id"]
-        campaigns = await get_website_campaigns(wid)
+    for w_name, w_id in website_list:
+        campaigns = await get_website_campaigns(w_id)
         if not campaigns:
-            parts.append(f"📺 {ch_name} (ID {wid}): нет кампаний")
+            parts.append(f"📺 {w_name} (ID {w_id}): нет кампаний")
             continue
-        lines = [f"📺 {ch_name} (ID {wid}):"]
-        for c in campaigns[:5]:
+        lines = [f"📺 {w_name} (ID {w_id}):"]
+        for c in campaigns:
             name = c.get("name", "?")
             status = c.get("connection_status", "?")
             gotolink = c.get("gotolink", "")
