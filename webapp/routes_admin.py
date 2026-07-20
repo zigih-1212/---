@@ -605,38 +605,74 @@ async def store_delivery_update(store: str = Form(...), delivery_text: str = For
 async def bulk_actions_form(request: Request, _: int = Depends(admin_required)):
     return render("admin_bulk_actions.html", active_page='bulk')
 
-@router.post("/bulk-actions/execute", response_class=HTMLResponse)
-async def bulk_actions_execute(request: Request, group: str = Form(...), action: str = Form(...),
-                               value: float = Form(0), _: int = Depends(admin_required)):
+@router.get("/bulk-actions/users")
+async def bulk_actions_users(q: str = Query(""), _: int = Depends(admin_required)):
     conn = get_db()
     try:
-        cond = ""
-        if group == "saas": cond = "WHERE role='saas'"
-        elif group == "blogger": cond = "WHERE role='blogger'"
-        elif group == "active": cond = "WHERE is_active=1"
-        elif group == "banned": cond = "WHERE is_active=0"
-        elif group == "with_balance": cond = "WHERE balance_available > 0"
-        elif group == "no_posts": cond = f"WHERE user_id NOT IN (SELECT DISTINCT user_id FROM posts WHERE status='published')"
-        elif group == "beta": cond = "WHERE beta_tester=1"
+        if q:
+            users = conn.execute("""
+                SELECT user_id, username, role, is_active, balance_available
+                FROM users
+                WHERE CAST(user_id AS TEXT) LIKE ? OR username LIKE ?
+                ORDER BY user_id LIMIT 50
+            """, (f"%{q}%", f"%{q}%")).fetchall()
+        else:
+            users = conn.execute("""
+                SELECT user_id, username, role, is_active, balance_available
+                FROM users ORDER BY user_id DESC LIMIT 50
+            """).fetchall()
+    finally:
+        conn.close()
+    return JSONResponse([{
+        "user_id": u["user_id"],
+        "username": u["username"] or "",
+        "role": u["role"],
+        "is_active": u["is_active"],
+        "balance": u["balance_available"] or 0,
+    } for u in users])
+
+@router.post("/bulk-actions/execute", response_class=HTMLResponse)
+async def bulk_actions_execute(request: Request, group: str = Form(...), action: str = Form(...),
+                               value: float = Form(0), user_ids: str = Form(""),
+                               _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        if user_ids:
+            id_list = [int(x.strip()) for x in user_ids.split(",") if x.strip().isdigit()]
+            if not id_list:
+                return render("admin_bulk_actions.html", message="Некорректный список ID", active_page='bulk')
+            placeholders = ",".join("?" * len(id_list))
+            cond = f"WHERE user_id IN ({placeholders})"
+            params = list(id_list)
+        else:
+            params = []
+            cond = ""
+            if group == "saas": cond = "WHERE role='saas'"
+            elif group == "blogger": cond = "WHERE role='blogger'"
+            elif group == "active": cond = "WHERE is_active=1"
+            elif group == "banned": cond = "WHERE is_active=0"
+            elif group == "with_balance": cond = "WHERE balance_available > 0"
+            elif group == "no_posts": cond = f"WHERE user_id NOT IN (SELECT DISTINCT user_id FROM posts WHERE status='published')"
+            elif group == "beta": cond = "WHERE beta_tester=1"
 
         if action == "activate":
-            conn.execute(f"UPDATE users SET is_active=1 {cond}")
+            conn.execute(f"UPDATE users SET is_active=1 {cond}", params)
         elif action == "deactivate":
-            conn.execute(f"UPDATE users SET is_active=0 {cond}")
+            conn.execute(f"UPDATE users SET is_active=0 {cond}", params)
         elif action == "reset_balance":
-            conn.execute(f"UPDATE users SET balance_available=0, balance_pending=0 {cond}")
+            conn.execute(f"UPDATE users SET balance_available=0, balance_pending=0 {cond}", params)
         elif action == "add_balance":
             if value > 0:
-                conn.execute(f"UPDATE users SET balance_available = balance_available + ? {cond}", (value,))
+                conn.execute(f"UPDATE users SET balance_available = balance_available + ? {cond}", [value] + params)
         elif action == "set_commission":
             if 0 < value <= 1:
-                conn.execute(f"UPDATE users SET commission_rate = ? {cond}", (value,))
+                conn.execute(f"UPDATE users SET commission_rate = ? {cond}", [value] + params)
         elif action == "add_beta":
-            conn.execute(f"UPDATE users SET beta_tester=1 {cond}")
+            conn.execute(f"UPDATE users SET beta_tester=1 {cond}", params)
         elif action == "remove_beta":
-            conn.execute(f"UPDATE users SET beta_tester=0 {cond}")
+            conn.execute(f"UPDATE users SET beta_tester=0 {cond}", params)
         elif action == "delete":
-            conn.execute(f"DELETE FROM users {cond}")
+            conn.execute(f"DELETE FROM users {cond}", params)
         conn.commit()
         count = conn.total_changes
     finally:
@@ -645,19 +681,26 @@ async def bulk_actions_execute(request: Request, group: str = Form(...), action:
 
 @router.post("/bulk-actions/send-message", response_class=HTMLResponse)
 async def bulk_send_message(request: Request, group: str = Form(...), text: str = Form(...),
-                            _: int = Depends(admin_required)):
+                            user_ids: str = Form(""), _: int = Depends(admin_required)):
     bot = request.app.state.bot
     conn = get_db()
     try:
-        cond = ""
-        if group == "saas": cond = "WHERE role='saas'"
-        elif group == "blogger": cond = "WHERE role='blogger'"
-        elif group == "active": cond = "WHERE is_active=1"
-        elif group == "with_balance": cond = "WHERE balance_available > 0"
-        elif group == "no_posts": cond = f"WHERE user_id NOT IN (SELECT DISTINCT user_id FROM posts WHERE status='published')"
-        elif group == "beta": cond = "WHERE beta_tester=1"
+        if user_ids:
+            id_list = [int(x.strip()) for x in user_ids.split(",") if x.strip().isdigit()]
+            if not id_list:
+                return render("admin_bulk_actions.html", message="Некорректный список ID", active_page='bulk')
+            placeholders = ",".join("?" * len(id_list))
+            users = conn.execute(f"SELECT user_id FROM users WHERE user_id IN ({placeholders})", id_list).fetchall()
+        else:
+            cond = ""
+            if group == "saas": cond = "WHERE role='saas'"
+            elif group == "blogger": cond = "WHERE role='blogger'"
+            elif group == "active": cond = "WHERE is_active=1"
+            elif group == "with_balance": cond = "WHERE balance_available > 0"
+            elif group == "no_posts": cond = f"WHERE user_id NOT IN (SELECT DISTINCT user_id FROM posts WHERE status='published')"
+            elif group == "beta": cond = "WHERE beta_tester=1"
+            users = conn.execute(f"SELECT user_id FROM users {cond}").fetchall()
 
-        users = conn.execute(f"SELECT user_id FROM users {cond}").fetchall()
         sent = 0
         for u in users:
             try:
@@ -908,37 +951,73 @@ async def dashboard_data(
             """).fetchall()
 
         # --- 4. Магазины по доходам (approved) ---
-        store_revenue = conn.execute(f"""
-            SELECT COALESCE(g.source, 'Другой') as store,
-                   COUNT(DISTINCT at.id) as transactions,
-                   SUM(at.payment_sum) as revenue,
-                   COUNT(DISTINCT p.id) as posts_count
-            FROM admitad_transactions at
-            LEFT JOIN posts p ON p.donor_post_id LIKE '%' || at.admitad_id || '%' AND p.status='published'
-            LEFT JOIN gdeslon_catalog g ON g.id = CAST(substr(p.donor_post_id, 9, instr(substr(p.donor_post_id, 9), '_') - 1) AS INTEGER)
-            WHERE at.payment_status = 'approved'
-              {date_filter_at.replace('at.time', 'at.time')}
-            GROUP BY store
-            ORDER BY revenue DESC
-            LIMIT 15
-        """).fetchall()
+        if channel_id and channel_id != 'all':
+            store_revenue = conn.execute(f"""
+                SELECT COALESCE(g.source, 'Другой') as store,
+                       COUNT(DISTINCT at.id) as transactions,
+                       SUM(at.payment_sum) as revenue,
+                       COUNT(DISTINCT p.id) as posts_count
+                FROM admitad_transactions at
+                LEFT JOIN posts p ON p.donor_post_id LIKE '%' || at.admitad_id || '%' AND p.status='published'
+                LEFT JOIN gdeslon_catalog g ON g.id = CAST(substr(p.donor_post_id, 9, instr(substr(p.donor_post_id, 9), '_') - 1) AS INTEGER)
+                WHERE at.payment_status = 'approved'
+                  {date_filter_at.replace('at.time', 'at.time')}
+                  AND p.channel_id = ?
+                GROUP BY store
+                ORDER BY revenue DESC
+                LIMIT 15
+            """, (channel_id,)).fetchall()
+        else:
+            store_revenue = conn.execute(f"""
+                SELECT COALESCE(g.source, 'Другой') as store,
+                       COUNT(DISTINCT at.id) as transactions,
+                       SUM(at.payment_sum) as revenue,
+                       COUNT(DISTINCT p.id) as posts_count
+                FROM admitad_transactions at
+                LEFT JOIN posts p ON p.donor_post_id LIKE '%' || at.admitad_id || '%' AND p.status='published'
+                LEFT JOIN gdeslon_catalog g ON g.id = CAST(substr(p.donor_post_id, 9, instr(substr(p.donor_post_id, 9), '_') - 1) AS INTEGER)
+                WHERE at.payment_status = 'approved'
+                  {date_filter_at.replace('at.time', 'at.time')}
+                GROUP BY store
+                ORDER BY revenue DESC
+                LIMIT 15
+            """).fetchall()
 
         # --- 5. Топ-пользователей по доходу ---
-        top_users = conn.execute(f"""
-            SELECT u.user_id, u.username, u.role,
-                   COALESCE(SUM(at.payment_sum), 0) as total_revenue,
-                   COUNT(DISTINCT at.id) as transactions,
-                   COUNT(DISTINCT p.id) as posts_count
-            FROM users u
-            LEFT JOIN admitad_transactions at ON at.user_id = u.user_id AND at.payment_status = 'approved'
-              {date_filter_at.replace('at.time', '')}
-            LEFT JOIN posts p ON p.user_id = u.user_id AND p.status='published'
-              {date_filter.replace('p.published_at', 'p.published_at')}
-            GROUP BY u.user_id
-            HAVING total_revenue > 0 OR posts_count > 0
-            ORDER BY total_revenue DESC
-            LIMIT 20
-        """).fetchall()
+        if channel_id and channel_id != 'all':
+            top_users = conn.execute(f"""
+                SELECT u.user_id, u.username, u.role,
+                       COALESCE(SUM(at.payment_sum), 0) as total_revenue,
+                       COUNT(DISTINCT at.id) as transactions,
+                       COUNT(DISTINCT p.id) as posts_count
+                FROM users u
+                LEFT JOIN posts p ON p.user_id = u.user_id AND p.status='published' AND p.channel_id = ?
+                  {date_filter.replace('p.published_at', 'p.published_at')}
+                LEFT JOIN channels c ON c.user_id = u.user_id AND c.channel_id = ?
+                LEFT JOIN subid_stats s ON s.subid1 = c.sub_id
+                LEFT JOIN admitad_transactions at ON at.subid1 = c.sub_id AND at.payment_status = 'approved'
+                  {date_filter_at.replace('at.time', 'at.time')}
+                GROUP BY u.user_id
+                HAVING total_revenue > 0 OR posts_count > 0
+                ORDER BY total_revenue DESC
+                LIMIT 20
+            """, (channel_id, channel_id)).fetchall()
+        else:
+            top_users = conn.execute(f"""
+                SELECT u.user_id, u.username, u.role,
+                       COALESCE(SUM(at.payment_sum), 0) as total_revenue,
+                       COUNT(DISTINCT at.id) as transactions,
+                       COUNT(DISTINCT p.id) as posts_count
+                FROM users u
+                LEFT JOIN admitad_transactions at ON at.user_id = u.user_id AND at.payment_status = 'approved'
+                  {date_filter_at.replace('at.time', '')}
+                LEFT JOIN posts p ON p.user_id = u.user_id AND p.status='published'
+                  {date_filter.replace('p.published_at', 'p.published_at')}
+                GROUP BY u.user_id
+                HAVING total_revenue > 0 OR posts_count > 0
+                ORDER BY total_revenue DESC
+                LIMIT 20
+            """).fetchall()
 
         # --- 6. Общая статистика ---
         total_stats = conn.execute(f"""
@@ -952,6 +1031,9 @@ async def dashboard_data(
         """).fetchone()
 
         # --- 7. Магазины по постам (как было) ---
+        store_dist_params = list(params)
+        if channel_id and channel_id != 'all':
+            store_dist_params.append(channel_id)
         store_distribution = conn.execute(f"""
             SELECT g.source, COUNT(*) as cnt
             FROM posts p
@@ -960,7 +1042,7 @@ async def dashboard_data(
             {channel_filter}
             GROUP BY g.source
             ORDER BY cnt DESC
-        """, params).fetchall()
+        """, store_dist_params).fetchall()
 
         # --- 8. Аномалии CTR ---
         ctr_alerts = conn.execute("""
@@ -977,23 +1059,39 @@ async def dashboard_data(
         """).fetchall()
 
         # --- 9. Статистика по каналам ---
-        channel_stats = conn.execute(f"""
-            SELECT c.channel_id, c.channel_title, c.user_id, u.username,
-                   COUNT(DISTINCT p.id) as posts_count,
-                   COALESCE(SUM(s.clicks_count), 0) as clicks,
-                   COALESCE(SUM(s.leads_count), 0) as leads,
-                   COALESCE(SUM(s.earnings_approved), 0) as earnings
-            FROM channels c
-            LEFT JOIN users u ON u.user_id = c.user_id
-            LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.status='published'
-              {date_filter.replace('p.published_at', 'p.published_at')}
-            LEFT JOIN subid_stats s ON s.subid1 = c.sub_id
-            WHERE c.is_active = 1
-            GROUP BY c.channel_id
-            HAVING posts_count > 0 OR clicks > 0
-            ORDER BY earnings DESC
-            LIMIT 20
-        """).fetchall()
+        if channel_id and channel_id != 'all':
+            channel_stats = conn.execute(f"""
+                SELECT c.channel_id, c.channel_title, c.user_id, u.username,
+                       COUNT(DISTINCT p.id) as posts_count,
+                       COALESCE(SUM(s.clicks_count), 0) as clicks,
+                       COALESCE(SUM(s.leads_count), 0) as leads,
+                       COALESCE(SUM(s.earnings_approved), 0) as earnings
+                FROM channels c
+                LEFT JOIN users u ON u.user_id = c.user_id
+                LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.status='published'
+                  {date_filter.replace('p.published_at', 'p.published_at')}
+                LEFT JOIN subid_stats s ON s.subid1 = c.sub_id
+                WHERE c.is_active = 1 AND c.channel_id = ?
+                GROUP BY c.channel_id
+            """, (channel_id,)).fetchall()
+        else:
+            channel_stats = conn.execute(f"""
+                SELECT c.channel_id, c.channel_title, c.user_id, u.username,
+                       COUNT(DISTINCT p.id) as posts_count,
+                       COALESCE(SUM(s.clicks_count), 0) as clicks,
+                       COALESCE(SUM(s.leads_count), 0) as leads,
+                       COALESCE(SUM(s.earnings_approved), 0) as earnings
+                FROM channels c
+                LEFT JOIN users u ON u.user_id = c.user_id
+                LEFT JOIN posts p ON p.channel_id = c.channel_id AND p.status='published'
+                  {date_filter.replace('p.published_at', 'p.published_at')}
+                LEFT JOIN subid_stats s ON s.subid1 = c.sub_id
+                WHERE c.is_active = 1
+                GROUP BY c.channel_id
+                HAVING posts_count > 0 OR clicks > 0
+                ORDER BY earnings DESC
+                LIMIT 20
+            """).fetchall()
 
         # --- 10. Сводка по выбранному каналу ---
         channel_summary = None

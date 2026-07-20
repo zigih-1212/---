@@ -705,10 +705,24 @@ BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
 {% block content %}
 <h1>&#x1F465; &#x41C;&#x430;&#x441;&#x441;&#x43E;&#x432;&#x44B;&#x435; &#x434;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x44F;</h1>
 
+<!-- Поиск пользователей -->
+<div class="card">
+    <h2>&#x1F50D; &#x412;&#x44B;&#x431;&#x43E;&#x440; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x435;&#x439; (&#x43F;&#x43E; &#x43A;&#x43E;&#x43D;&#x43A;&#x440;&#x435;&#x442;&#x43D;&#x44B;&#x43C; ID / username)</h2>
+    <div style="display:flex; gap:10px; margin-bottom:10px;">
+        <input type="text" id="user-search" placeholder="ID: 123456 &#x438;&#x43B;&#x438; @username" style="flex:1; padding:8px; background:#1a1a2e; color:#fff; border:1px solid #333; border-radius:6px;">
+        <button type="button" id="search-btn" style="background:#ff4444; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">&#x1F50D; &#x41D;&#x430;&#x439;&#x442;&#x438;</button>
+    </div>
+    <div id="user-results" style="max-height:250px; overflow-y:auto; display:none; border:1px solid #333; border-radius:6px; margin-bottom:10px;"></div>
+    <div id="selected-users" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
+    <input type="hidden" id="selected-user-ids" value="">
+    <p style="color:#888; font-size:0.85em; margin-top:8px;">&#x415;&#x441;&#x43B;&#x438; &#x43D;&#x438;&#x447;&#x435;&#x433;&#x43E; &#x43D;&#x435; &#x432;&#x44B;&#x431;&#x440;&#x430;&#x43D;&#x43E; &#x2014; &#x434;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x435; &#x43F;&#x43E; &#x433;&#x440;&#x443;&#x43F;&#x43F;&#x435; &#x438;&#x437; &#x441;&#x43F;&#x438;&#x441;&#x43A;&#x430; &#x432;&#x44B;&#x448;&#x435;.</p>
+</div>
+
 <!-- Основные массовые действия -->
 <div class="card">
     <h2>&#x2699;&#xFE0F; &#x414;&#x435;&#x439;&#x441;&#x442;&#x432;&#x438;&#x44F; &#x441; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44F;&#x43C;&#x438;</h2>
-    <form method="post" action="/admin/bulk-actions/execute">
+    <form method="post" action="/admin/bulk-actions/execute" onsubmit="syncUserIds(this)">
+        <input type="hidden" name="user_ids" value="">
         <label>&#x413;&#x440;&#x443;&#x43F;&#x43F;&#x430; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x435;&#x439;:</label>
         <select name="group">
             <option value="all">&#x412;&#x441;&#x435;</option>
@@ -743,7 +757,8 @@ BULK_ACTIONS_TEMPLATE = '''{% extends "base.html" %}
 <!-- Отправка сообщения группе -->
 <div class="card">
     <h2>&#x1F4AC; &#x41E;&#x442;&#x43F;&#x440;&#x430;&#x432;&#x438;&#x442;&#x44C; &#x441;&#x43E;&#x43E;&#x431;&#x449;&#x435;&#x43D;&#x438;&#x435; &#x433;&#x440;&#x443;&#x43F;&#x43F;&#x435;</h2>
-    <form method="post" action="/admin/bulk-actions/send-message">
+    <form method="post" action="/admin/bulk-actions/send-message" onsubmit="syncUserIds(this)">
+        <input type="hidden" name="user_ids" value="">
         <label>&#x413;&#x440;&#x443;&#x43F;&#x43F;&#x430;:</label>
         <select name="group">
             <option value="all">&#x412;&#x441;&#x435;</option>
@@ -796,6 +811,70 @@ function setBulkAction(action) {
     valueSection.style.display = (action === 'add_balance' || action === 'set_commission') ? 'block' : 'none';
 }
 setBulkAction('activate');
+
+const selectedUsers = {};
+function syncUserIds(form) {
+    const ids = Object.keys(selectedUsers).join(',');
+    const hidden = form.querySelector('input[name="user_ids"]');
+    if (hidden) hidden.value = ids;
+}
+
+document.getElementById('search-btn').addEventListener('click', async () => {
+    const q = document.getElementById('user-search').value.trim();
+    if (!q) return;
+    const box = document.getElementById('user-results');
+    box.style.display = 'block';
+    box.innerHTML = '<p style="color:#888; padding:8px;">&#x417;&#x430;&#x433;&#x440;&#x443;&#x437;&#x43A;&#x430;...</p>';
+    try {
+        const resp = await fetch(`/admin/bulk-actions/users?q=${encodeURIComponent(q)}`);
+        const data = await resp.json();
+        if (!data.users || data.users.length === 0) {
+            box.innerHTML = '<p style="color:#888; padding:8px;">&#x41D;&#x438;&#x447;&#x435;&#x433;&#x43E; &#x43D;&#x435; &#x43D;&#x430;&#x439;&#x434;&#x435;&#x43D;&#x43E;</p>';
+            return;
+        }
+        box.innerHTML = data.users.map(u => {
+            const id = u.user_id;
+            const checked = selectedUsers[id] ? 'checked' : '';
+            const name = u.username ? `@${u.username}` : u.user_id;
+            const role = u.role || '';
+            return `<label style="display:flex; align-items:center; gap:8px; padding:8px; cursor:pointer; border-bottom:1px solid #222;">
+                <input type="checkbox" ${checked} onchange="toggleUser(${id}, '${(u.username||'').replace(/'/g,"\\'")}', ${id}, '${role}')">
+                <span><b>${name}</b> <span style="color:#888;">(${id})</span> <span style="color:#666;">${role}</span></span>
+            </label>`;
+        }).join('');
+    } catch(e) {
+        box.innerHTML = '<p style="color:#ff4444; padding:8px;">&#x41E;&#x448;&#x438;&#x431;&#x43A;&#x430;</p>';
+    }
+});
+
+function toggleUser(id, username, userId, role) {
+    if (selectedUsers[id]) {
+        delete selectedUsers[id];
+    } else {
+        selectedUsers[id] = {username, userId, role};
+    }
+    renderSelected();
+}
+
+function removeUser(id) {
+    delete selectedUsers[id];
+    renderSelected();
+}
+
+function renderSelected() {
+    const box = document.getElementById('selected-users');
+    const ids = Object.keys(selectedUsers);
+    document.getElementById('selected-user-ids').value = ids.join(',');
+    if (ids.length === 0) {
+        box.innerHTML = '';
+        return;
+    }
+    box.innerHTML = ids.map(id => {
+        const u = selectedUsers[id];
+        const name = u.username ? `@${u.username}` : id;
+        return `<span style="display:inline-flex;align-items:center;gap:4px;background:#333;border:1px solid #555;border-radius:16px;padding:4px 10px;margin:3px;font-size:0.9em;">${name} <button type="button" onclick="removeUser('${id}')" style="background:none;border:none;color:#ff4444;cursor:pointer;font-size:1.1em;">&times;</button></span>`;
+    }).join('');
+}
 </script>
 {% endblock %}'''
 
