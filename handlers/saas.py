@@ -87,7 +87,10 @@ async def cb_stores(callback: CallbackQuery):
     # Пояснительный текст под кнопками
     footer = "\n\n* — требуется выбор города\n⛔ — магазин временно не работает\n🔞 — контент для взрослых"
     await safe_edit(callback.message, text + footer, reply_markup=kb, parse_mode=ParseMode.HTML)
-    await callback.answer()
+    try:
+        await callback.answer()
+    except Exception:
+        pass
 
 @router.callback_query(F.data.startswith("store_toggle:"))
 async def cb_toggle_store(callback: CallbackQuery):
@@ -158,6 +161,7 @@ async def cb_toggle_store(callback: CallbackQuery):
             return
         else:
             # Если уже есть — удаляем
+            await callback.answer(f"✅ {store_name} удалён из ваших магазинов.")
             conn = get_db()
             try:
                 conn.execute(
@@ -168,10 +172,10 @@ async def cb_toggle_store(callback: CallbackQuery):
             finally:
                 conn.close()
             await cb_stores(callback)
-            await callback.answer(f"✅ {store_name} удалён из ваших магазинов.")
             return
 
     # Стандартное переключение для остальных магазинов
+    await callback.answer()
     conn = get_db()
     try:
         existing = conn.execute(
@@ -193,7 +197,6 @@ async def cb_toggle_store(callback: CallbackQuery):
         conn.close()
 
     await cb_stores(callback)
-    await callback.answer()
 
 # ---------------------------------------------------------------------------
 # Циклический постинг — расписание по магазинам
