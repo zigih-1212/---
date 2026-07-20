@@ -202,3 +202,29 @@ async def backfill_existing_channels():
             logger.warning(f"  ❌ {ch_id} — не удалось зарегистрировать")
 
     logger.info(f"📊 Бэктейл завершён: {registered} создано, {failed} ошибок")
+
+
+# =============================================================================
+# Получение подключенных рекламных кампаний для площадки
+# =============================================================================
+async def get_website_campaigns(website_id: int) -> list:
+    """Возвращает список рекламодателей, подключенных к площадке."""
+    token = await get_access_token()
+    if not token:
+        return []
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(
+                f"https://api.admitad.com/advcampaigns/website/{website_id}/",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"limit": 200}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("results", [])
+            logger.error(f"❌ get_website_campaigns error {resp.status_code}: {resp.text[:200]}")
+            return []
+        except Exception as e:
+            logger.error(f"❌ get_website_campaigns exception: {e}")
+            return []
