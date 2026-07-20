@@ -14,15 +14,19 @@ logger = logging.getLogger("autopost_bot.admitad")
 # ---------------------------------------------------------------------------
 # Магазины и маппинг
 # ---------------------------------------------------------------------------
+STORES = {
+    "Читай-город": {
+        "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=24883&last_import=",
+        "adult": False,
+        "website_id": "15460",
+        "available": True
+    },
+    # ... другие магазины ...
+}
+
 def get_available_stores() -> dict:
     """Возвращает список доступных магазинов с их статусом"""
-    return {
-        "Читай-город": {
-            "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=24883&last_import=",
-            "adult": False,
-            "website_id": "15460",
-            "available": True
-        },
+    return STORES
     "Аквафор": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=18482&last_import=",
         "adult": False,
