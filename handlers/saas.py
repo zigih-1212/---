@@ -310,8 +310,9 @@ async def cb_cancel_galaxy_city(callback: CallbackQuery):
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
-    """Обработчик кнопки принудительной публикации"""
+    """Обработчик кнопки принудительной публикации с улучшенной обработкой ошибок"""
     user_id = callback.from_user.id
+    logger.info(f"User {user_id} triggered force post")
     
     conn = get_db()
     try:
@@ -331,13 +332,30 @@ async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
         if channels_count == 0:
             await callback.answer("❌ Нет активных каналов", show_alert=True)
             return
+            
+        # Проверяем наличие товаров в каталоге
+        product_count = conn.execute(
+            "SELECT COUNT(*) FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL",
+            (user_id,)
+        ).fetchone()[0]
+        
+        if product_count == 0:
+            await callback.answer("❌ Нет доступных товаров для публикации", show_alert=True)
+            return
+            
+    except sqlite3.Error as e:
+        logger.error(f"Database error in cb_saas_force_post for user {user_id}: {e}")
+        await callback.answer("⚠️ Ошибка базы данных", show_alert=True)
+        return
     finally:
         conn.close()
 
     if preview_confirmed:
+        logger.info(f"User {user_id} force posting immediately (preview confirmed)")
         await callback.answer("🚀 Публикую пост...", show_alert=True)
         await _force_post_immediate(callback, bot, user_id)
     else:
+        logger.info(f"User {user_id} force posting with preview")
         await callback.answer("🔍 Подбираю товар для предпросмотра...", show_alert=False)
         await _force_post_preview(callback, bot, user_id)
 
