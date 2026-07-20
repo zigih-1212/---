@@ -26,29 +26,6 @@ UPLOAD_DIR = "/app/data/receipts"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-def build_ord_report_rows(posts_rows):
-    """Подготавливает строки для Excel-отчёта ОРД с корректными полями."""
-    result = []
-    for post in posts_rows:
-        post_link = post.get("direct_link") or ""
-        channel_title = post.get("channel_title") or ""
-        channel_id = post.get("channel_id") or ""
-        display_channel = channel_title or channel_id or "Telegram"
-        channel_username = post.get("channel_username") or ""
-        channel_link = post.get("channel_link") or ""
-        result.append({
-            "erid": post.get("erid") or "",
-            "platform": post_link or "Telegram",
-            "channel_type": display_channel,
-            "views_count": post.get("views_count") or 0,
-            "post_link": post_link,
-            "channel_title": channel_title,
-            "channel_username": channel_username,
-            "channel_link": channel_link,
-            "published_at": post.get("published_at"),
-        })
-    return result
-
 # ------------------------------------------------------------------------------
 # Шаблон главной страницы статистики
 # ------------------------------------------------------------------------------
@@ -1343,13 +1320,10 @@ async def download_ord_report(token: str = Query(...), request: Request = None):
         )
 
     except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"Ошибка в ord-report: {error_details}")
+        logger.error(f"Ошибка в ord-report: {e}")
         return HTMLResponse(
             f"<h2>❌ Ошибка формирования отчёта</h2>"
-            f"<pre style='color:#ff4444;'>{str(e)}</pre>"
-            f"<details><summary>Подробности</summary><pre>{error_details}</pre></details>"
+            f"<p>Попробуйте позже или обратитесь в поддержку.</p>"
             f"<br><a href='javascript:history.back()'>Вернуться</a>",
             status_code=500
         )

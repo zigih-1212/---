@@ -2111,82 +2111,102 @@ async def main() -> None:
         logger.info("Бот и планировщик остановлены")
 
 async def generate_monthly_ord_reports(bot: Bot):
-    """Генерирует отчёт ОРД для всех пользователей с постами за прошедший месяц и отправляет им в Telegram"""
+    """Генерирует отчёт ОРД за прошедший месяц и отправляет пользователям в Telegram"""
+    now = datetime.now(timezone.utc)
+    first_of_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last_month_end = first_of_this_month - timedelta(seconds=1)
+    last_month_start = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    start_iso = last_month_start.isoformat()
+    end_iso = last_month_end.isoformat()
+    month_label = last_month_start.strftime("%B %Y")
+
     conn = get_db()
     try:
-        # Получаем всех пользователей, у которых есть опубликованные посты с ERID
         users = conn.execute("""
-            SELECT DISTINCT user_id FROM posts 
+            SELECT DISTINCT user_id FROM posts
             WHERE status = 'published' AND erid IS NOT NULL AND erid != ''
-        """).fetchall()
+              AND published_at >= ? AND published_at <= ?
+        """, (start_iso, end_iso)).fetchall()
     finally:
         conn.close()
 
     for user_row in users:
         user_id = user_row["user_id"]
         try:
-            # Генерируем отчёт для пользователя
-            # Импортируем функцию из routes_user (нужно будет перенести или продублировать)
-            # Здесь мы можем вызвать ту же логику, что и в download_ord_report, но сохранить в файл
-            
-            # Собираем просмотры
             await collect_views_for_user(user_id, bot)
-            
-            # Формируем Excel-файл
+
             conn = get_db()
-            posts = conn.execute("""
-                SELECT p.published_at, p.erid, p.views_count, p.direct_link 
-                FROM posts p 
-                WHERE p.user_id = ? AND p.status = 'published' AND p.erid IS NOT NULL AND p.erid != ''
-                ORDER BY p.published_at DESC
-            """, (user_id,)).fetchall()
-            conn.close()
-            
+            try:
+                posts = conn.execute("""
+                    SELECT p.published_at, p.erid, p.views_count, p.direct_link, p.channel_id,
+                           COALESCE(c.channel_title, '') AS channel_title
+                    FROM posts p
+                    LEFT JOIN channels c ON c.user_id = p.user_id AND c.channel_id = p.channel_id
+                    WHERE p.user_id = ? AND p.status = 'published' AND p.erid IS NOT NULL AND p.erid != ''
+                      AND p.published_at >= ? AND p.published_at <= ?
+                    ORDER BY p.published_at DESC
+                """, (user_id, start_iso, end_iso)).fetchall()
+            finally:
+                conn.close()
+
             if not posts:
                 continue
-            
-            # Создаём Excel
+
             output = BytesIO()
-            # remove_timezone: xlsxwriter сам снимает tzinfo с datetime (Excel не поддерживает часовые пояса)
             workbook = xlsxwriter.Workbook(output, {'in_memory': True, 'remove_timezone': True})
             worksheet = workbook.add_worksheet("ORD")
-            headers = ["erid", "Площадка", "Тип площадки", "Количество показов", "Количество переходов", "Сумма потраченная", "Дата начала", "Дата окончания"]
+            headers = [
+                "ERID", "Площадка (Telegram)", "Тип площадки",
+                "Количество показов", "Количество переходов", "Сумма потраченная",
+                "Дата начала", "Дата окончания", "Ссылка на пост", "Название канала"
+            ]
             for col, header in enumerate(headers):
                 worksheet.write(0, col, header)
-            row = 1
-            for p in posts:
+
+            date_format = workbook.add_format({'num_format': 'dd.mm.yyyy'})
+
+            for row_idx, p in enumerate(posts, start=1):
                 views = p["views_count"] or 0
+                direct_link = p["direct_link"] or ""
+                channel_title = p["channel_title"] or "Telegram"
+
                 try:
                     pub_date = datetime.fromisoformat(p["published_at"].replace("Z", "+00:00"))
-                    # Приводим к наивному datetime (Excel не поддерживает tz), затем форматируем в строку
                     if pub_date.tzinfo is not None:
                         pub_date = pub_date.replace(tzinfo=None)
-                    date_str = pub_date.strftime("%d.%m.%Y")
-                except:
-                    date_str = ""
-                worksheet.write(row, 0, p["erid"])
-                worksheet.write(row, 1, p["direct_link"] or "")
-                worksheet.write(row, 2, "Сайт/Приложение")
-                worksheet.write(row, 3, views)
-                worksheet.write(row, 4, 0)
-                worksheet.write(row, 5, 0)
-                worksheet.write(row, 6, date_str)
-                worksheet.write(row, 7, "")
-                row += 1
+                except Exception:
+                    pub_date = datetime.now()
+
+                worksheet.write(row_idx, 0, p["erid"])
+                worksheet.write(row_idx, 1, "Telegram")
+                worksheet.write(row_idx, 2, channel_title)
+                worksheet.write(row_idx, 3, views)
+                worksheet.write(row_idx, 4, 0)
+                worksheet.write(row_idx, 5, 0)
+                worksheet.write_datetime(row_idx, 6, pub_date, date_format)
+                worksheet.write_datetime(row_idx, 7, pub_date, date_format)
+                worksheet.write(row_idx, 8, direct_link)
+                worksheet.write(row_idx, 9, channel_title)
+
+            worksheet.set_column(0, 0, 30)
+            worksheet.set_column(1, 2, 18)
+            worksheet.set_column(3, 5, 20)
+            worksheet.set_column(6, 7, 14)
+            worksheet.set_column(8, 9, 40)
+
             workbook.close()
             output.seek(0)
-            
-            # Отправляем пользователю
-            filename = f"ORD_Report_{datetime.now().strftime('%Y%m')}.xlsx"
+
+            filename = f"ORD_Report_{last_month_start.strftime('%Y%m')}.xlsx"
             from aiogram.types import BufferedInputFile
-            file_bytes = output.getvalue()
-            document = BufferedInputFile(file_bytes, filename=filename)
+            document = BufferedInputFile(output.getvalue(), filename=filename)
             await bot.send_document(
                 chat_id=user_id,
                 document=document,
-                caption=f"📊 Ежемесячный отчёт для ОРД за {datetime.now().strftime('%B %Y')}\n\nВсего постов: {len(posts)}"
+                caption=f"📊 Отчёт ОРД за {month_label}\n\nВсего постов: {len(posts)}"
             )
-            logger.info(f"Отчёт ОРД отправлен пользователю {user_id}")
+            logger.info(f"Отчёт ОРД за {month_label} отправлен пользователю {user_id}")
         except Exception as e:
             logger.error(f"Ошибка генерации отчёта для user_id={user_id}: {e}")
 async def backup_database_to_telegram(bot: Bot):

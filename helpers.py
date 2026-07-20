@@ -244,25 +244,29 @@ async def check_rss_and_publish(bot: Bot):
             conn.close()
 
 async def collect_views_for_user(user_id: int, bot):
-    """Собирает просмотры для всех опубликованных постов пользователя (обновляет все, не только с views_count=0)"""
+    """Собирает просмотры для опубликованных постов за последние 30 дней."""
     from services.db import get_db
+    from datetime import timedelta, timezone
     import logging
     logger = logging.getLogger("autopost_bot")
-    
+
     conn = get_db()
     try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         posts = conn.execute("""
-            SELECT p.id, p.channel_id, p.direct_link 
-            FROM posts p 
-            WHERE p.user_id = ? AND p.status = 'published' AND p.direct_link IS NOT NULL AND p.direct_link != ''
-        """, (user_id,)).fetchall()
-        
-        logger.info(f"Сбор просмотров для user_id={user_id}, всего постов: {len(posts)}")
-        
+            SELECT p.id, p.channel_id, p.direct_link
+            FROM posts p
+            WHERE p.user_id = ? AND p.status = 'published'
+              AND p.direct_link IS NOT NULL AND p.direct_link != ''
+              AND p.published_at >= ?
+            ORDER BY p.published_at DESC
+            LIMIT 200
+        """, (user_id, cutoff)).fetchall()
+
+        logger.info(f"Сбор просмотров для user_id={user_id}, постов за 30 дней: {len(posts)}")
+
         updated = 0
         for post in posts:
-            if not post["direct_link"]:
-                continue
             try:
                 parts = post["direct_link"].split("/")
                 msg_id = int(parts[-1])
@@ -270,7 +274,7 @@ async def collect_views_for_user(user_id: int, bot):
             except Exception as e:
                 logger.warning(f"Не удалось разобрать direct_link для поста {post['id']}: {e}")
                 continue
-            
+
             try:
                 messages = await bot.get_messages(chat_id=chat_identifier, message_ids=[msg_id])
                 if messages and messages[0].views is not None:
