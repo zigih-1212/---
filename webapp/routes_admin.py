@@ -799,11 +799,11 @@ async def settings_edit_save(
     conn = get_db()
     try:
         for key, val in [
-            ("night_start", night_start),
-            ("night_end", night_end),
-            ("run_interval", run_interval),
-            ("min_payout", min_payout),
-            ("payout_bank_pct", payout_bank_pct)
+            ("NIGHT_START", night_start),
+            ("NIGHT_END", night_end),
+            ("RUN_INTERVAL_SECONDS", run_interval),
+            ("PAYOUT_FIXED_FEE", min_payout),
+            ("PAYOUT_BANK_PCT", payout_bank_pct)
         ]:
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, val))
         conn.commit()

@@ -14,17 +14,12 @@ import re
 import secrets
 import sqlite3
 import time
-import random
 import hashlib
-import os
 import xlsxwriter
 from aiogram.types import FSInputFile
-from aiogram.filters import Command, CommandStart
-from datetime import datetime
-from xml.etree import ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from xml.etree import ElementTree as ET
 from logging.handlers import RotatingFileHandler
-from typing import Optional, Dict, Any, List
 from webapp import create_app
 from webapp.routes_user import collect_views_for_user
 import sys
@@ -74,7 +69,6 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import StateFilter
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
-from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -82,7 +76,6 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    LabeledPrice,
     Message,
     PreCheckoutQuery,
     SuccessfulPayment,
@@ -369,6 +362,13 @@ def init_db() -> None:
         )
     """)
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS store_delivery (
+            store TEXT PRIMARY KEY,
+            delivery_text TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_gdeslon_unique 
             ON gdeslon_catalog(user_id, sku)
     """)
@@ -630,20 +630,6 @@ def init_db() -> None:
 
 # =============================================================================
 # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =================================================
-def log_admin_action(admin_id: int, action: str, details: str = ""):
-    conn = get_db()
-    try:
-        conn.execute(
-            "INSERT INTO admin_audit (admin_id, action, details) VALUES (?, ?, ?)",
-            (admin_id, action, details)
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
-
 def generate_sub_id(username: str, user_id: int, role: str = "blogger") -> str:
     _TRANSLIT_MAP = {
         "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
@@ -662,10 +648,6 @@ def generate_sub_id(username: str, user_id: int, role: str = "blogger") -> str:
     return f"{prefix}{result}_uid{user_id}"
 
 
-def generate_subid2(user_id: int, channel_id: str) -> str:
-    """Генерирует уникальный subid2 для связки пользователь-канал."""
-    clean_channel = channel_id.lstrip("@").replace(" ", "_")
-    return f"u{user_id}_ch_{clean_channel[:20]}"
 def sanitize_html(text: str) -> str:
     if not text:
         return ""
@@ -1302,7 +1284,7 @@ async def cb_delete_channel(callback: CallbackQuery) -> None:
         await cb_my_channels(callback)
     else:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Да, удалить", callback_data=f"delete_channel:{channel_id}:confirm")],
+            [InlineKeyboardButton(text="❌ Да, удалить", callback_data=f"channel_delete:{channel_id}:confirm")],
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")],
         ])
         await callback.message.answer("⚠️ Вы уверены, что хотите удалить канал?", reply_markup=kb)
@@ -1450,19 +1432,6 @@ async def cb_force_preview_enable(callback: CallbackQuery):
     await callback.answer("✅ Предпросмотр включен (посты теперь публикуются сразу)", show_alert=True)
     await open_saas_settings(callback)
 
-@router.callback_query(F.data == "saas_toggle:force_preview_reset")
-async def cb_force_preview_reset(callback: CallbackQuery):
-    """Выключает режим предпросмотра (force_preview_confirmed = 0)"""
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET force_preview_confirmed = 0 WHERE user_id = ?", (user_id,))
-        conn.commit()
-    finally:
-        conn.close()
-    await callback.answer("🔍 Предпросмотр выключен (будет показываться каждый раз)", show_alert=True)
-    await open_saas_settings(callback)
-  
 @router.callback_query(F.data.startswith("saas_toggle:"))
 async def cb_saas_toggles(callback: CallbackQuery) -> None:
     action = callback.data.split(":")[1]
@@ -1647,7 +1616,7 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
         if role == "blogger":
             conn.execute("UPDATE users SET commission_rate = 0.70 WHERE user_id = ?", (user_id,))
         else:
-            conn.execute("UPDATE users SET commission_rate = 0.70 WHERE user_id = ?", (user_id,))
+            conn.execute("UPDATE users SET commission_rate = 0.95 WHERE user_id = ?", (user_id,))
         # Реферальная связь
         if referrer_id:
             conn.execute("""
@@ -1817,6 +1786,8 @@ async def show_blogger_instruction(callback: CallbackQuery):
 
 @router.message(Command("debug_sub"))
 async def debug_subscription(message: Message):
+    if not is_admin(message.from_user.id):
+        return
     conn = get_db()
     user = conn.execute("SELECT role, subscription_until FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
     conn.close()
@@ -1827,6 +1798,8 @@ async def debug_subscription(message: Message):
 
 @router.message(Command("fix_channels"))
 async def fix_duplicate_channels(message: Message) -> None:
+    if not is_admin(message.from_user.id):
+        return
     conn = get_db()
     conn.execute("DELETE FROM channels WHERE id NOT IN (SELECT MIN(id) FROM channels GROUP BY user_id, channel_id)")
     conn.commit()
@@ -2016,7 +1989,6 @@ async def cleanup_old_report_files() -> None:
 async def auto_delete_posts(bot: Bot):
     conn = get_db()
     try:
-        now = datetime.now(timezone.utc)
         rows = conn.execute("""
             SELECT p.id, p.channel_id, p.direct_link, p.user_id, p.auto_delete_hours, p.published_at
             FROM posts p
@@ -2024,16 +1996,10 @@ async def auto_delete_posts(bot: Bot):
               AND p.auto_delete_hours IS NOT NULL
               AND p.auto_delete_hours > 0
               AND p.published_at IS NOT NULL
+              AND datetime(p.published_at, '+' || p.auto_delete_hours || ' hours') <= datetime('now')
         """).fetchall()
         deleted_count = 0
         for row in rows:
-            try:
-                published_at = datetime.fromisoformat(row["published_at"].replace("Z", "+00:00"))
-            except Exception:
-                continue
-            hours_elapsed = (now - published_at).total_seconds() / 3600
-            if hours_elapsed < (row["auto_delete_hours"] or 168):
-                continue
             channel_id = row["channel_id"]
             message_id = None
             if row["direct_link"] and "/" in row["direct_link"]:

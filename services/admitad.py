@@ -21,16 +21,6 @@ STORES = {
         "website_id": "15460",
         "available": True
     },
-    # ... другие магазины ...
-}
-
-STORES = {
-    "Читай-город": {
-        "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=24883&last_import=",
-        "adult": False,
-        "website_id": "15460",
-        "available": True
-    },
     "Аквафор": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=18482&last_import=",
         "adult": False,
@@ -168,23 +158,22 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
         parser = XMLPullParser(['end'])
 
         try:
-            # Проверка доступности фида
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     head_resp = await client.head(feed_url)
             except httpx.RequestError as e:
                 logger.error(f"Connection error for {store_name} feed: {e}")
                 continue
-                if head_resp.status_code != 200:
-                    logger.error(f"Admitad фид {store_name} недоступен (HEAD): {head_resp.status_code}")
-                    continue
-                
-                # Полная загрузка если фид доступен
-                async with httpx.AsyncClient(timeout=45.0) as client:
-                    async with client.stream("GET", feed_url) as resp:
-                        if resp.status_code != 200:
-                            logger.error(f"Admitad фид {store_name} недоступен: {resp.status_code}")
-                            continue
+
+            if head_resp.status_code != 200:
+                logger.error(f"Admitad фид {store_name} недоступен (HEAD): {head_resp.status_code}")
+                continue
+
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                async with client.stream("GET", feed_url) as resp:
+                    if resp.status_code != 200:
+                        logger.error(f"Admitad фид {store_name} недоступен: {resp.status_code}")
+                        continue
 
                     async for chunk in resp.aiter_bytes(chunk_size=128*1024):
                         try:
@@ -282,25 +271,6 @@ async def update_all_store_data_from_feed():
     logger.info("🔄 Обновление промокодов и доставки из XML-фида купонов...")
     conn = get_db()
     try:
-        # Убедимся, что таблицы существуют
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS store_promocodes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                store TEXT NOT NULL,
-                promocode TEXT NOT NULL,
-                description TEXT,
-                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS store_delivery (
-                store TEXT PRIMARY KEY,
-                delivery_text TEXT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-
         # Очищаем старые данные
         conn.execute("DELETE FROM store_promocodes")
         conn.execute("DELETE FROM store_delivery")

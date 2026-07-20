@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 
 from states import SaasStates, PaymentFSM
 from services.db import get_db
-from services.saas_core import publish_post_with_fallback
+from services.saas_core import publish_post_with_fallback, generate_subid2
 from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES, get_delivery_for_store, STORE_ID_MAP
 from keyboards.saas import kb_cabinet_menu
 from services.text_rewriter import generate_post_text
@@ -448,7 +448,7 @@ async def process_promocode_input(message: Message, state: FSMContext):
                 text=ch["channel_title"] or ch["channel_id"],
                 callback_data=f"promo_channel:{ch['channel_id']}"
             )])
-        kb_rows.append([InlineKeyboardButton(text="🔙 Отмена", callback_data=__CABINET_OPEN__)])
+        kb_rows.append([InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")])
         await message.answer(
             "🎯 Выберите канал для активации промокода:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
@@ -456,17 +456,7 @@ async def process_promocode_input(message: Message, state: FSMContext):
 
     await state.clear()
 
-@router.callback_query(F.data == "share_success")
-async def cb_share_success(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        role = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()["role"]
-    finally:
-        conn.close()
-    text = await generate_success_text(user_id, role)
-    await callback.message.answer(text, parse_mode=ParseMode.HTML)
-    await callback.answer("✅ Текст скопирован в следующее сообщение. Можете переслать его!", show_alert=True)
+
 # ---------------------------------------------------------------------------
 # Galaxy Store – выбор города
 # ---------------------------------------------------------------------------
@@ -904,6 +894,8 @@ async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
             "SELECT * FROM gdeslon_catalog WHERE id = ? AND user_id = ?", 
             (product_id, user_id)
         ).fetchone()
+        urow = conn.execute("SELECT default_auto_delete_hours FROM users WHERE user_id=?", (user_id,)).fetchone()
+        auto_delete_hours = urow["default_auto_delete_hours"] if urow and urow["default_auto_delete_hours"] is not None else 168
         if not product:
             await callback.answer("❌ Товар не найден", show_alert=True)
             return
@@ -1156,7 +1148,7 @@ async def cb_discount_filter(callback: CallbackQuery):
         [InlineKeyboardButton(text="от 20%", callback_data="discount_set:20"),
          InlineKeyboardButton(text="от 30%", callback_data="discount_set:30")],
         [InlineKeyboardButton(text="от 50%", callback_data="discount_set:50")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data=__CABINET_OPEN__)]
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
     ])
     await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer()
@@ -1265,7 +1257,7 @@ async def cb_finance(callback: CallbackQuery):
         else:
             kb_buttons.append([InlineKeyboardButton(text="❌ Недостаточно средств для вывода", callback_data="none")])
     kb_buttons.append([InlineKeyboardButton(text="📢 Поделиться успехом", callback_data="share_success")])
-    kb_buttons.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data=__CABINET_OPEN__)])
+    kb_buttons.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")])
 
     await safe_edit(callback.message, full_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons), parse_mode=ParseMode.HTML)
     await callback.answer()
@@ -1445,11 +1437,11 @@ async def cb_menu_oferta(callback: CallbackQuery):
     if not accepted:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✅ Принимаю", callback_data="oferta:accept")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data=__CABINET_OPEN__)]
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
         ])
     else:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data=__CABINET_OPEN__)]
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
         ])
 
     await safe_edit(callback.message, text_oferta, reply_markup=kb, parse_mode=ParseMode.HTML)
@@ -1518,14 +1510,10 @@ async def cb_change_tax_status(callback: CallbackQuery, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🧾 Я Самозанятый / ИП", callback_data="tax:business")],
         [InlineKeyboardButton(text="👤 Обычное физлицо", callback_data="tax:individual")],
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data=__CABINET_OPEN__)]
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
     ])
     await safe_edit(callback.message, f"Ваш текущий налоговый статус: <b>{current_text}</b>\n\n"
         "Выберите новый статус:",
         reply_markup=kb, parse_mode=ParseMode.HTML)
     await state.set_state(TaxStates.waiting_tax_status)
     await callback.answer()
-
-def generate_subid2(user_id: int, channel_id: str) -> str:
-    clean_channel = channel_id.lstrip("@").replace(" ", "_")
-    return f"u{user_id}_ch_{clean_channel[:20]}"
