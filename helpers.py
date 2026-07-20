@@ -181,7 +181,7 @@ async def generate_success_text(user_id: int, role: str = "blogger") -> str:
     return "\n".join(lines)
 
 async def check_rss_and_publish(bot: Bot):
-    """Проверяет RSS-ленты YouTube и Rutube и публикует новые видео."""
+    """Проверяет RSS-ленты видео-платформ и публикует новые видео."""
     conn = get_db()
     try:
         channels = conn.execute("""
@@ -189,7 +189,7 @@ async def check_rss_and_publish(bot: Bot):
                    c.channel_id as tg_channel
             FROM social_channels sc
             JOIN channels c ON sc.user_id = c.user_id AND c.is_active = 1
-            WHERE sc.is_active = 1 AND sc.platform IN ('youtube', 'rutube')
+            WHERE sc.is_active = 1 AND sc.platform IN ('youtube', 'rutube', 'vk_video', 'dzen')
         """).fetchall()
     finally:
         conn.close()

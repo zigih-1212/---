@@ -33,8 +33,8 @@ DEFAULT_VIDEO_TEMPLATE = (
 # ---------- Клавиатуры ----------
 def kb_social_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Добавить YouTube / Rutube", callback_data="social:add_channel")],
-        [InlineKeyboardButton(text="📤 Ручной пост (TikTok/Instagram)", callback_data="social:manual_post")],
+        [InlineKeyboardButton(text="➕ Добавить YouTube/Rutube/VK/Dzen", callback_data="social:add_channel")],
+        [InlineKeyboardButton(text="📤 Ручной пост (TikTok/Instagram/VK)", callback_data="social:manual_post")],
         [InlineKeyboardButton(text="📋 Мои каналы", callback_data="social:list_channels")],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
     ])
@@ -42,13 +42,23 @@ def kb_social_main() -> InlineKeyboardMarkup:
 # ---------- Основное меню «Мои видео-каналы» ----------
 @router.callback_query(F.data == "blogger:social_channels")
 async def cb_social_main(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "🎥 <b>Мои видео-каналы</b>\n\n"
-        "Здесь можно подключить YouTube или Rutube каналы — бот будет автоматически анонсировать новые видео.\n"
-        "Для TikTok и Instagram используйте ручную отправку ссылки.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_social_main()
-    )
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user or user["role"] != "blogger":
+            await callback.answer("❌ Эта функция доступна только блогерам", show_alert=True)
+            return
+            
+        await callback.message.edit_text(
+            "🎥 <b>Мои видео-каналы</b>\n\n"
+            "Здесь можно подключить YouTube, Rutube, VK Video или Dzen каналы — бот будет автоматически анонсировать новые видео.\n"
+            "Для TikTok и Instagram используйте ручную отправку ссылки.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb_social_main()
+        )
+    finally:
+        conn.close()
     await callback.answer()
 
 # ---------- Добавление YouTube/Rutube ----------
@@ -192,8 +202,19 @@ async def cb_delete_channel(callback: CallbackQuery):
 # ---------- Ручной постинг (TikTok/Instagram) ----------
 @router.callback_query(F.data == "social:manual_post")
 async def cb_manual_post_start(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not user or user["role"] != "blogger":
+            await callback.answer("❌ Эта функция доступна только блогерам", show_alert=True)
+            return
+            
+    finally:
+        conn.close()
+
     await callback.message.answer(
-        "📤 Отправьте ссылку на видео или пост из TikTok или Instagram.\n"
+        "📤 Отправьте ссылку на видео или пост из TikTok, Instagram, VK или Dzen.\n"
         "Бот опубликует её в ваши каналы с подписью.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="social:main")]
