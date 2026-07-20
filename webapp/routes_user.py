@@ -1214,12 +1214,14 @@ async def publish_post(request: Request, token: str = Form(...), product_id: int
                 if msg:
                     direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}"
                     donor_post_id = f"admitad_{product['id']}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
+                    user_row = conn.execute("SELECT default_auto_delete_hours FROM users WHERE user_id=?", (user_id,)).fetchone()
+                    ad_hours = user_row["default_auto_delete_hours"] if user_row and user_row["default_auto_delete_hours"] is not None else 168
                     conn.execute(
                         """INSERT INTO posts 
-                        (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
+                        (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption, auto_delete_hours)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?)""",
                         (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], subid2, direct_link,
-                         product["erid"], datetime.now(timezone.utc).isoformat(), caption)
+                         product["erid"], datetime.now(timezone.utc).isoformat(), caption, ad_hours)
                     )
                     conn.commit()
             

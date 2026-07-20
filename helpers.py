@@ -439,7 +439,7 @@ async def open_saas_settings(callback):
     user_id = callback.from_user.id
     conn = get_db()
     try:
-        user = conn.execute("SELECT api_key, auto_pin, notify_posts, force_preview_confirmed FROM users WHERE user_id=?", (user_id,)).fetchone()
+        user = conn.execute("SELECT api_key, auto_pin, notify_posts, force_preview_confirmed, default_auto_delete_hours FROM users WHERE user_id=?", (user_id,)).fetchone()
     finally:
         conn.close()
     if not user:
@@ -451,6 +451,13 @@ async def open_saas_settings(callback):
     preview_confirmed = bool(user["force_preview_confirmed"]) if user else False
     preview_text = "✅ Предпросмотр включен (посты сразу)" if preview_confirmed else "🔍 Предпросмотр выключен (показывается каждый раз)"
     preview_callback = "saas_toggle:force_preview_reset" if preview_confirmed else "saas_toggle:force_preview_enable"
+    delete_hours = user["default_auto_delete_hours"] if user and user["default_auto_delete_hours"] is not None else 168
+    if delete_hours == 0:
+        delete_text = "❌ Выключено"
+    elif delete_hours < 24:
+        delete_text = f"⏱ {delete_hours} ч."
+    else:
+        delete_text = f"⏱ {delete_hours // 24} дн."
 
     text = (
         "⚙️ <b>Настройки SaaS-аккаунта</b>\n\n"
@@ -466,6 +473,7 @@ async def open_saas_settings(callback):
         [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
         [InlineKeyboardButton(text=f"🔔 Уведомления о постах: {'✅' if notify_posts else '❌'}", callback_data="saas_toggle:notifyposts")],
         [InlineKeyboardButton(text="⏰ Циклический постинг", callback_data="menu:cyclic")],
+        [InlineKeyboardButton(text=f"🗑 Автоудаление постов: {delete_text}", callback_data="saas_set:autodelete")],
         [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
         [InlineKeyboardButton(text=f"🔄 {preview_text}", callback_data=preview_callback)],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]

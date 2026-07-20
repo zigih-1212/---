@@ -553,6 +553,14 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE users ADD COLUMN notify_posts INTEGER DEFAULT 1")
     except sqlite3.OperationalError:
         pass
+    try:
+        cursor.execute("ALTER TABLE posts ADD COLUMN auto_delete_hours INTEGER DEFAULT 168")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN default_auto_delete_hours INTEGER DEFAULT 168")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
 
     cursor.execute("""
@@ -1967,6 +1975,49 @@ async def cleanup_old_report_files() -> None:
     if removed:
         logger.info(f"Очистка отчётов: удалено {removed} файлов старше 90 дней")
 
+async def auto_delete_posts(bot: Bot):
+    conn = get_db()
+    try:
+        now = datetime.now(timezone.utc)
+        rows = conn.execute("""
+            SELECT p.id, p.channel_id, p.direct_link, p.user_id, p.auto_delete_hours, p.published_at
+            FROM posts p
+            WHERE p.status = 'published'
+              AND p.auto_delete_hours IS NOT NULL
+              AND p.auto_delete_hours > 0
+              AND p.published_at IS NOT NULL
+        """).fetchall()
+        deleted_count = 0
+        for row in rows:
+            try:
+                published_at = datetime.fromisoformat(row["published_at"].replace("Z", "+00:00"))
+            except Exception:
+                continue
+            hours_elapsed = (now - published_at).total_seconds() / 3600
+            if hours_elapsed < (row["auto_delete_hours"] or 168):
+                continue
+            channel_id = row["channel_id"]
+            message_id = None
+            if row["direct_link"] and "/" in row["direct_link"]:
+                try:
+                    message_id = int(row["direct_link"].rstrip("/").split("/")[-1])
+                except (ValueError, IndexError):
+                    pass
+            if channel_id and message_id:
+                try:
+                    await bot.delete_message(chat_id=channel_id, message_id=message_id)
+                    deleted_count += 1
+                except Exception:
+                    pass
+            conn.execute("UPDATE posts SET status = 'deleted' WHERE id = ?", (row["id"],))
+        conn.commit()
+        if deleted_count:
+            logger.info(f"Автоудаление: удалено {deleted_count} постов из каналов")
+    except Exception as e:
+        logger.error(f"Ошибка автоудаления: {e}")
+    finally:
+        conn.close()
+
 async def daily_report(bot: Bot):
     import csv, os as _os, pathlib
     reports_dir = "/app/data/reports"
@@ -2071,6 +2122,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(check_receipt_reminders, trigger="interval", minutes=30, kwargs={"bot": bot}, id="receipt_reminders", replace_existing=True)
     scheduler.add_job(update_post_views, 'cron', hour=3, minute=30, kwargs={"bot": bot}, id="update_views", replace_existing=True)
     scheduler.add_job(generate_monthly_ord_reports, trigger="cron", day=1, hour=0, minute=5, kwargs={"bot": bot}, id="monthly_ord_reports", replace_existing=True)
+    scheduler.add_job(auto_delete_posts, trigger="interval", minutes=15, kwargs={"bot": bot}, id="auto_delete_posts", replace_existing=True)
     
     logger.info("✅ Все задачи добавлены в планировщик")
     return scheduler

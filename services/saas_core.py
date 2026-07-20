@@ -279,11 +279,12 @@ async def publish_from_catalog(bot: Bot):
             finally:
                 conn.close()
 
-        # Получаем пользовательский шаблон товара
+        # Получаем пользовательский шаблон товара и настройки автоудаления
         conn = get_db()
         try:
-            user_tmpl = conn.execute("SELECT product_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+            user_tmpl = conn.execute("SELECT product_template, default_auto_delete_hours FROM users WHERE user_id=?", (user_id,)).fetchone()
             custom_template = user_tmpl["product_template"] if user_tmpl and user_tmpl["product_template"] else None
+            auto_delete_hours = user_tmpl["default_auto_delete_hours"] if user_tmpl and user_tmpl["default_auto_delete_hours"] is not None else 168
         finally:
             conn.close()
 
@@ -438,10 +439,10 @@ async def publish_from_catalog(bot: Bot):
                     try:
                         conn_rec.execute(
                             """INSERT INTO posts 
-                            (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
+                            (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption, auto_delete_hours)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?)""",
                             (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], subid2, direct_link,
-                             erid, datetime.now(timezone.utc).isoformat(), caption)
+                             erid, datetime.now(timezone.utc).isoformat(), caption, auto_delete_hours)
                         )
                         conn_rec.commit()
                         logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}, post_id={msg.message_id}")

@@ -619,10 +619,11 @@ async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int,
         store_ids = [r["category_id"] for r in user_stores]
         
         user_tmpl = conn.execute(
-            "SELECT product_template FROM users WHERE user_id = ?", 
+            "SELECT product_template, default_auto_delete_hours FROM users WHERE user_id = ?", 
             (user_id,)
         ).fetchone()
         custom_template = user_tmpl["product_template"] if user_tmpl else None
+        auto_delete_hours = user_tmpl["default_auto_delete_hours"] if user_tmpl and user_tmpl["default_auto_delete_hours"] is not None else 168
         
         min_disc = conn.execute(
             "SELECT min_discount FROM users WHERE user_id = ?", 
@@ -817,6 +818,12 @@ async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, prod
     title = product['title'] or ''
     price = product['price'] or 0
     currency = product['currency'] or '₽'
+    conn_ad = get_db()
+    try:
+        urow = conn_ad.execute("SELECT default_auto_delete_hours FROM users WHERE user_id=?", (user_id,)).fetchone()
+        auto_delete_hours = urow["default_auto_delete_hours"] if urow and urow["default_auto_delete_hours"] is not None else 168
+    finally:
+        conn_ad.close()
     advertiser = product['advertiser'] or 'Рекламодатель'
     erid = product['erid'] or ''
     photo_url = product["image_url"]
@@ -874,10 +881,10 @@ async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, prod
             try:
                 conn_rec.execute(
                     """INSERT INTO posts 
-                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
+                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption, auto_delete_hours)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?)""",
                     (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], subid2, direct_link, erid,
-                     datetime.now(timezone.utc).isoformat(), caption)
+                     datetime.now(timezone.utc).isoformat(), caption, auto_delete_hours)
                 )
                 conn_rec.commit()
             finally:
@@ -1003,10 +1010,10 @@ async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
             try:
                 conn_rec.execute(
                     """INSERT INTO posts 
-                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
+                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption, auto_delete_hours)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?)""",
                     (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], subid2, direct_link, erid,
-                     datetime.now(timezone.utc).isoformat(), caption)
+                     datetime.now(timezone.utc).isoformat(), caption, auto_delete_hours)
                 )
                 conn_rec.commit()
             finally:
@@ -1040,6 +1047,65 @@ async def cb_saas_set_source(callback: CallbackQuery) -> None:
     ])
     await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer()
+
+AUTO_DELETE_OPTIONS = [
+    (0, "❌ Выключено"),
+    (1, "1 час"),
+    (6, "6 часов"),
+    (12, "12 часов"),
+    (24, "1 день"),
+    (48, "2 дня"),
+    (72, "3 дня"),
+    (168, "7 дней (по умолчанию)"),
+    (336, "14 дней"),
+    (720, "30 дней"),
+]
+
+@router.callback_query(F.data == "saas_set:autodelete")
+async def cb_saas_set_autodelete(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT default_auto_delete_hours FROM users WHERE user_id=?", (user_id,)).fetchone()
+        current = row["default_auto_delete_hours"] if row and row["default_auto_delete_hours"] is not None else 168
+    finally:
+        conn.close()
+
+    text = (
+        "🗑 <b>Автоудаление постов</b>\n\n"
+        "Рекламные посты автоматически удаляются из канала через указанное время.\n"
+        "Кука Admitad работает 30 дней — переходы засчитываются даже после удаления.\n\n"
+        "Выберите время жизни поста:"
+    )
+    kb_rows = []
+    for hours, label in AUTO_DELETE_OPTIONS:
+        marker = "✅ " if hours == current else ""
+        kb_rows.append([InlineKeyboardButton(text=f"{marker}{label}", callback_data=f"autodelete_set:{hours}")])
+    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:settings")])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("autodelete_set:"))
+async def cb_autodelete_set(callback: CallbackQuery):
+    hours = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET default_auto_delete_hours = ? WHERE user_id = ?", (hours, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    if hours == 0:
+        await callback.answer("✅ Автоудаление выключено", show_alert=True)
+    else:
+        if hours < 24:
+            label = f"{hours} ч."
+        else:
+            label = f"{hours // 24} дн."
+        await callback.answer(f"✅ Посты будут удаляться через {label}", show_alert=True)
+    await open_saas_settings(callback)
 
 
 # ---------------------------------------------------------------------------
