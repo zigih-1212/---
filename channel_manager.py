@@ -4,6 +4,7 @@ channel_manager.py — «Шпионский режим»: управление T
 """
 
 import logging
+logger = logging.getLogger(__name__)
 from typing import Optional, Dict, Any, List
 
 from aiogram import Bot
@@ -169,30 +170,7 @@ async def publish_test_post(bot: Bot, channel_id: str, text: str,
             logger.warning(f"Publish attempt {attempt} failed for {channel_id}: {e}")
             if attempt < max_retries:
                 await asyncio.sleep(2 ** attempt)  # Exponential backoff
-    """
-    Публикует пост в канал (требует админских прав).
-    Возвращает message_id или None при ошибке.
-    """
-    try:
-        from aiogram.enums import ParseMode
-        if photo_url:
-            msg = await bot.send_photo(
-                chat_id=channel_id,
-                photo=photo_url,
-                caption=text,
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            msg = await bot.send_message(
-                chat_id=channel_id,
-                text=text,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=False
-            )
-        return msg.message_id
-    except TelegramAPIError as e:
-        logger.error(f"publish_test_post error for {channel_id}: {e}")
-        return None
+    return None
 
 # =============================================================================
 # === СМЕНА ОПИСАНИЯ КАНАЛА ==================================================

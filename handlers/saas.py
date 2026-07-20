@@ -308,6 +308,8 @@ async def cb_cancel_galaxy_city(callback: CallbackQuery):
 # ---------------------------------------------------------------------------
 # Force Post (единая логика)
 # ---------------------------------------------------------------------------
+import sqlite3
+
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
     """Обработчик кнопки принудительной публикации с улучшенной обработкой ошибок"""
@@ -756,10 +758,10 @@ async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
             try:
                 conn_rec.execute(
                     """INSERT INTO posts 
-                    user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)""",
+                    (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)""",
                     (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], subid2, direct_link, erid,
-                     datetime.now(timezone.utc).isoformat())
+                     datetime.now(timezone.utc).isoformat(), caption)
                 )
                 conn_rec.commit()
             finally:

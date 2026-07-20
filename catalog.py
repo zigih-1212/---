@@ -1,6 +1,9 @@
 import asyncio
 import httpx
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 from xml.etree.ElementTree import XMLPullParser
 from urllib.parse import urlparse, parse_qs
 
