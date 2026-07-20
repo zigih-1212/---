@@ -36,32 +36,36 @@ router = Router(name="saas")
 async def cb_stores(callback: CallbackQuery):
     try:
         user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        # Получаем выбранные пользователем магазины
-        user_stores = conn.execute(
-            "SELECT category_id FROM user_category_preferences WHERE user_id = ?",
-            (user_id,)
-        ).fetchall()
-        user_store_ids = {r["category_id"] for r in user_stores}
-        selected_count = len(user_store_ids)
-        
-        # Получаем список всех доступных магазинов
-        from services.admitad import STORE_ID_MAP, get_available_stores
-        available_stores = get_available_stores()
-        
-        stores = []
-        for store_id, store_name in STORE_ID_MAP.items():
-            store_info = available_stores.get(store_name, {})
-            stores.append({
-                "id": store_id,
-                "name": store_name,
-                "available": store_info.get("available", False),
-                "adult": store_info.get("adult", False),
-                "requires_city": store_name == "Galaxy Store"
-            })
-    finally:
-        conn.close()
+        conn = get_db()
+        try:
+            # Получаем выбранные пользователем магазины
+            user_stores = conn.execute(
+                "SELECT category_id FROM user_category_preferences WHERE user_id = ?",
+                (user_id,)
+            ).fetchall()
+            user_store_ids = {r["category_id"] for r in user_stores}
+            selected_count = len(user_store_ids)
+            
+            # Получаем список всех доступных магазинов
+            from services.admitad import STORE_ID_MAP, get_available_stores
+            available_stores = get_available_stores()
+            
+            stores = []
+            for store_id, store_name in STORE_ID_MAP.items():
+                store_info = available_stores.get(store_name, {})
+                stores.append({
+                    "id": store_id,
+                    "name": store_name,
+                    "available": store_info.get("available", False),
+                    "adult": store_info.get("adult", False),
+                    "requires_city": store_name == "Galaxy Store"
+                })
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"Error in cb_stores: {e}")
+        await callback.answer("⚠️ Произошла ошибка", show_alert=True)
+        return
 
     text = f"🏪 <b>Выберите магазины для постинга:</b> (выбрано {selected_count})\n\n"
     kb_rows = []
