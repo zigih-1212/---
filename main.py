@@ -1422,6 +1422,32 @@ async def cmd_test_cpc(message: Message):
     await message.answer(text)
 
 
+@router.message(Command("test_all_cpc"))
+async def cmd_test_all_cpc(message: Message):
+    from services.admitad_subnetwork import search_all_cpc_campaigns
+    await message.answer("🔍 Ищу CPC-рекламодателей...")
+    campaigns = await search_all_cpc_campaigns(limit=100)
+    if not campaigns:
+        await message.answer("❌ Не найдено CPC-рекламодателей. Возможно, scope `advcampaigns` не включён в настройках приложения Admitad.")
+        return
+    lines = [f"📊 Найдено CPC-рекламодателей: {len(campaigns)}"]
+    for c in campaigns[:15]:
+        name = c.get("name", "?")
+        site_url = c.get("site_url", "")
+        actions = c.get("actions", [])
+        cpc_actions = [a for a in actions if "клик" in (a.get("name", "") or "").lower()]
+        rates_str = "; ".join(f"{a['name']}: {a['rate']} {a.get('currency', '₽')}" for a in cpc_actions)
+        lines.append(f"\n• {name}")
+        if rates_str:
+            lines.append(f"  {rates_str}")
+        if site_url:
+            lines.append(f"  {site_url}")
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:4000] + "\n\n..."
+    await message.answer(text)
+
+
 @router.message(Command("admin"))
 async def cmd_admin(message: Message):
     if not is_admin(message.from_user.id):

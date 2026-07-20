@@ -61,7 +61,7 @@ async def get_access_token() -> Optional[str]:
                 headers={"Authorization": auth_header},
                 data={
                     "grant_type": "client_credentials",
-                    "scope": "manage_websites advcampaigns_for_website"
+                    "scope": "advcampaigns manage_websites advcampaigns_for_website"
                 }
             )
             if resp.status_code != 200:
@@ -227,4 +227,38 @@ async def get_website_campaigns(website_id: int) -> list:
             return []
         except Exception as e:
             logger.error(f"❌ get_website_campaigns exception: {e}")
+            return []
+
+
+async def search_all_cpc_campaigns(query: str = "", limit: int = 50) -> list:
+    """Поиск по всем рекламодателям Admitad, возвращает только с CPC-ставками."""
+    token = await get_access_token()
+    if not token:
+        return []
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            params = {"limit": limit, "region": "RU"}
+            if query:
+                params["q"] = query
+            resp = await client.get(
+                "https://api.admitad.com/advcampaigns/",
+                headers={"Authorization": f"Bearer {token}"},
+                params=params
+            )
+            if resp.status_code != 200:
+                logger.error(f"❌ search_all error {resp.status_code}: {resp.text[:200]}")
+                return []
+            data = resp.json()
+            results = data.get("results", [])
+            # Оставляем только тех, у кого есть CPC-действие
+            cpc_campaigns = []
+            for c in results:
+                actions = c.get("actions", [])
+                has_cpc = any("клик" in (a.get("name", "") or "").lower() for a in actions)
+                if has_cpc:
+                    cpc_campaigns.append(c)
+            return cpc_campaigns
+        except Exception as e:
+            logger.error(f"❌ search_all_cpc exception: {e}")
             return []
