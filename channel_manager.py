@@ -3,6 +3,7 @@ channel_manager.py — «Шпионский режим»: управление T
 Предоставляет функции для админ-панели и хендлеров.
 """
 
+import asyncio
 import logging
 logger = logging.getLogger(__name__)
 from typing import Optional, Dict, Any, List
