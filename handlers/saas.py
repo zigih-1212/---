@@ -34,50 +34,63 @@ router = Router(name="saas")
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:categories")
 async def cb_stores(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
     try:
-        user_id = callback.from_user.id
-        conn = get_db()
-        try:
-            # Получаем выбранные пользователем магазины
-            user_stores = conn.execute(
-                "SELECT category_id FROM user_category_preferences WHERE user_id = ?",
-                (user_id,)
-            ).fetchall()
-            user_store_ids = {r["category_id"] for r in user_stores}
-            selected_count = len(user_store_ids)
-            
-            # Получаем список всех доступных магазинов
-            from services.admitad import STORE_ID_MAP, get_available_stores
-            available_stores = get_available_stores()
-            
-            stores = []
-            for store_id, store_name in STORE_ID_MAP.items():
-                store_info = available_stores.get(store_name, {})
-                stores.append({
-                    "id": store_id,
-                    "name": store_name,
-                    "available": store_info.get("available", False),
-                    "adult": store_info.get("adult", False),
-                    "requires_city": store_name == "Galaxy Store"
-                })
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.error(f"Error in cb_stores: {e}")
-        await callback.answer("⚠️ Произошла ошибка", show_alert=True)
-        return
+        user_stores = conn.execute(
+            "SELECT category_id FROM user_category_preferences WHERE user_id = ?",
+            (user_id,)
+        ).fetchall()
+        user_store_ids = {r["category_id"] for r in user_stores}
+        selected_count = len(user_store_ids)
+    finally:
+        conn.close()
+
+    from services.admitad import STORE_ID_MAP, get_available_stores
+    stores_config = get_available_stores()
+
+    # Список магазинов с их статусами
+    stores = []
+    for store_id, store_name in STORE_ID_MAP.items():
+        info = stores_config.get(store_name, {})
+        stores.append({
+            "id": store_id,
+            "name": store_name,
+            "available": info.get("available", True),
+            "adult": info.get("adult", False),
+            "requires_city": store_name == "Galaxy Store"
+        })
 
     text = f"🏪 <b>Выберите магазины для постинга:</b> (выбрано {selected_count})\n\n"
     kb_rows = []
     for store in stores:
+        # Формируем текст кнопки с метками
+        label = store["name"]
+        if not store["available"]:
+            label += " ⛔ недоступен"
+        elif store["adult"]:
+            label += " 🔞 18+"
+        # Для Galaxy Store добавим звёздочку
+        if store["requires_city"]:
+            label += " *"
+
         emoji = "✅" if store["id"] in user_store_ids else "❌"
         kb_rows.append([InlineKeyboardButton(
-            text=f"{emoji} {store['name']}",
+            text=f"{emoji} {label}",
             callback_data=f"store_toggle:{store['id']}"
         )])
+
+    # Добавляем пояснения
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+    # Пояснительный текст под кнопками
+    footer = "\n\n* — требуется выбор города\n⛔ — магазин временно не работает\n🔞 — контент для взрослых"
+    await callback.message.edit_text(
+        text + footer,
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
     await callback.answer()
 
 @router.callback_query(F.data.startswith("store_toggle:"))
