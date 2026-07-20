@@ -75,7 +75,7 @@ async def cb_stores(callback: CallbackQuery):
             text=f"{emoji} {store['name']}",
             callback_data=f"store_toggle:{store['id']}"
         )])
-    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data=__CABINET_OPEN__)])
+    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback.answer()
