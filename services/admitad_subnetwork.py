@@ -1,6 +1,7 @@
 # services/admitad_subnetwork.py
 import time
 import logging
+import base64
 import httpx
 from typing import Optional, Dict
 from services.db import get_db
@@ -11,6 +12,12 @@ logger = logging.getLogger("autopost_bot.admitad_subnetwork")
 TOKEN_URL = "https://api.admitad.com/token/"
 SUBNETWORK_WEBSITES_URL = "https://api.admitad.com/subnetworks/v1/websites/create/"
 SUBNETWORK_STATUSES_URL = "https://api.admitad.com/subnetworks/v1/advcampaign/{advcampaign_id}/statuses/"
+
+
+def _get_basic_auth_header() -> str:
+    creds = f"{ADMITAD_CLIENT_ID}:{ADMITAD_CLIENT_SECRET}"
+    encoded = base64.b64encode(creds.encode()).decode()
+    return f"Basic {encoded}"
 
 
 def _get_token_from_db() -> Optional[Dict]:
@@ -45,14 +52,17 @@ async def get_access_token() -> Optional[str]:
         return cached["access_token"]
 
     logger.info("🔑 Запрашиваем новый OAuth access_token от Admitad...")
+    auth_header = _get_basic_auth_header()
     async with httpx.AsyncClient(timeout=30) as client:
         try:
-            resp = await client.post(TOKEN_URL, data={
-                "grant_type": "client_credentials",
-                "client_id": ADMITAD_CLIENT_ID,
-                "client_secret": ADMITAD_CLIENT_SECRET,
-                "scope": "manage_websites advcampaigns_for_website"
-            })
+            resp = await client.post(
+                TOKEN_URL,
+                headers={"Authorization": auth_header},
+                data={
+                    "grant_type": "client_credentials",
+                    "scope": "manage_websites advcampaigns_for_website"
+                }
+            )
             if resp.status_code != 200:
                 logger.error(f"❌ OAuth error {resp.status_code}: {resp.text[:300]}")
                 return cached["access_token"] if cached else None
