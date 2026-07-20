@@ -389,6 +389,8 @@ async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int,
             )
             await callback.answer()
             return
+    finally:
+        conn.close()
 
     allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
 
