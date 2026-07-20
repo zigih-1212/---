@@ -24,55 +24,72 @@ STORES = {
     # ... другие магазины ...
 }
 
-def get_available_stores() -> dict:
-    """Возвращает список доступных магазинов с их статусом"""
-    return STORES
+STORES = {
+    "Читай-город": {
+        "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=24883&last_import=",
+        "adult": False,
+        "website_id": "15460",
+        "available": True
+    },
     "Аквафор": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=18482&last_import=",
         "adult": False,
         "website_id": "0",       # отключён
+        "available": False
     },
     "Розовый кролик": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=26654&last_import=",
         "adult": True,
         "website_id": "181544",
+        "available": True
     },
     "Hi Store RU": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=25803&last_import=",
         "adult": False,
         "website_id": "109641",
+        "available": True
     },
     "KANZLER": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=25851&last_import=",
         "adult": False,
         "website_id": "14625",
+        "available": True
     },
     "KIKO MILANO": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=15202&last_import=",
         "adult": False,
         "website_id": "15735",
+        "available": True
     },
     "Moulinex": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=25773&last_import=",
         "adult": False,
         "website_id": "15488",
+        "available": True
     },
     "Playtoday": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=26222&last_import=",
         "adult": False,
         "website_id": "17006",
+        "available": True
     },
     "SELA": {
         "feed_url": "https://export.admitad.com/ru/webmaster/websites/2956090/products/export_adv_products/?user=zigi_oh-by2ec9e&code=emrdliwjzy&format=xml&currency=&feed_id=24700&last_import=",
         "adult": False,
         "website_id": "6476",
+        "available": True
     },
     "Galaxystore": {
         "feed_url": "",  # фида нет, только купоны
         "adult": False,
         "website_id": "13423",
-    },
+        "available": True
+    }
 }
+
+def get_available_stores() -> dict:
+    """Возвращает список доступных магазинов с их статусом"""
+    return STORES
 
 ADULT_STORES = {"Розовый кролик"}
 
