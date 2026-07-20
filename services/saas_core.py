@@ -19,8 +19,46 @@ from services.admitad import get_delivery_for_store, get_random_promocode, STORE
 from helpers import get_block_reason
 
 def generate_subid2(user_id: int, channel_id: str) -> str:
-    clean_channel = channel_id.lstrip("@").replace(" ", "_")
+    """Генерирует уникальный subid2 в формате: u{user_id}_ch_{channel}"""
+    clean_channel = channel_id.lstrip("@").replace(" ", "_").replace("-", "_")
     return f"u{user_id}_ch_{clean_channel[:20]}"
+
+def generate_partner_url(base_url: str, subid1: str = None, subid2: str = None) -> str:
+    """
+    Генерирует партнёрскую ссылку с subid параметрами.
+    
+    Args:
+        base_url: Базовая URL-ссылка
+        subid1: Основной идентификатор (обычно sub_id канала)
+        subid2: Дополнительный идентификатор (обычно комбинация user_id + channel_id)
+    
+    Returns:
+        Сформированная партнёрская ссылка с параметрами
+    """
+    if not base_url:
+        return ""
+    
+    # Очищаем URL от существующих subid параметров
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    parsed = urlparse(base_url)
+    query_params = {}
+    
+    # Парсим существующие параметры (исключая subid)
+    if parsed.query:
+        query_params = {k: v[0] for k, v in parse_qs(parsed.query).items() 
+                       if k.lower() not in ['subid', 'subid1', 'subid2']}
+    
+    # Добавляем наши subid параметры
+    if subid1:
+        query_params['subid'] = subid1  # Для обратной совместимости
+        query_params['subid1'] = subid1
+    if subid2:
+        query_params['subid2'] = subid2
+    
+    # Собираем URL обратно
+    new_query = urlencode(query_params)
+    new_parsed = parsed._replace(query=new_query)
+    return urlunparse(new_parsed)
 
 
 logger = logging.getLogger("autopost_bot")
