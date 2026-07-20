@@ -288,12 +288,12 @@ async def collect_views_for_user(user_id: int, bot):
 # ===== ВЫНЕСЕННЫЕ ФУНКЦИИ ИЗ main.py =====
 from aiogram.types import Message
 from aiogram.enums import ParseMode
-from keyboards.saas import kb_cabinet_menu
 from services.db import get_db
 from datetime import datetime, timezone, timedelta
 from config import BOT_USERNAME
 
 async def show_user_cabinet(message: Message, user_id: int = None):
+    from keyboards.saas import kb_cabinet_menu
     """Отображает личный кабинет пользователя."""
     if user_id is None:
         user_id = message.from_user.id
