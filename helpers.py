@@ -465,6 +465,7 @@ async def open_saas_settings(callback):
         [InlineKeyboardButton(text="ℹ️ Об источнике товаров", callback_data="saas_set:gdeslon_apikey")],
         [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
         [InlineKeyboardButton(text=f"🔔 Уведомления о постах: {'✅' if notify_posts else '❌'}", callback_data="saas_toggle:notifyposts")],
+        [InlineKeyboardButton(text="⏰ Циклический постинг", callback_data="menu:cyclic")],
         [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
         [InlineKeyboardButton(text=f"🔄 {preview_text}", callback_data=preview_callback)],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]

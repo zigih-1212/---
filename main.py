@@ -554,6 +554,21 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass
     conn.commit()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cyclic_schedules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            store_id INTEGER NOT NULL,
+            interval_days INTEGER DEFAULT 1,
+            last_posted_at TIMESTAMP,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, store_id),
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        )
+    """)
+    conn.commit()
     
     # Инициализация фич (если их нет в БД)
     try:

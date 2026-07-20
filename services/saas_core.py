@@ -226,6 +226,50 @@ async def publish_from_catalog(bot: Bot):
             logger.info(f"[DEBUG] User {user_id}: нет выбранных магазинов, пропускаем")
             continue
 
+        # Циклический постинг: определяем какой магазин должен опубликовать сегодня
+        cyclic_store_source = None
+        cyclic_store_id = None
+        conn = get_db()
+        try:
+            schedules = conn.execute(
+                "SELECT store_id, interval_days, last_posted_at FROM cyclic_schedules WHERE user_id=? AND is_active=1",
+                (user_id,)
+            ).fetchall()
+        finally:
+            conn.close()
+
+        if schedules:
+            now = datetime.now(timezone.utc)
+            most_overdue_days = -1
+            for sched in schedules:
+                sid = sched["store_id"]
+                interval = sched["interval_days"]
+                last_posted = sched["last_posted_at"]
+                if sid not in [s for s in store_ids if s in STORE_ID_MAP]:
+                    continue
+                source_name = STORE_ID_MAP.get(sid)
+                if not source_name:
+                    continue
+                if last_posted:
+                    try:
+                        last_dt = datetime.fromisoformat(last_posted.replace("Z", "+00:00"))
+                        days_since = (now - last_dt).total_seconds() / 86400
+                    except Exception:
+                        days_since = interval + 1
+                else:
+                    days_since = interval + 1
+                if days_since >= interval and days_since > most_overdue_days:
+                    most_overdue_days = days_since
+                    cyclic_store_source = source_name
+                    cyclic_store_id = sid
+
+            if cyclic_store_source:
+                logger.info(f"[DEBUG] User {user_id}: циклический магазин {cyclic_store_source} (просрочен {most_overdue_days:.1f} дн.)")
+                allowed_sources = [cyclic_store_source]
+            else:
+                logger.info(f"[DEBUG] User {user_id}: ни один циклический магазин не просрочен, пропускаем")
+                continue
+
         min_discount = 0
         if role == "saas":
             conn = get_db()
@@ -424,6 +468,17 @@ async def publish_from_catalog(bot: Bot):
                             pass
                     finally:
                         conn_rec.close()
+                    if cyclic_store_id:
+                        try:
+                            conn_cyc = get_db()
+                            conn_cyc.execute(
+                                "UPDATE cyclic_schedules SET last_posted_at = ? WHERE user_id = ? AND store_id = ?",
+                                (datetime.now(timezone.utc).isoformat(), user_id, cyclic_store_id)
+                            )
+                            conn_cyc.commit()
+                            conn_cyc.close()
+                        except Exception:
+                            pass
                 else:
                     logger.warning(f"[DEBUG] Не удалось опубликовать в {ch['channel_id']}")
             except Exception as e:

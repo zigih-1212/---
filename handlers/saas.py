@@ -202,6 +202,189 @@ async def cb_toggle_store(callback: CallbackQuery):
     await cb_stores(callback)
     await callback.answer()
 
+# ---------------------------------------------------------------------------
+# Циклический постинг — расписание по магазинам
+# ---------------------------------------------------------------------------
+INTERVAL_OPTIONS = [
+    (1, "Каждый день"),
+    (2, "Каждые 2 дня"),
+    (3, "Каждые 3 дня"),
+    (5, "Каждые 5 дней"),
+    (7, "Раз в неделю"),
+    (14, "Раз в 2 недели"),
+    (30, "Раз в месяц"),
+]
+
+@router.callback_query(F.data == "menu:cyclic")
+async def cb_cyclic_schedules(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        schedules = conn.execute(
+            "SELECT store_id, interval_days, is_active FROM cyclic_schedules WHERE user_id=?",
+            (user_id,)
+        ).fetchall()
+        user_stores = conn.execute(
+            "SELECT category_id FROM user_category_preferences WHERE user_id=?",
+            (user_id,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    store_ids = {r["category_id"] for r in user_stores}
+    sched_map = {r["store_id"]: r for r in schedules}
+
+    if not store_ids:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏪 Сначала выберите магазины", callback_data="menu:categories")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+        ])
+        await callback.message.edit_text(
+            "⏰ <b>Циклический постинг</b>\n\n"
+            "Сначала выберите хотя бы один магазин в разделе «🏪 Магазины».",
+            reply_markup=kb, parse_mode=ParseMode.HTML
+        )
+        await callback.answer()
+        return
+
+    from services.admitad import STORE_ID_MAP
+
+    text = "⏰ <b>Циклический постинг</b>\n\n"
+    text += "Настройте расписание для каждого магазина.\n"
+    text += "Бот будет публиковать товары из магазина с установленной периодичностью.\n\n"
+
+    kb_rows = []
+    for sid in sorted(store_ids):
+        store_name = STORE_ID_MAP.get(sid, f"ID {sid}")
+        sched = sched_map.get(sid)
+        if sched and sched["interval_days"]:
+            label_map = {d: t for d, t in INTERVAL_OPTIONS}
+            interval_text = label_map.get(sched["interval_days"], f"каждые {sched['interval_days']} дн.")
+            status = "✅" if sched["is_active"] else "⏸"
+            kb_rows.append([InlineKeyboardButton(
+                text=f"{status} {store_name}: {interval_text}",
+                callback_data=f"cyclic_set:{sid}"
+            )])
+        else:
+            kb_rows.append([InlineKeyboardButton(
+                text=f"❌ {store_name}: не настроено",
+                callback_data=f"cyclic_set:{sid}"
+            )])
+
+    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("cyclic_set:"))
+async def cb_cyclic_set(callback: CallbackQuery):
+    store_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+
+    from services.admitad import STORE_ID_MAP
+    store_name = STORE_ID_MAP.get(store_id, f"ID {store_id}")
+
+    conn = get_db()
+    try:
+        sched = conn.execute(
+            "SELECT interval_days, is_active FROM cyclic_schedules WHERE user_id=? AND store_id=?",
+            (user_id, store_id)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    current_text = ""
+    if sched:
+        label_map = {d: t for d, t in INTERVAL_OPTIONS}
+        current_text = f"\nТекущее: {label_map.get(sched['interval_days'], str(sched['interval_days']) + ' дн.')}"
+        if sched["is_active"]:
+            current_text += " (активно)"
+        else:
+            current_text += " (приостановлено)"
+
+    text = f"⏰ <b>Расписание: {store_name}</b>{current_text}\n\nВыберите периодичность публикации:"
+
+    kb_rows = []
+    for days, label in INTERVAL_OPTIONS:
+        kb_rows.append([InlineKeyboardButton(
+            text=label,
+            callback_data=f"cyclic_apply:{store_id}:{days}"
+        )])
+
+    if sched:
+        toggle_text = "⏸ Приостановить" if sched["is_active"] else "▶️ Возобновить"
+        kb_rows.append([InlineKeyboardButton(
+            text=toggle_text,
+            callback_data=f"cyclic_toggle:{store_id}"
+        )])
+        kb_rows.append([InlineKeyboardButton(
+            text="🗑 Удалить расписание",
+            callback_data=f"cyclic_delete:{store_id}"
+        )])
+
+    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:cyclic")])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("cyclic_apply:"))
+async def cb_cyclic_apply(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    store_id = int(parts[1])
+    interval_days = int(parts[2])
+    user_id = callback.from_user.id
+
+    conn = get_db()
+    try:
+        conn.execute("""
+            INSERT INTO cyclic_schedules (user_id, store_id, interval_days, is_active)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(user_id, store_id) DO UPDATE SET interval_days=?, is_active=1
+        """, (user_id, store_id, interval_days, interval_days))
+        conn.commit()
+    finally:
+        conn.close()
+
+    from services.admitad import STORE_ID_MAP
+    store_name = STORE_ID_MAP.get(store_id, f"ID {store_id}")
+    label_map = {d: t for d, t in INTERVAL_OPTIONS}
+    interval_text = label_map.get(interval_days, f"каждые {interval_days} дн.")
+    await callback.answer(f"✅ {store_name}: {interval_text}", show_alert=True)
+    await cb_cyclic_schedules(callback)
+
+@router.callback_query(F.data.startswith("cyclic_toggle:"))
+async def cb_cyclic_toggle(callback: CallbackQuery):
+    store_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE cyclic_schedules SET is_active = 1 - is_active WHERE user_id=? AND store_id=?",
+            (user_id, store_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    await callback.answer("✅ Статус изменён")
+    await cb_cyclic_schedules(callback)
+
+@router.callback_query(F.data.startswith("cyclic_delete:"))
+async def cb_cyclic_delete(callback: CallbackQuery):
+    store_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM cyclic_schedules WHERE user_id=? AND store_id=?", (user_id, store_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    await callback.answer("🗑 Расписание удалено")
+    await cb_cyclic_schedules(callback)
+
 @router.callback_query(F.data == "promo:activate")
 async def cb_promo_activate(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
