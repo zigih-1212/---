@@ -169,8 +169,12 @@ async def fetch_admitad_catalog_for_user(user_id: int, max_items_per_store: int 
 
         try:
             # Проверка доступности фида
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                head_resp = await client.head(feed_url)
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    head_resp = await client.head(feed_url)
+            except httpx.RequestError as e:
+                logger.error(f"Connection error for {store_name} feed: {e}")
+                continue
                 if head_resp.status_code != 200:
                     logger.error(f"Admitad фид {store_name} недоступен (HEAD): {head_resp.status_code}")
                     continue
