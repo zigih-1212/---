@@ -104,14 +104,24 @@ async def cb_toggle_store(callback: CallbackQuery):
         await callback.answer("❌ Магазин не найден", show_alert=True)
         return
 
-    store_info = get_available_stores().get(store_name, {})
-    
-    # Проверка доступности магазина
-    if not store_info.get("available", False):
-        await callback.answer(f"❌ {store_name} временно недоступен", show_alert=True)
+    # Проверка конкретных магазинов, которые недоступны
+    if store_id == 1:  # AliExpress
+        await callback.answer("❌ AliExpress временно недоступен (отсутствует ERID).", show_alert=True)
+        return
+    if store_id == 3:  # Аквафор
+        await callback.answer("❌ Аквафор временно недоступен.", show_alert=True)
+        return
+    if store_id == 5:  # Love Republic
+        await callback.answer("❌ Love Republic временно недоступен.", show_alert=True)
         return
 
-    # Для Galaxy Store проверяем выбор города
+    # Проверка доступности из конфига
+    store_info = get_available_stores().get(store_name, {})
+    if not store_info.get("available", True):
+        await callback.answer(f"❌ {store_name} временно недоступен.", show_alert=True)
+        return
+
+    # Для Galaxy Store — выбор города
     if store_name == "Galaxy Store":
         conn = get_db()
         try:
@@ -126,6 +136,49 @@ async def cb_toggle_store(callback: CallbackQuery):
             await callback.answer()
             return
 
+    # Для Розового кролика — предупреждение 18+
+    if store_name == "Розовый кролик":
+        # Проверим, включён ли уже магазин
+        conn = get_db()
+        try:
+            existing = conn.execute(
+                "SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
+                (user_id, store_id)
+            ).fetchone()
+        finally:
+            conn.close()
+        if not existing:
+            # Если добавляем — покажем предупреждение
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔞 Да, я подтверждаю", callback_data=f"store_confirm_adult:{store_id}")],
+                [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:categories")]
+            ])
+            await callback.message.edit_text(
+                "⚠️ <b>Внимание!</b>\n\n"
+                "Магазин «Розовый кролик» содержит товары для взрослых (18+).\n"
+                "Убедитесь, что ваш канал соответствует возрастным ограничениям.\n\n"
+                "Вы уверены, что хотите добавить этот магазин?",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+            await callback.answer()
+            return
+        else:
+            # Если уже есть — удаляем
+            conn = get_db()
+            try:
+                conn.execute(
+                    "DELETE FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
+                    (user_id, store_id)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            await cb_stores(callback)
+            await callback.answer(f"✅ {store_name} удалён из ваших магазинов.")
+            return
+
+    # Стандартное переключение для остальных магазинов
     conn = get_db()
     try:
         existing = conn.execute(
@@ -138,7 +191,6 @@ async def cb_toggle_store(callback: CallbackQuery):
                 (user_id, store_id)
             )
         else:
-            # ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ БЕЗ ОГРАНИЧЕНИЙ — просто добавляем
             conn.execute(
                 "INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
                 (user_id, store_id)
@@ -147,14 +199,6 @@ async def cb_toggle_store(callback: CallbackQuery):
     finally:
         conn.close()
 
-    from services.admitad import fetch_admitad_catalog_for_user
-    try:
-        await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)
-        await callback.answer(f"🔄 Каталог {store_name} обновлён")
-    except Exception as e:
-        logger.error(f"Ошибка обновления каталога для {user_id}: {e}")
-        await callback.answer("⚠️ Ошибка обновления каталога. Попробуйте позже.", show_alert=True)
-    
     await cb_stores(callback)
     await callback.answer()
 
