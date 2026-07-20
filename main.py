@@ -1413,7 +1413,9 @@ async def cmd_test_cpc(message: Message):
             if rates:
                 lines.extend(rates)
             if gotolink:
-                lines.append(f"    Ссылка: {gotolink[:80]}...")
+                cpclink = gotolink.replace("/g/", "/c/")
+                lines.append(f"    CPA: {gotolink[:70]}...")
+                lines.append(f"    CPC: {cpclink[:70]}...")
         parts.append("\n".join(lines))
 
     text = "📊 Подключенные рекламодатели:\n\n" + "\n\n".join(parts)
