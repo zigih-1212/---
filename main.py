@@ -1390,7 +1390,7 @@ async def cmd_test_cpc(message: Message):
         return
 
     parts = []
-    for ch in channels:
+    for ch in channels[:3]:
         ch_name = ch["channel_title"] or ch["channel_id"]
         wid = ch["admitad_website_id"]
         campaigns = await get_website_campaigns(wid)
@@ -1402,9 +1402,18 @@ async def cmd_test_cpc(message: Message):
             name = c.get("name", "?")
             status = c.get("connection_status", "?")
             gotolink = c.get("gotolink", "")
+            actions = c.get("actions", [])
+            rates = []
+            for a in actions[:3]:
+                a_name = a.get("name", "?")
+                a_rate = a.get("rate", "?")
+                a_currency = a.get("currency", "₽")
+                rates.append(f"      {a_name}: {a_rate} {a_currency}")
             lines.append(f"  • {name} — {status}")
+            if rates:
+                lines.extend(rates)
             if gotolink:
-                lines.append(f"    Ссылка: {gotolink}")
+                lines.append(f"    Ссылка: {gotolink[:80]}...")
         parts.append("\n".join(lines))
 
     text = "📊 Подключенные рекламодатели:\n\n" + "\n\n".join(parts)
