@@ -54,9 +54,8 @@ TEMPLATES = {
     "admin_audit.html": AUDIT_TEMPLATE,
     "admin_reports.html": REPORTS_TEMPLATE,
     "admin_payouts.html": ADMIN_PAYOUTS_TEMPLATE,
-    "admin_chat.html": ADMIN_CHAT_TEMPLATE,    
+    "admin_chat.html": ADMIN_CHAT_TEMPLATE,
 }
-TEMPLATES["admin_chat.html"] = ADMIN_CHAT_TEMPLATE
 
 env = Environment(loader=DictLoader(TEMPLATES))
 
@@ -152,27 +151,7 @@ async def admin_send_message(request_id: int, message: str = Form(...), admin_id
     finally:
         conn.close()
 
-@router.get("/payouts/{request_id}/chat")
-async def admin_payout_chat(request_id: int, _: int = Depends(admin_required)):
-    conn = get_db()
-    try:
-        messages = conn.execute("""
-            SELECT sender_role, message, file_path, created_at
-            FROM payout_chat
-            WHERE request_id = ?
-            ORDER BY created_at ASC
-        """, (request_id,)).fetchall()
-        return JSONResponse([{
-            "sender_role": m["sender_role"],
-            "message": m["message"],
-            "file_path": m["file_path"],
-            "created_at": m["created_at"]
-        } for m in messages])
-    finally:
-        conn.close()
 
-
-# Модифицируем send_money, decline, confirm_receipt
 @router.post("/payouts/request/{request_id}/send-money")
 async def send_money(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
     conn = get_db()
@@ -314,13 +293,11 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
         week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         posts_week = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published' AND published_at >= ?", (week_ago,)).fetchone()[0]
         errors_today = conn.execute("SELECT COUNT(*) FROM posts WHERE status='error' AND DATE(created_at)=?", (today,)).fetchone()[0]
-        pending_payouts = conn.execute("SELECT COUNT(*) FROM payouts WHERE status='pending'").fetchone()[0]
+        pending_payouts = conn.execute("SELECT COUNT(*) FROM payout_requests WHERE status IN ('processing','awaiting_receipt','receipt_uploaded')").fetchone()[0]
         channels = conn.execute("SELECT DISTINCT channel_id, channel_title FROM channels ORDER BY channel_title").fetchall()
-        last_users = conn.execute("SELECT user_id, role, created_at FROM users ORDER BY created_at DESC LIMIT 5").fetchall()
-        last_posts = conn.execute("SELECT id, channel_id, status, published_at, created_at FROM posts ORDER BY id DESC LIMIT 5").fetchall()
         
         # Аномалии CTR (пользователи, у которых средний CTR > 25% за 7 дней)
-        ctr_alerts = conn.execute("""
+        raw_ctr = conn.execute("""
             SELECT s.subid1, s.clicks_count, s.leads_count,
                    ROUND(CAST(s.leads_count AS REAL) / NULLIF(s.clicks_count, 0) * 100, 1) as ctr,
                    c.user_id, u.username, c.channel_title
@@ -332,43 +309,27 @@ async def dashboard(request: Request, _: int = Depends(admin_required)):
             ORDER BY ctr DESC
             LIMIT 10
         """).fetchall()
+        ctr_alerts = [{
+            "subid1": r["subid1"],
+            "clicks": r["clicks_count"],
+            "leads": r["leads_count"],
+            "ctr": r["ctr"],
+            "user_id": r["user_id"],
+            "username": r["username"],
+            "channel_title": r["channel_title"],
+        } for r in raw_ctr]
     finally:
         conn.close()
     return render("admin_dashboard.html",
                   active_saas=active_saas, active_bloggers=active_bloggers,
                   posts_today=posts_today, posts_week=posts_week,
                   errors_today=errors_today, pending_payouts=pending_payouts,
-                  last_users=last_users, last_posts=last_posts,
                   channels=channels,
                   ctr_alerts=ctr_alerts,
                   current_period_label='30 дней',
                   period='30d',
                   active_page='dashboard')
 
-@router.get("/payouts/{request_id}/chat-data")
-async def admin_chat_data(request_id: int, _: int = Depends(admin_required)):
-    conn = get_db()
-    try:
-        req = conn.execute("SELECT status FROM payout_requests WHERE id=?", (request_id,)).fetchone()
-        if not req:
-            return JSONResponse({"status": "unknown", "messages": []})
-        messages = conn.execute("""
-            SELECT sender_role, message, file_path, created_at
-            FROM payout_chat
-            WHERE request_id = ?
-            ORDER BY created_at ASC
-        """, (request_id,)).fetchall()
-        return JSONResponse({
-            "status": req["status"],
-            "messages": [{
-                "sender_role": m["sender_role"],
-                "message": m["message"],
-                "file_path": m["file_path"],
-                "created_at": m["created_at"]
-            } for m in messages]
-        })
-    finally:
-        conn.close()
 # ---------- Пользователи ----------
 @router.get("/users", response_class=HTMLResponse)
 async def users_list(request: Request, _: int = Depends(admin_required)):
@@ -442,61 +403,6 @@ async def payouts_list(request: Request, admin_id: int = Depends(admin_required)
     finally:
         conn.close()
     return render("admin_payouts.html", users=users, requests=requests, active_page='payouts', bot_username=BOT_USERNAME)
-
-@router.post("/payouts/request/{request_id}/decline")
-async def decline_payout_request(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
-    conn = get_db()
-    try:
-        req = conn.execute("SELECT * FROM payout_requests WHERE id=? AND status!='completed'", (request_id,)).fetchone()
-        if not req:
-            return RedirectResponse(url="/admin/payouts", status_code=303)
-        user_id = req["user_id"]
-        amount = req["amount"]
-        # Если статус был processing или awaiting_receipt, возвращаем баланс
-        if req["status"] in ("processing", "awaiting_receipt", "receipt_uploaded"):
-            conn.execute("UPDATE users SET balance_available = balance_available + ? WHERE user_id=?", (amount, user_id))
-        conn.execute("UPDATE payout_requests SET status='declined' WHERE id=?", (request_id,))
-        conn.commit()
-        log_admin_action(admin_id, "decline_payout", f"request #{request_id}")
-
-        # Уведомление блогеру об отклонении
-        bot = request.app.state.bot
-        try:
-            await bot.send_message(
-                user_id,
-                "❌ Ваша заявка на выплату была отклонена администратором.\n"
-                "Средства возвращены на баланс. Если есть вопросы, обратитесь в поддержку."
-            )
-        except Exception as e:
-            logger.error(f"Не удалось уведомить пользователя {user_id}: {e}")
-    finally:
-        conn.close()
-    return RedirectResponse(url="/admin/payouts", status_code=303)
-
-
-@router.post("/payouts/request/{request_id}/confirm-receipt")
-async def confirm_receipt(request_id: int, request: Request, admin_id: int = Depends(admin_required)):
-    conn = get_db()
-    try:
-        req = conn.execute("SELECT * FROM payout_requests WHERE id=? AND status='receipt_uploaded'", (request_id,)).fetchone()
-        if not req:
-            return RedirectResponse(url="/admin/payouts", status_code=303)
-        conn.execute("UPDATE payout_requests SET status='completed' WHERE id=?", (request_id,))
-        conn.commit()
-        log_admin_action(admin_id, "confirm_receipt", f"request #{request_id}")
-
-        # Уведомление блогеру об успешном завершении
-        bot = request.app.state.bot
-        try:
-            await bot.send_message(
-                req["user_id"],
-                "✅ Ваш чек принят! Выплата успешно завершена."
-            )
-        except Exception as e:
-            logger.error(f"Не удалось уведомить пользователя {req['user_id']}: {e}")
-    finally:
-        conn.close()
-    return RedirectResponse(url="/admin/payouts", status_code=303)
 
 @router.post("/payouts/pay")
 async def payouts_execute(request: Request, user_id: int = Form(...), amount: float = Form(...),
@@ -634,7 +540,10 @@ async def broadcast_send(request: Request, text: str = Form(...), role: str = Fo
     bot = request.app.state.bot
     conn = get_db()
     try:
-        users = conn.execute("SELECT user_id FROM users" if role == "all" else f"SELECT user_id FROM users WHERE role='{role}'").fetchall()
+        if role == "all":
+            users = conn.execute("SELECT user_id FROM users").fetchall()
+        else:
+            users = conn.execute("SELECT user_id FROM users WHERE role=?", (role,)).fetchall()
         success = 0
         for u in users:
             try:

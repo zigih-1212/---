@@ -122,8 +122,8 @@ DASHBOARD_TEMPLATE = r'''{% extends "base.html" %}
 <div class="card">
     <h2>&#x1F4C5; &#x41F;&#x435;&#x440;&#x438;&#x43E;&#x434;</h2>
     <div class="tabs">
-        <button class="tab-btn active" data-period="7d">7 &#x434;&#x43D;&#x435;&#x439;</button>
-        <button class="tab-btn" data-period="30d">30 &#x434;&#x43D;&#x435;&#x439;</button>
+        <button class="tab-btn" data-period="7d">7 &#x434;&#x43D;&#x435;&#x439;</button>
+        <button class="tab-btn active" data-period="30d">30 &#x434;&#x43D;&#x435;&#x439;</button>
         <button class="tab-btn" data-period="90d">90 &#x434;&#x43D;&#x435;&#x439;</button>
         <button class="tab-btn" data-period="all">&#x412;&#x441;&#x451; &#x432;&#x440;&#x435;&#x43C;&#x44F;</button>
     </div>
