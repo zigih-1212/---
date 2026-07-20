@@ -378,7 +378,7 @@ async def show_user_cabinet(message: Message, user_id: int = None):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📝 Политика конф. (ФЗ-152)", url=privacy_link)],
             [InlineKeyboardButton(text="✅ Принимаю условия", callback_data="oferta:accept")],
-            [InlineKeyboardButton(text="🔙 Отмена", callback_data="start")]
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
         ])
         await message.answer(text_oferta, parse_mode=ParseMode.HTML, reply_markup=kb)
         return

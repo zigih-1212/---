@@ -402,6 +402,19 @@ async def publish_from_catalog(bot: Bot):
                         conn_rec.commit()
                         logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}, post_id={msg.message_id}")
                         await pin_post_if_enabled(bot, user_id, ch["channel_id"], msg.message_id)
+                        try:
+                            channel_title = ch['channel_id'].lstrip('@')
+                            await bot.send_message(
+                                user_id,
+                                f"✅ Пост опубликован в <b>{channel_title}</b>\n"
+                                f"📦 {title}\n"
+                                f"💰 {price} {currency}\n"
+                                f"<a href='{direct_link}'>Открыть пост</a>",
+                                parse_mode="HTML",
+                                disable_web_page_preview=True
+                            )
+                        except Exception:
+                            pass
                     finally:
                         conn_rec.close()
                 else:

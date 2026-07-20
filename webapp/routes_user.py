@@ -42,22 +42,23 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Моя статистика</title>
 <style>
     body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; }
     h1 { color: #ff4444; }
-    .nav { margin-bottom: 20px; display: flex; gap: 15px; }
-    .nav a { color: #ff4444; text-decoration: none; padding: 8px 16px; border-radius: 8px; background: #333; }
+    .nav { margin-bottom: 20px; display: flex; gap: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px; }
+    .nav a { color: #ff4444; text-decoration: none; padding: 8px 16px; border-radius: 8px; background: #333; white-space: nowrap; flex-shrink: 0; }
     .nav a.active { background: #ff4444; color: #fff; }
     .container { max-width: 1100px; margin: auto; }
-    .period-selector { margin-bottom: 20px; }
-    .period-selector button { background: #333; color: #ccc; border: 1px solid #555; padding: 8px 16px; cursor: pointer; }
+    .period-selector { margin-bottom: 20px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .period-selector button { background: #333; color: #ccc; border: 1px solid #555; padding: 8px 16px; cursor: pointer; border-radius: 6px; }
     .period-selector button.active { background: #ff4444; color: #fff; border-color: #ff4444; }
-    canvas { background: #222; border-radius: 12px; padding: 10px; margin-bottom: 30px; }
+    canvas { background: #222; border-radius: 12px; padding: 10px; margin-bottom: 30px; max-width: 100%; }
     .balance { font-size: 1.2em; margin-bottom: 20px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     .card { background: #1e1e1e; border-radius: 12px; padding: 20px; margin-bottom: 30px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; overflow-x: auto; display: block; }
     th, td { padding: 8px 12px; border-bottom: 1px solid #333; text-align: left; }
     th { background: #2a2a2a; color: #ff4444; }
     tr:hover { background: #2a2a2a; }

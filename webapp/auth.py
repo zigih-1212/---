@@ -144,10 +144,12 @@ def get_user_id_from_token(token: str) -> int:
             (token,)
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Token not found")
+            raise HTTPException(status_code=404, detail="Token not found",
+                headers={"Content-Type": "text/html; charset=utf-8"})
         expires = datetime.fromisoformat(row["stats_token_expires"].replace("Z", "+00:00"))
         if datetime.now(timezone.utc) > expires:
-            raise HTTPException(status_code=401, detail="Token expired")
+            raise HTTPException(status_code=401, detail="Token expired",
+                headers={"Content-Type": "text/html; charset=utf-8"})
         return row["user_id"]
     finally:
         conn.close()

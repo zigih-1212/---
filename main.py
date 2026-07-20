@@ -791,7 +791,13 @@ async def cb_privacy_decline(callback: CallbackQuery):
 
 @router.callback_query(F.data == "blogger_custom_interval")
 async def cb_blogger_custom_interval(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("✏️ Введите интервал в минутах (например, 45):")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
+    ])
+    await callback.message.answer(
+        "✏️ Введите интервал в минутах (минимум 5):",
+        reply_markup=kb
+    )
     await state.set_state(BloggerStates.waiting_post_interval)
     await callback.answer()
 
@@ -810,8 +816,13 @@ async def cb_blogger_set_interval(callback: CallbackQuery):
 
 @router.message(BloggerStates.waiting_post_interval)
 async def process_blogger_interval_input(message: Message, state: FSMContext):
+    text = message.text.strip().lower()
+    if text in ("отмена", "отмен", "cancel", "назад"):
+        await state.clear()
+        await show_user_cabinet(message, user_id=message.from_user.id)
+        return
     try:
-        minutes = int(message.text.strip())
+        minutes = int(text)
         if minutes < 5:
             await message.answer("❌ Минимальный интервал — 5 минут.")
             return
@@ -826,7 +837,10 @@ async def process_blogger_interval_input(message: Message, state: FSMContext):
         await state.clear()
         await show_user_cabinet(message, user_id=user_id)
     except ValueError:
-        await message.answer("❌ Введите число (минут).")
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
+        ])
+        await message.answer("❌ Введите число (минут) или нажмите «Отмена».", reply_markup=kb)
 @router.callback_query(F.data == "blogger:referral")
 async def cb_blogger_referral(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -996,14 +1010,22 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
     try:
         user = conn.execute("SELECT role FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
         if not user:
-            # Предлагаем выбрать роль
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="💼 SaaS-клиент", callback_data="role:saas")],
                 [InlineKeyboardButton(text="👤 Блогер", callback_data="role:blogger")],
             ])
             await message.answer(
-                "👋 Добро пожаловать! Выберите вашу роль:",
-                reply_markup=kb
+                "👋 <b>Добро пожаловать в AutoPost!</b>\n\n"
+                "Бот автоматически публикует товары из партнёрских магазинов в ваш Telegram-канал "
+                "и приносит вам <b>70% комиссии</b> с каждой продажи.\n\n"
+                "<b>Как это работает:</b>\n"
+                "1. Добавляете канал\n"
+                "2. Выбираете магазины\n"
+                "3. Бот публикует посты с вашими партнёрскими ссылками\n"
+                "4. Получаете доход за каждую покупку\n\n"
+                "Выберите вашу роль:",
+                reply_markup=kb,
+                parse_mode=ParseMode.HTML
             )
             await state.set_state(OnboardingStates.waiting_role)
         else:
@@ -1016,6 +1038,30 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
             )
     finally:
         conn.close()
+
+@router.message(Command("help"))
+async def cmd_help(message: Message):
+    await message.answer(
+        "📖 <b>Справка — AutoPost Bot</b>\n\n"
+        "<b>Основные команды:</b>\n"
+        "/start — Главное меню\n"
+        "/cabinet — Личный кабинет\n"
+        "/help — Эта справка\n\n"
+        "<b>Дополнительно:</b>\n"
+        "/promo — Активировать промокод\n"
+        "/privacy — Политика конфиденциальности\n"
+        "/delete — Удалить аккаунт и все данные\n\n"
+        "<b>Как начать зарабатывать:</b>\n"
+        "1. Добавьте канал в «Кабинете»\n"
+        "2. Добавьте бота админом в канал с правами на постинг\n"
+        "3. Выберите магазины в разделе «Магазины»\n"
+        "4. Бот начнёт публикации автоматически!\n\n"
+        "<b>Выплаты:</b>\n"
+        "Минимальная выплата — 3000 ₽.\n"
+        "Доступен для самозанятых.\n\n"
+        "<b>Поддержка:</b> напишите /start и нажмите «💬 Поддержка»",
+        parse_mode=ParseMode.HTML
+    )
 
 @router.message(Command("preview"))
 async def cmd_preview(message: Message):
@@ -1046,49 +1092,22 @@ async def cmd_privacy(message: Message):
         disable_web_page_preview=True
     )
 
+_pending_deletes: dict[int, float] = {}
+
 @router.message(Command("delete"))
 async def cmd_delete(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username or "без username"
-    
-    state = message.state
-    if state:
-        data = await state.get_data()
-        if data.get("delete_confirmed"):
+
+    import time
+    now = time.time()
+    pending_until = _pending_deletes.get(user_id, 0)
+
+    if now < pending_until:
+        del _pending_deletes[user_id]
+        state = message.state
+        if state:
             await state.clear()
-            _delete_user_data(user_id)
-            for admin_id in ADMIN_IDS:
-                try:
-                    await message.bot.send_message(
-                        admin_id,
-                        f"🗑 <b>Пользователь удалил аккаунт</b>\n\n"
-                        f"User ID: <code>{user_id}</code>\n"
-                        f"Username: @{username}\n"
-                        f"Все данные удалены из базы.",
-                        parse_mode=ParseMode.HTML
-                    )
-                except Exception as e:
-                    logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
-            
-            await message.answer(
-                "✅ Все ваши данные удалены в соответствии со ст. 21 152-ФЗ.\n\n"
-                "Если вы захотите вернуться — просто напишите /start."
-            )
-        else:
-            await state.set_data({"delete_confirmed": True})
-            confirm_msg = await message.answer(
-                "⚠️ <b>Внимание!</b>\n\n"
-                "Это действие удалит <b>все ваши данные</b> из бота:\n"
-                "• Профиль и подписка\n"
-                "• Каналы и посты\n"
-                "• Баланс и транзакции\n"
-                "• Шаблоны и настройки\n\n"
-                "Это действие <b>необратимо</b>.\n\n"
-                "Для подтверждения отправьте команду <code>/delete</code> ещё раз.",
-                parse_mode=ParseMode.HTML
-            )
-            return
-    else:
         _delete_user_data(user_id)
         for admin_id in ADMIN_IDS:
             try:
@@ -1102,10 +1121,22 @@ async def cmd_delete(message: Message):
                 )
             except Exception as e:
                 logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
-        
         await message.answer(
             "✅ Все ваши данные удалены в соответствии со ст. 21 152-ФЗ.\n\n"
             "Если вы захотите вернуться — просто напишите /start."
+        )
+    else:
+        _pending_deletes[user_id] = now + 60
+        await message.answer(
+            "⚠️ <b>Внимание!</b>\n\n"
+            "Это действие удалит <b>все ваши данные</b> из бота:\n"
+            "• Профиль и подписка\n"
+            "• Каналы и посты\n"
+            "• Баланс и транзакции\n"
+            "• Шаблоны и настройки\n\n"
+            "Это действие <b>необратимо</b>.\n\n"
+            "Для подтверждения отправьте <code>/delete</code> ещё раз в течение 60 секунд.",
+            parse_mode=ParseMode.HTML
         )
 
 
@@ -1215,18 +1246,26 @@ async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("channel_delete:"))
 async def cb_delete_channel(callback: CallbackQuery) -> None:
-    channel_id = callback.data.split(":")[1]
+    parts = callback.data.split(":")
+    channel_id = parts[1]
     user_id = callback.from_user.id
 
-    conn = get_db()
-    try:
-        conn.execute("DELETE FROM channels WHERE id=? AND user_id=?", (channel_id, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-    await callback.answer("🗑 Канал удалён.", show_alert=True)
-    await cb_my_channels(callback)
+    if len(parts) > 2 and parts[2] == "confirm":
+        conn = get_db()
+        try:
+            conn.execute("DELETE FROM channels WHERE id=? AND user_id=?", (channel_id, user_id))
+            conn.commit()
+        finally:
+            conn.close()
+        await callback.answer("🗑 Канал удалён.", show_alert=True)
+        await cb_my_channels(callback)
+    else:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Да, удалить", callback_data=f"delete_channel:{channel_id}:confirm")],
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")],
+        ])
+        await callback.message.answer("⚠️ Вы уверены, что хотите удалить канал?", reply_markup=kb)
+        await callback.answer()
 
 # ---------------------------------------------------------------------------
 # Статистика SaaS
@@ -1253,7 +1292,6 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
         else:
             text += "  Нет данных\n"
         text += f"\n<i>Подключите каналы для детальной статистики.</i>"
-        kb.append([InlineKeyboardButton(text="📢 Поделиться успехом", callback_data="share_success")])
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
         ])
@@ -1588,9 +1626,19 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
 async def cb_support_contact(callback: CallbackQuery):
     text = (
         "📞 <b>Связь с администратором</b>\n\n"
-        "По любым вопросам, ошибкам, багам, предложениям и для оплаты пишите:\n"
+        "По любым вопросам пишите:\n"
         "👉 <a href='https://t.me/Zigih90'>@Zigih90</a>\n\n"
-        "<i>Стараюсь отвечать быстро 😊</i>"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "❓ <b>Частые вопросы:</b>\n\n"
+        "<b>Бот не публикует посты?</b>\n"
+        "Убедитесь, что бот — админ канала с правами на публикацию.\n\n"
+        "<b>Нет дохода?</b>\n"
+        "Доход появляется после подтверждения покупок рекламодателем (30–90 дней).\n\n"
+        "<b>Не могу вывести деньги?</b>\n"
+        "Нужен статус самозанятого и баланс от 3000 ₽.\n\n"
+        "<b>Какие магазины доступны?</b>\n"
+        "Откройте «Кабинет» → «Магазины» — там весь список.\n\n"
+        "<i>Стаюсь отвечать быстро</i>"
     )
     await callback.message.edit_text(
         text,
@@ -1771,13 +1819,12 @@ async def cb_payout_request(callback: CallbackQuery, state: FSMContext):
 async def process_payout_message(message: Message, state: FSMContext):
     user_id = message.from_user.id
     text = message.text.strip()
-    
-    # Валидация реквизитов: номер карты (16 цифр), счёт (20 цифр) или телефон (11 цифр)
-    import re
-    if not re.match(r'^[\d\s\-]{11,20}$', text.replace(' ', '').replace('-', '')):
+
+    if len(text) < 3 or len(text) > 100:
         await message.answer(
-            "❌ Введите корректные реквизиты: номер карты (16 цифр), номер счёта (20 цифр) или номер телефона (11 цифр).\n"
-            "Пример: 2202 2081 0829 0025"
+            "❌ Реквизиты слишком короткие или длинные (3–100 символов).\n"
+            "Пример: <i>Сбербанк 2202 2081 0829 0025</i> или <i>UQAbc123...</i>",
+            parse_mode=ParseMode.HTML
         )
         return
     
@@ -2030,6 +2077,7 @@ async def main() -> None:
         commands=[
             BotCommand(command="start", description="Главное меню"),
             BotCommand(command="cabinet", description="Личный кабинет"),
+            BotCommand(command="help", description="Справка и контакты"),
         ],
         scope=BotCommandScopeDefault(),
     )
