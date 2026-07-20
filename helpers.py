@@ -439,7 +439,7 @@ async def open_saas_settings(callback):
     user_id = callback.from_user.id
     conn = get_db()
     try:
-        user = conn.execute("SELECT api_key, auto_pin, force_preview_confirmed FROM users WHERE user_id=?", (user_id,)).fetchone()
+        user = conn.execute("SELECT api_key, auto_pin, notify_posts, force_preview_confirmed FROM users WHERE user_id=?", (user_id,)).fetchone()
     finally:
         conn.close()
     if not user:
@@ -447,6 +447,7 @@ async def open_saas_settings(callback):
         return
 
     auto_pin = bool(user["auto_pin"] if user["auto_pin"] is not None else 1)
+    notify_posts = bool(user["notify_posts"] if user["notify_posts"] is not None else 1)
     preview_confirmed = bool(user["force_preview_confirmed"]) if user else False
     preview_text = "✅ Предпросмотр включен (посты сразу)" if preview_confirmed else "🔍 Предпросмотр выключен (показывается каждый раз)"
     preview_callback = "saas_toggle:force_preview_reset" if preview_confirmed else "saas_toggle:force_preview_enable"
@@ -463,6 +464,7 @@ async def open_saas_settings(callback):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="ℹ️ Об источнике товаров", callback_data="saas_set:gdeslon_apikey")],
         [InlineKeyboardButton(text=f"📌 Авто-закреп постов: {'✅' if auto_pin else '❌'}", callback_data="saas_toggle:autopin")],
+        [InlineKeyboardButton(text=f"🔔 Уведомления о постах: {'✅' if notify_posts else '❌'}", callback_data="saas_toggle:notifyposts")],
         [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
         [InlineKeyboardButton(text=f"🔄 {preview_text}", callback_data=preview_callback)],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]

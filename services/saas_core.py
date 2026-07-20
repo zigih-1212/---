@@ -403,16 +403,23 @@ async def publish_from_catalog(bot: Bot):
                         logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}, post_id={msg.message_id}")
                         await pin_post_if_enabled(bot, user_id, ch["channel_id"], msg.message_id)
                         try:
-                            channel_title = ch['channel_id'].lstrip('@')
-                            await bot.send_message(
-                                user_id,
-                                f"✅ Пост опубликован в <b>{channel_title}</b>\n"
-                                f"📦 {title}\n"
-                                f"💰 {price} {currency}\n"
-                                f"<a href='{direct_link}'>Открыть пост</a>",
-                                parse_mode="HTML",
-                                disable_web_page_preview=True
-                            )
+                            conn_chk = get_db()
+                            try:
+                                row = conn_chk.execute("SELECT notify_posts FROM users WHERE user_id=?", (user_id,)).fetchone()
+                                do_notify = row["notify_posts"] if row else 1
+                            finally:
+                                conn_chk.close()
+                            if do_notify:
+                                channel_title = ch['channel_id'].lstrip('@')
+                                await bot.send_message(
+                                    user_id,
+                                    f"✅ Пост опубликован в <b>{channel_title}</b>\n"
+                                    f"📦 {title}\n"
+                                    f"💰 {price} {currency}\n"
+                                    f"<a href='{direct_link}'>Открыть пост</a>",
+                                    parse_mode="HTML",
+                                    disable_web_page_preview=True
+                                )
                         except Exception:
                             pass
                     finally:

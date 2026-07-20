@@ -147,6 +147,7 @@ def init_db() -> None:
             filter_ozon INTEGER DEFAULT 1,
             blogger_mode TEXT DEFAULT 'direct',
             auto_pin INTEGER DEFAULT 1,
+            notify_posts INTEGER DEFAULT 1,
             is_active INTEGER DEFAULT 1,
             payout_card TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -547,7 +548,11 @@ def init_db() -> None:
         logger.info("✅ Колонка beta_tester добавлена")
     except sqlite3.OperationalError as e:
         if "duplicate column name" not in str(e):
-            logger.warning(f"⚠️ Не удалось добавить beta_tester: {e}")          
+            logger.warning(f"⚠️ Не удалось добавить beta_tester: {e}")
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN notify_posts INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     
     # Инициализация фич (если их нет в БД)
@@ -1426,16 +1431,23 @@ async def cb_force_preview_reset(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("saas_toggle:"))
 async def cb_saas_toggles(callback: CallbackQuery) -> None:
     action = callback.data.split(":")[1]
-    if action != "autopin":
-        return
     user_id = callback.from_user.id
     conn = get_db()
     try:
-        user = conn.execute("SELECT auto_pin FROM users WHERE user_id=?", (user_id,)).fetchone()
-        if user:
-            new_val = 0 if user["auto_pin"] else 1
-            conn.execute("UPDATE users SET auto_pin=? WHERE user_id=?", (new_val, user_id))
-            conn.commit()
+        if action == "autopin":
+            user = conn.execute("SELECT auto_pin FROM users WHERE user_id=?", (user_id,)).fetchone()
+            if user:
+                new_val = 0 if user["auto_pin"] else 1
+                conn.execute("UPDATE users SET auto_pin=? WHERE user_id=?", (new_val, user_id))
+                conn.commit()
+        elif action == "notifyposts":
+            user = conn.execute("SELECT notify_posts FROM users WHERE user_id=?", (user_id,)).fetchone()
+            if user:
+                new_val = 0 if user["notify_posts"] else 1
+                conn.execute("UPDATE users SET notify_posts=? WHERE user_id=?", (new_val, user_id))
+                conn.commit()
+        else:
+            return
     finally:
         conn.close()
     await open_saas_settings(callback)
