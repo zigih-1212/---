@@ -21,7 +21,7 @@ from keyboards.saas import kb_cabinet_menu
 from services.text_rewriter import generate_post_text
 from services.admitad import get_random_promocode
 from states import SaasStates, PaymentFSM, PayoutStates, TaxStates
-from helpers import generate_success_text, show_user_cabinet, open_saas_settings, safe_edit
+from helpers import generate_success_text, show_user_cabinet, safe_edit
 from config import MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
 
 logger = logging.getLogger("autopost_bot.saas")
@@ -756,7 +756,6 @@ async def cb_force_cpc_channel(callback: CallbackQuery, bot: Bot) -> None:
     cpc_template = user_row["cpc_template"] if user_row and user_row["cpc_template"] else None
     auto_delete_hours = user_row["default_auto_delete_hours"] if user_row and user_row["default_auto_delete_hours"] is not None else 168
 
-    await callback.message.delete()
     await _publish_cpc_post(callback, bot, user_id, dict(campaign), dict(ch), cpc_template, auto_delete_hours)
     await callback.answer()
 
@@ -1096,7 +1095,6 @@ async def cb_force_channel_select(callback: CallbackQuery, bot: Bot):
     """Обработчик выбора канала для принудительной публикации"""
     channel_id = callback.data.split(":")[1]
     await _force_post_immediate(callback, bot, callback.from_user.id, channel_id)
-    await callback.message.delete()
     await callback.answer()
 
 @router.callback_query(F.data.startswith("force_confirm:"))
@@ -1228,81 +1226,6 @@ async def cb_force_cancel(callback: CallbackQuery) -> None:
 # ---------------------------------------------------------------------------
 # Настройка источника товаров (заглушка)
 # ---------------------------------------------------------------------------
-@router.callback_query(F.data == "saas_set:gdeslon_apikey")
-async def cb_saas_set_source(callback: CallbackQuery) -> None:
-    text = (
-        "📦 <b>Источник товаров: Admitad</b>\n\n"
-        "Бот автоматически загружает товары из выбранных вами магазинов-партнёров "
-        "(Читай-город, KANZLER, SELA, Hi Store и других).\n"
-        "Все товары поступают с готовой маркировкой ERID — дополнительных действий не требуется.\n\n"
-        "Вы управляете ассортиментом через раздел «🏪 Магазины» в кабинете."
-    )
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад в настройки", callback_data="menu:settings")]
-    ])
-    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
-    await callback.answer()
-
-AUTO_DELETE_OPTIONS = [
-    (0, "❌ Выключено"),
-    (1, "1 час"),
-    (6, "6 часов"),
-    (12, "12 часов"),
-    (24, "1 день"),
-    (48, "2 дня"),
-    (72, "3 дня"),
-    (168, "7 дней (по умолчанию)"),
-    (336, "14 дней"),
-    (720, "30 дней"),
-]
-
-@router.callback_query(F.data == "saas_set:autodelete")
-async def cb_saas_set_autodelete(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT default_auto_delete_hours FROM users WHERE user_id=?", (user_id,)).fetchone()
-        current = row["default_auto_delete_hours"] if row and row["default_auto_delete_hours"] is not None else 168
-    finally:
-        conn.close()
-
-    text = (
-        "🗑 <b>Автоудаление постов</b>\n\n"
-        "Рекламные посты автоматически удаляются из канала через указанное время.\n"
-        "Кука Admitad работает 30 дней — переходы засчитываются даже после удаления.\n\n"
-        "Выберите время жизни поста:"
-    )
-    kb_rows = []
-    for hours, label in AUTO_DELETE_OPTIONS:
-        marker = "✅ " if hours == current else ""
-        kb_rows.append([InlineKeyboardButton(text=f"{marker}{label}", callback_data=f"autodelete_set:{hours}")])
-    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:settings")])
-    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("autodelete_set:"))
-async def cb_autodelete_set(callback: CallbackQuery):
-    hours = int(callback.data.split(":")[1])
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET default_auto_delete_hours = ? WHERE user_id = ?", (hours, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-    if hours == 0:
-        await callback.answer("✅ Автоудаление выключено", show_alert=True)
-    else:
-        if hours < 24:
-            label = f"{hours} ч."
-        else:
-            label = f"{hours // 24} дн."
-        await callback.answer(f"✅ Посты будут удаляться через {label}", show_alert=True)
-    await open_saas_settings(callback)
-
-
 # ---------------------------------------------------------------------------
 # Промокоды
 # ---------------------------------------------------------------------------
@@ -1691,46 +1614,6 @@ async def cb_oferta_accept(callback: CallbackQuery, state: FSMContext):
         reply_markup=kb
     )
     await state.set_state(TaxStates.waiting_tax_status)
-
-@router.callback_query(F.data == "saas_toggle:force_preview_reset")
-async def cb_force_preview_reset(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET force_preview_confirmed = 0 WHERE user_id = ?", (user_id,))
-        conn.commit()
-    finally:
-        conn.close()
-    await callback.answer("🔍 Предпросмотр снова будет показываться перед публикацией.", show_alert=True)
-    await open_saas_settings(callback)
-
-@router.callback_query(F.data == "tax_status:change")
-async def cb_change_tax_status(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT tax_status FROM users WHERE user_id=?", (user_id,)).fetchone()
-        current = user["tax_status"] if user else ""
-    finally:
-        conn.close()
-
-    if current == "business":
-        current_text = "🧾 Самозанятый / ИП"
-    elif current == "individual":
-        current_text = "👤 Физическое лицо"
-    else:
-        current_text = "не указан"
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🧾 Я Самозанятый / ИП", callback_data="tax:business")],
-        [InlineKeyboardButton(text="👤 Обычное физлицо", callback_data="tax:individual")],
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
-    ])
-    await safe_edit(callback.message, f"Ваш текущий налоговый статус: <b>{current_text}</b>\n\n"
-        "Выберите новый статус:",
-        reply_markup=kb, parse_mode=ParseMode.HTML)
-    await state.set_state(TaxStates.waiting_tax_status)
-    await callback.answer()
 
 # ---------------------------------------------------------------------------
 # CPC Рекламодатели

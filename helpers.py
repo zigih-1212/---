@@ -12,16 +12,16 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 logger = logging.getLogger("autopost_bot.referral")
 
 
-async def safe_edit(message: Message, text: str, reply_markup: InlineKeyboardMarkup = None, parse_mode: str = ParseMode.HTML):
+async def safe_edit(message: Message, text: str, reply_markup: InlineKeyboardMarkup = None, parse_mode: str = ParseMode.HTML, **kwargs):
     """Перезаписывает сообщение с fallback на delete+send."""
     try:
-        await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+        await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode, **kwargs)
     except Exception:
         try:
             await message.delete()
         except Exception:
             pass
-        await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+        await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode, **kwargs)
 
 def log_admin_action(admin_id: int, action: str, details: str = ""):
     conn = get_db()

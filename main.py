@@ -1,8 +1,8 @@
 """
 =============================================================================
-  АВТОПОСТИНГ-БОТ | SaaS-платформа для монетизации Telegram-каналов
+  РђР’РўРћРџРћРЎРўРРќР“-Р‘РћРў | SaaS-РїР»Р°С‚С„РѕСЂРјР° РґР»СЏ РјРѕРЅРµС‚РёР·Р°С†РёРё Telegram-РєР°РЅР°Р»РѕРІ
   Stack: Python 3.10+, aiogram 3.x, FastAPI, SQLite3, httpx, APScheduler
-  Юридическая защита: ERID обязателен. Публикация без маркировки — запрещена.
+  Р®СЂРёРґРёС‡РµСЃРєР°СЏ Р·Р°С‰РёС‚Р°: ERID РѕР±СЏР·Р°С‚РµР»РµРЅ. РџСѓР±Р»РёРєР°С†РёСЏ Р±РµР· РјР°СЂРєРёСЂРѕРІРєРё вЂ” Р·Р°РїСЂРµС‰РµРЅР°.
 =============================================================================
 """
 
@@ -39,10 +39,8 @@ from services.saas_core import (
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request, HTTPException
-from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, PayoutStates, BloggerStates
-from stats import get_saas_channels, get_saas_channel_stats_new, get_saas_overview, STAT_PERIODS
+from states import OnboardingStates, SaasStates, AdminStates, PaymentFSM, PayoutStates
 from services.db import get_db
-from config import BOT_USERNAME
 from states import TaxStates 
 from keyboards.saas import kb_cabinet_menu
 from helpers import check_rss_and_publish, generate_success_text, collect_views_for_user
@@ -56,7 +54,7 @@ from utils.feature_flags import (
 from io import BytesIO
 from aiogram.types import BufferedInputFile
 from helpers import is_admin, get_block_reason
-from helpers import show_user_cabinet, open_saas_settings, safe_edit
+from helpers import show_user_cabinet, safe_edit
 
 logger = logging.getLogger("autopost_bot.referral")
 # ---------------------------------------------------------------------------
@@ -109,13 +107,13 @@ class ErrorLoggingMiddleware(BaseMiddleware):
         try:
             return await handler(event, data)
         except Exception as e:
-            logger.exception(f"Ошибка при обработке события: {e}")
-            # НЕ перевыбрасываем исключение — один сбойный хендлер не должен валить весь бот
+            logger.exception(f"РћС€РёР±РєР° РїСЂРё РѕР±СЂР°Р±РѕС‚РєРµ СЃРѕР±С‹С‚РёСЏ: {e}")
+            # РќР• РїРµСЂРµРІС‹Р±СЂР°СЃС‹РІР°РµРј РёСЃРєР»СЋС‡РµРЅРёРµ вЂ” РѕРґРёРЅ СЃР±РѕР№РЅС‹Р№ С…РµРЅРґР»РµСЂ РЅРµ РґРѕР»Р¶РµРЅ РІР°Р»РёС‚СЊ РІРµСЃСЊ Р±РѕС‚
             return
 
 
 # =============================================================================
-# === ИНИЦИАЛИЗАЦИЯ БД ========================================================
+# === РРќРР¦РРђР›РР—РђР¦РРЇ Р‘Р” ========================================================
 # =============================================================================
 def init_db() -> None:
     print("DEBUG: init_db done, starting bot...", flush=True, file=sys.stderr)
@@ -426,7 +424,7 @@ def init_db() -> None:
         )
     """)  
     conn.commit()  
-    # Миграции
+    # РњРёРіСЂР°С†РёРё
     migrations = [
         "ALTER TABLE users ADD COLUMN payout_card TEXT",
         "ALTER TABLE posts ADD COLUMN target_channel_id TEXT",
@@ -459,7 +457,7 @@ def init_db() -> None:
         except sqlite3.OperationalError:
             pass
 
-    # Дополнительные миграции (каждая в своём try/except)
+    # Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Рµ РјРёРіСЂР°С†РёРё (РєР°Р¶РґР°СЏ РІ СЃРІРѕС‘Рј try/except)
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER")
     except sqlite3.OperationalError:
@@ -521,7 +519,7 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass
 
-    # Новые миграции для выплат (напоминания о чеке)
+    # РќРѕРІС‹Рµ РјРёРіСЂР°С†РёРё РґР»СЏ РІС‹РїР»Р°С‚ (РЅР°РїРѕРјРёРЅР°РЅРёСЏ Рѕ С‡РµРєРµ)
     try:
         cursor.execute("ALTER TABLE payout_requests ADD COLUMN sent_at TIMESTAMP")
     except sqlite3.OperationalError:
@@ -530,7 +528,7 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE payout_requests ADD COLUMN receipt_reminded INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
         pass
-    # В функции init_db() после создания таблицы posts добавить миграцию:
+    # Р’ С„СѓРЅРєС†РёРё init_db() РїРѕСЃР»Рµ СЃРѕР·РґР°РЅРёСЏ С‚Р°Р±Р»РёС†С‹ posts РґРѕР±Р°РІРёС‚СЊ РјРёРіСЂР°С†РёСЋ:
     try:
         cursor.execute("ALTER TABLE posts ADD COLUMN views_count INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
@@ -547,13 +545,13 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE posts ADD COLUMN erid TEXT")
     except sqlite3.OperationalError:
         pass      
-    # Добавляем колонку beta_tester для управления доступом к новым функциям
+    # Р”РѕР±Р°РІР»СЏРµРј РєРѕР»РѕРЅРєСѓ beta_tester РґР»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ РґРѕСЃС‚СѓРїРѕРј Рє РЅРѕРІС‹Рј С„СѓРЅРєС†РёСЏРј
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN beta_tester INTEGER DEFAULT 0")
-        logger.info("✅ Колонка beta_tester добавлена")
+        logger.info("вњ… РљРѕР»РѕРЅРєР° beta_tester РґРѕР±Р°РІР»РµРЅР°")
     except sqlite3.OperationalError as e:
         if "duplicate column name" not in str(e):
-            logger.warning(f"⚠️ Не удалось добавить beta_tester: {e}")
+            logger.warning(f"вљ пёЏ РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕР±Р°РІРёС‚СЊ beta_tester: {e}")
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN notify_posts INTEGER DEFAULT 1")
     except sqlite3.OperationalError:
@@ -616,7 +614,7 @@ def init_db() -> None:
         pass
     conn.commit()
     
-    # Инициализация фич (если их нет в БД)
+    # РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ С„РёС‡ (РµСЃР»Рё РёС… РЅРµС‚ РІ Р‘Р”)
     try:
         features_to_init = [
             ("preview_post", "beta"),
@@ -641,24 +639,24 @@ def init_db() -> None:
                     "INSERT INTO features (name, status) VALUES (?, ?)",
                     (feature_name, default_status),
                 )
-                logger.info(f"✅ Фича '{feature_name}' инициализирована со статусом '{default_status}'")
+                logger.info(f"вњ… Р¤РёС‡Р° '{feature_name}' РёРЅРёС†РёР°Р»РёР·РёСЂРѕРІР°РЅР° СЃРѕ СЃС‚Р°С‚СѓСЃРѕРј '{default_status}'")
         conn.commit()
     except Exception as e:
-        logger.warning(f"⚠️ Ошибка инициализации фич: {e}")
+        logger.warning(f"вљ пёЏ РћС€РёР±РєР° РёРЅРёС†РёР°Р»РёР·Р°С†РёРё С„РёС‡: {e}")
     
     conn.close()
-    logger.info("База данных инициализирована")
+    logger.info("Р‘Р°Р·Р° РґР°РЅРЅС‹С… РёРЅРёС†РёР°Р»РёР·РёСЂРѕРІР°РЅР°")
 
 
 # =============================================================================
-# === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =================================================
+# === Р’РЎРџРћРњРћР“РђРўР•Р›Р¬РќР«Р• Р¤РЈРќРљР¦РР =================================================
 def generate_sub_id(username: str, user_id: int, role: str = "blogger") -> str:
     _TRANSLIT_MAP = {
-        "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
-        "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
-        "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-        "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
-        "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+        "Р°": "a", "Р±": "b", "РІ": "v", "Рі": "g", "Рґ": "d", "Рµ": "e", "С‘": "yo",
+        "Р¶": "zh", "Р·": "z", "Рё": "i", "Р№": "y", "Рє": "k", "Р»": "l", "Рј": "m",
+        "РЅ": "n", "Рѕ": "o", "Рї": "p", "СЂ": "r", "СЃ": "s", "С‚": "t", "Сѓ": "u",
+        "С„": "f", "С…": "kh", "С†": "ts", "С‡": "ch", "С€": "sh", "С‰": "shch",
+        "СЉ": "", "С‹": "y", "СЊ": "", "СЌ": "e", "СЋ": "yu", "СЏ": "ya",
     }
     username = (username or "").lstrip("@").lower()
     result = ""
@@ -688,16 +686,16 @@ async def check_bot_admin(bot: Bot, channel_id: str) -> bool:
             return getattr(member, "can_post_messages", False)
         return False
     except TelegramAPIError as e:
-        logger.error(f"Ошибка проверки админки в {channel_id}: {e}")
+        logger.error(f"РћС€РёР±РєР° РїСЂРѕРІРµСЂРєРё Р°РґРјРёРЅРєРё РІ {channel_id}: {e}")
         return False
 
 # =============================================================================
-# === КЛАВИАТУРЫ ==============================================================
+# === РљР›РђР’РРђРўРЈР Р« ==============================================================
 def kb_admin_panel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌐 Открыть Web-админку", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))],
-        [InlineKeyboardButton(text="📣 Рассылка всем", callback_data="admin:broadcast")],
-        [InlineKeyboardButton(text="🔧 Продлить подписку", callback_data="admin:extend_sub")],
+        [InlineKeyboardButton(text="рџЊђ РћС‚РєСЂС‹С‚СЊ Web-Р°РґРјРёРЅРєСѓ", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))],
+        [InlineKeyboardButton(text="рџ“Ј Р Р°СЃСЃС‹Р»РєР° РІСЃРµРј", callback_data="admin:broadcast")],
+        [InlineKeyboardButton(text="рџ”§ РџСЂРѕРґР»РёС‚СЊ РїРѕРґРїРёСЃРєСѓ", callback_data="admin:extend_sub")],
     ])
 
 # =============================================================================
@@ -713,26 +711,26 @@ async def promo_handler(message: Message, state: FSMContext):
     args = message.text.split()
     if len(args) < 2:
         await message.answer(
-            "🎁 Введите команду в формате: /promo КОД\nНапример: /promo D2075RPD",
+            "рџЋЃ Р’РІРµРґРёС‚Рµ РєРѕРјР°РЅРґСѓ РІ С„РѕСЂРјР°С‚Рµ: /promo РљРћР”\nРќР°РїСЂРёРјРµСЂ: /promo D2075RPD",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
+                [InlineKeyboardButton(text="рџ”™ РћС‚РјРµРЅР°", callback_data="cabinet:open")]
             ])
         )
         return
 
     code = args[1].strip().upper()
-    logger.info(f"[PROMO] Пользователь {message.from_user.id} ввёл код: {code}")
+    logger.info(f"[PROMO] РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ {message.from_user.id} РІРІС‘Р» РєРѕРґ: {code}")
 
     conn = get_db()
     try:
         promo = conn.execute("SELECT * FROM promocodes WHERE UPPER(code) = ?", (code,)).fetchone()
         if not promo:
-            await message.answer("❌ Неверный или несуществующий промокод.")
+            await message.answer("вќЊ РќРµРІРµСЂРЅС‹Р№ РёР»Рё РЅРµСЃСѓС‰РµСЃС‚РІСѓСЋС‰РёР№ РїСЂРѕРјРѕРєРѕРґ.")
             return
 
         activation = conn.execute("SELECT * FROM promocode_activations WHERE UPPER(code) = ?", (code,)).fetchone()
         if activation:
-            await message.answer("❌ Этот промокод уже использован.")
+            await message.answer("вќЊ Р­С‚РѕС‚ РїСЂРѕРјРѕРєРѕРґ СѓР¶Рµ РёСЃРїРѕР»СЊР·РѕРІР°РЅ.")
             return
 
         channels = conn.execute(
@@ -743,7 +741,7 @@ async def promo_handler(message: Message, state: FSMContext):
         conn.close()
 
     if not channels:
-        await message.answer("❌ У вас нет подключённых каналов.")
+        await message.answer("вќЊ РЈ РІР°СЃ РЅРµС‚ РїРѕРґРєР»СЋС‡С‘РЅРЅС‹С… РєР°РЅР°Р»РѕРІ.")
         return
 
     days = int(promo["days"])
@@ -765,10 +763,10 @@ async def promo_handler(message: Message, state: FSMContext):
         finally:
             conn.close()
 
-        await message.answer(f"✅ Промокод активирован!\nПодписка продлена на {days} дней.")
+        await message.answer(f"вњ… РџСЂРѕРјРѕРєРѕРґ Р°РєС‚РёРІРёСЂРѕРІР°РЅ!\nРџРѕРґРїРёСЃРєР° РїСЂРѕРґР»РµРЅР° РЅР° {days} РґРЅРµР№.")
         return
 
-    # Несколько каналов – показываем выбор
+    # РќРµСЃРєРѕР»СЊРєРѕ РєР°РЅР°Р»РѕРІ вЂ“ РїРѕРєР°Р·С‹РІР°РµРј РІС‹Р±РѕСЂ
     await state.update_data(promocode=code, promo_days=days)
     kb_rows = []
     for ch in channels:
@@ -776,37 +774,13 @@ async def promo_handler(message: Message, state: FSMContext):
             text=ch["channel_title"] or ch["channel_id"],
             callback_data=f"promo_channel:{ch['channel_id']}"
         )])
-    kb_rows.append([InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")])
+    kb_rows.append([InlineKeyboardButton(text="рџ”™ РћС‚РјРµРЅР°", callback_data="cabinet:open")])
 
     await message.answer(
-        "🎯 Выберите канал для активации промокода:",
+        "рџЋЇ Р’С‹Р±РµСЂРёС‚Рµ РєР°РЅР°Р» РґР»СЏ Р°РєС‚РёРІР°С†РёРё РїСЂРѕРјРѕРєРѕРґР°:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
     )
 
-@router.callback_query(F.data == "blogger:post_interval")
-async def cb_blogger_post_interval(callback: CallbackQuery, state: FSMContext):
-    # Показываем текущий интервал (или по умолчанию 60 минут)
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT post_interval_minutes FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        interval = user["post_interval_minutes"] if user and user["post_interval_minutes"] else 60
-    finally:
-        conn.close()
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🕐 1 пост в час", callback_data="blogger_set_interval:60")],
-        [InlineKeyboardButton(text="🕐 2 поста в час", callback_data="blogger_set_interval:30")],
-        [InlineKeyboardButton(text="🕐 4 поста в час", callback_data="blogger_set_interval:15")],
-        [InlineKeyboardButton(text="🕐 6 постов в час", callback_data="blogger_set_interval:10")],
-        [InlineKeyboardButton(text="✏️ Свой интервал", callback_data="blogger_custom_interval")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")],
-    ])
-    await safe_edit(callback.message, f"⚙️ <b>Периодичность постов</b>\n\n"
-        f"Сейчас: <b>{interval} минут</b>\n\n"
-        "Выберите частоту публикаций:",
-        reply_markup=kb, parse_mode=ParseMode.HTML)
-    await callback.answer()
 
 @router.callback_query(F.data == "privacy:accept")
 async def cb_privacy_accept(callback: CallbackQuery):
@@ -822,92 +796,15 @@ async def cb_privacy_accept(callback: CallbackQuery):
         conn.commit()
     finally:
         conn.close()
-    await safe_edit(callback.message, "✅ Спасибо! Теперь вы можете пользоваться ботом.")
+    await safe_edit(callback.message, "вњ… РЎРїР°СЃРёР±Рѕ! РўРµРїРµСЂСЊ РІС‹ РјРѕР¶РµС‚Рµ РїРѕР»СЊР·РѕРІР°С‚СЊСЃСЏ Р±РѕС‚РѕРј.")
     await show_user_cabinet(callback.message, user_id=user_id)
     await callback.answer()
 
 @router.callback_query(F.data == "privacy:decline")
 async def cb_privacy_decline(callback: CallbackQuery):
     await safe_edit(callback.message,
-        "❌ Без согласия на обработку данных бот не может работать.\n"
-        "Если передумаете — напишите /start."
-    )
-    await callback.answer()
-
-@router.callback_query(F.data == "blogger_custom_interval")
-async def cb_blogger_custom_interval(callback: CallbackQuery, state: FSMContext):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
-    ])
-    await callback.message.answer(
-        "✏️ Введите интервал в минутах (минимум 5):",
-        reply_markup=kb
-    )
-    await state.set_state(BloggerStates.waiting_post_interval)
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("blogger_set_interval:"))
-async def cb_blogger_set_interval(callback: CallbackQuery):
-    minutes = int(callback.data.split(":")[1])
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET post_interval_minutes = ? WHERE user_id = ?", (minutes, user_id))
-        conn.commit()
-    finally:
-        conn.close()
-    await callback.answer(f"✅ Интервал установлен: {minutes} минут", show_alert=True)
-    await cb_blogger_post_interval(callback)
-
-@router.message(BloggerStates.waiting_post_interval)
-async def process_blogger_interval_input(message: Message, state: FSMContext):
-    text = message.text.strip().lower()
-    if text in ("отмена", "отмен", "cancel", "назад"):
-        await state.clear()
-        await show_user_cabinet(message, user_id=message.from_user.id)
-        return
-    try:
-        minutes = int(text)
-        if minutes < 5:
-            await message.answer("❌ Минимальный интервал — 5 минут.")
-            return
-        user_id = message.from_user.id
-        conn = get_db()
-        try:
-            conn.execute("UPDATE users SET post_interval_minutes = ? WHERE user_id = ?", (minutes, user_id))
-            conn.commit()
-        finally:
-            conn.close()
-        await message.answer(f"✅ Интервал установлен: {minutes} минут")
-        await state.clear()
-        await show_user_cabinet(message, user_id=user_id)
-    except ValueError:
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
-        ])
-        await message.answer("❌ Введите число (минут) или нажмите «Отмена».", reply_markup=kb)
-@router.callback_query(F.data == "blogger:referral")
-async def cb_blogger_referral(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        user = conn.execute("SELECT role, sub_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        sub_id = user["sub_id"]
-        role = user["role"]
-    finally:
-        conn.close()
-    ref_link = f"https://t.me/{BOT_USERNAME}?start={sub_id}"
-    if role == "saas":
-        invite_text = "Приглашайте других SaaS-клиентов по этой ссылке.\nКогда они начнут зарабатывать, вы будете получать 10% от их дохода (эта сумма вычитается из их заработка)."
-    else:
-        invite_text = "Приглашайте других блогеров по этой ссылке.\nКогда они начнут зарабатывать, вы будете получать 10% от их дохода (эта сумма вычитается из их заработка)."
-    await safe_edit(callback.message,
-        f"🔗 <b>Ваша реферальная ссылка:</b>\n\n"
-        f"<code>{ref_link}</code>\n\n{invite_text}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
-        ]),
-        parse_mode=ParseMode.HTML
+        "вќЊ Р‘РµР· СЃРѕРіР»Р°СЃРёСЏ РЅР° РѕР±СЂР°Р±РѕС‚РєСѓ РґР°РЅРЅС‹С… Р±РѕС‚ РЅРµ РјРѕР¶РµС‚ СЂР°Р±РѕС‚Р°С‚СЊ.\n"
+        "Р•СЃР»Рё РїРµСЂРµРґСѓРјР°РµС‚Рµ вЂ” РЅР°РїРёС€РёС‚Рµ /start."
     )
     await callback.answer()
 
@@ -935,11 +832,11 @@ async def process_tax_status(callback: CallbackQuery, state: FSMContext):
         conn.close()
     if status == "individual":
         await callback.message.answer(
-            "ℹ️ Вы можете использовать бота, но для заказа выплат от 3000₽ вам потребуется получить статус Самозанятого "
-            "(это бесплатно за 1 минуту в приложении «Мой налог»)."
+            "в„№пёЏ Р’С‹ РјРѕР¶РµС‚Рµ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ Р±РѕС‚Р°, РЅРѕ РґР»СЏ Р·Р°РєР°Р·Р° РІС‹РїР»Р°С‚ РѕС‚ 3000в‚Ѕ РІР°Рј РїРѕС‚СЂРµР±СѓРµС‚СЃСЏ РїРѕР»СѓС‡РёС‚СЊ СЃС‚Р°С‚СѓСЃ РЎР°РјРѕР·Р°РЅСЏС‚РѕРіРѕ "
+            "(СЌС‚Рѕ Р±РµСЃРїР»Р°С‚РЅРѕ Р·Р° 1 РјРёРЅСѓС‚Сѓ РІ РїСЂРёР»РѕР¶РµРЅРёРё В«РњРѕР№ РЅР°Р»РѕРіВ»)."
         )
     else:
-        await callback.message.answer("✅ Статус сохранён. Теперь вам доступен вывод средств при достижении порога.")
+        await callback.message.answer("вњ… РЎС‚Р°С‚СѓСЃ СЃРѕС…СЂР°РЅС‘РЅ. РўРµРїРµСЂСЊ РІР°Рј РґРѕСЃС‚СѓРїРµРЅ РІС‹РІРѕРґ СЃСЂРµРґСЃС‚РІ РїСЂРё РґРѕСЃС‚РёР¶РµРЅРёРё РїРѕСЂРѕРіР°.")
     await state.clear()
     await show_user_cabinet(callback.message, user_id=user_id)
     await callback.answer()
@@ -950,46 +847,46 @@ async def handle_payout_start(message: Message, state: FSMContext):
     try:
         user = conn.execute("SELECT role, balance_available, tax_status, oferta_accepted FROM users WHERE user_id=?", (user_id,)).fetchone()
         if not user:
-            await message.answer("Сначала зарегистрируйтесь через /start")
+            await message.answer("РЎРЅР°С‡Р°Р»Р° Р·Р°СЂРµРіРёСЃС‚СЂРёСЂСѓР№С‚РµСЃСЊ С‡РµСЂРµР· /start")
             return
         if user["oferta_accepted"] != 1:
-            await message.answer("Примите оферту в личном кабинете.")
+            await message.answer("РџСЂРёРјРёС‚Рµ РѕС„РµСЂС‚Сѓ РІ Р»РёС‡РЅРѕРј РєР°Р±РёРЅРµС‚Рµ.")
             return
         if user["role"] not in ("blogger", "saas"):
-            await message.answer("Вывод средств доступен только блогерам и SaaS-клиентам.")
+            await message.answer("Р’С‹РІРѕРґ СЃСЂРµРґСЃС‚РІ РґРѕСЃС‚СѓРїРµРЅ С‚РѕР»СЊРєРѕ Р±Р»РѕРіРµСЂР°Рј Рё SaaS-РєР»РёРµРЅС‚Р°Рј.")
             return
         if user["tax_status"] != "business":
-            await message.answer("Вывод средств доступен только самозанятым/ИП.")
+            await message.answer("Р’С‹РІРѕРґ СЃСЂРµРґСЃС‚РІ РґРѕСЃС‚СѓРїРµРЅ С‚РѕР»СЊРєРѕ СЃР°РјРѕР·Р°РЅСЏС‚С‹Рј/РРџ.")
             return
         available = user["balance_available"] or 0.0
         if available < MIN_PAYOUT:
-            await message.answer(f"❌ Минимальная сумма вывода: {MIN_PAYOUT} ₽")
+            await message.answer(f"вќЊ РњРёРЅРёРјР°Р»СЊРЅР°СЏ СЃСѓРјРјР° РІС‹РІРѕРґР°: {MIN_PAYOUT} в‚Ѕ")
             return
-        # Проверка активной заявки
+        # РџСЂРѕРІРµСЂРєР° Р°РєС‚РёРІРЅРѕР№ Р·Р°СЏРІРєРё
         active = conn.execute(
             "SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')",
             (user_id,)
         ).fetchone()
         if active:
-            await message.answer("❌ У вас уже есть активная заявка на выплату.")
+            await message.answer("вќЊ РЈ РІР°СЃ СѓР¶Рµ РµСЃС‚СЊ Р°РєС‚РёРІРЅР°СЏ Р·Р°СЏРІРєР° РЅР° РІС‹РїР»Р°С‚Сѓ.")
             return
     finally:
         conn.close()
 
     await message.answer(
-        f"💸 Укажите реквизиты для выплаты (номер карты, банк, TON-кошелёк или другие данные):\n"
-        f"Доступно: <b>{available:.2f} ₽</b>\n\n"
-        f"Пример: <i>Сбербанк 2202 2081 0829 0025</i>",
+        f"рџ’ё РЈРєР°Р¶РёС‚Рµ СЂРµРєРІРёР·РёС‚С‹ РґР»СЏ РІС‹РїР»Р°С‚С‹ (РЅРѕРјРµСЂ РєР°СЂС‚С‹, Р±Р°РЅРє, TON-РєРѕС€РµР»С‘Рє РёР»Рё РґСЂСѓРіРёРµ РґР°РЅРЅС‹Рµ):\n"
+        f"Р”РѕСЃС‚СѓРїРЅРѕ: <b>{available:.2f} в‚Ѕ</b>\n\n"
+        f"РџСЂРёРјРµСЂ: <i>РЎР±РµСЂР±Р°РЅРє 2202 2081 0829 0025</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
+            [InlineKeyboardButton(text="рџ”™ РћС‚РјРµРЅР°", callback_data="cabinet:open")]
         ])
     )
     await state.set_state(PayoutStates.waiting_for_card)
 
 
 async def update_post_views(bot: Bot):
-    """Обновляет количество просмотров для постов, опубликованных 30+ дней назад."""
+    """РћР±РЅРѕРІР»СЏРµС‚ РєРѕР»РёС‡РµСЃС‚РІРѕ РїСЂРѕСЃРјРѕС‚СЂРѕРІ РґР»СЏ РїРѕСЃС‚РѕРІ, РѕРїСѓР±Р»РёРєРѕРІР°РЅРЅС‹С… 30+ РґРЅРµР№ РЅР°Р·Р°Рґ."""
     conn = get_db()
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
@@ -1014,9 +911,9 @@ async def update_post_views(bot: Bot):
                     conn.execute("UPDATE posts SET views_count = ? WHERE id = ?", (messages[0].views, post["id"]))
                     updated += 1
             except Exception as e:
-                logger.warning(f"Не удалось получить просмотры для поста {post['id']}: {e}")
+                logger.warning(f"РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ РїСЂРѕСЃРјРѕС‚СЂС‹ РґР»СЏ РїРѕСЃС‚Р° {post['id']}: {e}")
         conn.commit()
-        logger.info(f"Обновлено просмотров: {updated}")
+        logger.info(f"РћР±РЅРѕРІР»РµРЅРѕ РїСЂРѕСЃРјРѕС‚СЂРѕРІ: {updated}")
     finally:
         conn.close()
 # ---------------------------------------------------------------------------
@@ -1024,17 +921,17 @@ async def update_post_views(bot: Bot):
 # ---------------------------------------------------------------------------
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, command: Command = None):
-    # 1. Проверка запроса выплаты из веб-статистики
+    # 1. РџСЂРѕРІРµСЂРєР° Р·Р°РїСЂРѕСЃР° РІС‹РїР»Р°С‚С‹ РёР· РІРµР±-СЃС‚Р°С‚РёСЃС‚РёРєРё
     if command.args == "payout":
         await handle_payout_start(message, state)
         return  
 
     await state.clear()
     if is_admin(message.from_user.id):
-        await message.answer("👋 Добро пожаловать в Панель администратора.", reply_markup=kb_admin_panel())
+        await message.answer("рџ‘‹ Р”РѕР±СЂРѕ РїРѕР¶Р°Р»РѕРІР°С‚СЊ РІ РџР°РЅРµР»СЊ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°.", reply_markup=kb_admin_panel())
         return
 
-    # Проверяем реферальную ссылку (deep linking)
+    # РџСЂРѕРІРµСЂСЏРµРј СЂРµС„РµСЂР°Р»СЊРЅСѓСЋ СЃСЃС‹Р»РєСѓ (deep linking)
     referrer_id = None
     if command.args:
         ref_sub_id = command.args.strip()
@@ -1056,29 +953,29 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
         user = conn.execute("SELECT role FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
         if not user:
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💼 SaaS-клиент", callback_data="role:saas")],
-                [InlineKeyboardButton(text="👤 Блогер", callback_data="role:blogger")],
+                [InlineKeyboardButton(text="рџ’ј SaaS-РєР»РёРµРЅС‚", callback_data="role:saas")],
+                [InlineKeyboardButton(text="рџ‘¤ Р‘Р»РѕРіРµСЂ", callback_data="role:blogger")],
             ])
             await message.answer(
-                "👋 <b>Добро пожаловать в AutoPost!</b>\n\n"
-                "Бот автоматически публикует товары из партнёрских магазинов в ваш Telegram-канал "
-                "и приносит вам <b>70% комиссии</b> с каждой продажи.\n\n"
-                "<b>Как это работает:</b>\n"
-                "1. Добавляете канал\n"
-                "2. Выбираете магазины\n"
-                "3. Бот публикует посты с вашими партнёрскими ссылками\n"
-                "4. Получаете доход за каждую покупку\n\n"
-                "Выберите вашу роль:",
+                "рџ‘‹ <b>Р”РѕР±СЂРѕ РїРѕР¶Р°Р»РѕРІР°С‚СЊ РІ AutoPost!</b>\n\n"
+                "Р‘РѕС‚ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РїСѓР±Р»РёРєСѓРµС‚ С‚РѕРІР°СЂС‹ РёР· РїР°СЂС‚РЅС‘СЂСЃРєРёС… РјР°РіР°Р·РёРЅРѕРІ РІ РІР°С€ Telegram-РєР°РЅР°Р» "
+                "Рё РїСЂРёРЅРѕСЃРёС‚ РІР°Рј <b>70% РєРѕРјРёСЃСЃРёРё</b> СЃ РєР°Р¶РґРѕР№ РїСЂРѕРґР°Р¶Рё.\n\n"
+                "<b>РљР°Рє СЌС‚Рѕ СЂР°Р±РѕС‚Р°РµС‚:</b>\n"
+                "1. Р”РѕР±Р°РІР»СЏРµС‚Рµ РєР°РЅР°Р»\n"
+                "2. Р’С‹Р±РёСЂР°РµС‚Рµ РјР°РіР°Р·РёРЅС‹\n"
+                "3. Р‘РѕС‚ РїСѓР±Р»РёРєСѓРµС‚ РїРѕСЃС‚С‹ СЃ РІР°С€РёРјРё РїР°СЂС‚РЅС‘СЂСЃРєРёРјРё СЃСЃС‹Р»РєР°РјРё\n"
+                "4. РџРѕР»СѓС‡Р°РµС‚Рµ РґРѕС…РѕРґ Р·Р° РєР°Р¶РґСѓСЋ РїРѕРєСѓРїРєСѓ\n\n"
+                "Р’С‹Р±РµСЂРёС‚Рµ РІР°С€Сѓ СЂРѕР»СЊ:",
                 reply_markup=kb,
                 parse_mode=ParseMode.HTML
             )
             await state.set_state(OnboardingStates.waiting_role)
         else:
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💼 Открыть кабинет", callback_data="cabinet:open")]
+                [InlineKeyboardButton(text="рџ’ј РћС‚РєСЂС‹С‚СЊ РєР°Р±РёРЅРµС‚", callback_data="cabinet:open")]
             ])
             await message.answer(
-                "✅ Вы уже зарегистрированы. Для управления ботом используйте команду /cabinet.",
+                "вњ… Р’С‹ СѓР¶Рµ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅС‹. Р”Р»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ Р±РѕС‚РѕРј РёСЃРїРѕР»СЊР·СѓР№С‚Рµ РєРѕРјР°РЅРґСѓ /cabinet.",
                 reply_markup=kb
             )
     finally:
@@ -1087,24 +984,24 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
 @router.message(Command("help"))
 async def cmd_help(message: Message):
     await message.answer(
-        "📖 <b>Справка — AutoPost Bot</b>\n\n"
-        "<b>Основные команды:</b>\n"
-        "/start — Главное меню\n"
-        "/cabinet — Личный кабинет\n"
-        "/help — Эта справка\n\n"
-        "<b>Дополнительно:</b>\n"
-        "/promo — Активировать промокод\n"
-        "/privacy — Политика конфиденциальности\n"
-        "/delete — Удалить аккаунт и все данные\n\n"
-        "<b>Как начать зарабатывать:</b>\n"
-        "1. Добавьте канал в «Кабинете»\n"
-        "2. Добавьте бота админом в канал с правами на постинг\n"
-        "3. Выберите магазины в разделе «Магазины»\n"
-        "4. Бот начнёт публикации автоматически!\n\n"
-        "<b>Выплаты:</b>\n"
-        "Минимальная выплата — 3000 ₽.\n"
-        "Доступен для самозанятых.\n\n"
-        "<b>Поддержка:</b> напишите /start и нажмите «💬 Поддержка»",
+        "рџ“– <b>РЎРїСЂР°РІРєР° вЂ” AutoPost Bot</b>\n\n"
+        "<b>РћСЃРЅРѕРІРЅС‹Рµ РєРѕРјР°РЅРґС‹:</b>\n"
+        "/start вЂ” Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ\n"
+        "/cabinet вЂ” Р›РёС‡РЅС‹Р№ РєР°Р±РёРЅРµС‚\n"
+        "/help вЂ” Р­С‚Р° СЃРїСЂР°РІРєР°\n\n"
+        "<b>Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕ:</b>\n"
+        "/promo вЂ” РђРєС‚РёРІРёСЂРѕРІР°С‚СЊ РїСЂРѕРјРѕРєРѕРґ\n"
+        "/privacy вЂ” РџРѕР»РёС‚РёРєР° РєРѕРЅС„РёРґРµРЅС†РёР°Р»СЊРЅРѕСЃС‚Рё\n"
+        "/delete вЂ” РЈРґР°Р»РёС‚СЊ Р°РєРєР°СѓРЅС‚ Рё РІСЃРµ РґР°РЅРЅС‹Рµ\n\n"
+        "<b>РљР°Рє РЅР°С‡Р°С‚СЊ Р·Р°СЂР°Р±Р°С‚С‹РІР°С‚СЊ:</b>\n"
+        "1. Р”РѕР±Р°РІСЊС‚Рµ РєР°РЅР°Р» РІ В«РљР°Р±РёРЅРµС‚РµВ»\n"
+        "2. Р”РѕР±Р°РІСЊС‚Рµ Р±РѕС‚Р° Р°РґРјРёРЅРѕРј РІ РєР°РЅР°Р» СЃ РїСЂР°РІР°РјРё РЅР° РїРѕСЃС‚РёРЅРі\n"
+        "3. Р’С‹Р±РµСЂРёС‚Рµ РјР°РіР°Р·РёРЅС‹ РІ СЂР°Р·РґРµР»Рµ В«РњР°РіР°Р·РёРЅС‹В»\n"
+        "4. Р‘РѕС‚ РЅР°С‡РЅС‘С‚ РїСѓР±Р»РёРєР°С†РёРё Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё!\n\n"
+        "<b>Р’С‹РїР»Р°С‚С‹:</b>\n"
+        "РњРёРЅРёРјР°Р»СЊРЅР°СЏ РІС‹РїР»Р°С‚Р° вЂ” 3000 в‚Ѕ.\n"
+        "Р”РѕСЃС‚СѓРїРµРЅ РґР»СЏ СЃР°РјРѕР·Р°РЅСЏС‚С‹С….\n\n"
+        "<b>РџРѕРґРґРµСЂР¶РєР°:</b> РЅР°РїРёС€РёС‚Рµ /start Рё РЅР°Р¶РјРёС‚Рµ В«рџ’¬ РџРѕРґРґРµСЂР¶РєР°В»",
         parse_mode=ParseMode.HTML
     )
 
@@ -1113,19 +1010,19 @@ async def cmd_preview(message: Message):
     user_id = message.from_user.id
     
     if not is_admin(user_id) and not is_feature_enabled(user_id, "preview_post"):
-        await message.answer("⏳ Эта функция в бета-тесте. Скоро станет доступна всем!")
+        await message.answer("вЏі Р­С‚Р° С„СѓРЅРєС†РёСЏ РІ Р±РµС‚Р°-С‚РµСЃС‚Рµ. РЎРєРѕСЂРѕ СЃС‚Р°РЅРµС‚ РґРѕСЃС‚СѓРїРЅР° РІСЃРµРј!")
         return
     
-    # Отправляем ссылку на веб-статистику с предпросмотром
+    # РћС‚РїСЂР°РІР»СЏРµРј СЃСЃС‹Р»РєСѓ РЅР° РІРµР±-СЃС‚Р°С‚РёСЃС‚РёРєСѓ СЃ РїСЂРµРґРїСЂРѕСЃРјРѕС‚СЂРѕРј
     token = generate_user_token(user_id)
     link = f"{WEBAPP_BASE_URL}/my-stats?token={token}"
     await message.answer(
-        f"👀 <b>Предпросмотр поста</b>\n\n"
-        f"Перейдите в веб-статистику и найдите блок «Предпросмотр поста»:\n"
-        f"<a href='{link}'>Открыть статистику</a>\n\n"
-        f"Там вы сможете:\n"
-        f"• Посмотреть, как пост будет выглядеть в канале\n"
-        f"• Опубликовать его в один клик",
+        f"рџ‘Ђ <b>РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ РїРѕСЃС‚Р°</b>\n\n"
+        f"РџРµСЂРµР№РґРёС‚Рµ РІ РІРµР±-СЃС‚Р°С‚РёСЃС‚РёРєСѓ Рё РЅР°Р№РґРёС‚Рµ Р±Р»РѕРє В«РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ РїРѕСЃС‚Р°В»:\n"
+        f"<a href='{link}'>РћС‚РєСЂС‹С‚СЊ СЃС‚Р°С‚РёСЃС‚РёРєСѓ</a>\n\n"
+        f"РўР°Рј РІС‹ СЃРјРѕР¶РµС‚Рµ:\n"
+        f"вЂў РџРѕСЃРјРѕС‚СЂРµС‚СЊ, РєР°Рє РїРѕСЃС‚ Р±СѓРґРµС‚ РІС‹РіР»СЏРґРµС‚СЊ РІ РєР°РЅР°Р»Рµ\n"
+        f"вЂў РћРїСѓР±Р»РёРєРѕРІР°С‚СЊ РµРіРѕ РІ РѕРґРёРЅ РєР»РёРє",
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=True
     )
@@ -1133,7 +1030,7 @@ async def cmd_preview(message: Message):
 @router.message(Command("privacy"))
 async def cmd_privacy(message: Message):
     await message.answer(
-        "📄 Политика конфиденциальности:\n https://teletype.in/@miliron/yYN0SEGfm5l",
+        "рџ“„ РџРѕР»РёС‚РёРєР° РєРѕРЅС„РёРґРµРЅС†РёР°Р»СЊРЅРѕСЃС‚Рё:\n https://teletype.in/@miliron/yYN0SEGfm5l",
         disable_web_page_preview=True
     )
 
@@ -1142,7 +1039,7 @@ _pending_deletes: dict[int, float] = {}
 @router.message(Command("delete"))
 async def cmd_delete(message: Message):
     user_id = message.from_user.id
-    username = message.from_user.username or "без username"
+    username = message.from_user.username or "Р±РµР· username"
 
     import time
     now = time.time()
@@ -1158,29 +1055,29 @@ async def cmd_delete(message: Message):
             try:
                 await message.bot.send_message(
                     admin_id,
-                    f"🗑 <b>Пользователь удалил аккаунт</b>\n\n"
+                    f"рџ—‘ <b>РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓРґР°Р»РёР» Р°РєРєР°СѓРЅС‚</b>\n\n"
                     f"User ID: <code>{user_id}</code>\n"
                     f"Username: @{username}\n"
-                    f"Все данные удалены из базы.",
+                    f"Р’СЃРµ РґР°РЅРЅС‹Рµ СѓРґР°Р»РµРЅС‹ РёР· Р±Р°Р·С‹.",
                     parse_mode=ParseMode.HTML
                 )
             except Exception as e:
-                logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
+                logger.error(f"РќРµ СѓРґР°Р»РѕСЃСЊ СѓРІРµРґРѕРјРёС‚СЊ Р°РґРјРёРЅР° {admin_id}: {e}")
         await message.answer(
-            "✅ Все ваши данные удалены в соответствии со ст. 21 152-ФЗ.\n\n"
-            "Если вы захотите вернуться — просто напишите /start."
+            "вњ… Р’СЃРµ РІР°С€Рё РґР°РЅРЅС‹Рµ СѓРґР°Р»РµРЅС‹ РІ СЃРѕРѕС‚РІРµС‚СЃС‚РІРёРё СЃРѕ СЃС‚. 21 152-Р¤Р—.\n\n"
+            "Р•СЃР»Рё РІС‹ Р·Р°С…РѕС‚РёС‚Рµ РІРµСЂРЅСѓС‚СЊСЃСЏ вЂ” РїСЂРѕСЃС‚Рѕ РЅР°РїРёС€РёС‚Рµ /start."
         )
     else:
         _pending_deletes[user_id] = now + 60
         await message.answer(
-            "⚠️ <b>Внимание!</b>\n\n"
-            "Это действие удалит <b>все ваши данные</b> из бота:\n"
-            "• Профиль и подписка\n"
-            "• Каналы и посты\n"
-            "• Баланс и транзакции\n"
-            "• Шаблоны и настройки\n\n"
-            "Это действие <b>необратимо</b>.\n\n"
-            "Для подтверждения отправьте <code>/delete</code> ещё раз в течение 60 секунд.",
+            "вљ пёЏ <b>Р’РЅРёРјР°РЅРёРµ!</b>\n\n"
+            "Р­С‚Рѕ РґРµР№СЃС‚РІРёРµ СѓРґР°Р»РёС‚ <b>РІСЃРµ РІР°С€Рё РґР°РЅРЅС‹Рµ</b> РёР· Р±РѕС‚Р°:\n"
+            "вЂў РџСЂРѕС„РёР»СЊ Рё РїРѕРґРїРёСЃРєР°\n"
+            "вЂў РљР°РЅР°Р»С‹ Рё РїРѕСЃС‚С‹\n"
+            "вЂў Р‘Р°Р»Р°РЅСЃ Рё С‚СЂР°РЅР·Р°РєС†РёРё\n"
+            "вЂў РЁР°Р±Р»РѕРЅС‹ Рё РЅР°СЃС‚СЂРѕР№РєРё\n\n"
+            "Р­С‚Рѕ РґРµР№СЃС‚РІРёРµ <b>РЅРµРѕР±СЂР°С‚РёРјРѕ</b>.\n\n"
+            "Р”Р»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ РѕС‚РїСЂР°РІСЊС‚Рµ <code>/delete</code> РµС‰С‘ СЂР°Р· РІ С‚РµС‡РµРЅРёРµ 60 СЃРµРєСѓРЅРґ.",
             parse_mode=ParseMode.HTML
         )
 
@@ -1233,24 +1130,21 @@ async def cmd_cabinet(message: Message):
 
 
 # ---------------------------------------------------------------------------
-# Главное меню (колбэк)
+# Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ (РєРѕР»Р±СЌРє)
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:main")
 async def cb_menu_main(callback: CallbackQuery):
-    try:
-        await callback.message.delete()
-    except:
-        pass
     conn = get_db()
     try:
         user = conn.execute("SELECT role FROM users WHERE user_id=?", (callback.from_user.id,)).fetchone()
         role = user["role"] if user else "blogger"
     finally:
         conn.close()
-    await show_user_cabinet(callback.message, user_id=callback.from_user.id)
+    await show_user_cabinet(callback.message, user_id=callback.from_user.id, edit_message=callback.message)
+    await callback.answer()
 
 # ---------------------------------------------------------------------------
-# Мои каналы (SaaS)
+# РњРѕРё РєР°РЅР°Р»С‹ (SaaS)
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:my_channels")
 async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
@@ -1265,21 +1159,21 @@ async def cb_my_channels(callback: CallbackQuery, state: FSMContext) -> None:
         conn.close()
 
     if channels:
-        text = "📢 <b>Ваши подключенные каналы:</b>\n\n"
+        text = "рџ“ў <b>Р’Р°С€Рё РїРѕРґРєР»СЋС‡РµРЅРЅС‹Рµ РєР°РЅР°Р»С‹:</b>\n\n"
         kb_rows = []
         for i, ch in enumerate(channels, 1):
             text += f"{i}. {ch['channel_title']} (<code>{ch['channel_id']}</code>)\n"
             kb_rows.append([InlineKeyboardButton(
-                text=f"🗑 Удалить {ch['channel_title']}",
+                text=f"рџ—‘ РЈРґР°Р»РёС‚СЊ {ch['channel_title']}",
                 callback_data=f"channel_delete:{ch['id']}"
             )])
-        text += "\n<i>Для добавления нового канала отправьте его @username.</i>"
-        kb_rows.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")])
+        text += "\n<i>Р”Р»СЏ РґРѕР±Р°РІР»РµРЅРёСЏ РЅРѕРІРѕРіРѕ РєР°РЅР°Р»Р° РѕС‚РїСЂР°РІСЊС‚Рµ РµРіРѕ @username.</i>"
+        kb_rows.append([InlineKeyboardButton(text="рџ”™ РќР°Р·Р°Рґ РІ РєР°Р±РёРЅРµС‚", callback_data="cabinet:open")])
         kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     else:
-        text = "📢 <b>У вас пока нет подключенных каналов.</b>\n\nДля добавления канала отправьте его @username."
+        text = "рџ“ў <b>РЈ РІР°СЃ РїРѕРєР° РЅРµС‚ РїРѕРґРєР»СЋС‡РµРЅРЅС‹С… РєР°РЅР°Р»РѕРІ.</b>\n\nР”Р»СЏ РґРѕР±Р°РІР»РµРЅРёСЏ РєР°РЅР°Р»Р° РѕС‚РїСЂР°РІСЊС‚Рµ РµРіРѕ @username."
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]
+            [InlineKeyboardButton(text="рџ”™ РќР°Р·Р°Рґ РІ РєР°Р±РёРЅРµС‚", callback_data="cabinet:open")]
         ])
 
     try:
@@ -1302,18 +1196,18 @@ async def cb_delete_channel(callback: CallbackQuery) -> None:
             conn.commit()
         finally:
             conn.close()
-        await callback.answer("🗑 Канал удалён.", show_alert=True)
+        await callback.answer("рџ—‘ РљР°РЅР°Р» СѓРґР°Р»С‘РЅ.", show_alert=True)
         await cb_my_channels(callback)
     else:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Да, удалить", callback_data=f"channel_delete:{channel_id}:confirm")],
-            [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")],
+            [InlineKeyboardButton(text="вќЊ Р”Р°, СѓРґР°Р»РёС‚СЊ", callback_data=f"channel_delete:{channel_id}:confirm")],
+            [InlineKeyboardButton(text="рџ”™ РћС‚РјРµРЅР°", callback_data="cabinet:open")],
         ])
-        await callback.message.answer("⚠️ Вы уверены, что хотите удалить канал?", reply_markup=kb)
+        await safe_edit(callback.message, "вљ пёЏ Р’С‹ СѓРІРµСЂРµРЅС‹, С‡С‚Рѕ С…РѕС‚РёС‚Рµ СѓРґР°Р»РёС‚СЊ РєР°РЅР°Р»?", reply_markup=kb)
         await callback.answer()
 
 # ---------------------------------------------------------------------------
-# Статистика SaaS
+# РЎС‚Р°С‚РёСЃС‚РёРєР° SaaS
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "menu:stats")
 async def cb_menu_stats(callback: CallbackQuery) -> None:
@@ -1326,19 +1220,19 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
     if not channels:
         overview = get_saas_overview(user_id)
         text = (
-            f"📊 <b>Общая статистика</b>\n\n"
-            f"📬 Всего постов: <b>{overview['total_posts']}</b>\n"
-            f"📅 За 30 дней: <b>{overview['posts_30d']}</b>\n\n"
-            f"🏪 <b>По магазинам (все время):</b>\n"
+            f"рџ“Љ <b>РћР±С‰Р°СЏ СЃС‚Р°С‚РёСЃС‚РёРєР°</b>\n\n"
+            f"рџ“¬ Р’СЃРµРіРѕ РїРѕСЃС‚РѕРІ: <b>{overview['total_posts']}</b>\n"
+            f"рџ“… Р—Р° 30 РґРЅРµР№: <b>{overview['posts_30d']}</b>\n\n"
+            f"рџЏЄ <b>РџРѕ РјР°РіР°Р·РёРЅР°Рј (РІСЃРµ РІСЂРµРјСЏ):</b>\n"
         )
         if overview['by_store']:
             for store, count in overview['by_store'].items():
                 text += f"  {store}: {count}\n"
         else:
-            text += "  Нет данных\n"
-        text += f"\n<i>Подключите каналы для детальной статистики.</i>"
+            text += "  РќРµС‚ РґР°РЅРЅС‹С…\n"
+        text += f"\n<i>РџРѕРґРєР»СЋС‡РёС‚Рµ РєР°РЅР°Р»С‹ РґР»СЏ РґРµС‚Р°Р»СЊРЅРѕР№ СЃС‚Р°С‚РёСЃС‚РёРєРё.</i>"
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
+            [InlineKeyboardButton(text="рџ”™ РќР°Р·Р°Рґ", callback_data="menu:main")]
         ])
         await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
         return
@@ -1349,37 +1243,37 @@ async def _show_saas_stats(callback: CallbackQuery, user_id: int, channel_idx: i
     total_ch = len(channels)
 
     text = (
-        f"📊 <b>Статистика канала</b>\n"
-        f"📢 <b>{ch['channel_title'] or ch['channel_id']}</b>  <i>({channel_idx + 1}/{total_ch})</i>\n"
-        f"🗓 Период: <b>{s['period_label']}</b>\n\n"
-        f"📬 Всего постов: <b>{s['total']}</b>\n"
-        f"✅ Опубликовано: <b>{s['published']}</b>\n"
-        f"❌ Ошибок: <b>{s['errors']}</b>\n"
-        f"🕐 Последний: <b>{s['last_published_at']}</b>\n\n"
-        f"🏪 <b>По магазинам:</b>\n"
+        f"рџ“Љ <b>РЎС‚Р°С‚РёСЃС‚РёРєР° РєР°РЅР°Р»Р°</b>\n"
+        f"рџ“ў <b>{ch['channel_title'] or ch['channel_id']}</b>  <i>({channel_idx + 1}/{total_ch})</i>\n"
+        f"рџ—“ РџРµСЂРёРѕРґ: <b>{s['period_label']}</b>\n\n"
+        f"рџ“¬ Р’СЃРµРіРѕ РїРѕСЃС‚РѕРІ: <b>{s['total']}</b>\n"
+        f"вњ… РћРїСѓР±Р»РёРєРѕРІР°РЅРѕ: <b>{s['published']}</b>\n"
+        f"вќЊ РћС€РёР±РѕРє: <b>{s['errors']}</b>\n"
+        f"рџ•ђ РџРѕСЃР»РµРґРЅРёР№: <b>{s['last_published_at']}</b>\n\n"
+        f"рџЏЄ <b>РџРѕ РјР°РіР°Р·РёРЅР°Рј:</b>\n"
     )
     if s['by_store']:
         for store, count in s['by_store'].items():
             text += f"  {store}: {count}\n"
     else:
-        text += "  Нет данных\n"
+        text += "  РќРµС‚ РґР°РЅРЅС‹С…\n"
 
     nav_row = []
     if channel_idx > 0:
-        nav_row.append(InlineKeyboardButton(text="◀️ Канал", callback_data=f"saas_stats:{channel_idx - 1}:{period}"))
+        nav_row.append(InlineKeyboardButton(text="в—ЂпёЏ РљР°РЅР°Р»", callback_data=f"saas_stats:{channel_idx - 1}:{period}"))
     if channel_idx < total_ch - 1:
-        nav_row.append(InlineKeyboardButton(text="Канал ▶️", callback_data=f"saas_stats:{channel_idx + 1}:{period}"))
+        nav_row.append(InlineKeyboardButton(text="РљР°РЅР°Р» в–¶пёЏ", callback_data=f"saas_stats:{channel_idx + 1}:{period}"))
 
     period_row = []
     for p_key, p_cfg in STAT_PERIODS.items():
-        label = f"· {p_cfg['label']} ·" if p_key == period else p_cfg["label"]
+        label = f"В· {p_cfg['label']} В·" if p_key == period else p_cfg["label"]
         period_row.append(InlineKeyboardButton(text=label, callback_data=f"saas_stats:{channel_idx}:{p_key}"))
 
     kb = []
     if nav_row:
         kb.append(nav_row)
     kb.append(period_row)
-    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")])
+    kb.append([InlineKeyboardButton(text="рџ”™ РќР°Р·Р°Рґ", callback_data="menu:main")])
 
     await safe_edit(callback.message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.HTML)
 
@@ -1390,7 +1284,7 @@ async def cb_saas_stats_nav(callback: CallbackQuery) -> None:
         channel_idx = int(parts[1])
         period = parts[2]
     except (IndexError, ValueError):
-        await callback.answer("❌ Ошибка навигации", show_alert=True)
+        await callback.answer("вќЊ РћС€РёР±РєР° РЅР°РІРёРіР°С†РёРё", show_alert=True)
         return
     if period not in STAT_PERIODS:
         period = "30d"
@@ -1403,7 +1297,7 @@ async def cmd_test_cpc(message: Message):
     from services.admitad_subnetwork import get_website_campaigns, get_all_websites
     websites = await get_all_websites()
     
-    # На случай, если API не сработал — fallback на БД
+    # РќР° СЃР»СѓС‡Р°Р№, РµСЃР»Рё API РЅРµ СЃСЂР°Р±РѕС‚Р°Р» вЂ” fallback РЅР° Р‘Р”
     if not websites:
         conn = get_db()
         try:
@@ -1411,7 +1305,7 @@ async def cmd_test_cpc(message: Message):
         finally:
             conn.close()
         if not channels:
-            await message.answer("❌ Нет площадок. Возможно, scope `websites` не включён в настройках приложения Admitad.")
+            await message.answer("вќЊ РќРµС‚ РїР»РѕС‰Р°РґРѕРє. Р’РѕР·РјРѕР¶РЅРѕ, scope `websites` РЅРµ РІРєР»СЋС‡С‘РЅ РІ РЅР°СЃС‚СЂРѕР№РєР°С… РїСЂРёР»РѕР¶РµРЅРёСЏ Admitad.")
             return
         website_list = [(ch["channel_title"] or ch["channel_id"], ch["admitad_website_id"]) for ch in channels]
     else:
@@ -1421,9 +1315,9 @@ async def cmd_test_cpc(message: Message):
     for w_name, w_id in website_list:
         campaigns = await get_website_campaigns(w_id)
         if not campaigns:
-            parts.append(f"📺 {w_name} (ID {w_id}): нет кампаний")
+            parts.append(f"рџ“є {w_name} (ID {w_id}): РЅРµС‚ РєР°РјРїР°РЅРёР№")
             continue
-        lines = [f"📺 {w_name} (ID {w_id}):"]
+        lines = [f"рџ“є {w_name} (ID {w_id}):"]
         for c in campaigns:
             name = c.get("name", "?")
             status = c.get("connection_status", "?")
@@ -1433,9 +1327,9 @@ async def cmd_test_cpc(message: Message):
             for a in actions[:3]:
                 a_name = a.get("name", "?")
                 a_rate = a.get("rate", "?")
-                a_currency = a.get("currency", "₽")
+                a_currency = a.get("currency", "в‚Ѕ")
                 rates.append(f"      {a_name}: {a_rate} {a_currency}")
-            lines.append(f"  • {name} — {status}")
+            lines.append(f"  вЂў {name} вЂ” {status}")
             if rates:
                 lines.extend(rates)
             if gotolink:
@@ -1444,7 +1338,7 @@ async def cmd_test_cpc(message: Message):
                 lines.append(f"    CPC: {cpclink[:70]}...")
         parts.append("\n".join(lines))
 
-    text = "📊 Подключенные рекламодатели:\n\n" + "\n\n".join(parts)
+    text = "рџ“Љ РџРѕРґРєР»СЋС‡РµРЅРЅС‹Рµ СЂРµРєР»Р°РјРѕРґР°С‚РµР»Рё:\n\n" + "\n\n".join(parts)
     if len(text) > 4000:
         text = text[:4000] + "\n\n..."
     await message.answer(text)
@@ -1453,19 +1347,19 @@ async def cmd_test_cpc(message: Message):
 @router.message(Command("test_all_cpc"))
 async def cmd_test_all_cpc(message: Message):
     from services.admitad_subnetwork import search_all_cpc_campaigns
-    await message.answer("🔍 Ищу CPC-рекламодателей...")
+    await message.answer("рџ”Ќ РС‰Сѓ CPC-СЂРµРєР»Р°РјРѕРґР°С‚РµР»РµР№...")
     campaigns = await search_all_cpc_campaigns(limit=100)
     if not campaigns:
-        await message.answer("❌ Не найдено CPC-рекламодателей. Возможно, scope `advcampaigns` не включён в настройках приложения Admitad.")
+        await message.answer("вќЊ РќРµ РЅР°Р№РґРµРЅРѕ CPC-СЂРµРєР»Р°РјРѕРґР°С‚РµР»РµР№. Р’РѕР·РјРѕР¶РЅРѕ, scope `advcampaigns` РЅРµ РІРєР»СЋС‡С‘РЅ РІ РЅР°СЃС‚СЂРѕР№РєР°С… РїСЂРёР»РѕР¶РµРЅРёСЏ Admitad.")
         return
-    lines = [f"📊 Найдено CPC-рекламодателей: {len(campaigns)}"]
+    lines = [f"рџ“Љ РќР°Р№РґРµРЅРѕ CPC-СЂРµРєР»Р°РјРѕРґР°С‚РµР»РµР№: {len(campaigns)}"]
     for c in campaigns[:15]:
         name = c.get("name", "?")
         site_url = c.get("site_url", "")
         actions = c.get("actions", [])
-        cpc_actions = [a for a in actions if "клик" in (a.get("name", "") or "").lower()]
-        rates_str = "; ".join(f"{a['name']}: {a['rate']} {a.get('currency', '₽')}" for a in cpc_actions)
-        lines.append(f"\n• {name}")
+        cpc_actions = [a for a in actions if "РєР»РёРє" in (a.get("name", "") or "").lower()]
+        rates_str = "; ".join(f"{a['name']}: {a['rate']} {a.get('currency', 'в‚Ѕ')}" for a in cpc_actions)
+        lines.append(f"\nвЂў {name}")
         if rates_str:
             lines.append(f"  {rates_str}")
         if site_url:
@@ -1484,8 +1378,8 @@ async def cmd_admin(message: Message):
     base = WEBAPP_ADMIN_URL.rstrip('/')
     login_url = f"{base}/login?token={token}"
     await message.answer(
-        f"🔑 <a href='{login_url}'>Открыть админку</a>\n\n"
-        f"Или скопируйте ссылку:\n{login_url}",
+        f"рџ”‘ <a href='{login_url}'>РћС‚РєСЂС‹С‚СЊ Р°РґРјРёРЅРєСѓ</a>\n\n"
+        f"РР»Рё СЃРєРѕРїРёСЂСѓР№С‚Рµ СЃСЃС‹Р»РєСѓ:\n{login_url}",
         disable_web_page_preview=True
     )
 
@@ -1494,10 +1388,10 @@ async def cb_webstats(callback: CallbackQuery):
     user_id = callback.from_user.id
     token = generate_user_token(user_id)
     link = f"{WEBAPP_BASE_URL}/my-stats?token={token}"
-    await callback.message.answer(
-        f"📊 <a href='{link}'>Открыть статистику</a>\n\n"
-        "Ссылка действительна 24 часа.\n"
-        "Если вы не можете перейти, скопируйте адрес:\n"
+    await safe_edit(callback.message,
+        f"рџ“Љ <a href='{link}'>РћС‚РєСЂС‹С‚СЊ СЃС‚Р°С‚РёСЃС‚РёРєСѓ</a>\n\n"
+        "РЎСЃС‹Р»РєР° РґРµР№СЃС‚РІРёС‚РµР»СЊРЅР° 24 С‡Р°СЃР°.\n"
+        "Р•СЃР»Рё РІС‹ РЅРµ РјРѕР¶РµС‚Рµ РїРµСЂРµР№С‚Рё, СЃРєРѕРїРёСЂСѓР№С‚Рµ Р°РґСЂРµСЃ:\n"
         f"<code>{link}</code>",
         disable_web_page_preview=True,
         parse_mode=ParseMode.HTML
@@ -1506,58 +1400,13 @@ async def cb_webstats(callback: CallbackQuery):
 
 @router.callback_query(F.data == "menu:privacy")
 async def cb_menu_privacy(callback: CallbackQuery):
-    await callback.message.answer(
-        "📄 Политика конфиденциальности:\nhttps://teletype.in/@miliron/yYN0SEGfm5l",
+    await safe_edit(callback.message,
+        "рџ“„ РџРѕР»РёС‚РёРєР° РєРѕРЅС„РёРґРµРЅС†РёР°Р»СЊРЅРѕСЃС‚Рё:\nhttps://teletype.in/@miliron/yYN0SEGfm5l",
         disable_web_page_preview=True
     )
     await callback.answer()
 # ---------------------------------------------------------------------------
-# Настройки
-# ---------------------------------------------------------------------------
-@router.callback_query(F.data == "menu:settings")
-async def cb_menu_settings(callback: CallbackQuery) -> None:
-    await open_saas_settings(callback)
-    await callback.answer()
-
-@router.callback_query(F.data == "saas_toggle:force_preview_enable")
-async def cb_force_preview_enable(callback: CallbackQuery):
-    """Включает режим предпросмотра (force_preview_confirmed = 1)"""
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        conn.execute("UPDATE users SET force_preview_confirmed = 1 WHERE user_id = ?", (user_id,))
-        conn.commit()
-    finally:
-        conn.close()
-    await callback.answer("✅ Предпросмотр включен (посты теперь публикуются сразу)", show_alert=True)
-    await open_saas_settings(callback)
-
-@router.callback_query(F.data.startswith("saas_toggle:"))
-async def cb_saas_toggles(callback: CallbackQuery) -> None:
-    action = callback.data.split(":")[1]
-    user_id = callback.from_user.id
-    conn = get_db()
-    try:
-        if action == "autopin":
-            user = conn.execute("SELECT auto_pin FROM users WHERE user_id=?", (user_id,)).fetchone()
-            if user:
-                new_val = 0 if user["auto_pin"] else 1
-                conn.execute("UPDATE users SET auto_pin=? WHERE user_id=?", (new_val, user_id))
-                conn.commit()
-        elif action == "notifyposts":
-            user = conn.execute("SELECT notify_posts FROM users WHERE user_id=?", (user_id,)).fetchone()
-            if user:
-                new_val = 0 if user["notify_posts"] else 1
-                conn.execute("UPDATE users SET notify_posts=? WHERE user_id=?", (new_val, user_id))
-                conn.commit()
-        else:
-            return
-    finally:
-        conn.close()
-    await open_saas_settings(callback)
-
-# ---------------------------------------------------------------------------
-# Успешная оплата (звёзды)
+# РЈСЃРїРµС€РЅР°СЏ РѕРїР»Р°С‚Р° (Р·РІС‘Р·РґС‹)
 # ---------------------------------------------------------------------------
 @router.pre_checkout_query()
 async def process_pre_checkout_query(query: PreCheckoutQuery):
@@ -1579,7 +1428,7 @@ async def process_successful_payment(message: Message):
     try:
         tariff = conn.execute("SELECT days FROM tariffs WHERE id=?", (tariff_id,)).fetchone()
         if not tariff:
-            await message.answer("❌ Тариф не найден.")
+            await message.answer("вќЊ РўР°СЂРёС„ РЅРµ РЅР°Р№РґРµРЅ.")
             return
         days = tariff["days"]
 
@@ -1593,17 +1442,17 @@ async def process_successful_payment(message: Message):
         conn.close()
 
     await message.answer(
-        f"✅ <b>Подписка активирована!</b>\n\n"
-        f"Действует до: {new_until.strftime('%d.%m.%Y %H:%M')} (UTC)",
+        f"вњ… <b>РџРѕРґРїРёСЃРєР° Р°РєС‚РёРІРёСЂРѕРІР°РЅР°!</b>\n\n"
+        f"Р”РµР№СЃС‚РІСѓРµС‚ РґРѕ: {new_until.strftime('%d.%m.%Y %H:%M')} (UTC)",
         parse_mode=ParseMode.HTML
     )
 
 # ---------------------------------------------------------------------------
-# ОНБОРДИНГ: SAAS – ДОБАВЛЕНИЕ КАНАЛА (ключевой обработчик)
+# РћРќР‘РћР Р”РРќР“: SAAS вЂ“ Р”РћР‘РђР’Р›Р•РќРР• РљРђРќРђР›Рђ (РєР»СЋС‡РµРІРѕР№ РѕР±СЂР°Р±РѕС‚С‡РёРє)
 # ---------------------------------------------------------------------------
 @router.message(OnboardingStates.waiting_saas_tg_channel)
 async def handle_saas_channel_addition(message: Message, state: FSMContext) -> None:
-    """Обработчик принимает @username или пересланное сообщение из канала."""
+    """РћР±СЂР°Р±РѕС‚С‡РёРє РїСЂРёРЅРёРјР°РµС‚ @username РёР»Рё РїРµСЂРµСЃР»Р°РЅРЅРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ РёР· РєР°РЅР°Р»Р°."""
     try:
         user_id = message.from_user.id
         channel_username = None
@@ -1617,41 +1466,41 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
                 tg_chat_id = str(chat.id)
                 tg_title = chat.title or chat.username or tg_chat_id
                 channel_username = f"@{chat.username}" if chat.username else tg_chat_id
-                logger.info(f"Пользователь {user_id} переслал сообщение из канала {tg_chat_id}")
+                logger.info(f"РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ {user_id} РїРµСЂРµСЃР»Р°Р» СЃРѕРѕР±С‰РµРЅРёРµ РёР· РєР°РЅР°Р»Р° {tg_chat_id}")
         else:
             channel_username = message.text.strip()
             if channel_username.startswith("/"):
-                await message.answer("Пожалуйста, отправьте @username канала или перешлите сообщение из него.")
+                await message.answer("РџРѕР¶Р°Р»СѓР№СЃС‚Р°, РѕС‚РїСЂР°РІСЊС‚Рµ @username РєР°РЅР°Р»Р° РёР»Рё РїРµСЂРµС€Р»РёС‚Рµ СЃРѕРѕР±С‰РµРЅРёРµ РёР· РЅРµРіРѕ.")
                 return
             if not channel_username.startswith("@"):
                 await message.answer(
-                    "⚠️ Отправьте корректный @username (например, @mychannel) или перешлите любое сообщение из вашего канала."
+                    "вљ пёЏ РћС‚РїСЂР°РІСЊС‚Рµ РєРѕСЂСЂРµРєС‚РЅС‹Р№ @username (РЅР°РїСЂРёРјРµСЂ, @mychannel) РёР»Рё РїРµСЂРµС€Р»РёС‚Рµ Р»СЋР±РѕРµ СЃРѕРѕР±С‰РµРЅРёРµ РёР· РІР°С€РµРіРѕ РєР°РЅР°Р»Р°."
                 )
                 return
 
-            logger.info(f"Пользователь {user_id} пытается добавить канал {channel_username}")
+            logger.info(f"РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ {user_id} РїС‹С‚Р°РµС‚СЃСЏ РґРѕР±Р°РІРёС‚СЊ РєР°РЅР°Р» {channel_username}")
             try:
                 chat_info = await message.bot.get_chat(channel_username)
                 tg_chat_id = str(chat_info.id)
                 tg_title = chat_info.title or channel_username
             except Exception as e:
-                logger.error(f"Ошибка получения информации о канале {channel_username}: {e}")
-                await message.answer("❌ Не удалось получить информацию о канале. Проверьте правильность @username.")
+                logger.error(f"РћС€РёР±РєР° РїРѕР»СѓС‡РµРЅРёСЏ РёРЅС„РѕСЂРјР°С†РёРё Рѕ РєР°РЅР°Р»Рµ {channel_username}: {e}")
+                await message.answer("вќЊ РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ РёРЅС„РѕСЂРјР°С†РёСЋ Рѕ РєР°РЅР°Р»Рµ. РџСЂРѕРІРµСЂСЊС‚Рµ РїСЂР°РІРёР»СЊРЅРѕСЃС‚СЊ @username.")
                 return
 
         chat_identifier = channel_username if channel_username else tg_chat_id
         is_admin_ok = await check_bot_admin(message.bot, tg_chat_id if tg_chat_id else chat_identifier)
         if not is_admin_ok:
-            logger.warning(f"Бот не админ в канале {chat_identifier}")
+            logger.warning(f"Р‘РѕС‚ РЅРµ Р°РґРјРёРЅ РІ РєР°РЅР°Р»Рµ {chat_identifier}")
             await message.answer(
-                "❌ Бот не является администратором в этом канале. "
-                "Добавьте бота в администраторы канала с правом публикации сообщений и попробуйте снова."
+                "вќЊ Р‘РѕС‚ РЅРµ СЏРІР»СЏРµС‚СЃСЏ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј РІ СЌС‚РѕРј РєР°РЅР°Р»Рµ. "
+                "Р”РѕР±Р°РІСЊС‚Рµ Р±РѕС‚Р° РІ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂС‹ РєР°РЅР°Р»Р° СЃ РїСЂР°РІРѕРј РїСѓР±Р»РёРєР°С†РёРё СЃРѕРѕР±С‰РµРЅРёР№ Рё РїРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР°."
             )
             return
 
         conn = get_db()
         try:
-            # Проверка лимита каналов
+            # РџСЂРѕРІРµСЂРєР° Р»РёРјРёС‚Р° РєР°РЅР°Р»РѕРІ
             user = conn.execute("SELECT role, tariff_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
             conn.execute(
                 """INSERT INTO channels (user_id, channel_id, channel_title, sub_id)
@@ -1660,15 +1509,15 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
                 (user_id, channel_username if channel_username else tg_chat_id, tg_title, tg_chat_id)
             )
             conn.commit()
-            logger.info(f"Канал {chat_identifier} успешно добавлен для пользователя {user_id}")
+            logger.info(f"РљР°РЅР°Р» {chat_identifier} СѓСЃРїРµС€РЅРѕ РґРѕР±Р°РІР»РµРЅ РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ {user_id}")
         except sqlite3.Error as e:
-            logger.error(f"Ошибка БД при добавлении канала: {e}")
-            await message.answer("❌ Ошибка при добавлении канала в базу данных. Попробуйте позже.")
+            logger.error(f"РћС€РёР±РєР° Р‘Р” РїСЂРё РґРѕР±Р°РІР»РµРЅРёРё РєР°РЅР°Р»Р°: {e}")
+            await message.answer("вќЊ РћС€РёР±РєР° РїСЂРё РґРѕР±Р°РІР»РµРЅРёРё РєР°РЅР°Р»Р° РІ Р±Р°Р·Сѓ РґР°РЅРЅС‹С…. РџРѕРїСЂРѕР±СѓР№С‚Рµ РїРѕР·Р¶Рµ.")
             return
         finally:
             conn.close()
 
-        # Регистрация подплощадки в Admitad (subnetwork)
+        # Р РµРіРёСЃС‚СЂР°С†РёСЏ РїРѕРґРїР»РѕС‰Р°РґРєРё РІ Admitad (subnetwork)
         try:
             from services.admitad_subnetwork import register_channel_as_website
             channel_id_str = channel_username if channel_username else str(tg_chat_id)
@@ -1677,15 +1526,15 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
                 channel_name=tg_title or channel_username or str(tg_chat_id)
             )
             if website_id:
-                logger.info(f"✅ Подплощадка Admitad создана: website_id={website_id} для канала {channel_id_str}")
+                logger.info(f"вњ… РџРѕРґРїР»РѕС‰Р°РґРєР° Admitad СЃРѕР·РґР°РЅР°: website_id={website_id} РґР»СЏ РєР°РЅР°Р»Р° {channel_id_str}")
             else:
-                logger.warning(f"⚠️ Не удалось создать подплощадку для канала {channel_id_str}")
+                logger.warning(f"вљ пёЏ РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РїРѕРґРїР»РѕС‰Р°РґРєСѓ РґР»СЏ РєР°РЅР°Р»Р° {channel_id_str}")
         except Exception as e:
-            logger.warning(f"⚠️ Ошибка создания подплощадки: {e}")
+            logger.warning(f"вљ пёЏ РћС€РёР±РєР° СЃРѕР·РґР°РЅРёСЏ РїРѕРґРїР»РѕС‰Р°РґРєРё: {e}")
 
         display_name = channel_username if channel_username else tg_title
         await message.answer(
-            f"✅ Канал <b>{html.escape(display_name)}</b> успешно добавлен!",
+            f"вњ… РљР°РЅР°Р» <b>{html.escape(display_name)}</b> СѓСЃРїРµС€РЅРѕ РґРѕР±Р°РІР»РµРЅ!",
             parse_mode=ParseMode.HTML,
             reply_markup=kb_cabinet_menu("saas")
         )
@@ -1693,15 +1542,15 @@ async def handle_saas_channel_addition(message: Message, state: FSMContext) -> N
         await show_user_cabinet(message, user_id=user_id)
 
     except Exception as e:
-        logger.exception(f"Критическая ошибка при обработке добавления канала: {e}")
+        logger.exception(f"РљСЂРёС‚РёС‡РµСЃРєР°СЏ РѕС€РёР±РєР° РїСЂРё РѕР±СЂР°Р±РѕС‚РєРµ РґРѕР±Р°РІР»РµРЅРёСЏ РєР°РЅР°Р»Р°: {e}")
         await message.answer(
-            "❌ Произошла внутренняя ошибка. Администратор уже уведомлён. Попробуйте позже или свяжитесь с поддержкой."
+            "вќЊ РџСЂРѕРёР·РѕС€Р»Р° РІРЅСѓС‚СЂРµРЅРЅСЏСЏ РѕС€РёР±РєР°. РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СѓР¶Рµ СѓРІРµРґРѕРјР»С‘РЅ. РџРѕРїСЂРѕР±СѓР№С‚Рµ РїРѕР·Р¶Рµ РёР»Рё СЃРІСЏР¶РёС‚РµСЃСЊ СЃ РїРѕРґРґРµСЂР¶РєРѕР№."
         )
         await state.clear()
 
 @router.callback_query(OnboardingStates.waiting_role)
 async def process_role_selection(callback: CallbackQuery, state: FSMContext):
-    role = callback.data.split(":")[1]  # "saas" или "blogger"
+    role = callback.data.split(":")[1]  # "saas" РёР»Рё "blogger"
     user_id = callback.from_user.id
     data = await state.get_data()
     referrer_id = data.get("referrer_id")
@@ -1714,7 +1563,7 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
             (user_id, callback.from_user.username, sub_id, role, referrer_id)
         )
         conn.execute("UPDATE users SET commission_rate = 0.70 WHERE user_id = ?", (user_id,))
-        # Реферальная связь
+        # Р РµС„РµСЂР°Р»СЊРЅР°СЏ СЃРІСЏР·СЊ
         if referrer_id:
             conn.execute("""
                 INSERT OR IGNORE INTO referrals (referrer_id, referral_id, total_brought_profit)
@@ -1724,53 +1573,53 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
     finally:
         conn.close()
 
-    # Уведомление рефереру
+    # РЈРІРµРґРѕРјР»РµРЅРёРµ СЂРµС„РµСЂРµСЂСѓ
     if referrer_id:
         try:
             await callback.bot.send_message(
                 referrer_id,
-                f"🎉 По вашей реферальной ссылке зарегистрировался новый блогер (ID {user_id})!\n"
-                "Вы будете получать 10% от его заработка."
+                f"рџЋ‰ РџРѕ РІР°С€РµР№ СЂРµС„РµСЂР°Р»СЊРЅРѕР№ СЃСЃС‹Р»РєРµ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°Р»СЃСЏ РЅРѕРІС‹Р№ Р±Р»РѕРіРµСЂ (ID {user_id})!\n"
+                "Р’С‹ Р±СѓРґРµС‚Рµ РїРѕР»СѓС‡Р°С‚СЊ 10% РѕС‚ РµРіРѕ Р·Р°СЂР°Р±РѕС‚РєР°."
             )
         except Exception as e:
-            logger.error(f"Не удалось уведомить реферера {referrer_id}: {e}")
+            logger.error(f"РќРµ СѓРґР°Р»РѕСЃСЊ СѓРІРµРґРѕРјРёС‚СЊ СЂРµС„РµСЂРµСЂР° {referrer_id}: {e}")
 
     if role == "saas":
         await safe_edit(callback.message,
-            "👋 Добро пожаловать! Для начала работы отправьте @username вашего Telegram-канала."
+            "рџ‘‹ Р”РѕР±СЂРѕ РїРѕР¶Р°Р»РѕРІР°С‚СЊ! Р”Р»СЏ РЅР°С‡Р°Р»Р° СЂР°Р±РѕС‚С‹ РѕС‚РїСЂР°РІСЊС‚Рµ @username РІР°С€РµРіРѕ Telegram-РєР°РЅР°Р»Р°."
         )
         await state.set_state(OnboardingStates.waiting_saas_tg_channel)
     else:  # blogger
         await safe_edit(callback.message,
-            "👋 Добро пожаловать, блогер! Для начала отправьте @username вашего Telegram-канала."
+            "рџ‘‹ Р”РѕР±СЂРѕ РїРѕР¶Р°Р»РѕРІР°С‚СЊ, Р±Р»РѕРіРµСЂ! Р”Р»СЏ РЅР°С‡Р°Р»Р° РѕС‚РїСЂР°РІСЊС‚Рµ @username РІР°С€РµРіРѕ Telegram-РєР°РЅР°Р»Р°."
         )
-        await state.set_state(OnboardingStates.waiting_saas_tg_channel)  # то же состояние, но без лимитов
+        await state.set_state(OnboardingStates.waiting_saas_tg_channel)  # С‚Рѕ Р¶Рµ СЃРѕСЃС‚РѕСЏРЅРёРµ, РЅРѕ Р±РµР· Р»РёРјРёС‚РѕРІ
 
     await callback.answer()
 # ---------------------------------------------------------------------------
-# Обработчики инструкций и поддержки
+# РћР±СЂР°Р±РѕС‚С‡РёРєРё РёРЅСЃС‚СЂСѓРєС†РёР№ Рё РїРѕРґРґРµСЂР¶РєРё
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "support:contact")
 async def cb_support_contact(callback: CallbackQuery):
     text = (
-        "📞 <b>Связь с администратором</b>\n\n"
-        "По любым вопросам пишите:\n"
-        "👉 <a href='https://t.me/Zigih90'>@Zigih90</a>\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "❓ <b>Частые вопросы:</b>\n\n"
-        "<b>Бот не публикует посты?</b>\n"
-        "Убедитесь, что бот — админ канала с правами на публикацию.\n\n"
-        "<b>Нет дохода?</b>\n"
-        "Доход появляется после подтверждения покупок рекламодателем (30–90 дней).\n\n"
-        "<b>Не могу вывести деньги?</b>\n"
-        "Нужен статус самозанятого и баланс от 3000 ₽.\n\n"
-        "<b>Какие магазины доступны?</b>\n"
-        "Откройте «Кабинет» → «Магазины» — там весь список.\n\n"
-        "<i>Стаюсь отвечать быстро</i>"
+        "рџ“ћ <b>РЎРІСЏР·СЊ СЃ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј</b>\n\n"
+        "РџРѕ Р»СЋР±С‹Рј РІРѕРїСЂРѕСЃР°Рј РїРёС€РёС‚Рµ:\n"
+        "рџ‘‰ <a href='https://t.me/Zigih90'>@Zigih90</a>\n\n"
+        "в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ\n"
+        "вќ“ <b>Р§Р°СЃС‚С‹Рµ РІРѕРїСЂРѕСЃС‹:</b>\n\n"
+        "<b>Р‘РѕС‚ РЅРµ РїСѓР±Р»РёРєСѓРµС‚ РїРѕСЃС‚С‹?</b>\n"
+        "РЈР±РµРґРёС‚РµСЃСЊ, С‡С‚Рѕ Р±РѕС‚ вЂ” Р°РґРјРёРЅ РєР°РЅР°Р»Р° СЃ РїСЂР°РІР°РјРё РЅР° РїСѓР±Р»РёРєР°С†РёСЋ.\n\n"
+        "<b>РќРµС‚ РґРѕС…РѕРґР°?</b>\n"
+        "Р”РѕС…РѕРґ РїРѕСЏРІР»СЏРµС‚СЃСЏ РїРѕСЃР»Рµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ РїРѕРєСѓРїРѕРє СЂРµРєР»Р°РјРѕРґР°С‚РµР»РµРј (30вЂ“90 РґРЅРµР№).\n\n"
+        "<b>РќРµ РјРѕРіСѓ РІС‹РІРµСЃС‚Рё РґРµРЅСЊРіРё?</b>\n"
+        "РќСѓР¶РµРЅ СЃС‚Р°С‚СѓСЃ СЃР°РјРѕР·Р°РЅСЏС‚РѕРіРѕ Рё Р±Р°Р»Р°РЅСЃ РѕС‚ 3000 в‚Ѕ.\n\n"
+        "<b>РљР°РєРёРµ РјР°РіР°Р·РёРЅС‹ РґРѕСЃС‚СѓРїРЅС‹?</b>\n"
+         "РќР°Р¶РјРёС‚Рµ В«рџЏЄ РњР°РіР°Р·РёРЅС‹В» в†’ РІС‹Р±РµСЂРёС‚Рµ В«рџ›’ РџРѕРєСѓРїРєР°В» (CPA) РёР»Рё В«рџ‘† РљР»РёРєРёВ» (CPC).\n\n"
+        "<i>РЎС‚Р°СЋСЃСЊ РѕС‚РІРµС‡Р°С‚СЊ Р±С‹СЃС‚СЂРѕ</i>"
     )
     await safe_edit(callback.message, text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")]
+            [InlineKeyboardButton(text="рџ”™ РќР°Р·Р°Рґ", callback_data="menu:main")]
         ]),
         parse_mode=ParseMode.HTML
     )
@@ -1793,91 +1642,95 @@ async def cb_menu_instructions(callback: CallbackQuery) -> None:
 
 async def show_saas_instruction(callback: CallbackQuery):
     text = (
-        "📖 <b>Инструкция для SaaS-клиентов</b>\n\n"
-        "<b>1. Подготовка</b>\n"
-        "─ Бот автоматически получает товары из проверенных магазинов (Admitad).\n"
-        "─ Вам не нужно вводить API-ключи или оплачивать подписку — доступ бессрочный и бесплатный.\n\n"
-        "<b>2. Подключение каналов</b>\n"
-        "─ Перейдите в «📢 Мои каналы» и отправьте @username вашего канала.\n"
-        "─ Для каждого канала автоматически создаётся уникальный идентификатор, который позволяет отслеживать продажи.\n\n"
-        "<b>3. Выбор магазинов</b>\n"
-        "─ Нажмите «🏪 Магазины» и отметьте интересующие вас магазины.\n"
-        "─ От выбранных магазинов зависит, какие товары будут публиковаться.\n\n"
-        "<b>4. Автоматический постинг и доход</b>\n"
-        "─ Бот самостоятельно наполняет каталог товарами с маркировкой ERID.\n"
-        "─ Посты выходят автоматически с партнёрскими ссылками, в которые встроен идентификатор вашего канала.\n"
-        "─ Доход от продаж распределяется в пропорции: 70% – вам, 30% – сервису.\n\n"
-        "<b>5. Интервал постов</b>\n"
-        "─ Вы можете настроить частоту публикаций в разделе «⚙️ Периодичность постов».\n\n"
-        "<b>6. Циклический постинг</b>\n"
-        "─ В настройках SaaS нажмите «⏰ Циклический постинг» и задайте периодичность для каждого магазина.\n"
-        "─ Бот будет публиковать товары из нужного магазина через заданные интервалы (от 1 дня до 1 месяца).\n"
-        "─ Если расписание не настроено — магазины чередуются автоматически.\n\n"
-        "<b>7. Автоудаление постов</b>\n"
-        "─ В настройках SaaS нажмите «🗑 Автоудаление постов» и выберите время жизни поста.\n"
-        "─ По умолчанию посты удаляются через 7 дней. Можно выключить или установить от 1 часа до 30 дней.\n"
-        "─ Переходы засчитываются в течение 30 дней (кука Admitad), даже если пост уже удалён.\n\n"
-        "<b>8. Шаблоны и финансы</b>\n"
-        "─ Настройка шаблонов постов и запрос выплат доступны в веб-статистике (кнопка «📊 Веб-статистика» в кабинете).\n\n"
-        "<b>9. Реферальная программа</b>\n"
-        "─ Вы можете приглашать других пользователей по реферальной ссылке и получать 10% от их дохода.\n\n"
-        "<i>По всем вопросам обращайтесь к администратору.</i>"
+        "рџ“– <b>РРЅСЃС‚СЂСѓРєС†РёСЏ РґР»СЏ SaaS-РєР»РёРµРЅС‚РѕРІ</b>\n\n"
+        "<b>1. РџРѕРґРіРѕС‚РѕРІРєР°</b>\n"
+        "в”Ђ Р‘РѕС‚ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РїРѕР»СѓС‡Р°РµС‚ С‚РѕРІР°СЂС‹ РёР· РїСЂРѕРІРµСЂРµРЅРЅС‹С… РјР°РіР°Р·РёРЅРѕРІ (Admitad).\n"
+        "в”Ђ Р’Р°Рј РЅРµ РЅСѓР¶РЅРѕ РІРІРѕРґРёС‚СЊ API-РєР»СЋС‡Рё РёР»Рё РѕРїР»Р°С‡РёРІР°С‚СЊ РїРѕРґРїРёСЃРєСѓ вЂ” РґРѕСЃС‚СѓРї Р±РµСЃСЃСЂРѕС‡РЅС‹Р№ Рё Р±РµСЃРїР»Р°С‚РЅС‹Р№.\n\n"
+        "<b>2. РџРѕРґРєР»СЋС‡РµРЅРёРµ РєР°РЅР°Р»РѕРІ</b>\n"
+        "в”Ђ РџРµСЂРµР№РґРёС‚Рµ РІ В«рџ“ў РњРѕРё РєР°РЅР°Р»С‹В» Рё РѕС‚РїСЂР°РІСЊС‚Рµ @username РІР°С€РµРіРѕ РєР°РЅР°Р»Р°.\n"
+        "в”Ђ Р”Р»СЏ РєР°Р¶РґРѕРіРѕ РєР°РЅР°Р»Р° Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё СЃРѕР·РґР°С‘С‚СЃСЏ СѓРЅРёРєР°Р»СЊРЅС‹Р№ РёРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ, РєРѕС‚РѕСЂС‹Р№ РїРѕР·РІРѕР»СЏРµС‚ РѕС‚СЃР»РµР¶РёРІР°С‚СЊ РїСЂРѕРґР°Р¶Рё.\n\n"
+        "<b>3. Р’С‹Р±РѕСЂ РјР°РіР°Р·РёРЅРѕРІ</b>\n"
+         "в”Ђ РќР°Р¶РјРёС‚Рµ В«рџЏЄ РњР°РіР°Р·РёРЅС‹В» Рё РІС‹Р±РµСЂРёС‚Рµ С‚РёРї РјРѕРЅРµС‚РёР·Р°С†РёРё:\n"
+         "   вЂў В«рџ›’ РџРѕРєСѓРїРєР° (CPA)В» вЂ” РґРѕС…РѕРґ Р·Р° РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅС‹Рµ Р·Р°РєР°Р·С‹.\n"
+         "   вЂў В«рџ‘† РљР»РёРєРё (CPC)В» вЂ” РґРѕС…РѕРґ Р·Р° РєР»РёРєРё РїРѕ СЃСЃС‹Р»РєРµ.\n"
+         "в”Ђ Р’ РєР°Р¶РґРѕРј СЂР°Р·РґРµР»Рµ РѕС‚РјРµС‚СЊС‚Рµ РёРЅС‚РµСЂРµСЃСѓСЋС‰РёРµ РјР°РіР°Р·РёРЅС‹ РёР»Рё СЂРµРєР»Р°РјРѕРґР°С‚РµР»РµР№.\n"
+         "в”Ђ РћС‚ РІС‹Р±СЂР°РЅРЅС‹С… РјР°РіР°Р·РёРЅРѕРІ Р·Р°РІРёСЃРёС‚, РєР°РєРёРµ С‚РѕРІР°СЂС‹ Р±СѓРґСѓС‚ РїСѓР±Р»РёРєРѕРІР°С‚СЊСЃСЏ.\n\n"
+         "<b>4. РђРІС‚РѕРјР°С‚РёС‡РµСЃРєРёР№ РїРѕСЃС‚РёРЅРі Рё РґРѕС…РѕРґ</b>\n"
+        "в”Ђ Р‘РѕС‚ СЃР°РјРѕСЃС‚РѕСЏС‚РµР»СЊРЅРѕ РЅР°РїРѕР»РЅСЏРµС‚ РєР°С‚Р°Р»РѕРі С‚РѕРІР°СЂР°РјРё СЃ РјР°СЂРєРёСЂРѕРІРєРѕР№ ERID.\n"
+        "в”Ђ РџРѕСЃС‚С‹ РІС‹С…РѕРґСЏС‚ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё СЃ РїР°СЂС‚РЅС‘СЂСЃРєРёРјРё СЃСЃС‹Р»РєР°РјРё, РІ РєРѕС‚РѕСЂС‹Рµ РІСЃС‚СЂРѕРµРЅ РёРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ РІР°С€РµРіРѕ РєР°РЅР°Р»Р°.\n"
+        "в”Ђ Р”РѕС…РѕРґ РѕС‚ РїСЂРѕРґР°Р¶ СЂР°СЃРїСЂРµРґРµР»СЏРµС‚СЃСЏ РІ РїСЂРѕРїРѕСЂС†РёРё: 70% вЂ“ РІР°Рј, 30% вЂ“ СЃРµСЂРІРёСЃСѓ.\n\n"
+        "<b>5. РРЅС‚РµСЂРІР°Р» РїРѕСЃС‚РѕРІ</b>\n"
+        "в”Ђ Р’С‹ РјРѕР¶РµС‚Рµ РЅР°СЃС‚СЂРѕРёС‚СЊ С‡Р°СЃС‚РѕС‚Сѓ РїСѓР±Р»РёРєР°С†РёР№ РІ СЂР°Р·РґРµР»Рµ В«вљ™пёЏ РџРµСЂРёРѕРґРёС‡РЅРѕСЃС‚СЊ РїРѕСЃС‚РѕРІВ».\n\n"
+        "<b>6. Р¦РёРєР»РёС‡РµСЃРєРёР№ РїРѕСЃС‚РёРЅРі</b>\n"
+        "в”Ђ Р’ РЅР°СЃС‚СЂРѕР№РєР°С… SaaS РЅР°Р¶РјРёС‚Рµ В«вЏ° Р¦РёРєР»РёС‡РµСЃРєРёР№ РїРѕСЃС‚РёРЅРіВ» Рё Р·Р°РґР°Р№С‚Рµ РїРµСЂРёРѕРґРёС‡РЅРѕСЃС‚СЊ РґР»СЏ РєР°Р¶РґРѕРіРѕ РјР°РіР°Р·РёРЅР°.\n"
+        "в”Ђ Р‘РѕС‚ Р±СѓРґРµС‚ РїСѓР±Р»РёРєРѕРІР°С‚СЊ С‚РѕРІР°СЂС‹ РёР· РЅСѓР¶РЅРѕРіРѕ РјР°РіР°Р·РёРЅР° С‡РµСЂРµР· Р·Р°РґР°РЅРЅС‹Рµ РёРЅС‚РµСЂРІР°Р»С‹ (РѕС‚ 1 РґРЅСЏ РґРѕ 1 РјРµСЃСЏС†Р°).\n"
+        "в”Ђ Р•СЃР»Рё СЂР°СЃРїРёСЃР°РЅРёРµ РЅРµ РЅР°СЃС‚СЂРѕРµРЅРѕ вЂ” РјР°РіР°Р·РёРЅС‹ С‡РµСЂРµРґСѓСЋС‚СЃСЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё.\n\n"
+        "<b>7. РђРІС‚РѕСѓРґР°Р»РµРЅРёРµ РїРѕСЃС‚РѕРІ</b>\n"
+        "в”Ђ Р’ РЅР°СЃС‚СЂРѕР№РєР°С… SaaS РЅР°Р¶РјРёС‚Рµ В«рџ—‘ РђРІС‚РѕСѓРґР°Р»РµРЅРёРµ РїРѕСЃС‚РѕРІВ» Рё РІС‹Р±РµСЂРёС‚Рµ РІСЂРµРјСЏ Р¶РёР·РЅРё РїРѕСЃС‚Р°.\n"
+        "в”Ђ РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РїРѕСЃС‚С‹ СѓРґР°Р»СЏСЋС‚СЃСЏ С‡РµСЂРµР· 7 РґРЅРµР№. РњРѕР¶РЅРѕ РІС‹РєР»СЋС‡РёС‚СЊ РёР»Рё СѓСЃС‚Р°РЅРѕРІРёС‚СЊ РѕС‚ 1 С‡Р°СЃР° РґРѕ 30 РґРЅРµР№.\n"
+        "в”Ђ РџРµСЂРµС…РѕРґС‹ Р·Р°СЃС‡РёС‚С‹РІР°СЋС‚СЃСЏ РІ С‚РµС‡РµРЅРёРµ 30 РґРЅРµР№ (РєСѓРєР° Admitad), РґР°Р¶Рµ РµСЃР»Рё РїРѕСЃС‚ СѓР¶Рµ СѓРґР°Р»С‘РЅ.\n\n"
+         "<b>8. РЁР°Р±Р»РѕРЅС‹ Рё С„РёРЅР°РЅСЃС‹</b>\n"
+         "в”Ђ Р’ РІРµР±-СЃС‚Р°С‚РёСЃС‚РёРєРµ (РєРЅРѕРїРєР° В«рџ“Љ Р’РµР±-СЃС‚Р°С‚РёСЃС‚РёРєР°В») РґРѕСЃС‚СѓРїРЅС‹ РѕС‚РґРµР»СЊРЅС‹Рµ С€Р°Р±Р»РѕРЅС‹ РґР»СЏ CPA-РїРѕСЃС‚РѕРІ Рё CPC-РїРѕСЃС‚РѕРІ.\n"
+         "в”Ђ РўР°Рј Р¶Рµ РјРѕР¶РЅРѕ Р·Р°РїСЂРѕСЃРёС‚СЊ РІС‹РїР»Р°С‚Сѓ.\n\n"
+        "<b>9. Р РµС„РµСЂР°Р»СЊРЅР°СЏ РїСЂРѕРіСЂР°РјРјР°</b>\n"
+        "в”Ђ Р’С‹ РјРѕР¶РµС‚Рµ РїСЂРёРіР»Р°С€Р°С‚СЊ РґСЂСѓРіРёС… РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ РїРѕ СЂРµС„РµСЂР°Р»СЊРЅРѕР№ СЃСЃС‹Р»РєРµ Рё РїРѕР»СѓС‡Р°С‚СЊ 10% РѕС‚ РёС… РґРѕС…РѕРґР°.\n\n"
+        "<i>РџРѕ РІСЃРµРј РІРѕРїСЂРѕСЃР°Рј РѕР±СЂР°С‰Р°Р№С‚РµСЃСЊ Рє Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂСѓ.</i>"
     )
     await safe_edit(callback.message, text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+            [InlineKeyboardButton(text="рџ”™ РќР°Р·Р°Рґ", callback_data="cabinet:open")]
         ]),
         parse_mode=ParseMode.HTML
     )
 async def show_blogger_instruction(callback: CallbackQuery):
     text = (
-        "📖 <b>Инструкция: Как зарабатывать с ботом</b>\n\n"
-        "Бот сам публикует товары от брендов в ваш Telegram‑канал, а вы получаете <b>70%</b> "
-        "от комиссии за каждую покупку. Чтобы работа была стабильной и легальной, следуйте трём шагам.\n\n"
-        "<b>⏳ Шаг 1. Как устроен баланс</b>\n"
-        "Когда подписчик переходит по ссылке и покупает товар, в веб-статистике (кнопка «📊 Веб-статистика») обновляется баланс:\n"
-        "• <b>«В ожидании»</b> — магазин проверяет заказ (30–90 дней).\n"
-        "• <b>«Доступно к выводу»</b> — деньги подтверждены, можно забирать.\n\n"
-        "<b>💳 Шаг 2. Вывод средств и налоги</b>\n"
-        "Минимальная сумма для вывода — <b>3000 ₽</b>. Сервис работает официально, поэтому вы обязаны "
-        "иметь статус <b>Самозанятого</b> (оформляется бесплатно в приложении «Мой Налог») или <b>ИП</b>.\n"
-        "Когда накопится 3000 ₽, откройте веб-статистику и нажмите «💸 Запросить выплату», укажите реквизиты.\n\n"
-        "<b>🛡️ Шаг 3. Чек и защита выплаты</b>\n"
-        "• Администратор отправляет деньги.\n"
-        "• В веб-статистике появится чат с кнопкой «📤 Отправить чек». <b>Вы обязаны в течение 24 часов</b> "
-        "сформировать чек в приложении «Мой Налог» (тип: Продажа физ.лицу, услуга: Рекламные услуги) "
-        "и загрузить его.\n"
-        "• После проверки администратором заявка закрывается.\n\n"
-        "<b>⚠️ ВАЖНО:</b> Если вы не пришлёте чек за 24 часа, аккаунт будет <b>заблокирован навсегда</b>, "
-        "а невыплаченные средства аннулированы.\n\n"
-        "<b>🚫 Запрещено (бан без выплат):</b>\n"
-        "• Спам ссылками в чужих каналах, комментариях, личных сообщениях.\n"
-        "• Мотивированный трафик (просьбы «купи по ссылке, я верну деньги»).\n"
-        "• Самовыкупы и накрутка.\n"
-        "• Размещение ссылок в каналах с запрещённым контентом (казино, пиратство, треш).\n\n"
-        "<b>🚀 С чего начать:</b>\n"
-        "1. Добавьте канал через «📢 Мои Telegram‑каналы».\n"
-        "2. Назначьте бота администратором с правом публикации.\n"
-        "3. Выберите магазины в «🏪 Магазины».\n"
-        "4. Настройте интервал постов.\n"
-        "5. Настройте шаблоны и следите за доходом в «📊 Веб‑статистика».\n\n"
-        "<b>⏰ Циклический постинг (в настройках SaaS):</b>\n"
-        "─ Задайте периодичность для каждого магазина (1 день – 1 месяц).\n"
-        "─ Бот будет публиковать товары из нужного магазина по расписанию.\n\n"
-        "<b>🗑 Автоудаление постов:</b>\n"
-        "─ По умолчанию посты удаляются через 7 дней. Можно изменить (от 1 часа до 30 дней) или выключить.\n"
-        "─ Переходы засчитываются 30 дней (кука Admitad), даже после удаления поста.\n\n"
-        "По вопросам пишите: 👉 <a href='https://t.me/Zigih90'>@Zigih90</a>"
+        "рџ“– <b>РРЅСЃС‚СЂСѓРєС†РёСЏ: РљР°Рє Р·Р°СЂР°Р±Р°С‚С‹РІР°С‚СЊ СЃ Р±РѕС‚РѕРј</b>\n\n"
+        "Р‘РѕС‚ СЃР°Рј РїСѓР±Р»РёРєСѓРµС‚ С‚РѕРІР°СЂС‹ РѕС‚ Р±СЂРµРЅРґРѕРІ РІ РІР°С€ TelegramвЂ‘РєР°РЅР°Р», Р° РІС‹ РїРѕР»СѓС‡Р°РµС‚Рµ <b>70%</b> "
+        "РѕС‚ РєРѕРјРёСЃСЃРёРё Р·Р° РєР°Р¶РґСѓСЋ РїРѕРєСѓРїРєСѓ. Р§С‚РѕР±С‹ СЂР°Р±РѕС‚Р° Р±С‹Р»Р° СЃС‚Р°Р±РёР»СЊРЅРѕР№ Рё Р»РµРіР°Р»СЊРЅРѕР№, СЃР»РµРґСѓР№С‚Рµ С‚СЂС‘Рј С€Р°РіР°Рј.\n\n"
+        "<b>вЏі РЁР°Рі 1. РљР°Рє СѓСЃС‚СЂРѕРµРЅ Р±Р°Р»Р°РЅСЃ</b>\n"
+        "РљРѕРіРґР° РїРѕРґРїРёСЃС‡РёРє РїРµСЂРµС…РѕРґРёС‚ РїРѕ СЃСЃС‹Р»РєРµ Рё РїРѕРєСѓРїР°РµС‚ С‚РѕРІР°СЂ, РІ РІРµР±-СЃС‚Р°С‚РёСЃС‚РёРєРµ (РєРЅРѕРїРєР° В«рџ“Љ Р’РµР±-СЃС‚Р°С‚РёСЃС‚РёРєР°В») РѕР±РЅРѕРІР»СЏРµС‚СЃСЏ Р±Р°Р»Р°РЅСЃ:\n"
+        "вЂў <b>В«Р’ РѕР¶РёРґР°РЅРёРёВ»</b> вЂ” РјР°РіР°Р·РёРЅ РїСЂРѕРІРµСЂСЏРµС‚ Р·Р°РєР°Р· (30вЂ“90 РґРЅРµР№).\n"
+        "вЂў <b>В«Р”РѕСЃС‚СѓРїРЅРѕ Рє РІС‹РІРѕРґСѓВ»</b> вЂ” РґРµРЅСЊРіРё РїРѕРґС‚РІРµСЂР¶РґРµРЅС‹, РјРѕР¶РЅРѕ Р·Р°Р±РёСЂР°С‚СЊ.\n\n"
+        "<b>рџ’і РЁР°Рі 2. Р’С‹РІРѕРґ СЃСЂРµРґСЃС‚РІ Рё РЅР°Р»РѕРіРё</b>\n"
+        "РњРёРЅРёРјР°Р»СЊРЅР°СЏ СЃСѓРјРјР° РґР»СЏ РІС‹РІРѕРґР° вЂ” <b>3000 в‚Ѕ</b>. РЎРµСЂРІРёСЃ СЂР°Р±РѕС‚Р°РµС‚ РѕС„РёС†РёР°Р»СЊРЅРѕ, РїРѕСЌС‚РѕРјСѓ РІС‹ РѕР±СЏР·Р°РЅС‹ "
+        "РёРјРµС‚СЊ СЃС‚Р°С‚СѓСЃ <b>РЎР°РјРѕР·Р°РЅСЏС‚РѕРіРѕ</b> (РѕС„РѕСЂРјР»СЏРµС‚СЃСЏ Р±РµСЃРїР»Р°С‚РЅРѕ РІ РїСЂРёР»РѕР¶РµРЅРёРё В«РњРѕР№ РќР°Р»РѕРіВ») РёР»Рё <b>РРџ</b>.\n"
+        "РљРѕРіРґР° РЅР°РєРѕРїРёС‚СЃСЏ 3000 в‚Ѕ, РѕС‚РєСЂРѕР№С‚Рµ РІРµР±-СЃС‚Р°С‚РёСЃС‚РёРєСѓ Рё РЅР°Р¶РјРёС‚Рµ В«рџ’ё Р—Р°РїСЂРѕСЃРёС‚СЊ РІС‹РїР»Р°С‚СѓВ», СѓРєР°Р¶РёС‚Рµ СЂРµРєРІРёР·РёС‚С‹.\n\n"
+        "<b>рџ›ЎпёЏ РЁР°Рі 3. Р§РµРє Рё Р·Р°С‰РёС‚Р° РІС‹РїР»Р°С‚С‹</b>\n"
+        "вЂў РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РѕС‚РїСЂР°РІР»СЏРµС‚ РґРµРЅСЊРіРё.\n"
+        "вЂў Р’ РІРµР±-СЃС‚Р°С‚РёСЃС‚РёРєРµ РїРѕСЏРІРёС‚СЃСЏ С‡Р°С‚ СЃ РєРЅРѕРїРєРѕР№ В«рџ“¤ РћС‚РїСЂР°РІРёС‚СЊ С‡РµРєВ». <b>Р’С‹ РѕР±СЏР·Р°РЅС‹ РІ С‚РµС‡РµРЅРёРµ 24 С‡Р°СЃРѕРІ</b> "
+        "СЃС„РѕСЂРјРёСЂРѕРІР°С‚СЊ С‡РµРє РІ РїСЂРёР»РѕР¶РµРЅРёРё В«РњРѕР№ РќР°Р»РѕРіВ» (С‚РёРї: РџСЂРѕРґР°Р¶Р° С„РёР·.Р»РёС†Сѓ, СѓСЃР»СѓРіР°: Р РµРєР»Р°РјРЅС‹Рµ СѓСЃР»СѓРіРё) "
+        "Рё Р·Р°РіСЂСѓР·РёС‚СЊ РµРіРѕ.\n"
+        "вЂў РџРѕСЃР»Рµ РїСЂРѕРІРµСЂРєРё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј Р·Р°СЏРІРєР° Р·Р°РєСЂС‹РІР°РµС‚СЃСЏ.\n\n"
+        "<b>вљ пёЏ Р’РђР–РќРћ:</b> Р•СЃР»Рё РІС‹ РЅРµ РїСЂРёС€Р»С‘С‚Рµ С‡РµРє Р·Р° 24 С‡Р°СЃР°, Р°РєРєР°СѓРЅС‚ Р±СѓРґРµС‚ <b>Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ РЅР°РІСЃРµРіРґР°</b>, "
+        "Р° РЅРµРІС‹РїР»Р°С‡РµРЅРЅС‹Рµ СЃСЂРµРґСЃС‚РІР° Р°РЅРЅСѓР»РёСЂРѕРІР°РЅС‹.\n\n"
+        "<b>рџљ« Р—Р°РїСЂРµС‰РµРЅРѕ (Р±Р°РЅ Р±РµР· РІС‹РїР»Р°С‚):</b>\n"
+        "вЂў РЎРїР°Рј СЃСЃС‹Р»РєР°РјРё РІ С‡СѓР¶РёС… РєР°РЅР°Р»Р°С…, РєРѕРјРјРµРЅС‚Р°СЂРёСЏС…, Р»РёС‡РЅС‹С… СЃРѕРѕР±С‰РµРЅРёСЏС….\n"
+        "вЂў РњРѕС‚РёРІРёСЂРѕРІР°РЅРЅС‹Р№ С‚СЂР°С„РёРє (РїСЂРѕСЃСЊР±С‹ В«РєСѓРїРё РїРѕ СЃСЃС‹Р»РєРµ, СЏ РІРµСЂРЅСѓ РґРµРЅСЊРіРёВ»).\n"
+        "вЂў РЎР°РјРѕРІС‹РєСѓРїС‹ Рё РЅР°РєСЂСѓС‚РєР°.\n"
+        "вЂў Р Р°Р·РјРµС‰РµРЅРёРµ СЃСЃС‹Р»РѕРє РІ РєР°РЅР°Р»Р°С… СЃ Р·Р°РїСЂРµС‰С‘РЅРЅС‹Рј РєРѕРЅС‚РµРЅС‚РѕРј (РєР°Р·РёРЅРѕ, РїРёСЂР°С‚СЃС‚РІРѕ, С‚СЂРµС€).\n\n"
+        "<b>рџљЂ РЎ С‡РµРіРѕ РЅР°С‡Р°С‚СЊ:</b>\n"
+         "1. Р”РѕР±Р°РІСЊС‚Рµ РєР°РЅР°Р» С‡РµСЂРµР· В«рџ“ў РњРѕРё TelegramвЂ‘РєР°РЅР°Р»С‹В».\n"
+         "2. РќР°Р·РЅР°С‡СЊС‚Рµ Р±РѕС‚Р° Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј СЃ РїСЂР°РІРѕРј РїСѓР±Р»РёРєР°С†РёРё.\n"
+         "3. Р’С‹Р±РµСЂРёС‚Рµ РјР°РіР°Р·РёРЅС‹ РІ В«рџЏЄ РњР°РіР°Р·РёРЅС‹В» (CPA РґР»СЏ РґРѕС…РѕРґР° СЃ РїСЂРѕРґР°Р¶, CPC РґР»СЏ РґРѕС…РѕРґР° СЃ РєР»РёРєРѕРІ).\n"
+         "4. РќР°СЃС‚СЂРѕР№С‚Рµ РёРЅС‚РµСЂРІР°Р» РїРѕСЃС‚РѕРІ.\n"
+         "5. РќР°СЃС‚СЂРѕР№С‚Рµ С€Р°Р±Р»РѕРЅС‹ Рё СЃР»РµРґРёС‚Рµ Р·Р° РґРѕС…РѕРґРѕРј РІ В«рџ“Љ Р’РµР±вЂ‘СЃС‚Р°С‚РёСЃС‚РёРєР°В».\n\n"
+        "<b>вЏ° Р¦РёРєР»РёС‡РµСЃРєРёР№ РїРѕСЃС‚РёРЅРі (РІ РЅР°СЃС‚СЂРѕР№РєР°С… SaaS):</b>\n"
+        "в”Ђ Р—Р°РґР°Р№С‚Рµ РїРµСЂРёРѕРґРёС‡РЅРѕСЃС‚СЊ РґР»СЏ РєР°Р¶РґРѕРіРѕ РјР°РіР°Р·РёРЅР° (1 РґРµРЅСЊ вЂ“ 1 РјРµСЃСЏС†).\n"
+        "в”Ђ Р‘РѕС‚ Р±СѓРґРµС‚ РїСѓР±Р»РёРєРѕРІР°С‚СЊ С‚РѕРІР°СЂС‹ РёР· РЅСѓР¶РЅРѕРіРѕ РјР°РіР°Р·РёРЅР° РїРѕ СЂР°СЃРїРёСЃР°РЅРёСЋ.\n\n"
+        "<b>рџ—‘ РђРІС‚РѕСѓРґР°Р»РµРЅРёРµ РїРѕСЃС‚РѕРІ:</b>\n"
+        "в”Ђ РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РїРѕСЃС‚С‹ СѓРґР°Р»СЏСЋС‚СЃСЏ С‡РµСЂРµР· 7 РґРЅРµР№. РњРѕР¶РЅРѕ РёР·РјРµРЅРёС‚СЊ (РѕС‚ 1 С‡Р°СЃР° РґРѕ 30 РґРЅРµР№) РёР»Рё РІС‹РєР»СЋС‡РёС‚СЊ.\n"
+        "в”Ђ РџРµСЂРµС…РѕРґС‹ Р·Р°СЃС‡РёС‚С‹РІР°СЋС‚СЃСЏ 30 РґРЅРµР№ (РєСѓРєР° Admitad), РґР°Р¶Рµ РїРѕСЃР»Рµ СѓРґР°Р»РµРЅРёСЏ РїРѕСЃС‚Р°.\n\n"
+        "РџРѕ РІРѕРїСЂРѕСЃР°Рј РїРёС€РёС‚Рµ: рџ‘‰ <a href='https://t.me/Zigih90'>@Zigih90</a>"
     )
     await safe_edit(callback.message, text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+            [InlineKeyboardButton(text="рџ”™ РќР°Р·Р°Рґ", callback_data="cabinet:open")]
         ]),
         parse_mode=ParseMode.HTML
     )
 
 # ---------------------------------------------------------------------------
-# Административные команды
+# РђРґРјРёРЅРёСЃС‚СЂР°С‚РёРІРЅС‹Рµ РєРѕРјР°РЅРґС‹
 # ---------------------------------------------------------------------------
 
 
@@ -1889,9 +1742,9 @@ async def debug_subscription(message: Message):
     user = conn.execute("SELECT role, subscription_until FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
     conn.close()
     if user:
-        await message.answer(f"DEBUG:\nРоль: {user['role']}\nПодписка до: {user['subscription_until']}")
+        await message.answer(f"DEBUG:\nР РѕР»СЊ: {user['role']}\nРџРѕРґРїРёСЃРєР° РґРѕ: {user['subscription_until']}")
     else:
-        await message.answer("Пользователь не найден в БД!")
+        await message.answer("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ РІ Р‘Р”!")
 
 @router.message(Command("fix_channels"))
 async def fix_duplicate_channels(message: Message) -> None:
@@ -1901,24 +1754,24 @@ async def fix_duplicate_channels(message: Message) -> None:
     conn.execute("DELETE FROM channels WHERE id NOT IN (SELECT MIN(id) FROM channels GROUP BY user_id, channel_id)")
     conn.commit()
     conn.close()
-    await message.answer("✅ Дубликаты каналов удалены.")
+    await message.answer("вњ… Р”СѓР±Р»РёРєР°С‚С‹ РєР°РЅР°Р»РѕРІ СѓРґР°Р»РµРЅС‹.")
 
 @router.callback_query(F.data.startswith("admin:"))
 async def handle_admin_callbacks(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id):
-        await call.answer("⛔ Нет доступа", show_alert=True)
+        await call.answer("в›” РќРµС‚ РґРѕСЃС‚СѓРїР°", show_alert=True)
         return
     action = call.data.split(":")[1]
     if action == "broadcast":
         await call.answer()
         await state.set_state(AdminStates.broadcast_text)
-        await call.message.answer("✏️ Введи текст рассылки:")
+        await call.message.answer("вњЏпёЏ Р’РІРµРґРё С‚РµРєСЃС‚ СЂР°СЃСЃС‹Р»РєРё:")
     elif action == "extend_sub":
         await call.answer()
         await state.set_state(AdminStates.extend_user_id)
-        await call.message.answer("👤 Введи user_id пользователя:")
+        await call.message.answer("рџ‘¤ Р’РІРµРґРё user_id РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ:")
     else:
-        await call.answer("Неизвестная команда", show_alert=True)
+        await call.answer("РќРµРёР·РІРµСЃС‚РЅР°СЏ РєРѕРјР°РЅРґР°", show_alert=True)
 
 
 @router.callback_query(F.data == "payout:request")
@@ -1929,31 +1782,31 @@ async def cb_payout_request(callback: CallbackQuery, state: FSMContext):
         user = conn.execute("SELECT balance_available, tax_status FROM users WHERE user_id=?", (user_id,)).fetchone()
         available = user["balance_available"]
         tax_status = user["tax_status"]
-        # Проверка налогового статуса
+        # РџСЂРѕРІРµСЂРєР° РЅР°Р»РѕРіРѕРІРѕРіРѕ СЃС‚Р°С‚СѓСЃР°
         if tax_status != "business":
-            await callback.answer("❌ Вывод средств доступен только самозанятым/ИП.", show_alert=True)
+            await callback.answer("вќЊ Р’С‹РІРѕРґ СЃСЂРµРґСЃС‚РІ РґРѕСЃС‚СѓРїРµРЅ С‚РѕР»СЊРєРѕ СЃР°РјРѕР·Р°РЅСЏС‚С‹Рј/РРџ.", show_alert=True)
             return
-        # Проверка активных заявок
+        # РџСЂРѕРІРµСЂРєР° Р°РєС‚РёРІРЅС‹С… Р·Р°СЏРІРѕРє
         active = conn.execute(
             "SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')",
             (user_id,)
         ).fetchone()
         if active:
-            await callback.answer("❌ У вас уже есть активная заявка на выплату.", show_alert=True)
+            await callback.answer("вќЊ РЈ РІР°СЃ СѓР¶Рµ РµСЃС‚СЊ Р°РєС‚РёРІРЅР°СЏ Р·Р°СЏРІРєР° РЅР° РІС‹РїР»Р°С‚Сѓ.", show_alert=True)
             return
         if available < MIN_PAYOUT:
-            await callback.answer(f"❌ Минимальная сумма вывода: {MIN_PAYOUT} ₽", show_alert=True)
+            await callback.answer(f"вќЊ РњРёРЅРёРјР°Р»СЊРЅР°СЏ СЃСѓРјРјР° РІС‹РІРѕРґР°: {MIN_PAYOUT} в‚Ѕ", show_alert=True)
             return
     finally:
         conn.close()
 
-    await callback.message.answer(
-        f"💸 Укажите реквизиты для выплаты (номер карты, банк, TON-кошелёк или другие данные):\n"
-        f"Доступно: <b>{available:.2f} ₽</b>\n\n"
-        f"Пример: <i>Сбербанк 2202 2081 0829 0025</i>",
+    await safe_edit(callback.message,
+        f"рџ’ё РЈРєР°Р¶РёС‚Рµ СЂРµРєРІРёР·РёС‚С‹ РґР»СЏ РІС‹РїР»Р°С‚С‹ (РЅРѕРјРµСЂ РєР°СЂС‚С‹, Р±Р°РЅРє, TON-РєРѕС€РµР»С‘Рє РёР»Рё РґСЂСѓРіРёРµ РґР°РЅРЅС‹Рµ):\n"
+        f"Р”РѕСЃС‚СѓРїРЅРѕ: <b>{available:.2f} в‚Ѕ</b>\n\n"
+        f"РџСЂРёРјРµСЂ: <i>РЎР±РµСЂР±Р°РЅРє 2202 2081 0829 0025</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:finance")]
+            [InlineKeyboardButton(text="рџ”™ РћС‚РјРµРЅР°", callback_data="menu:finance")]
         ])
     )
     await state.set_state(PayoutStates.waiting_for_card)
@@ -1965,8 +1818,8 @@ async def process_payout_message(message: Message, state: FSMContext):
 
     if len(text) < 3 or len(text) > 100:
         await message.answer(
-            "❌ Реквизиты слишком короткие или длинные (3–100 символов).\n"
-            "Пример: <i>Сбербанк 2202 2081 0829 0025</i> или <i>UQAbc123...</i>",
+            "вќЊ Р РµРєРІРёР·РёС‚С‹ СЃР»РёС€РєРѕРј РєРѕСЂРѕС‚РєРёРµ РёР»Рё РґР»РёРЅРЅС‹Рµ (3вЂ“100 СЃРёРјРІРѕР»РѕРІ).\n"
+            "РџСЂРёРјРµСЂ: <i>РЎР±РµСЂР±Р°РЅРє 2202 2081 0829 0025</i> РёР»Рё <i>UQAbc123...</i>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -1976,16 +1829,16 @@ async def process_payout_message(message: Message, state: FSMContext):
         user = conn.execute("SELECT balance_available, tax_status FROM users WHERE user_id=?", (user_id,)).fetchone()
         available = user["balance_available"]
         if user["tax_status"] != "business":
-            await message.answer("❌ Вывод средств недоступен для вашего налогового статуса.")
+            await message.answer("вќЊ Р’С‹РІРѕРґ СЃСЂРµРґСЃС‚РІ РЅРµРґРѕСЃС‚СѓРїРµРЅ РґР»СЏ РІР°С€РµРіРѕ РЅР°Р»РѕРіРѕРІРѕРіРѕ СЃС‚Р°С‚СѓСЃР°.")
             await state.clear()
             return
         if available < MIN_PAYOUT:
-            await message.answer("❌ Недостаточно средств.")
+            await message.answer("вќЊ РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ СЃСЂРµРґСЃС‚РІ.")
             await state.clear()
             return
-        # Списание баланса сразу
+        # РЎРїРёСЃР°РЅРёРµ Р±Р°Р»Р°РЅСЃР° СЃСЂР°Р·Сѓ
         conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (available, user_id))
-        # Создание заявки со статусом processing
+        # РЎРѕР·РґР°РЅРёРµ Р·Р°СЏРІРєРё СЃРѕ СЃС‚Р°С‚СѓСЃРѕРј processing
         conn.execute(
             "INSERT INTO payout_requests (user_id, amount, message, status) VALUES (?, ?, ?, 'processing')",
             (user_id, available, text)
@@ -1996,31 +1849,31 @@ async def process_payout_message(message: Message, state: FSMContext):
         conn.close()
 
     await message.answer(
-        f"✅ Заявка на выплату <b>{available:.2f} ₽</b> создана и передана администратору. "
-        f"Номер заявки: <b>#{request_id}</b>.\nОжидайте уведомления о переводе.",
+        f"вњ… Р—Р°СЏРІРєР° РЅР° РІС‹РїР»Р°С‚Сѓ <b>{available:.2f} в‚Ѕ</b> СЃРѕР·РґР°РЅР° Рё РїРµСЂРµРґР°РЅР° Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂСѓ. "
+        f"РќРѕРјРµСЂ Р·Р°СЏРІРєРё: <b>#{request_id}</b>.\nРћР¶РёРґР°Р№С‚Рµ СѓРІРµРґРѕРјР»РµРЅРёСЏ Рѕ РїРµСЂРµРІРѕРґРµ.",
         parse_mode=ParseMode.HTML
     )
 
-    # Уведомление админам
+    # РЈРІРµРґРѕРјР»РµРЅРёРµ Р°РґРјРёРЅР°Рј
     for admin_id in ADMIN_IDS:
         try:
             await message.bot.send_message(
                 admin_id,
-                f"🔔 Новый запрос на выплату!\n"
-                f"Пользователь: {user_id}\n"
-                f"Сумма: {available:.2f} ₽\n"
-                f"Заявка #{request_id}\n"
-                f"Реквизиты: {text[:200]}",
+                f"рџ”” РќРѕРІС‹Р№ Р·Р°РїСЂРѕСЃ РЅР° РІС‹РїР»Р°С‚Сѓ!\n"
+                f"РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ: {user_id}\n"
+                f"РЎСѓРјРјР°: {available:.2f} в‚Ѕ\n"
+                f"Р—Р°СЏРІРєР° #{request_id}\n"
+                f"Р РµРєРІРёР·РёС‚С‹: {text[:200]}",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🌐 Открыть админку", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))]
+                    [InlineKeyboardButton(text="рџЊђ РћС‚РєСЂС‹С‚СЊ Р°РґРјРёРЅРєСѓ", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))]
                 ])
             )
         except Exception as e:
-            logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
+            logger.error(f"РќРµ СѓРґР°Р»РѕСЃСЊ СѓРІРµРґРѕРјРёС‚СЊ Р°РґРјРёРЅР° {admin_id}: {e}")
 
     await state.clear()
 # ---------------------------------------------------------------------------
-# Колбэк "cabinet:open" (из интерфейса)
+# РљРѕР»Р±СЌРє "cabinet:open" (РёР· РёРЅС‚РµСЂС„РµР№СЃР°)
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "cabinet:open")
 async def cb_open_cabinet(callback: CallbackQuery):
@@ -2028,7 +1881,7 @@ async def cb_open_cabinet(callback: CallbackQuery):
     await callback.answer()
 
 # ---------------------------------------------------------------------------
-# Планировщик и периодические задачи
+# РџР»Р°РЅРёСЂРѕРІС‰РёРє Рё РїРµСЂРёРѕРґРёС‡РµСЃРєРёРµ Р·Р°РґР°С‡Рё
 # ---------------------------------------------------------------------------
 
 
@@ -2059,9 +1912,9 @@ async def cleanup_old_posts() -> None:
         conn.execute("DELETE FROM subid_stats WHERE subid1 NOT IN (SELECT DISTINCT subid1 FROM posts WHERE subid1 IS NOT NULL AND subid1 != '')")
         orphan_count = conn.execute("SELECT changes()").fetchone()[0]
         conn.commit()
-        logger.info(f"Очистка: {draft_count} черновиков, {pub_count} опубликованных, {orphan_count} orphan subid_stats")
+        logger.info(f"РћС‡РёСЃС‚РєР°: {draft_count} С‡РµСЂРЅРѕРІРёРєРѕРІ, {pub_count} РѕРїСѓР±Р»РёРєРѕРІР°РЅРЅС‹С…, {orphan_count} orphan subid_stats")
     except Exception as e:
-        logger.error(f"Ошибка очистки: {e}")
+        logger.error(f"РћС€РёР±РєР° РѕС‡РёСЃС‚РєРё: {e}")
     finally:
         conn.close()
 
@@ -2077,7 +1930,7 @@ async def cleanup_old_report_files() -> None:
             f.unlink()
             removed += 1
     if removed:
-        logger.info(f"Очистка отчётов: удалено {removed} файлов старше 90 дней")
+        logger.info(f"РћС‡РёСЃС‚РєР° РѕС‚С‡С‘С‚РѕРІ: СѓРґР°Р»РµРЅРѕ {removed} С„Р°Р№Р»РѕРІ СЃС‚Р°СЂС€Рµ 90 РґРЅРµР№")
 
 async def auto_delete_posts(bot: Bot):
     conn = get_db()
@@ -2109,9 +1962,9 @@ async def auto_delete_posts(bot: Bot):
             conn.execute("UPDATE posts SET status = 'deleted' WHERE id = ?", (row["id"],))
         conn.commit()
         if deleted_count:
-            logger.info(f"Автоудаление: удалено {deleted_count} постов из каналов")
+            logger.info(f"РђРІС‚РѕСѓРґР°Р»РµРЅРёРµ: СѓРґР°Р»РµРЅРѕ {deleted_count} РїРѕСЃС‚РѕРІ РёР· РєР°РЅР°Р»РѕРІ")
     except Exception as e:
-        logger.error(f"Ошибка автоудаления: {e}")
+        logger.error(f"РћС€РёР±РєР° Р°РІС‚РѕСѓРґР°Р»РµРЅРёСЏ: {e}")
     finally:
         conn.close()
 
@@ -2148,17 +2001,17 @@ async def daily_report(bot: Bot):
 
     with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
-        writer.writerow(["Канал (ID)", "SubID", "Прямая ссылка на пост", "Время (UTC)", "Название канала"])
+        writer.writerow(["РљР°РЅР°Р» (ID)", "SubID", "РџСЂСЏРјР°СЏ СЃСЃС‹Р»РєР° РЅР° РїРѕСЃС‚", "Р’СЂРµРјСЏ (UTC)", "РќР°Р·РІР°РЅРёРµ РєР°РЅР°Р»Р°"])
         for ch_id, subid, link, ts, title in rows:
             writer.writerow([ch_id, subid or "", link or "", ts or "", title or ""])
 
     caption = (
-        f"📊 <b>Ежедневный отчёт</b>\n"
-        f"📅 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC\n\n"
-        f"🟢 Активных каналов: <b>{active_channels}</b>\n"
-        f"📬 Всего постов: <b>{total_posts}</b>\n"
-        f"💰 Новых транзакций: <b>{new_tx}</b>\n\n"
-        f"📎 Файл сохранён на сервере: <code>{filepath}</code>"
+        f"рџ“Љ <b>Р•Р¶РµРґРЅРµРІРЅС‹Р№ РѕС‚С‡С‘С‚</b>\n"
+        f"рџ“… {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC\n\n"
+        f"рџџў РђРєС‚РёРІРЅС‹С… РєР°РЅР°Р»РѕРІ: <b>{active_channels}</b>\n"
+        f"рџ“¬ Р’СЃРµРіРѕ РїРѕСЃС‚РѕРІ: <b>{total_posts}</b>\n"
+        f"рџ’° РќРѕРІС‹С… С‚СЂР°РЅР·Р°РєС†РёР№: <b>{new_tx}</b>\n\n"
+        f"рџ“Ћ Р¤Р°Р№Р» СЃРѕС…СЂР°РЅС‘РЅ РЅР° СЃРµСЂРІРµСЂРµ: <code>{filepath}</code>"
     )
 
     admin_id = ADMIN_IDS[0] if ADMIN_IDS else None
@@ -2167,13 +2020,13 @@ async def daily_report(bot: Bot):
             from aiogram.types import FSInputFile
             doc = FSInputFile(filepath, filename=filename)
             await bot.send_document(admin_id, document=doc, caption=caption, parse_mode="HTML")
-            logger.info(f"Ежедневный отчёт отправлен и сохранён как {filepath}")
+            logger.info(f"Р•Р¶РµРґРЅРµРІРЅС‹Р№ РѕС‚С‡С‘С‚ РѕС‚РїСЂР°РІР»РµРЅ Рё СЃРѕС…СЂР°РЅС‘РЅ РєР°Рє {filepath}")
         except Exception as e:
-            logger.error(f"Ошибка отправки ежедневного отчёта: {e}")
+            logger.error(f"РћС€РёР±РєР° РѕС‚РїСЂР°РІРєРё РµР¶РµРґРЅРµРІРЅРѕРіРѕ РѕС‚С‡С‘С‚Р°: {e}")
 
 
 async def check_receipt_reminders(bot: Bot):
-    """Напоминает блогерам о необходимости загрузить чек через 12 часов после отправки денег."""
+    """РќР°РїРѕРјРёРЅР°РµС‚ Р±Р»РѕРіРµСЂР°Рј Рѕ РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё Р·Р°РіСЂСѓР·РёС‚СЊ С‡РµРє С‡РµСЂРµР· 12 С‡Р°СЃРѕРІ РїРѕСЃР»Рµ РѕС‚РїСЂР°РІРєРё РґРµРЅРµРі."""
     conn = get_db()
     try:
         now = datetime.now(timezone.utc)
@@ -2189,22 +2042,22 @@ async def check_receipt_reminders(bot: Bot):
             try:
                 await bot.send_message(
                     row["user_id"],
-                    f"⏰ <b>Напоминание о чеке</b>\n\n"
-                    f"Вам был отправлен перевод на сумму <b>{row['amount']} ₽</b>.\n"
-                    "Согласно оферте, вы обязаны загрузить чек из приложения «Мой налог» в течение 24 часов.\n"
-                    "Пожалуйста, перейдите в веб-статистику и нажмите «📤 Отправить чек».",
+                    f"вЏ° <b>РќР°РїРѕРјРёРЅР°РЅРёРµ Рѕ С‡РµРєРµ</b>\n\n"
+                    f"Р’Р°Рј Р±С‹Р» РѕС‚РїСЂР°РІР»РµРЅ РїРµСЂРµРІРѕРґ РЅР° СЃСѓРјРјСѓ <b>{row['amount']} в‚Ѕ</b>.\n"
+                    "РЎРѕРіР»Р°СЃРЅРѕ РѕС„РµСЂС‚Рµ, РІС‹ РѕР±СЏР·Р°РЅС‹ Р·Р°РіСЂСѓР·РёС‚СЊ С‡РµРє РёР· РїСЂРёР»РѕР¶РµРЅРёСЏ В«РњРѕР№ РЅР°Р»РѕРіВ» РІ С‚РµС‡РµРЅРёРµ 24 С‡Р°СЃРѕРІ.\n"
+                    "РџРѕР¶Р°Р»СѓР№СЃС‚Р°, РїРµСЂРµР№РґРёС‚Рµ РІ РІРµР±-СЃС‚Р°С‚РёСЃС‚РёРєСѓ Рё РЅР°Р¶РјРёС‚Рµ В«рџ“¤ РћС‚РїСЂР°РІРёС‚СЊ С‡РµРєВ».",
                     parse_mode=ParseMode.HTML
                 )
                 conn.execute("UPDATE payout_requests SET receipt_reminded = 1 WHERE id = ?", (row["id"],))
                 conn.commit()
-                logger.info(f"Отправлено напоминание о чеке по заявке #{row['id']}")
+                logger.info(f"РћС‚РїСЂР°РІР»РµРЅРѕ РЅР°РїРѕРјРёРЅР°РЅРёРµ Рѕ С‡РµРєРµ РїРѕ Р·Р°СЏРІРєРµ #{row['id']}")
             except Exception as e:
-                logger.error(f"Ошибка отправки напоминания для заявки #{row['id']}: {e}")
+                logger.error(f"РћС€РёР±РєР° РѕС‚РїСЂР°РІРєРё РЅР°РїРѕРјРёРЅР°РЅРёСЏ РґР»СЏ Р·Р°СЏРІРєРё #{row['id']}: {e}")
     finally:
         conn.close()
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
-    logger.info("🔄 Настройка планировщика...")
+    logger.info("рџ”„ РќР°СЃС‚СЂРѕР№РєР° РїР»Р°РЅРёСЂРѕРІС‰РёРєР°...")
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     
     scheduler.add_job(unpin_old_messages, trigger="interval", minutes=30, kwargs={"bot": bot}, id="unpin_vip_posts", replace_existing=True)
@@ -2222,13 +2075,13 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(generate_monthly_ord_reports, trigger="cron", day=1, hour=0, minute=5, kwargs={"bot": bot}, id="monthly_ord_reports", replace_existing=True)
     scheduler.add_job(auto_delete_posts, trigger="interval", minutes=15, kwargs={"bot": bot}, id="auto_delete_posts", replace_existing=True)
     
-    logger.info("✅ Все задачи добавлены в планировщик")
+    logger.info("вњ… Р’СЃРµ Р·Р°РґР°С‡Рё РґРѕР±Р°РІР»РµРЅС‹ РІ РїР»Р°РЅРёСЂРѕРІС‰РёРє")
     return scheduler
 # ---------------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------------
 async def main() -> None:
-    logger.info("=== AutoPost Bot + Web Admin Panel запускается ===")
+    logger.info("=== AutoPost Bot + Web Admin Panel Р·Р°РїСѓСЃРєР°РµС‚СЃСЏ ===")
     init_db()
 
     bot = Bot(
@@ -2243,47 +2096,45 @@ async def main() -> None:
     dp.include_router(router)
     dp.include_router(saas_router)
 
-    from handlers.social import router as social_router
-    dp.include_router(social_router)
     scheduler = setup_scheduler(bot)
     scheduler.start()
-    logger.info("Планировщик (APScheduler) запущен")
+    logger.info("РџР»Р°РЅРёСЂРѕРІС‰РёРє (APScheduler) Р·Р°РїСѓС‰РµРЅ")
 
-    # Бэктейл существующих каналов в Admitad subnetwork
+    # Р‘СЌРєС‚РµР№Р» СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёС… РєР°РЅР°Р»РѕРІ РІ Admitad subnetwork
     try:
         from services.admitad_subnetwork import backfill_existing_channels
         asyncio.create_task(backfill_existing_channels())
     except Exception as e:
-        logger.warning(f"⚠️ Запуск бэктейла subnetwork отложен: {e}")
+        logger.warning(f"вљ пёЏ Р—Р°РїСѓСЃРє Р±СЌРєС‚РµР№Р»Р° subnetwork РѕС‚Р»РѕР¶РµРЅ: {e}")
 
-    # ===== КОМАНДЫ ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ =====
+    # ===== РљРћРњРђРќР”Р« Р”Р›РЇ Р’РЎР•РҐ РџРћР›Р¬Р—РћР’РђРўР•Р›Р•Р™ =====
     await bot.set_my_commands(
         commands=[
-            BotCommand(command="start", description="Главное меню"),
-            BotCommand(command="cabinet", description="Личный кабинет"),
-            BotCommand(command="help", description="Справка и контакты"),
+            BotCommand(command="start", description="Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ"),
+            BotCommand(command="cabinet", description="Р›РёС‡РЅС‹Р№ РєР°Р±РёРЅРµС‚"),
+            BotCommand(command="help", description="РЎРїСЂР°РІРєР° Рё РєРѕРЅС‚Р°РєС‚С‹"),
         ],
         scope=BotCommandScopeDefault(),
     )
 
-    # ===== КОМАНДЫ ДЛЯ АДМИНОВ =====
+    # ===== РљРћРњРђРќР”Р« Р”Р›РЇ РђР”РњРРќРћР’ =====
     for admin_id in ADMIN_IDS:
         try:
             await bot.set_my_commands(
                 commands=[
-                    BotCommand(command="start", description="Панель администратора"),
-                    BotCommand(command="cabinet", description="Панель администратора"),
-                    BotCommand(command="debug_sub", description="Проверить подписку пользователя"),
-                    BotCommand(command="fix_channels", description="Удалить дубликаты каналов"),
-                    BotCommand(command="beta", description="Управление бета-тестерами"),
-                    BotCommand(command="preview", description="Предпросмотр поста"),
+                    BotCommand(command="start", description="РџР°РЅРµР»СЊ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°"),
+                    BotCommand(command="cabinet", description="РџР°РЅРµР»СЊ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°"),
+                    BotCommand(command="debug_sub", description="РџСЂРѕРІРµСЂРёС‚СЊ РїРѕРґРїРёСЃРєСѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ"),
+                    BotCommand(command="fix_channels", description="РЈРґР°Р»РёС‚СЊ РґСѓР±Р»РёРєР°С‚С‹ РєР°РЅР°Р»РѕРІ"),
+                    BotCommand(command="beta", description="РЈРїСЂР°РІР»РµРЅРёРµ Р±РµС‚Р°-С‚РµСЃС‚РµСЂР°РјРё"),
+                    BotCommand(command="preview", description="РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ РїРѕСЃС‚Р°"),
                 ],
                 scope=BotCommandScopeChat(chat_id=admin_id),
             )
         except TelegramBadRequest as e:
-            logger.warning(f"Не удалось установить команды для админа {admin_id}: {e}")
+            logger.warning(f"РќРµ СѓРґР°Р»РѕСЃСЊ СѓСЃС‚Р°РЅРѕРІРёС‚СЊ РєРѕРјР°РЅРґС‹ РґР»СЏ Р°РґРјРёРЅР° {admin_id}: {e}")
 
-    # ===== КОМАНДЫ ДЛЯ БЕТА-ТЕСТЕРОВ =====
+    # ===== РљРћРњРђРќР”Р« Р”Р›РЇ Р‘Р•РўРђ-РўР•РЎРўР•Р РћР’ =====
     for tester in get_beta_testers():
         user_id = tester["user_id"]
         if user_id in ADMIN_IDS:
@@ -2291,17 +2142,17 @@ async def main() -> None:
         try:
             await bot.set_my_commands(
                 commands=[
-                    BotCommand(command="start", description="Главное меню"),
-                    BotCommand(command="cabinet", description="Личный кабинет"),
-                    BotCommand(command="preview", description="Предпросмотр поста"),
+                    BotCommand(command="start", description="Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ"),
+                    BotCommand(command="cabinet", description="Р›РёС‡РЅС‹Р№ РєР°Р±РёРЅРµС‚"),
+                    BotCommand(command="preview", description="РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ РїРѕСЃС‚Р°"),
                 ],
                 scope=BotCommandScopeChat(chat_id=user_id),
             )
-            logger.info(f"Команды для бета-тестера {user_id} установлены")
+            logger.info(f"РљРѕРјР°РЅРґС‹ РґР»СЏ Р±РµС‚Р°-С‚РµСЃС‚РµСЂР° {user_id} СѓСЃС‚Р°РЅРѕРІР»РµРЅС‹")
         except Exception as e:
-            logger.warning(f"Не удалось установить команды для {user_id}: {e}")
+            logger.warning(f"РќРµ СѓРґР°Р»РѕСЃСЊ СѓСЃС‚Р°РЅРѕРІРёС‚СЊ РєРѕРјР°РЅРґС‹ РґР»СЏ {user_id}: {e}")
 
-    # ===== ЗАПУСК FASTAPI =====
+    # ===== Р—РђРџРЈРЎРљ FASTAPI =====
     fastapi_app = create_app(bot)
     config = uvicorn.Config(
         fastapi_app,
@@ -2311,7 +2162,7 @@ async def main() -> None:
     )
     server = uvicorn.Server(config)
 
-    logger.info(f"🌐 Web Admin Panel доступен по адресу: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
+    logger.info(f"рџЊђ Web Admin Panel РґРѕСЃС‚СѓРїРµРЅ РїРѕ Р°РґСЂРµСЃСѓ: http://{WEBAPP_HOST}:{WEBAPP_PORT}/admin")
 
     try:
         await asyncio.gather(
@@ -2322,10 +2173,10 @@ async def main() -> None:
     finally:
         await bot.session.close()
         scheduler.shutdown()
-        logger.info("Бот и планировщик остановлены")
+        logger.info("Р‘РѕС‚ Рё РїР»Р°РЅРёСЂРѕРІС‰РёРє РѕСЃС‚Р°РЅРѕРІР»РµРЅС‹")
 
 async def generate_monthly_ord_reports(bot: Bot):
-    """Генерирует отчёт ОРД за прошедший месяц и отправляет пользователям в Telegram"""
+    """Р“РµРЅРµСЂРёСЂСѓРµС‚ РѕС‚С‡С‘С‚ РћР Р” Р·Р° РїСЂРѕС€РµРґС€РёР№ РјРµСЃСЏС† Рё РѕС‚РїСЂР°РІР»СЏРµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏРј РІ Telegram"""
     now = datetime.now(timezone.utc)
     first_of_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     last_month_end = first_of_this_month - timedelta(seconds=1)
@@ -2371,9 +2222,9 @@ async def generate_monthly_ord_reports(bot: Bot):
             workbook = xlsxwriter.Workbook(output, {'in_memory': True, 'remove_timezone': True})
             worksheet = workbook.add_worksheet("ORD")
             headers = [
-                "ERID", "Площадка (Telegram)", "Тип площадки",
-                "Количество показов", "Количество переходов", "Сумма потраченная",
-                "Дата начала", "Дата окончания", "Ссылка на пост", "Название канала"
+                "ERID", "РџР»РѕС‰Р°РґРєР° (Telegram)", "РўРёРї РїР»РѕС‰Р°РґРєРё",
+                "РљРѕР»РёС‡РµСЃС‚РІРѕ РїРѕРєР°Р·РѕРІ", "РљРѕР»РёС‡РµСЃС‚РІРѕ РїРµСЂРµС…РѕРґРѕРІ", "РЎСѓРјРјР° РїРѕС‚СЂР°С‡РµРЅРЅР°СЏ",
+                "Р”Р°С‚Р° РЅР°С‡Р°Р»Р°", "Р”Р°С‚Р° РѕРєРѕРЅС‡Р°РЅРёСЏ", "РЎСЃС‹Р»РєР° РЅР° РїРѕСЃС‚", "РќР°Р·РІР°РЅРёРµ РєР°РЅР°Р»Р°"
             ]
             for col, header in enumerate(headers):
                 worksheet.write(0, col, header)
@@ -2418,20 +2269,20 @@ async def generate_monthly_ord_reports(bot: Bot):
             await bot.send_document(
                 chat_id=user_id,
                 document=document,
-                caption=f"📊 Отчёт ОРД за {month_label}\n\nВсего постов: {len(posts)}"
+                caption=f"рџ“Љ РћС‚С‡С‘С‚ РћР Р” Р·Р° {month_label}\n\nР’СЃРµРіРѕ РїРѕСЃС‚РѕРІ: {len(posts)}"
             )
-            logger.info(f"Отчёт ОРД за {month_label} отправлен пользователю {user_id}")
+            logger.info(f"РћС‚С‡С‘С‚ РћР Р” Р·Р° {month_label} РѕС‚РїСЂР°РІР»РµРЅ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ {user_id}")
         except Exception as e:
-            logger.error(f"Ошибка генерации отчёта для user_id={user_id}: {e}")
+            logger.error(f"РћС€РёР±РєР° РіРµРЅРµСЂР°С†РёРё РѕС‚С‡С‘С‚Р° РґР»СЏ user_id={user_id}: {e}")
 async def backup_database_to_telegram(bot: Bot):
     db_path = DB_PATH
     if not os.path.exists(db_path):
-        logger.error("Бэкап: файл базы данных не найден")
+        logger.error("Р‘СЌРєР°Рї: С„Р°Р№Р» Р±Р°Р·С‹ РґР°РЅРЅС‹С… РЅРµ РЅР°Р№РґРµРЅ")
         return
 
     admin_id = ADMIN_IDS[0] if ADMIN_IDS else None
     if not admin_id:
-        logger.error("Бэкап: не указан администратор")
+        logger.error("Р‘СЌРєР°Рї: РЅРµ СѓРєР°Р·Р°РЅ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ")
         return
 
     try:
@@ -2441,11 +2292,11 @@ async def backup_database_to_telegram(bot: Bot):
         await bot.send_document(
             chat_id=admin_id,
             document=db_file,
-            caption=f"📦 Ежедневный бэкап базы данных ({timestamp})"
+            caption=f"рџ“¦ Р•Р¶РµРґРЅРµРІРЅС‹Р№ Р±СЌРєР°Рї Р±Р°Р·С‹ РґР°РЅРЅС‹С… ({timestamp})"
         )
-        logger.info("Бэкап базы данных отправлен администратору")
+        logger.info("Р‘СЌРєР°Рї Р±Р°Р·С‹ РґР°РЅРЅС‹С… РѕС‚РїСЂР°РІР»РµРЅ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂСѓ")
     except Exception as e:
-        logger.error(f"Ошибка при отправке бэкапа: {e}")
+        logger.error(f"РћС€РёР±РєР° РїСЂРё РѕС‚РїСЂР°РІРєРµ Р±СЌРєР°РїР°: {e}")
 
 @router.message(Command("beta"))
 async def cmd_beta(message: Message):
@@ -2455,10 +2306,10 @@ async def cmd_beta(message: Message):
     args = message.text.split()
     if len(args) < 2:
         await message.answer(
-            "📋 Использование:\n"
-            "/beta add USER_ID — добавить тестера\n"
-            "/beta remove USER_ID — убрать тестера\n"
-            "/beta list — список тестеров"
+            "рџ“‹ РСЃРїРѕР»СЊР·РѕРІР°РЅРёРµ:\n"
+            "/beta add USER_ID вЂ” РґРѕР±Р°РІРёС‚СЊ С‚РµСЃС‚РµСЂР°\n"
+            "/beta remove USER_ID вЂ” СѓР±СЂР°С‚СЊ С‚РµСЃС‚РµСЂР°\n"
+            "/beta list вЂ” СЃРїРёСЃРѕРє С‚РµСЃС‚РµСЂРѕРІ"
         )
         return
     
@@ -2466,44 +2317,44 @@ async def cmd_beta(message: Message):
     try:
         if action == "add":
             if len(args) < 3:
-                await message.answer("❌ Укажите USER_ID")
+                await message.answer("вќЊ РЈРєР°Р¶РёС‚Рµ USER_ID")
                 return
             user_id = int(args[2])
             if add_beta_tester(user_id):
-                await message.answer(f"✅ Пользователь {user_id} добавлен в бета-тестеры")
+                await message.answer(f"вњ… РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ {user_id} РґРѕР±Р°РІР»РµРЅ РІ Р±РµС‚Р°-С‚РµСЃС‚РµСЂС‹")
             else:
-                await message.answer(f"❌ Не удалось добавить пользователя {user_id}")
+                await message.answer(f"вќЊ РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕР±Р°РІРёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ {user_id}")
         elif action == "remove":
             if len(args) < 3:
-                await message.answer("❌ Укажите USER_ID")
+                await message.answer("вќЊ РЈРєР°Р¶РёС‚Рµ USER_ID")
                 return
             user_id = int(args[2])
             if remove_beta_tester(user_id):
-                await message.answer(f"✅ Пользователь {user_id} удалён из бета-тестеров")
+                await message.answer(f"вњ… РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ {user_id} СѓРґР°Р»С‘РЅ РёР· Р±РµС‚Р°-С‚РµСЃС‚РµСЂРѕРІ")
             else:
-                await message.answer(f"❌ Не удалось удалить пользователя {user_id}")
+                await message.answer(f"вќЊ РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ {user_id}")
         elif action == "list":
             testers = get_beta_testers()
             if testers:
-                text = "👥 Бета-тестеры:\n"
+                text = "рџ‘Ґ Р‘РµС‚Р°-С‚РµСЃС‚РµСЂС‹:\n"
                 for t in testers:
-                    text += f"- {t['user_id']} ({t['username'] or 'без username'})\n"
+                    text += f"- {t['user_id']} ({t['username'] or 'Р±РµР· username'})\n"
                 await message.answer(text)
             else:
-                await message.answer("❌ Нет бета-тестеров")
+                await message.answer("вќЊ РќРµС‚ Р±РµС‚Р°-С‚РµСЃС‚РµСЂРѕРІ")
         else:
-            await message.answer("❌ Неизвестное действие")
+            await message.answer("вќЊ РќРµРёР·РІРµСЃС‚РЅРѕРµ РґРµР№СЃС‚РІРёРµ")
     except ValueError:
-        await message.answer("❌ USER_ID должен быть числом")
+        await message.answer("вќЊ USER_ID РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ С‡РёСЃР»РѕРј")
     except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
+        await message.answer(f"вќЊ РћС€РёР±РєР°: {e}")
 
 if __name__ == "__main__":
     while True:
         try:
             asyncio.run(main())
         except Exception as e:
-            logger.critical(f"Критическая ошибка: {e}. Перезапуск через 5 секунд...")
+            logger.critical(f"РљСЂРёС‚РёС‡РµСЃРєР°СЏ РѕС€РёР±РєР°: {e}. РџРµСЂРµР·Р°РїСѓСЃРє С‡РµСЂРµР· 5 СЃРµРєСѓРЅРґ...")
             import time as _time
             _time.sleep(5)
             continue

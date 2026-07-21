@@ -74,6 +74,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     <div class="nav">
         <a href="/my-stats?token={{ token }}" class="active">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
         <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
     </div>
     <h1>📊 Статистика</h1>
@@ -580,6 +581,8 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     <div class="nav">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}" class="active">📝 Шаблоны</a>
+        <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
+        <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
     </div>
     <h1>📝 Шаблоны постов</h1>
     <div class="tabs">
@@ -813,6 +816,316 @@ document.getElementById('video-template').addEventListener('input', updatePrevie
 document.getElementById('cpc-template').addEventListener('input', updatePreview);
 
 loadTemplates();
+</script>
+</body>
+</html>'''
+
+# ------------------------------------------------------------------------------
+# Шаблон страницы настроек
+# ------------------------------------------------------------------------------
+SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Настройки</title>
+<style>
+    body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+    h1 { color: #ff4444; font-size: 1.5em; margin-bottom: 20px; }
+    .nav { margin-bottom: 20px; display: flex; gap: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px; }
+    .nav a { color: #ff4444; text-decoration: none; padding: 8px 16px; border-radius: 8px; background: #333; white-space: nowrap; flex-shrink: 0; }
+    .nav a.active { background: #ff4444; color: #fff; }
+    .section { background: #222; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .section h2 { color: #ddd; font-size: 1.2em; margin: 0 0 15px 0; }
+    label { display: block; margin-bottom: 5px; color: #aaa; font-size: 0.9em; }
+    input, select { background: #333; border: 1px solid #555; color: #ddd; padding: 12px; border-radius: 8px; width: 100%; margin-bottom: 15px; font-size: 1em; box-sizing: border-box; }
+    input[type="checkbox"] { width: auto; margin-right: 8px; }
+    .checkbox-label { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; cursor: pointer; }
+    .checkbox-label input { margin: 0; }
+    .btn { background: #ff4444; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1em; cursor: pointer; width: 100%; }
+    .btn:hover { background: #e03333; }
+    .btn-small { background: #444; color: #ccc; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85em; }
+    .btn-small:hover { background: #555; }
+    .btn-danger { background: #c62828; }
+    .btn-danger:hover { background: #b71c1c; }
+    .success { color: #4caf50; margin-bottom: 10px; }
+    .error { color: #ff4444; margin-bottom: 10px; }
+    .store-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px; background: #2a2a2a; border-radius: 8px; }
+    .store-row label { margin: 0; flex: 1; }
+    .store-row select { width: auto; margin: 0; min-width: 120px; }
+    .channel-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px; background: #2a2a2a; border-radius: 8px; }
+    .channel-row span { flex: 1; }
+    .info-text { background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px; color: #aaa; line-height: 1.6; }
+    .info-text code { background: #333; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .tab-btn { background: #333; border: 1px solid #555; color: #ddd; padding: 10px 20px; border-radius: 8px; cursor: pointer; flex: 1; min-width: 100px; text-align: center; }
+    .tab-btn.active { background: #ff4444; color: #fff; border-color: #ff4444; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="nav">
+        <a href="/my-stats?token={{ token }}">📊 Статистика</a>
+        <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/settings?token={{ token }}" class="active">⚙️ Настройки</a>
+        <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
+    </div>
+    <h1>⚙️ Настройки</h1>
+
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="general">Основные</button>
+        <button class="tab-btn" data-tab="cyclic">Расписание</button>
+        <button class="tab-btn" data-tab="video">Видео-каналы</button>
+        <button class="tab-btn" data-tab="referral">Рефералка</button>
+    </div>
+
+    <div id="tab-general" class="tab-content active">
+        <div class="section">
+            <h2>Периодичность</h2>
+            <label>Интервал между постами (минуты)</label>
+            <input type="number" id="post-interval" min="5" value="60">
+        </div>
+        <div class="section">
+            <h2>Посты</h2>
+            <div class="checkbox-label"><input type="checkbox" id="auto-pin"> 📌 Авто-закреп постов на 24 часа</div>
+            <div class="checkbox-label"><input type="checkbox" id="notify-posts"> 🔔 Уведомлять о каждом опубликованном посте</div>
+            <div class="checkbox-label"><input type="checkbox" id="skip-preview"> 🚀 Публиковать без предпросмотра</div>
+            <label>Автоудаление постов</label>
+            <select id="auto-delete">
+                <option value="0">❌ Выключено</option>
+                <option value="1">1 час</option>
+                <option value="6">6 часов</option>
+                <option value="12">12 часов</option>
+                <option value="24">1 день</option>
+                <option value="48">2 дня</option>
+                <option value="72">3 дня</option>
+                <option value="168" selected>7 дней (по умолчанию)</option>
+                <option value="336">14 дней</option>
+                <option value="720">30 дней</option>
+            </select>
+        </div>
+        <div class="section">
+            <h2>Фильтр товаров</h2>
+            <label>Минимальная скидка для CPA-товаров (%) — <b>0</b> = все товары</label>
+            <input type="number" id="min-discount" min="0" max="100" value="0">
+        </div>
+        <div class="section">
+            <h2>Налоговый статус (для выплат)</h2>
+            <label>Выберите ваш статус в РФ</label>
+            <select id="tax-status">
+                <option value="">Не указан</option>
+                <option value="business">🧾 Самозанятый / ИП</option>
+                <option value="individual">👤 Физическое лицо</option>
+            </select>
+        </div>
+        <button class="btn" onclick="saveGeneralSettings()">💾 Сохранить настройки</button>
+        <div id="save-msg" style="margin-top:10px;"></div>
+    </div>
+
+    <div id="tab-cyclic" class="tab-content">
+        <div class="section">
+            <h2>⏰ Циклический постинг</h2>
+            <p style="color:#aaa; margin-bottom:15px;">Задайте периодичность для каждого магазина. Если расписание не настроено — магазины чередуются автоматически.</p>
+            <div id="cyclic-list"></div>
+            <button class="btn" onclick="saveCyclicSchedules()">💾 Сохранить расписание</button>
+            <div id="cyclic-msg" style="margin-top:10px;"></div>
+        </div>
+    </div>
+
+    <div id="tab-video" class="tab-content">
+        <div class="section" id="video-section">
+            <h2>🎥 Подключённые видео-каналы</h2>
+            <div id="video-list"></div>
+            <hr style="border-color:#333; margin:15px 0;">
+            <h3>Добавить канал</h3>
+            <label>Платформа</label>
+            <select id="video-platform">
+                <option value="youtube">YouTube</option>
+                <option value="rutube">Rutube</option>
+                <option value="vk_video">VK Видео</option>
+                <option value="dzen">Дзен</option>
+            </select>
+            <label>ID канала / Username</label>
+            <input type="text" id="video-channel-id" placeholder="UC... или @username">
+            <button class="btn" onclick="addVideoChannel()">➕ Добавить</button>
+            <div id="video-msg" style="margin-top:10px;"></div>
+        </div>
+    </div>
+
+    <div id="tab-referral" class="tab-content">
+        <div class="section">
+            <h2>🔗 Реферальная программа</h2>
+            <div class="info-text">
+                Приглашайте других пользователей и получайте <b>10%</b> от их чистого заработка!
+                Деньги удерживаются из доли приглашённого и перечисляются вам.
+            </div>
+            <div id="referral-info"></div>
+            <label>Ваша реферальная ссылка:</label>
+            <input type="text" id="referral-link" readonly onclick="this.select()" style="cursor:pointer;">
+        </div>
+    </div>
+</div>
+
+<script>
+const token = "{{ token }}";
+const role = "{{ role }}";
+
+const intervalOptions = [
+    [0, "Выключено"], [1, "1 час"], [6, "6 часов"], [12, "12 часов"],
+    [24, "1 день"], [48, "2 дня"], [72, "3 дня"], [168, "7 дней"],
+    [336, "14 дней"], [720, "30 дней"]
+];
+
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    });
+});
+
+// Load settings
+async function loadSettings() {
+    try {
+        const resp = await fetch(`/my-stats/settings-data?token=${token}`);
+        const data = await resp.json();
+        document.getElementById('post-interval').value = data.post_interval_minutes || 60;
+        document.getElementById('auto-delete').value = data.default_auto_delete_hours || 168;
+        document.getElementById('auto-pin').checked = data.auto_pin;
+        document.getElementById('notify-posts').checked = data.notify_posts;
+        document.getElementById('skip-preview').checked = data.force_preview_confirmed;
+        document.getElementById('min-discount').value = data.min_discount || 0;
+        if (data.tax_status) document.getElementById('tax-status').value = data.tax_status;
+        loadCyclic(data.stores);
+        loadVideoChannels(data.video_channels);
+        loadReferral(data.sub_id);
+    } catch(e) { console.error(e); }
+}
+
+function loadCyclic(stores) {
+    const container = document.getElementById('cyclic-list');
+    if (!stores || stores.length === 0) {
+        container.innerHTML = '<p style="color:#888;">Сначала выберите магазины в боте (🏪 Магазины).</p>';
+        return;
+    }
+    container.innerHTML = stores.map(s => `
+        <div class="store-row">
+            <label>${s.name}</label>
+            <select data-store="${s.id}" ${!s.available ? 'disabled' : ''}>
+                ${intervalOptions.map(([val, label]) =>
+                    `<option value="${val}" ${s.interval == val && val > 0 ? 'selected' : ''}>${label}</option>`
+                ).join('')}
+                <option value="-1" ${s.interval > 0 && !intervalOptions.some(o => o[0] == s.interval) ? 'selected' : ''} disabled>—</option>
+            </select>
+        </div>
+    `).join('');
+}
+
+function loadVideoChannels(channels) {
+    const container = document.getElementById('video-list');
+    if (!channels || channels.length === 0) {
+        container.innerHTML = '<p style="color:#888;">Нет подключённых видео-каналов.</p>';
+        return;
+    }
+    container.innerHTML = channels.map(ch => `
+        <div class="channel-row">
+            <span>${ch.platform}: <b>${ch.channel_id}</b> ${ch.is_active ? '🟢' : '🔴'}</span>
+            <button class="btn-small btn-danger" onclick="removeVideoChannel(${ch.id})">Удалить</button>
+        </div>
+    `).join('');
+}
+
+function loadReferral(subId) {
+    const container = document.getElementById('referral-info');
+    if (!subId) {
+        container.innerHTML = '<p style="color:#888;">Сначала добавьте канал, чтобы получить реферальную ссылку.</p>';
+        document.getElementById('referral-link').value = '';
+        return;
+    }
+    document.getElementById('referral-link').value = `https://t.me/{{ bot_username }}?start=${subId}`;
+}
+
+async function saveGeneralSettings() {
+    const btn = document.querySelector('#tab-general .btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Сохранение...';
+    const formData = new FormData();
+    formData.append('token', token);
+    formData.append('post_interval_minutes', document.getElementById('post-interval').value);
+    formData.append('default_auto_delete_hours', document.getElementById('auto-delete').value);
+    formData.append('auto_pin', document.getElementById('auto-pin').checked ? '1' : '0');
+    formData.append('notify_posts', document.getElementById('notify-posts').checked ? '1' : '0');
+    formData.append('force_preview_confirmed', document.getElementById('skip-preview').checked ? '1' : '0');
+    formData.append('min_discount', document.getElementById('min-discount').value);
+    formData.append('tax_status', document.getElementById('tax-status').value);
+    try {
+        const resp = await fetch('/my-stats/save-settings', { method: 'POST', body: formData });
+        const data = await resp.json();
+        const msg = document.getElementById('save-msg');
+        msg.innerHTML = data.ok ? '<p class="success">✅ Настройки сохранены</p>' : '<p class="error">❌ Ошибка сохранения</p>';
+        setTimeout(() => msg.innerHTML = '', 3000);
+    } catch(e) { console.error(e); }
+    btn.disabled = false;
+    btn.textContent = '💾 Сохранить настройки';
+}
+
+async function saveCyclicSchedules() {
+    const rows = document.querySelectorAll('#cyclic-list .store-row select');
+    const schedules = [];
+    rows.forEach(sel => {
+        const val = parseInt(sel.value);
+        if (val > 0) schedules.push({ store_id: parseInt(sel.dataset.store), interval_days: val });
+    });
+    const formData = new FormData();
+    formData.append('token', token);
+    formData.append('schedules', JSON.stringify(schedules));
+    try {
+        const resp = await fetch('/my-stats/save-cyclic', { method: 'POST', body: formData });
+        const data = await resp.json();
+        const msg = document.getElementById('cyclic-msg');
+        msg.innerHTML = data.ok ? '<p class="success">✅ Расписание сохранено</p>' : '<p class="error">❌ Ошибка</p>';
+        setTimeout(() => msg.innerHTML = '', 3000);
+    } catch(e) { console.error(e); }
+}
+
+async function addVideoChannel() {
+    const platform = document.getElementById('video-platform').value;
+    const channelId = document.getElementById('video-channel-id').value.trim();
+    if (!channelId) return;
+    const formData = new FormData();
+    formData.append('token', token);
+    formData.append('platform', platform);
+    formData.append('channel_id', channelId);
+    try {
+        const resp = await fetch('/my-stats/add-video-channel', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (data.ok) {
+            document.getElementById('video-channel-id').value = '';
+            loadVideoChannels(data.channels);
+        }
+        const msg = document.getElementById('video-msg');
+        msg.innerHTML = data.ok ? '<p class="success">✅ Канал добавлен</p>' : '<p class="error">❌ ' + (data.error || 'Ошибка') + '</p>';
+        setTimeout(() => msg.innerHTML = '', 3000);
+    } catch(e) { console.error(e); }
+}
+
+async function removeVideoChannel(id) {
+    if (!confirm('Удалить видео-канал?')) return;
+    const formData = new FormData();
+    formData.append('token', token);
+    formData.append('channel_id', id);
+    try {
+        const resp = await fetch('/my-stats/remove-video-channel', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (data.ok) loadVideoChannels(data.channels);
+    } catch(e) { console.error(e); }
+}
+
+loadSettings();
 </script>
 </body>
 </html>'''
@@ -1052,6 +1365,154 @@ async def save_template(token: str = Form(...), type: str = Form(...), template:
         conn.execute(f"UPDATE users SET {column}=? WHERE user_id=?", (template, user_id))
         conn.commit()
         return JSONResponse({"ok": True})
+    finally:
+        conn.close()
+
+# ---------- Настройки ----------
+@router.get("/settings", response_class=HTMLResponse)
+async def settings_page(token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,)).fetchone()
+        role = user["role"] if user else "blogger"
+    finally:
+        conn.close()
+    html = SETTINGS_PAGE_TEMPLATE.replace('{{ token }}', token).replace('{{ role }}', role)
+    return HTMLResponse(content=html)
+
+@router.get("/settings-data")
+async def get_settings_data(token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        user = conn.execute("""SELECT post_interval_minutes, default_auto_delete_hours,
+            auto_pin, notify_posts, force_preview_confirmed, min_discount, tax_status, sub_id
+            FROM users WHERE user_id=?""", (user_id,)).fetchone()
+        user_stores = conn.execute(
+            "SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)
+        ).fetchall()
+        schedules = conn.execute(
+            "SELECT store_id, interval_days FROM cyclic_schedules WHERE user_id=?", (user_id,)
+        ).fetchall()
+        video_channels = conn.execute(
+            "SELECT id, platform, channel_id, is_active FROM social_channels WHERE user_id=?", (user_id,)
+        ).fetchall()
+        from services.admitad import STORE_ID_MAP
+        stores = []
+        for s in user_stores:
+            sid = s["category_id"]
+            name = STORE_ID_MAP.get(sid, f"ID {sid}")
+            interval = 0
+            for sch in schedules:
+                if sch["store_id"] == sid:
+                    interval = sch["interval_days"]
+                    break
+            stores.append({"id": sid, "name": name, "interval": interval, "available": True})
+        return JSONResponse({
+            "post_interval_minutes": user["post_interval_minutes"] if user else 60,
+            "default_auto_delete_hours": user["default_auto_delete_hours"] if user else 168,
+            "auto_pin": bool(user["auto_pin"]) if user else True,
+            "notify_posts": bool(user["notify_posts"]) if user else True,
+            "force_preview_confirmed": bool(user["force_preview_confirmed"]) if user else False,
+            "min_discount": user["min_discount"] if user else 0,
+            "tax_status": user["tax_status"] if user else "",
+            "stores": stores,
+            "video_channels": [{"id": v["id"], "platform": v["platform"], "channel_id": v["channel_id"], "is_active": v["is_active"]} for v in video_channels],
+            "sub_id": user["sub_id"] if user else "",
+        })
+    finally:
+        conn.close()
+
+@router.post("/save-settings")
+async def save_settings(
+    token: str = Form(...),
+    post_interval_minutes: int = Form(60),
+    default_auto_delete_hours: int = Form(168),
+    auto_pin: int = Form(1),
+    notify_posts: int = Form(1),
+    force_preview_confirmed: int = Form(0),
+    min_discount: int = Form(0),
+    tax_status: str = Form(""),
+):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        conn.execute("""UPDATE users SET
+            post_interval_minutes=?, default_auto_delete_hours=?, auto_pin=?,
+            notify_posts=?, force_preview_confirmed=?, min_discount=?, tax_status=?
+            WHERE user_id=?""",
+            (post_interval_minutes, default_auto_delete_hours, auto_pin,
+             notify_posts, force_preview_confirmed, min_discount, tax_status, user_id))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        logger.error(f"Save settings error: {e}")
+        return JSONResponse({"ok": False, "error": str(e)})
+    finally:
+        conn.close()
+
+@router.post("/save-cyclic")
+async def save_cyclic_schedules(token: str = Form(...), schedules: str = Form("[]")):
+    user_id = get_user_id_from_token(token)
+    import json
+    try:
+        conn = get_db()
+        try:
+            conn.execute("DELETE FROM cyclic_schedules WHERE user_id=?", (user_id,))
+            sched_list = json.loads(schedules)
+            for s in sched_list:
+                conn.execute("""
+                    INSERT INTO cyclic_schedules (user_id, store_id, interval_days, is_active)
+                    VALUES (?, ?, ?, 1)
+                """, (user_id, s["store_id"], s["interval_days"]))
+            conn.commit()
+            return JSONResponse({"ok": True})
+        finally:
+            conn.close()
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
+
+@router.post("/add-video-channel")
+async def add_video_channel(token: str = Form(...), platform: str = Form(...), channel_id: str = Form(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO social_channels (user_id, platform, channel_id, is_active) VALUES (?, ?, ?, 1)",
+            (user_id, platform, channel_id)
+        )
+        conn.commit()
+        channels = conn.execute(
+            "SELECT id, platform, channel_id, is_active FROM social_channels WHERE user_id=?", (user_id,)
+        ).fetchall()
+        return JSONResponse({
+            "ok": True,
+            "channels": [{"id": v["id"], "platform": v["platform"], "channel_id": v["channel_id"], "is_active": v["is_active"]} for v in channels]
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
+    finally:
+        conn.close()
+
+@router.post("/remove-video-channel")
+async def remove_video_channel(token: str = Form(...), channel_id: int = Form(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        conn.execute(
+            "DELETE FROM social_channels WHERE id=? AND user_id=?", (channel_id, user_id)
+        )
+        conn.commit()
+        channels = conn.execute(
+            "SELECT id, platform, channel_id, is_active FROM social_channels WHERE user_id=?", (user_id,)
+        ).fetchall()
+        return JSONResponse({
+            "ok": True,
+            "channels": [{"id": v["id"], "platform": v["platform"], "channel_id": v["channel_id"], "is_active": v["is_active"]} for v in channels]
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
     finally:
         conn.close()
 
@@ -1407,6 +1868,7 @@ GUIDE_TEMPLATE = r'''<!DOCTYPE html>
     <div class="nav">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
         <a href="/my-stats/guide?token={{ token }}" class="active">📖 Инструкция</a>
     </div>
     <h1>📖 Инструкция</h1>
