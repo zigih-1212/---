@@ -20,10 +20,9 @@ from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES, get_d
 from keyboards.saas import kb_cabinet_menu
 from services.text_rewriter import generate_post_text
 from services.admitad import get_random_promocode
-from states import SaasStates, PaymentFSM, PayoutStates, TaxStates, CpcStates
+from states import SaasStates, PaymentFSM, PayoutStates, TaxStates
 from helpers import generate_success_text, show_user_cabinet, open_saas_settings, safe_edit
 from config import MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
-from helpers import open_saas_settings
 
 logger = logging.getLogger("autopost_bot.saas")
 
@@ -37,19 +36,48 @@ async def cb_stores(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
     try:
+        cpa_count = conn.execute(
+            "SELECT COUNT(*) FROM user_category_preferences WHERE user_id = ?", (user_id,)
+        ).fetchone()[0]
+        cpc_count = conn.execute(
+            "SELECT COUNT(*) FROM cpc_campaigns WHERE user_id = ? AND is_active = 1", (user_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    text = (
+        "🏪 <b>Магазины для постинга</b>\n\n"
+        f"🛒 Покупка (CPA): <b>{cpa_count}</b> магазинов\n"
+        f"👆 Клики (CPC): <b>{cpc_count}</b> рекламодателей\n\n"
+        "Выберите тип монетизации:"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🛒 Покупка (CPA)", callback_data="stores:cpa"),
+            InlineKeyboardButton(text="👆 Клики (CPC)", callback_data="stores:cpc"),
+        ],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")]
+    ])
+    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "stores:cpa")
+async def cb_stores_cpa(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
         user_stores = conn.execute(
             "SELECT category_id FROM user_category_preferences WHERE user_id = ?",
             (user_id,)
         ).fetchall()
         user_store_ids = {r["category_id"] for r in user_stores}
-        selected_count = len(user_store_ids)
     finally:
         conn.close()
 
     from services.admitad import STORE_ID_MAP, get_available_stores
     stores_config = get_available_stores()
 
-    # Список магазинов с их статусами
     stores = []
     for store_id, store_name in STORE_ID_MAP.items():
         info = stores_config.get(store_name, {})
@@ -61,36 +89,53 @@ async def cb_stores(callback: CallbackQuery):
             "requires_city": store_name == "Galaxy Store"
         })
 
-    text = f"🏪 <b>Выберите магазины для постинга:</b> (выбрано {selected_count})\n\n"
+    text = f"🛒 <b>Покупка (CPA)</b> — доход за заказ\nВыбрано: {len(user_store_ids)}\n\n"
     kb_rows = []
     for store in stores:
-        # Формируем текст кнопки с метками
         label = store["name"]
         if not store["available"]:
-            label += " ⛔ недоступен"
+            label += " ⛔"
         elif store["adult"]:
             label += " 🔞 18+"
-        # Для Galaxy Store добавим звёздочку
         if store["requires_city"]:
             label += " *"
-
         emoji = "✅" if store["id"] in user_store_ids else "❌"
         kb_rows.append([InlineKeyboardButton(
             text=f"{emoji} {label}",
             callback_data=f"store_toggle:{store['id']}"
         )])
 
-    # Добавляем пояснения
-    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cabinet:open")])
+    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:categories")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-
-    # Пояснительный текст под кнопками
-    footer = "\n\n* — требуется выбор города\n⛔ — магазин временно не работает\n🔞 — контент для взрослых"
+    footer = "\n\n* — выбор города | ⛔ — недоступен | 🔞 — 18+"
     await safe_edit(callback.message, text + footer, reply_markup=kb, parse_mode=ParseMode.HTML)
-    try:
-        await callback.answer()
-    except Exception:
-        pass
+    await callback.answer()
+
+
+@router.callback_query(F.data == "stores:cpc")
+async def cb_stores_cpc(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    campaigns = await _sync_cpc_campaigns(user_id)
+
+    active = [c for c in campaigns if c["is_active"]]
+    text = f"👆 <b>Клики (CPC)</b> — доход за клик\nАктивно: {len(active)} из {len(campaigns)}\n\n"
+
+    kb_rows = []
+    for c in campaigns:
+        status = "🟢" if c["is_active"] else "🔴"
+        name = c["name"]
+        kb_rows.append([InlineKeyboardButton(
+            text=f"{status} {name}",
+            callback_data=f"cpc_toggle:{c['id']}"
+        )])
+
+    if not campaigns:
+        text += "Нет подключённых рекламодателей.\nПодключите их в кабинете Admitad → Рекламодатели."
+
+    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:categories")])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await callback.answer()
 
 @router.callback_query(F.data.startswith("store_toggle:"))
 async def cb_toggle_store(callback: CallbackQuery):
@@ -171,7 +216,7 @@ async def cb_toggle_store(callback: CallbackQuery):
                 conn.commit()
             finally:
                 conn.close()
-            await cb_stores(callback)
+            await cb_stores_cpa(callback)
             return
 
     # Стандартное переключение для остальных магазинов
@@ -196,7 +241,7 @@ async def cb_toggle_store(callback: CallbackQuery):
     finally:
         conn.close()
 
-    await cb_stores(callback)
+    await cb_stores_cpa(callback)
 
 # ---------------------------------------------------------------------------
 # Циклический постинг — расписание по магазинам
@@ -521,12 +566,12 @@ async def cb_galaxy_city_selected(callback: CallbackQuery):
     await fetch_admitad_catalog_for_user(user_id, max_items_per_store=50)
     
     await callback.answer(f"✅ Galaxy Store ({city_name}) добавлен в ваши магазины.")
-    await cb_stores(callback)
+    await cb_stores_cpa(callback)
 
 
 @router.callback_query(F.data == "cancel_galaxy_city")
 async def cb_cancel_galaxy_city(callback: CallbackQuery):
-    await cb_stores(callback)
+    await cb_stores_cpa(callback)
     await callback.answer()
 
 
@@ -537,54 +582,224 @@ import sqlite3
 
 @router.callback_query(F.data == "saas_force_post")
 async def cb_saas_force_post(callback: CallbackQuery, bot: Bot) -> None:
-    """Обработчик кнопки принудительной публикации с улучшенной обработкой ошибок"""
+    """Обработчик кнопки принудительной публикации — выбор CPA или CPC"""
     user_id = callback.from_user.id
-    logger.info(f"User {user_id} triggered force post")
-    
+
     conn = get_db()
     try:
-        # Проверяем настройки пользователя
+        cpa_count = conn.execute(
+            "SELECT COUNT(*) FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL",
+            (user_id,)
+        ).fetchone()[0]
+        cpc_count = conn.execute(
+            "SELECT COUNT(*) FROM cpc_campaigns WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    if cpa_count == 0 and cpc_count == 0:
+        await callback.answer("❌ Нет доступных товаров или кампаний для публикации", show_alert=True)
+        return
+
+    text = "🚀 <b>Опубликовать сейчас</b>\n\nВыберите тип поста:"
+    kb_rows = []
+    if cpa_count > 0:
+        kb_rows.append([InlineKeyboardButton(
+            text=f"🛒 Покупка (CPA) — {cpa_count} товаров",
+            callback_data="force_type:cpa"
+        )])
+    if cpc_count > 0:
+        kb_rows.append([InlineKeyboardButton(
+            text=f"👆 Клики (CPC) — {cpc_count} кампаний",
+            callback_data="force_type:cpc"
+        )])
+    kb_rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cabinet:open")])
+
+    await safe_edit(callback.message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows), parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "force_type:cpa")
+async def cb_force_type_cpa(callback: CallbackQuery, bot: Bot) -> None:
+    """Force Post CPA — существующая логика"""
+    user_id = callback.from_user.id
+    logger.info(f"User {user_id} triggered force post CPA")
+
+    conn = get_db()
+    try:
         user = conn.execute(
-            "SELECT force_preview_confirmed FROM users WHERE user_id = ?", 
+            "SELECT force_preview_confirmed FROM users WHERE user_id = ?",
             (user_id,)
         ).fetchone()
         preview_confirmed = bool(user["force_preview_confirmed"]) if user else False
-        
-        # Проверяем наличие каналов
+
         channels_count = conn.execute(
             "SELECT COUNT(*) FROM channels WHERE user_id = ? AND is_active = 1",
             (user_id,)
         ).fetchone()[0]
-        
+
         if channels_count == 0:
             await callback.answer("❌ Нет активных каналов", show_alert=True)
             return
-            
-        # Проверяем наличие товаров в каталоге
+
         product_count = conn.execute(
             "SELECT COUNT(*) FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL",
             (user_id,)
         ).fetchone()[0]
-        
+
         if product_count == 0:
             await callback.answer("❌ Нет доступных товаров для публикации", show_alert=True)
             return
-            
+
     except sqlite3.Error as e:
-        logger.error(f"Database error in cb_saas_force_post for user {user_id}: {e}")
+        logger.error(f"Database error in cb_force_type_cpa for user {user_id}: {e}")
         await callback.answer("⚠️ Ошибка базы данных", show_alert=True)
         return
     finally:
         conn.close()
 
     if preview_confirmed:
-        logger.info(f"User {user_id} force posting immediately (preview confirmed)")
-        await callback.answer("🚀 Публикую пост...", show_alert=True)
+        await callback.answer("🚀 Публикую CPA пост...", show_alert=True)
         await _force_post_immediate(callback, bot, user_id)
     else:
-        logger.info(f"User {user_id} force posting with preview")
-        await callback.answer("🔍 Подбираю товар для предпросмотра...", show_alert=False)
+        await callback.answer("🔍 Подбираю товар...", show_alert=False)
         await _force_post_preview(callback, bot, user_id)
+
+
+@router.callback_query(F.data == "force_type:cpc")
+async def cb_force_type_cpc(callback: CallbackQuery, bot: Bot) -> None:
+    """Force Post CPC — публикация CPC кампании"""
+    user_id = callback.from_user.id
+    logger.info(f"User {user_id} triggered force post CPC")
+
+    conn = get_db()
+    try:
+        campaigns = conn.execute(
+            "SELECT id, name, cpc_link, text FROM cpc_campaigns WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        ).fetchall()
+        channels = conn.execute(
+            "SELECT channel_id, sub_id, channel_title FROM channels WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not campaigns:
+        await callback.answer("❌ Нет активных CPC-кампаний", show_alert=True)
+        return
+    if not channels:
+        await callback.answer("❌ Нет активных каналов", show_alert=True)
+        return
+
+    await callback.answer("🚀 Публикую CPC пост...", show_alert=True)
+
+    user_row = None
+    conn = get_db()
+    try:
+        user_row = conn.execute(
+            "SELECT product_template, cpc_template, default_auto_delete_hours FROM users WHERE user_id=?",
+            (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    cpc_template = user_row["cpc_template"] if user_row and user_row["cpc_template"] else None
+    auto_delete_hours = user_row["default_auto_delete_hours"] if user_row and user_row["default_auto_delete_hours"] is not None else 168
+
+    import random
+    campaign = random.choice(campaigns)
+    ch = channels[0] if len(channels) == 1 else None
+
+    if not ch:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text=ch_row["channel_title"] or ch_row["channel_id"],
+                callback_data=f"force_cpc_channel:{campaign['id']}:{ch_row['channel_id']}"
+            )] for ch_row in channels
+        ])
+        await safe_edit(callback.message, "📢 Выберите канал для CPC-поста:", reply_markup=kb)
+        return
+
+    await _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template, auto_delete_hours)
+
+
+@router.callback_query(F.data.startswith("force_cpc_channel:"))
+async def cb_force_cpc_channel(callback: CallbackQuery, bot: Bot) -> None:
+    parts = callback.data.split(":")
+    campaign_id = int(parts[1])
+    channel_id = parts[2]
+    user_id = callback.from_user.id
+
+    conn = get_db()
+    try:
+        campaign = conn.execute(
+            "SELECT id, name, cpc_link, text FROM cpc_campaigns WHERE id = ? AND user_id = ?",
+            (campaign_id, user_id)
+        ).fetchone()
+        ch = conn.execute(
+            "SELECT channel_id, sub_id, channel_title FROM channels WHERE channel_id = ? AND user_id = ?",
+            (channel_id, user_id)
+        ).fetchone()
+        user_row = conn.execute(
+            "SELECT cpc_template, default_auto_delete_hours FROM users WHERE user_id=?",
+            (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not campaign or not ch:
+        await callback.answer("❌ Не найдено", show_alert=True)
+        return
+
+    cpc_template = user_row["cpc_template"] if user_row and user_row["cpc_template"] else None
+    auto_delete_hours = user_row["default_auto_delete_hours"] if user_row and user_row["default_auto_delete_hours"] is not None else 168
+
+    await callback.message.delete()
+    await _publish_cpc_post(callback, bot, user_id, dict(campaign), dict(ch), cpc_template, auto_delete_hours)
+    await callback.answer()
+
+
+async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=None, auto_delete_hours=168):
+    """Публикация одного CPC-поста"""
+    sub_id = ch["sub_id"] or ""
+    cpc_link = campaign["cpc_link"]
+    name = campaign["name"]
+
+    subid2 = generate_subid2(user_id, ch["channel_id"])
+    separator = "&" if "?" in cpc_link else "?"
+    final_url = f"{cpc_link}{separator}subid1={sub_id}&subid2={subid2}"
+
+    if cpc_template and "{link}" in cpc_template:
+        post_text = cpc_template.replace("{link}", final_url)
+    elif cpc_template and "{name}" in cpc_template:
+        post_text = cpc_template.replace("{name}", name).replace("{link}", final_url)
+    elif cpc_template:
+        post_text = f"{cpc_template}\n\n{final_url}"
+    else:
+        post_text = f"🔥 {name}\n\n{final_url}"
+
+    msg = await bot.send_message(
+        ch["channel_id"],
+        post_text,
+        parse_mode=None,
+        disable_web_page_preview=False,
+    )
+
+    if msg:
+        direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}"
+        conn_rec = get_db()
+        try:
+            conn_rec.execute(
+                "INSERT INTO posts (user_id, channel_id, status, published_at, auto_delete_hours, caption, direct_link) "
+                "VALUES (?, ?, 'published', ?, ?, ?, ?)",
+                (user_id, ch["channel_id"], datetime.now(timezone.utc).isoformat(),
+                 auto_delete_hours, post_text, direct_link)
+            )
+            conn_rec.commit()
+        finally:
+            conn_rec.close()
 
 
 async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int, channel_id: str = None) -> None:
@@ -1581,7 +1796,7 @@ async def _build_cpc_list(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
 
     if not campaigns:
         text = (
-            "📢 <b>Рекламодатели (CPC)</b>\n\n"
+            "👆 <b>Клики (CPC)</b>\n\n"
             "Нет подключённых рекламодателей.\n"
             "Подключите их в кабинете Admitad → Рекламодатели."
         )
@@ -1590,34 +1805,24 @@ async def _build_cpc_list(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
         ])
         return text, kb
 
-    lines = ["📢 <b>Рекламодатели (CPC)</b>\n", "Нажмите чтобы включить/выключить:", ""]
+    lines = ["👆 <b>Клики (CPC)</b>\n", "Нажмите чтобы включить/выключить:", ""]
     kb_rows = []
 
     for c in campaigns:
         status = "✅" if c["is_active"] else "⬜"
         name = c["name"]
-        text_preview = (c["text"][:30] + "...") if c["text"] and len(c["text"]) > 30 else (c["text"] or "без текста")
         lines.append(f"{status} <b>{name}</b>")
-        lines.append(f"   📝 {text_preview}")
         lines.append("")
 
         btn_status = f"{'🟢' if c['is_active'] else '🔴'} {name}"
         kb_rows.append([
             InlineKeyboardButton(text=btn_status, callback_data=f"cpc_toggle:{c['id']}"),
-            InlineKeyboardButton(text="📝", callback_data=f"cpc_text:{c['id']}"),
         ])
 
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")])
     text = "\n".join(lines)
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     return text, kb
-
-
-@router.callback_query(F.data == "menu:cpc")
-async def cb_cpc_menu(callback: CallbackQuery):
-    text, kb = await _build_cpc_list(callback.from_user.id)
-    await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("cpc_toggle:"))
@@ -1640,78 +1845,3 @@ async def cb_cpc_toggle(callback: CallbackQuery):
     text, kb = await _build_cpc_list(user_id)
     await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer(f"{'Включено' if new_val else 'Выключено'}")
-
-
-@router.callback_query(F.data.startswith("cpc_text:"))
-async def cb_cpc_text(callback: CallbackQuery, state: FSMContext):
-    row_id = int(callback.data.split(":")[1])
-    user_id = callback.from_user.id
-
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT name, text FROM cpc_campaigns WHERE id=? AND user_id=?", (row_id, user_id)).fetchone()
-    finally:
-        conn.close()
-
-    if not row:
-        await callback.answer("❌ Не найдено", show_alert=True)
-        return
-
-    current = row["text"] or ""
-    name = row["name"]
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="menu:cpc")]
-    ])
-
-    prompt = (
-        f"📝 <b>Текст для «{name}»</b>\n\n"
-        f"Текущий текст:\n<i>{current or '(пусто)'}</i>\n\n"
-        "Отправьте новый текст. Бот будет постить его с CPC-ссылкой.\n"
-        "Используйте {link} где вставить ссылку (по умолчанию ссылка в конце)."
-    )
-
-    await state.update_data(cpc_row_id=row_id)
-    await state.set_state(CpcStates.waiting_text)
-    await safe_edit(callback.message, prompt, reply_markup=kb, parse_mode=ParseMode.HTML)
-    await callback.answer()
-
-
-@router.message(CpcStates.waiting_text)
-async def cb_cpc_text_save(message: Message, state: FSMContext):
-    data = await state.get_data()
-    row_id = data.get("cpc_row_id")
-    if not row_id:
-        await state.clear()
-        return
-
-    new_text = message.text.strip()
-
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT name, cpc_link FROM cpc_campaigns WHERE id=?", (row_id,)).fetchone()
-        conn.execute("UPDATE cpc_campaigns SET text=? WHERE id=?", (new_text, row_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-    await state.clear()
-
-    preview_link = "https://example.com/ref"
-    if "{link}" in new_text:
-        preview = new_text.replace("{link}", preview_link)
-    elif new_text:
-        preview = f"{new_text}\n\n{preview_link}"
-    else:
-        preview = f"🔥 {row['name']}\n\n{preview_link}"
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 К списку", callback_data="menu:cpc")]
-    ])
-
-    await message.answer(
-        f"✅ Текст сохранён!\n\n"
-        f"<b>Превью поста:</b>\n\n{preview}\n\n"
-        f"<i>(Ссылка будет рабочей CPC)</i>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb
-    )

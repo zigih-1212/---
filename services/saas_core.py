@@ -566,11 +566,35 @@ async def publish_cpc_campaigns(bot: Bot):
         if not cpc_link or not channel_id:
             continue
 
+        # Получаем CPC-шаблон пользователя
+        cpc_template = None
+        auto_delete_hours = 168
+        try:
+            c = get_db()
+            try:
+                u_row = c.execute(
+                    "SELECT cpc_template, default_auto_delete_hours FROM users WHERE user_id=?", (user_id,)
+                ).fetchone()
+                if u_row:
+                    cpc_template = u_row["cpc_template"]
+                    if u_row["default_auto_delete_hours"] is not None:
+                        auto_delete_hours = u_row["default_auto_delete_hours"]
+            finally:
+                c.close()
+        except Exception:
+            pass
+
         subid2 = generate_subid2(user_id, channel_id)
         separator = "&" if "?" in cpc_link else "?"
         final_url = f"{cpc_link}{separator}subid1={sub_id}&subid2={subid2}"
 
-        if text_template and "{link}" in text_template:
+        if cpc_template and "{link}" in cpc_template:
+            post_text = cpc_template.replace("{link}", final_url)
+        elif cpc_template and "{name}" in cpc_template:
+            post_text = cpc_template.replace("{name}", name).replace("{link}", final_url)
+        elif cpc_template:
+            post_text = f"{cpc_template}\n\n{final_url}"
+        elif text_template and "{link}" in text_template:
             post_text = text_template.replace("{link}", final_url)
         elif text_template:
             post_text = f"{text_template}\n\n{final_url}"
@@ -586,32 +610,19 @@ async def publish_cpc_campaigns(bot: Bot):
             )
             logger.info(f"✅ CPC пост '{name}' отправлен в {ch_title} (user {user_id})")
 
-            auto_delete_hours = 168
-            try:
-                c = get_db()
-                try:
-                    u_row = c.execute(
-                        "SELECT default_auto_delete_hours FROM users WHERE user_id=?", (user_id,)
-                    ).fetchone()
-                    if u_row and u_row["default_auto_delete_hours"]:
-                        auto_delete_hours = u_row["default_auto_delete_hours"]
-                finally:
-                    c.close()
-            except Exception:
-                pass
+            direct_link = f"https://t.me/{channel_id.lstrip('@')}/{msg.message_id}"
 
-            if auto_delete_hours > 0:
-                del_at = datetime.now(timezone.utc) + timedelta(hours=auto_delete_hours)
-                c = get_db()
-                try:
-                    c.execute(
-                        "INSERT INTO posts (user_id, channel_id, status, published_at, auto_delete_hours) "
-                        "VALUES (?, ?, 'published', ?, ?)",
-                        (user_id, channel_id, datetime.now(timezone.utc).isoformat(), auto_delete_hours)
-                    )
-                    c.commit()
-                finally:
-                    c.close()
+            c = get_db()
+            try:
+                c.execute(
+                    "INSERT INTO posts (user_id, channel_id, status, published_at, auto_delete_hours, caption, direct_link) "
+                    "VALUES (?, ?, 'published', ?, ?, ?, ?)",
+                    (user_id, channel_id, datetime.now(timezone.utc).isoformat(),
+                     auto_delete_hours, post_text, direct_link)
+                )
+                c.commit()
+            finally:
+                c.close()
 
             if cpc_id not in posted_ids:
                 posted_ids.add(cpc_id)

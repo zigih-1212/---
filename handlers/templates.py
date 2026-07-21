@@ -6,7 +6,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from services.db import get_db
-from states import TemplateStates
+from states import TemplateStates, CpcStates
 from services.text_rewriter import generate_post_text
 from services.admitad import get_delivery_for_store, get_random_promocode
 from helpers import safe_edit
@@ -28,13 +28,20 @@ DEFAULT_VIDEO_TEMPLATE = (
     "🔗 <a href='{link}'>Смотреть</a>"
 )
 
+DEFAULT_CPC_TEMPLATE = (
+    "👆 <b>{name}</b>\n\n"
+    "Перейдите по ссылке:\n{link}"
+)
+
 def get_template_preview_buttons() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Изменить шаблон товаров", callback_data="templates:set_product")],
-        [InlineKeyboardButton(text="📝 Изменить шаблон видео", callback_data="templates:set_video")],
+        [InlineKeyboardButton(text="📝 Шаблон товаров (CPA)", callback_data="templates:set_product")],
+        [InlineKeyboardButton(text="📝 Шаблон видео", callback_data="templates:set_video")],
+        [InlineKeyboardButton(text="📝 Шаблон кликов (CPC)", callback_data="templates:set_cpc")],
         [InlineKeyboardButton(text="🔄 Сбросить до стандартных", callback_data="templates:reset")],
         [InlineKeyboardButton(text="👀 Предпросмотр товара", callback_data="templates:preview_product")],
         [InlineKeyboardButton(text="👀 Предпросмотр видео", callback_data="templates:preview_video")],
+        [InlineKeyboardButton(text="👀 Предпросмотр CPC", callback_data="templates:preview_cpc")],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")],
     ])
 
@@ -43,21 +50,27 @@ async def cb_menu_templates(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
     try:
-        user = conn.execute("SELECT product_template, video_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+        user = conn.execute("SELECT product_template, video_template, cpc_template FROM users WHERE user_id=?", (user_id,)).fetchone()
         product_tmpl = user["product_template"] if user else ""
         video_tmpl = user["video_template"] if user else ""
+        cpc_tmpl = user["cpc_template"] if user else ""
     finally:
         conn.close()
 
     text = (
         "📝 <b>Шаблоны постов</b>\n\n"
-        "<b>Товарный шаблон:</b>\n"
+        "<b>CPA товарный шаблон:</b>\n"
         f"<code>{product_tmpl or DEFAULT_PRODUCT_TEMPLATE}</code>\n\n"
         "<b>Видео-шаблон:</b>\n"
         f"<code>{video_tmpl or DEFAULT_VIDEO_TEMPLATE}</code>\n\n"
-        "Используйте подстановки:\n"
-        "<b>Для товаров:</b> {title}, {price}, {currency}, {link}, {advertiser}, {erid}, {old_price}, {discount_percent}, {delivery_line}, {promocode_line}\n"
-        "<b>Для видео:</b> {title}, {link}, {description}"
+        "<b>CPC шаблон (клики):</b>\n"
+        f"<code>{cpc_tmpl or DEFAULT_CPC_TEMPLATE}</code>\n\n"
+        "CPA подстановки:\n"
+        "<b>{title}, {price}, {currency}, {link}, {advertiser}, {erid}, {old_price}, {discount_percent}, {delivery_line}, {promocode_line}</b>\n\n"
+        "CPC подстановки:\n"
+        "<b>{name} — название рекламодателя, {link} — CPC-ссылка</b>\n\n"
+        "Видео подстановки:\n"
+        "<b>{title}, {link}, {description}</b>"
     )
     await safe_edit(callback.message, text, reply_markup=get_template_preview_buttons(), parse_mode=ParseMode.HTML)
     await callback.answer()
@@ -154,17 +167,79 @@ async def process_video_template(message: Message, state: FSMContext):
     await show_video_preview(message, template)
     await state.clear()
 
+# --- Установка шаблона CPC ---
+@router.callback_query(F.data == "templates:set_cpc")
+async def cb_set_cpc_template(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer(
+        "✏️ Введите шаблон для CPC-постов (оплата за клик).\n\n"
+        "Подстановки:\n"
+        "<b>{name}</b> — название рекламодателя\n"
+        "<b>{link}</b> — CPC-ссылка (обязательна)\n\n"
+        "Пример стандартного шаблона:\n"
+        "<code>👆 {name}\n\nПерейдите по ссылке:\n{link}</code>\n\n"
+        "Можно добавлять эмодзи, менять порядок, но {link} обязателен.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="templates:cancel")]
+        ])
+    )
+    await state.set_state(CpcStates.waiting_template)
+    await callback.answer()
+
+@router.message(CpcStates.waiting_template)
+async def process_cpc_template(message: Message, state: FSMContext):
+    template = message.text.strip()
+    if len(template) < 5:
+        await message.answer("❌ Шаблон слишком короткий. Минимум 5 символов.")
+        return
+    if "{link}" not in template:
+        await message.answer("❌ В шаблоне обязательна подстановка {link} — CPC-ссылка.")
+        return
+    user_id = message.from_user.id
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET cpc_template=? WHERE user_id=?", (template, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    await message.answer("✅ CPC-шаблон сохранён! Предпросмотр:")
+    await show_cpc_preview(message, template)
+    await state.clear()
+
+async def show_cpc_preview(message: Message, template: str):
+    test_data = {
+        "name": "Test Advertiser",
+        "link": "https://example.com/cpc/ref"
+    }
+    try:
+        text = template.format(**test_data)
+    except KeyError as e:
+        text = f"❌ Ошибка в шаблоне: неизвестная подстановка {e}"
+    await message.answer(text, parse_mode=ParseMode.HTML)
+
+@router.callback_query(F.data == "templates:preview_cpc")
+async def cb_preview_cpc(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT cpc_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+        tmpl = row["cpc_template"] if row and row["cpc_template"] else DEFAULT_CPC_TEMPLATE
+    finally:
+        conn.close()
+    await show_cpc_preview(callback.message, tmpl)
+    await callback.answer()
+
 # --- Сброс шаблонов ---
 @router.callback_query(F.data == "templates:reset")
 async def cb_reset_templates(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
     try:
-        conn.execute("UPDATE users SET product_template='', video_template='' WHERE user_id=?", (user_id,))
+        conn.execute("UPDATE users SET product_template='', video_template='', cpc_template='' WHERE user_id=?", (user_id,))
         conn.commit()
     finally:
         conn.close()
-    await safe_edit(callback.message, "✅ Шаблоны сброшены до стандартных.", reply_markup=get_template_preview_buttons())
+    await safe_edit(callback.message, "✅ Все шаблоны сброшены до стандартных.", reply_markup=get_template_preview_buttons())
     await callback.answer()
 
 # --- Предпросмотр товара ---

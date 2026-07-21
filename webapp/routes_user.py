@@ -583,8 +583,9 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     </div>
     <h1>📝 Шаблоны постов</h1>
     <div class="tabs">
-        <button id="tab-product" class="active" onclick="switchTab('product')">Товарный</button>
-        <button id="tab-video" onclick="switchTab('video')">Видео</button>
+        <button id="tab-product" class="active" onclick="switchTab('product')">🛒 Товарный (CPA)</button>
+        <button id="tab-video" onclick="switchTab('video')">🎬 Видео</button>
+        <button id="tab-cpc" onclick="switchTab('cpc')">👆 Клики (CPC)</button>
     </div>
 
     <div id="tab-product-content" class="editor-panel">
@@ -614,6 +615,20 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
             <div id="video-placeholders"></div>
         </div>
     </div>
+    <div id="tab-cpc-content" class="editor-panel" style="display:none;">
+        <div class="editor">
+            <textarea id="cpc-template" placeholder="Введите шаблон CPC-постов..."></textarea>
+            <div class="actions">
+                <button onclick="saveTemplate('cpc')">Сохранить</button>
+                <button onclick="resetTemplate('cpc')">Сбросить</button>
+                <button onclick="renderCpcPreview()">Обновить предпросмотр</button>
+            </div>
+        </div>
+        <div class="placeholders">
+            <h3>Вставить</h3>
+            <div id="cpc-placeholders"></div>
+        </div>
+    </div>
     <div class="preview-box">
         <h3>Предпросмотр</h3>
         <div id="preview-content"></div>
@@ -628,14 +643,16 @@ let currentTab = 'product';
 
 const placeholders = {
     product: ['{title}', '{price}', '{currency}', '{link}', '{advertiser}', '{erid}', '{old_price}', '{discount_percent}', '{delivery_line}', '{promocode_line}', '{price_label}', '{cta_phrase}'],
-    video: ['{title}', '{link}', '{description}']
+    video: ['{title}', '{link}', '{description}'],
+    cpc: ['{name}', '{link}']
 };
 const defaultProduct = `🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}\n{promocode_line}{delivery_line}\n{cta_phrase}\n\nРеклама. {advertiser}. Erid: {erid}`;
 const defaultVideo = `🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href='{link}'>Смотреть</a>`;
+const defaultCpc = `👆 <b>{name}</b>\n\nПерейдите по ссылке:\n{link}`;
 let previewDebounceTimer = null;
 
 if (isSaaS) {
-    // Скрываем вкладку видео
+    // Скрываем вкладку видео для SaaS
     document.getElementById('tab-video').style.display = 'none';
     document.getElementById('tab-video-content').style.display = 'none';
 }
@@ -649,7 +666,9 @@ async function loadTemplates() {
             document.getElementById('video-template').value = data.video_template || defaultVideo;
             renderPlaceholders('video');
         }
+        document.getElementById('cpc-template').value = data.cpc_template || defaultCpc;
         renderPlaceholders('product');
+        renderPlaceholders('cpc');
         updatePreview();
     } catch(e) {
         console.error(e);
@@ -677,6 +696,8 @@ function insertPlaceholder(type, placeholder) {
 function updatePreview() {
     if (currentTab === 'product') {
         scheduleProductPreview();
+    } else if (currentTab === 'cpc') {
+        renderCpcPreview();
     } else {
         renderVideoSample();
     }
@@ -760,8 +781,8 @@ async function saveTemplate(type) {
 }
 
 async function resetTemplate(type) {
-    const def = type === 'product' ? defaultProduct : defaultVideo;
-    document.getElementById(`${type}-template`).value = def;
+    const defaults = { product: defaultProduct, video: defaultVideo, cpc: defaultCpc };
+    document.getElementById(`${type}-template`).value = defaults[type] || '';
     updatePreview();
 }
 
@@ -769,13 +790,27 @@ function switchTab(tab) {
     currentTab = tab;
     document.getElementById('tab-product').classList.toggle('active', tab === 'product');
     document.getElementById('tab-video').classList.toggle('active', tab === 'video');
+    document.getElementById('tab-cpc').classList.toggle('active', tab === 'cpc');
     document.getElementById('tab-product-content').style.display = tab === 'product' ? 'flex' : 'none';
     document.getElementById('tab-video-content').style.display = tab === 'video' ? 'flex' : 'none';
+    document.getElementById('tab-cpc-content').style.display = tab === 'cpc' ? 'flex' : 'none';
     updatePreview();
+}
+
+function renderCpcPreview() {
+    const template = document.getElementById('cpc-template').value || defaultCpc;
+    const preview = document.getElementById('preview-content');
+    const testData = { name: 'Тестовый рекламодатель', link: 'https://example.com/cpc/ref123' };
+    let text = template;
+    for (const [key, val] of Object.entries(testData)) {
+        text = text.replace(new RegExp(`\\{${key}\\}`, 'g'), val);
+    }
+    preview.innerHTML = `<div style="background:#0f0f0f; border-radius:12px; padding:16px; font-size:14px; line-height:1.6; white-space:pre-wrap;">${text.replace(/\n/g, '<br>')}</div>`;
 }
 
 document.getElementById('product-template').addEventListener('input', updatePreview);
 document.getElementById('video-template').addEventListener('input', updatePreview);
+document.getElementById('cpc-template').addEventListener('input', updatePreview);
 
 loadTemplates();
 </script>
@@ -997,17 +1032,21 @@ async def get_templates(token: str = Query(...)):
     user_id = get_user_id_from_token(token)
     conn = get_db()
     try:
-        user = conn.execute("SELECT product_template, video_template FROM users WHERE user_id=?", (user_id,)).fetchone()
-        return JSONResponse({"product_template": user["product_template"] if user else "", "video_template": user["video_template"] if user else ""})
+        user = conn.execute("SELECT product_template, video_template, cpc_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+        return JSONResponse({
+            "product_template": user["product_template"] if user else "",
+            "video_template": user["video_template"] if user else "",
+            "cpc_template": user["cpc_template"] if user else ""
+        })
     finally:
         conn.close()
 
 @router.post("/save-template")
 async def save_template(token: str = Form(...), type: str = Form(...), template: str = Form(...)):
     user_id = get_user_id_from_token(token)
-    if type not in ("product", "video"):
+    if type not in ("product", "video", "cpc"):
         return JSONResponse({"ok": False})
-    column = "product_template" if type == "product" else "video_template"
+    column = {"product": "product_template", "video": "video_template", "cpc": "cpc_template"}[type]
     conn = get_db()
     try:
         conn.execute(f"UPDATE users SET {column}=? WHERE user_id=?", (template, user_id))

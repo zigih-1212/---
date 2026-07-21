@@ -481,6 +481,10 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass
     try:
+        cursor.execute("ALTER TABLE users ADD COLUMN cpc_template TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
         cursor.execute("ALTER TABLE users ADD COLUMN template_preview_data TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass

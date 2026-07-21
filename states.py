@@ -39,3 +39,4 @@ class PayoutStates(StatesGroup):
 
 class CpcStates(StatesGroup):
     waiting_text = State()
+    waiting_template = State()
