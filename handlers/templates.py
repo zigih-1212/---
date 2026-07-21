@@ -30,7 +30,7 @@ DEFAULT_VIDEO_TEMPLATE = (
 
 DEFAULT_CPC_TEMPLATE = (
     "👆 <b>{name}</b>\n\n"
-    "Перейдите по ссылке:\n{link}"
+    "{link}"
 )
 
 def get_template_preview_buttons() -> InlineKeyboardMarkup:

@@ -809,23 +809,23 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
 
     erid_match = _re.search(r'erid=([^&]+)', final_url)
     erid_value = erid_match.group(1) if erid_match else ""
+    hidden_link = f"<a href='{final_url}'>Перейти</a>"
 
     if cpc_template and "{link}" in cpc_template:
-        post_text = cpc_template.replace("{link}", final_url)
+        post_text = cpc_template.replace("{link}", hidden_link)
     elif cpc_template and "{name}" in cpc_template:
-        post_text = cpc_template.replace("{name}", name).replace("{link}", final_url)
+        post_text = cpc_template.replace("{name}", name).replace("{link}", hidden_link)
     elif cpc_template:
-        post_text = f"{cpc_template}\n\n{final_url}"
+        post_text = f"{cpc_template}\n\n{hidden_link}"
     elif custom_text:
         post_text = custom_text
     elif description:
-        post_text = f"👆 {name}\n\n{description}\n\n{final_url}"
+        post_text = f"👆 {name}\n\n{description}\n\n{hidden_link}"
     else:
-        post_text = f"👆 {name}\n\n{final_url}"
+        post_text = f"👆 {name}\n\n{hidden_link}"
 
-    erid_line = f"\n\n🆔 ERID: {erid_value}" if erid_value else ""
-    reklama_line = "\n\n<b>Реклама. ИП Неизвестен.</b>"
-    post_text = f"{post_text}{erid_line}{reklama_line}"
+    reklama_line = f"\n\nРеклама. {name}. Erid: {erid_value}" if erid_value else ""
+    post_text = f"{post_text}{reklama_line}"
 
     # Проверка правил
     if rules and not skip_rules:
@@ -840,9 +840,6 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
             await safe_edit(callback.message, warn, reply_markup=kb_warn, parse_mode=ParseMode.HTML)
             return
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛒 Перейти", url=final_url)]
-    ])
     image_url = campaign.get("image_url") or ""
 
     logger.info(f"CPC post: name={name!r}, text={post_text[:100]!r}, image={image_url!r}, channel={ch['channel_id']}")
@@ -850,7 +847,7 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
     msg = await publish_post_with_fallback(
         bot=bot, channel_id=ch["channel_id"],
         caption=post_text, photo_url=image_url,
-        reply_markup=kb, parse_mode=ParseMode.HTML,
+        reply_markup=None, parse_mode=ParseMode.HTML,
     )
 
     if msg:
@@ -1768,6 +1765,7 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
     for cid, info in all_campaigns.items():
         if not info["image_url"] or not info["description"]:
             og = await scrape_og_data(info["cpc_link"])
+            logger.info(f"OG scrape for '{info['name']}' ({info['cpc_link']}): image={og['og_image']!r}, desc={og['og_description'][:50]!r}")
             if not info["image_url"] and og["og_image"]:
                 info["image_url"] = og["og_image"]
             if not info["description"] and og["og_description"]:

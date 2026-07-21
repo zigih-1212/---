@@ -643,36 +643,33 @@ async def publish_cpc_campaigns(bot: Bot):
         subid2 = generate_subid2(user_id, channel_id)
         separator = "&" if "?" in cpc_link else "?"
         final_url = f"{cpc_link}{separator}subid1={sub_id}&subid2={subid2}"
+        hidden_link = f"<a href='{final_url}'>Перейти</a>"
 
         if cpc_template and "{link}" in cpc_template:
-            post_text = cpc_template.replace("{link}", final_url)
+            post_text = cpc_template.replace("{link}", hidden_link)
         elif cpc_template and "{name}" in cpc_template:
-            post_text = cpc_template.replace("{name}", name).replace("{link}", final_url)
+            post_text = cpc_template.replace("{name}", name).replace("{link}", hidden_link)
         elif cpc_template:
-            post_text = f"{cpc_template}\n\n{final_url}"
+            post_text = f"{cpc_template}\n\n{hidden_link}"
         elif text_template and "{link}" in text_template:
-            post_text = text_template.replace("{link}", final_url)
+            post_text = text_template.replace("{link}", hidden_link)
         elif text_template:
             post_text = text_template
         elif description:
-            post_text = f"👆 {name}\n\n{description}\n\n{final_url}"
+            post_text = f"👆 {name}\n\n{description}\n\n{hidden_link}"
         else:
-            post_text = f"👆 {name}\n\n{final_url}"
+            post_text = f"👆 {name}\n\n{hidden_link}"
 
         erid_match = _re.search(r'erid=([^&]+)', final_url)
         erid_value = erid_match.group(1) if erid_match else ""
-        erid_line = f"\n\n🆔 ERID: {erid_value}" if erid_value else ""
-        post_text = f"{post_text}{erid_line}\n\n<b>Реклама. ИП Неизвестен.</b>"
-
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🛒 Перейти", url=final_url)]
-        ])
+        reklama_line = f"\n\nРеклама. {name}. Erid: {erid_value}" if erid_value else ""
+        post_text = f"{post_text}{reklama_line}"
 
         try:
             msg = await publish_post_with_fallback(
                 bot=bot, channel_id=channel_id,
                 caption=post_text, photo_url=image_url,
-                reply_markup=kb, parse_mode="HTML",
+                reply_markup=None, parse_mode="HTML",
             )
             if not msg:
                 logger.error(f"❌ CPC пост '{name}' → {ch_title}: publish_post_with_fallback вернул None")
