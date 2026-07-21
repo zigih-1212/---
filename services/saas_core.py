@@ -149,9 +149,11 @@ async def publish_post_with_fallback(
     parse_mode: str = "HTML",
 ) -> Optional[Message]:
     from aiogram.types import BufferedInputFile
+    logger.info(f"publish_post_with_fallback: channel={channel_id}, photo_url={photo_url!r}, caption_len={len(caption)}, parse_mode={parse_mode!r}")
 
     if photo_url:
         image_bytes = await download_image(photo_url)
+        logger.info(f"publish_post_with_fallback: image_bytes={'yes' if image_bytes else 'no'}")
         if image_bytes:
             try:
                 logger.info(f"publish_post_with_fallback: sending photo to {channel_id}, caption={caption[:80]!r}")
@@ -197,6 +199,7 @@ async def publish_post_with_fallback(
                     conn_deact.close()
                 return None
     try:
+        logger.info(f"publish_post_with_fallback: sending text fallback to {channel_id}, text={caption[:80]!r}")
         return await bot.send_message(
             chat_id=channel_id,
             text=caption,
@@ -581,11 +584,13 @@ async def publish_cpc_campaigns(bot: Bot):
     if is_night_time():
         return
 
+    import re as _re
     conn = get_db()
     try:
         campaigns = conn.execute("""
             SELECT cpc.id, cpc.user_id, cpc.campaign_id, cpc.name, cpc.cpc_link,
                    cpc.text, cpc.image_url, cpc.interval_hours, cpc.last_posted_at,
+                   cpc.description,
                    ch.channel_id, ch.sub_id, ch.channel_title
             FROM cpc_campaigns cpc
             JOIN users u ON u.user_id = cpc.user_id
@@ -609,6 +614,7 @@ async def publish_cpc_campaigns(bot: Bot):
         sub_id = row["sub_id"] or ""
         cpc_link = row["cpc_link"]
         text_template = row["text"] or ""
+        description = row["description"] or ""
         name = row["name"]
         image_url = row["image_url"] or ""
         ch_title = row["channel_title"] or channel_id
@@ -648,8 +654,15 @@ async def publish_cpc_campaigns(bot: Bot):
             post_text = text_template.replace("{link}", final_url)
         elif text_template:
             post_text = text_template
+        elif description:
+            post_text = f"👆 {name}\n\n{description}\n\n{final_url}"
         else:
             post_text = f"👆 {name}\n\n{final_url}"
+
+        erid_match = _re.search(r'erid=([^&]+)', final_url)
+        erid_value = erid_match.group(1) if erid_match else ""
+        erid_line = f"\n\n🆔 ERID: {erid_value}" if erid_value else ""
+        post_text = f"{post_text}{erid_line}\n\n<b>Реклама. ИП Неизвестен.</b>"
 
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🛒 Перейти", url=final_url)]
@@ -659,7 +672,7 @@ async def publish_cpc_campaigns(bot: Bot):
             msg = await publish_post_with_fallback(
                 bot=bot, channel_id=channel_id,
                 caption=post_text, photo_url=image_url,
-                reply_markup=kb, parse_mode=None,
+                reply_markup=kb, parse_mode="HTML",
             )
             if not msg:
                 logger.error(f"❌ CPC пост '{name}' → {ch_title}: publish_post_with_fallback вернул None")
