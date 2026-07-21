@@ -1749,6 +1749,7 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
                 img = c.get("image") or ""
                 if isinstance(img, dict):
                     img = img.get("url", "")
+                logger.info(f"CPC sync: '{c.get('name')}' api_image={c.get('image')!r} parsed_img={img!r}")
                 all_campaigns[cid] = {
                     "campaign_id": cid,
                     "name": c.get("name", f"ID {cid}"),
@@ -1766,7 +1767,7 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
     for cid, info in all_campaigns.items():
         if not info["image_url"] or not info["description"]:
             og = await scrape_og_data(info["cpc_link"])
-            logger.info(f"OG scrape for '{info['name']}' ({info['cpc_link']}): image={og['og_image']!r}, desc={og['og_description'][:50]!r}")
+            logger.info(f"OG scrape for '{info['name']}' ({info['cpc_link']}): image={og['og_image']!r}, desc={og['og_description'][:80]!r}")
             if not info["image_url"] and og["og_image"]:
                 info["image_url"] = og["og_image"]
             if not info["description"] and og["og_description"]:
