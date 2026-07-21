@@ -2076,6 +2076,8 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     .btn-toggle.off { background: #555; color: #aaa; }
     .success { color: #4caf50; font-size: 0.85em; margin-top: 4px; }
     .no-campaigns { color: #888; text-align: center; padding: 40px; font-size: 1.1em; }
+    .campaign-desc { background: #1e1e1e; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 0.9em; color: #aaa; line-height: 1.5; max-height: 200px; overflow-y: auto; }
+    .campaign-desc b { color: #ddd; }
 </style>
 </head>
 <body>
@@ -2111,11 +2113,13 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const toggleClass = isActive ? 'on' : 'off';
             const toggleText = isActive ? '🔴 Отключить' : '🟢 Включить';
             const imgHtml = c.image_url ? `<img class="campaign-img" src="${c.image_url}" alt="" onerror="this.style.display='none'">` : '<div class="campaign-img"></div>';
+            const descHtml = c.description ? `<div class="campaign-desc"><b>📋 Правила:</b><br>${c.description}</div>` : '';
             return `<div class="campaign-card">
                 ${imgHtml}
                 <div class="campaign-info">
                     <div class="campaign-name">${c.name}</div>
                     <div class="campaign-status ${statusClass}">${statusText}</div>
+                    ${descHtml}
                     <textarea class="campaign-textarea" id="text-${c.id}" placeholder="Напишите рекламный текст для этой кампании...">${c.text || ''}</textarea>
                     <div id="msg-${c.id}"></div>
                     <div class="campaign-actions">
@@ -2164,7 +2168,7 @@ async def get_cpc_campaigns_data(token: str = Query(...)):
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, campaign_id, name, text, image_url, is_active, interval_hours, last_posted_at "
+            "SELECT id, campaign_id, name, text, image_url, description, is_active, interval_hours, last_posted_at "
             "FROM cpc_campaigns WHERE user_id=? ORDER BY name",
             (user_id,)
         ).fetchall()

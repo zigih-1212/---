@@ -1666,6 +1666,7 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
                     "name": c.get("name", f"ID {cid}"),
                     "cpc_link": cpc_link,
                     "image_url": img,
+                    "description": c.get("description", "") or "",
                 }
 
     if not all_campaigns:
@@ -1680,13 +1681,13 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
             ).fetchone()
             if not existing and info["cpc_link"]:
                 conn.execute(
-                    "INSERT INTO cpc_campaigns (user_id, campaign_id, name, cpc_link, image_url) VALUES (?,?,?,?,?)",
-                    (user_id, cid, info["name"], info["cpc_link"], info["image_url"])
+                    "INSERT INTO cpc_campaigns (user_id, campaign_id, name, cpc_link, image_url, description) VALUES (?,?,?,?,?,?)",
+                    (user_id, cid, info["name"], info["cpc_link"], info["image_url"], info["description"])
                 )
         conn.commit()
 
         rows = conn.execute(
-            "SELECT id, campaign_id, name, cpc_link, text, image_url, is_active, interval_hours, last_posted_at "
+            "SELECT id, campaign_id, name, cpc_link, text, image_url, description, is_active, interval_hours, last_posted_at "
             "FROM cpc_campaigns WHERE user_id=? ORDER BY name",
             (user_id,)
         ).fetchall()
