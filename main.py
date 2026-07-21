@@ -2096,6 +2096,8 @@ async def main() -> None:
     dp.include_router(router)
     dp.include_router(saas_router)
 
+    from handlers.social import router as social_router
+    dp.include_router(social_router)
     scheduler = setup_scheduler(bot)
     scheduler.start()
     logger.info("РџР»Р°РЅРёСЂРѕРІС‰РёРє (APScheduler) Р·Р°РїСѓС‰РµРЅ")
