@@ -722,7 +722,14 @@ async def cb_force_type_cpc(callback: CallbackQuery, bot: Bot) -> None:
         await safe_edit(callback.message, "📢 Выберите канал для CPC-поста:", reply_markup=kb)
         return
 
-    await _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template, auto_delete_hours)
+    try:
+        await _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template, auto_delete_hours)
+    except Exception as e:
+        logger.error(f"❌ Force CPC error for user {user_id}: {e}")
+        try:
+            await callback.message.answer(f"❌ Ошибка публикации CPC: {e}")
+        except:
+            pass
 
 
 @router.callback_query(F.data.startswith("force_cpc_channel:"))
@@ -790,7 +797,7 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
     msg = await publish_post_with_fallback(
         bot=bot, channel_id=ch["channel_id"],
         caption=post_text, photo_url=image_url,
-        reply_markup=kb,
+        reply_markup=kb, parse_mode=None,
     )
 
     if msg:
@@ -806,6 +813,10 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
             conn_rec.commit()
         finally:
             conn_rec.close()
+    try:
+        await callback.answer("✅ CPC-пост опубликован", show_alert=False)
+    except:
+        pass
 
 
 async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int, channel_id: str = None) -> None:

@@ -584,8 +584,8 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     .nav { margin-bottom: 20px; display: flex; gap: 15px; }
     .nav a { color: #ff4444; text-decoration: none; padding: 8px 16px; border-radius: 8px; background: #333; }
     .nav a.active { background: #ff4444; color: #fff; }
-    .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-    .tabs button { background: #333; color: #ccc; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+    .tabs button { background: #333; color: #ccc; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
     .tabs button.active { background: #ff4444; color: #fff; }
     .editor-panel { display: flex; gap: 20px; flex-wrap: wrap; }
     .editor { flex: 2; min-width: 300px; }
@@ -901,8 +901,8 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     .channel-row span { flex: 1; }
     .info-text { background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px; color: #aaa; line-height: 1.6; }
     .info-text code { background: #333; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-    .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
-    .tab-btn { background: #333; border: 1px solid #555; color: #ddd; padding: 10px 20px; border-radius: 8px; cursor: pointer; flex: 1; min-width: 100px; text-align: center; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+    .tab-btn { background: #333; border: 1px solid #555; color: #ddd; padding: 10px 20px; border-radius: 8px; cursor: pointer; flex-shrink: 0; min-width: 100px; text-align: center; }
     .tab-btn.active { background: #ff4444; color: #fff; border-color: #ff4444; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
@@ -1601,8 +1601,13 @@ async def preview_template(token: str = Query(...), type: str = Query("product")
                 custom_template=custom_template
             )
             return JSONResponse({"html": caption})
+        elif type == "cpc":
+            user_tmpl = conn.execute("SELECT cpc_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+            tmpl = user_tmpl["cpc_template"] if user_tmpl and user_tmpl["cpc_template"] else "{name}\n{link}"
+            html = tmpl.replace("{name}", "Тестовый рекламодатель").replace("{link}", "https://example.com/cpc/ref")
+            return JSONResponse({"html": html})
         else:
-            return JSONResponse({"html": "Предпросмотр видео пока недоступен"})
+            return JSONResponse({"html": "Предпросмотр пока недоступен"})
     finally:
         conn.close()
 

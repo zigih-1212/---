@@ -90,11 +90,12 @@ async def publish_post_with_fallback(
     bot: Bot, 
     channel_id: str,
     caption: str,
-    user_id: int = None,  # Добавляем необязательный user_id
+    user_id: int = None,
     photo_url: Optional[str] = None,
     video_url: Optional[str] = None,
     reply_markup: Optional[InlineKeyboardMarkup] = None,
     has_spoiler: bool = False,
+    parse_mode: str = "HTML",
 ) -> Optional[Message]:
     from aiogram.types import BufferedInputFile
 
@@ -106,7 +107,7 @@ async def publish_post_with_fallback(
                     chat_id=channel_id,
                     photo=BufferedInputFile(image_bytes, filename="product.jpg"),
                     caption=caption,
-                    parse_mode="HTML",
+                    parse_mode=parse_mode,
                     reply_markup=reply_markup,
                     has_spoiler=has_spoiler,
                 )
@@ -119,7 +120,7 @@ async def publish_post_with_fallback(
                 chat_id=channel_id,
                 video=video_url,
                 caption=caption,
-                parse_mode="HTML",
+                parse_mode=parse_mode,
                 reply_markup=reply_markup,
                 has_spoiler=has_spoiler,
             )
@@ -127,12 +128,10 @@ async def publish_post_with_fallback(
             logger.warning(f"Ошибка отправки: {e}")
             reason = get_block_reason(e)
             if reason:
-                # Деактивируем канал
                 conn_deact = get_db()
                 try:
                     conn_deact.execute("UPDATE channels SET is_active = 0 WHERE channel_id = ?", (channel_id,))
                     conn_deact.commit()
-                    # Уведомление владельцу канала (найдём user_id по channel_id)
                     user_row = conn_deact.execute("SELECT user_id FROM channels WHERE channel_id = ?", (channel_id,)).fetchone()
                     if user_row:
                         try:
@@ -144,14 +143,12 @@ async def publish_post_with_fallback(
                         except: pass
                 finally:
                     conn_deact.close()
-                return None  # Прерываем текущую попытку
-            # Если не критично, пробуем фолбэк дальше
-
+                return None
     try:
         return await bot.send_message(
             chat_id=channel_id,
             text=caption,
-            parse_mode="HTML",
+            parse_mode=parse_mode,
             reply_markup=reply_markup,
             disable_web_page_preview=False
         )
@@ -610,7 +607,7 @@ async def publish_cpc_campaigns(bot: Bot):
             msg = await publish_post_with_fallback(
                 bot=bot, channel_id=channel_id,
                 caption=post_text, photo_url=image_url,
-                reply_markup=kb,
+                reply_markup=kb, parse_mode=None,
             )
             if not msg:
                 logger.error(f"❌ CPC пост '{name}' → {ch_title}: publish_post_with_fallback вернул None")
