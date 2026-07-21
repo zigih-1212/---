@@ -2127,12 +2127,19 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const imgHtml = c.image_url ? `<img class="campaign-img" src="${c.image_url}" alt="" onerror="this.style.display='none'">` : '<div class="campaign-img"></div>';
             const descHtml = c.description ? `<div class="campaign-desc"><b>📝 Описание:</b><br>${c.description}</div>` : '';
             const rulesBtnHtml = (c.more_rules || c.rules) ? `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(c.name).replace(/'/g,"\\'")}, ${JSON.stringify(c.more_rules||c.rules||"").replace(/'/g,"\\'")})'>⚠️ Правила</button>` : '';
+            const imgEditHtml = `<div style="margin-bottom:8px;"><label style="font-size:0.85em;color:#888;">🖼 Картинка (URL):</label>
+                <div style="display:flex;gap:6px;margin-top:4px;">
+                    <input type="text" id="img-${c.id}" value="${c.image_url || ''}" placeholder="https://..." style="flex:1;background:#333;border:1px solid #555;color:#ddd;padding:6px 8px;border-radius:6px;font-size:0.85em;">
+                    <button class="btn-save" style="background:#555;font-size:0.85em;padding:6px 10px;" onclick="saveImage(${c.id})">💾</button>
+                </div>
+            </div>`;
             return `<div class="campaign-card">
                 ${imgHtml}
                 <div class="campaign-info">
                     <div class="campaign-name">${c.name}</div>
                     <div class="campaign-status ${statusClass}">${statusText}</div>
                     ${descHtml}
+                    ${imgEditHtml}
                     <textarea class="campaign-textarea" id="text-${c.id}" placeholder="Напишите рекламный текст для этой кампании...">${c.text || c.description || ''}</textarea>
                     <div id="msg-${c.id}"></div>
                     <div class="campaign-actions">
@@ -2156,6 +2163,20 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
         if (data.ok) {
             msg.innerHTML = '<div class="success">✅ Текст сохранён</div>';
             setTimeout(() => msg.innerHTML = '', 3000);
+        }
+    }
+    async function saveImage(id) {
+        const url = document.getElementById('img-' + id).value.trim();
+        const f = new FormData();
+        f.append('token', '{{ token }}');
+        f.append('campaign_id', id);
+        f.append('image_url', url);
+        const res = await fetch('/my-stats/save-cpc-image', { method: 'POST', body: f });
+        const data = await res.json();
+        const msg = document.getElementById('msg-' + id);
+        if (data.ok) {
+            msg.innerHTML = '<div class="success">✅ Картинка сохранена</div>';
+            setTimeout(() => { msg.innerHTML = ''; loadCampaigns(); }, 1500);
         }
     }
     function openRulesModal(name, rules) {
@@ -2206,6 +2227,20 @@ async def save_cpc_text(token: str = Form(...), campaign_id: int = Form(...), te
         conn.execute(
             "UPDATE cpc_campaigns SET text=? WHERE id=? AND user_id=?",
             (text, campaign_id, user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+@router.post("/save-cpc-image")
+async def save_cpc_image(token: str = Form(...), campaign_id: int = Form(...), image_url: str = Form("")):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE cpc_campaigns SET image_url=? WHERE id=? AND user_id=?",
+            (image_url, campaign_id, user_id)
         )
         conn.commit()
     finally:

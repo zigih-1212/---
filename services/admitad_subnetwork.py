@@ -61,7 +61,7 @@ async def get_access_token() -> Optional[str]:
                 headers={"Authorization": auth_header},
                 data={
                     "grant_type": "client_credentials",
-                    "scope": "advcampaigns websites manage_websites advcampaigns_for_website"
+                    "scope": "advcampaigns websites manage_websites advcampaigns_for_website banners"
                 }
             )
             if resp.status_code != 200:
@@ -228,6 +228,47 @@ async def get_website_campaigns(website_id: int) -> list:
         except Exception as e:
             logger.error(f"❌ get_website_campaigns exception: {e}")
             return []
+
+
+async def get_campaign_banners(campaign_id: int) -> list:
+    """Получает баннеры/креативы кампании через Banners API."""
+    token = await get_access_token()
+    if not token:
+        return []
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(
+                f"https://api.admitad.com/banners/",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"advcampaign": campaign_id, "limit": 10}
+            )
+            if resp.status_code == 200:
+                return resp.json().get("results", [])
+            logger.warning(f"get_campaign_banners({campaign_id}): {resp.status_code}")
+            return []
+        except Exception as e:
+            logger.warning(f"get_campaign_banners error: {e}")
+            return []
+
+
+async def get_advertiser_info(campaign_id: int) -> dict:
+    """Получает детали партнёрской программы (логотип, описание и т.д.)."""
+    token = await get_access_token()
+    if not token:
+        return {}
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(
+                f"https://api.admitad.com/advcampaigns/{campaign_id}/",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            logger.warning(f"get_advertiser_info({campaign_id}): {resp.status_code}")
+            return {}
+        except Exception as e:
+            logger.warning(f"get_advertiser_info error: {e}")
+            return {}
 
 
 async def search_all_cpc_campaigns(query: str = "", limit: int = 50) -> list:

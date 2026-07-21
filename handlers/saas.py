@@ -1775,6 +1775,28 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
             elif not info["description"] and og["og_title"]:
                 info["description"] = og["og_title"]
 
+    # Fallback: Banners API + Advertiser Info для кампаний всё ещё без картинки
+    from services.admitad_subnetwork import get_campaign_banners, get_advertiser_info
+    for cid, info in all_campaigns.items():
+        if not info["image_url"]:
+            banners = await get_campaign_banners(cid)
+            for b in banners:
+                img = b.get("image") or b.get("src") or ""
+                if isinstance(img, dict):
+                    img = img.get("url", "")
+                if img and img.startswith("http"):
+                    info["image_url"] = img
+                    logger.info(f"Banners API: '{info['name']}' image={img!r}")
+                    break
+            if not info["image_url"]:
+                details = await get_advertiser_info(cid)
+                detail_img = details.get("image") or ""
+                if isinstance(detail_img, dict):
+                    detail_img = detail_img.get("url", "")
+                if detail_img and detail_img.startswith("http"):
+                    info["image_url"] = detail_img
+                    logger.info(f"Advertiser info: '{info['name']}' image={detail_img!r}")
+
     conn = get_db()
     try:
         for cid, info in all_campaigns.items():
