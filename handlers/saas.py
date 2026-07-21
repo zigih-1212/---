@@ -834,6 +834,8 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
     ])
     image_url = campaign.get("image_url") or ""
 
+    logger.info(f"CPC post: name={name!r}, text={post_text[:100]!r}, image={image_url!r}, channel={ch['channel_id']}")
+
     msg = await publish_post_with_fallback(
         bot=bot, channel_id=ch["channel_id"],
         caption=post_text, photo_url=image_url,

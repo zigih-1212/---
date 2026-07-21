@@ -154,6 +154,7 @@ async def publish_post_with_fallback(
         image_bytes = await download_image(photo_url)
         if image_bytes:
             try:
+                logger.info(f"publish_post_with_fallback: sending photo to {channel_id}, caption={caption[:80]!r}")
                 return await bot.send_photo(
                     chat_id=channel_id,
                     photo=BufferedInputFile(image_bytes, filename="product.jpg"),
