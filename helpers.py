@@ -309,11 +309,17 @@ from services.db import get_db
 from datetime import datetime, timezone, timedelta
 from config import BOT_USERNAME
 
-async def show_user_cabinet(message: Message, user_id: int = None):
+async def show_user_cabinet(message: Message, user_id: int = None, edit_message: Message = None):
     from keyboards.saas import kb_cabinet_menu
     """Отображает личный кабинет пользователя."""
     if user_id is None:
         user_id = message.from_user.id
+
+    async def _send(text, kb):
+        if edit_message:
+            await safe_edit(edit_message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        else:
+            await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
     conn = get_db()
     try:
@@ -393,7 +399,7 @@ async def show_user_cabinet(message: Message, user_id: int = None):
             [InlineKeyboardButton(text="✅ Принимаю условия", callback_data="oferta:accept")],
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="cabinet:open")]
         ])
-        await message.answer(text_oferta, parse_mode=ParseMode.HTML, reply_markup=kb)
+        await _send(text_oferta, kb)
         return
 
     # Статус подписки
@@ -444,7 +450,7 @@ async def show_user_cabinet(message: Message, user_id: int = None):
         f"📌 Налоговый статус: {tax_status_display}"
         f"{finance_text}"
     )
-    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb_cabinet_menu(role))
+    await _send(text, kb_cabinet_menu(role))
 
 
 async def open_saas_settings(callback):
@@ -487,6 +493,7 @@ async def open_saas_settings(callback):
         [InlineKeyboardButton(text=f"🔔 Уведомления о постах: {'✅' if notify_posts else '❌'}", callback_data="saas_toggle:notifyposts")],
         [InlineKeyboardButton(text="⏰ Циклический постинг", callback_data="menu:cyclic")],
         [InlineKeyboardButton(text=f"🗑 Автоудаление постов: {delete_text}", callback_data="saas_set:autodelete")],
+        [InlineKeyboardButton(text="📢 Рекламодатели (CPC)", callback_data="menu:cpc")],
         [InlineKeyboardButton(text="🚀 Опубликовать сейчас (Force Post)", callback_data="saas_force_post")],
         [InlineKeyboardButton(text=f"🔄 {preview_text}", callback_data=preview_callback)],
         [InlineKeyboardButton(text="🔙 Назад в кабинет", callback_data="cabinet:open")]

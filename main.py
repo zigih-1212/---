@@ -34,7 +34,8 @@ from config import (
 )
 from services.saas_core import (
     publish_post_with_fallback,
-    publish_from_catalog
+    publish_from_catalog,
+    publish_cpc_campaigns
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Form, Request, HTTPException
@@ -584,6 +585,23 @@ def init_db() -> None:
             access_token TEXT NOT NULL,
             expires_at REAL NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cpc_campaigns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            campaign_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            cpc_link TEXT NOT NULL,
+            text TEXT DEFAULT '',
+            is_active INTEGER DEFAULT 0,
+            interval_hours INTEGER DEFAULT 24,
+            last_posted_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     """)
     conn.commit()
@@ -2002,11 +2020,7 @@ async def process_payout_message(message: Message, state: FSMContext):
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "cabinet:open")
 async def cb_open_cabinet(callback: CallbackQuery):
-    try:
-        await callback.message.delete()
-    except:
-        pass
-    await show_user_cabinet(callback.message, user_id=callback.from_user.id)
+    await show_user_cabinet(callback.message, user_id=callback.from_user.id, edit_message=callback.message)
     await callback.answer()
 
 # ---------------------------------------------------------------------------
@@ -2194,6 +2208,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(cleanup_old_report_files, trigger="cron", hour=3, minute=5, id="cleanup_report_files", replace_existing=True)
     scheduler.add_job(backup_database_to_telegram, trigger="cron", hour=3, minute=10, kwargs={"bot": bot}, id="backup_database", replace_existing=True)
     scheduler.add_job(publish_from_catalog, trigger="interval", minutes=10, jitter=30, kwargs={"bot": bot}, id="publish_catalog", replace_existing=True)
+    scheduler.add_job(publish_cpc_campaigns, trigger="interval", minutes=15, jitter=30, kwargs={"bot": bot}, id="publish_cpc", replace_existing=True)
     scheduler.add_job(refill_admitad_catalogs, trigger="interval", minutes=15, id="refill_admitad", replace_existing=True)
     scheduler.add_job(daily_report, trigger="cron", hour=9, minute=0, kwargs={"bot": bot}, id="daily_report", replace_existing=True)
     scheduler.add_job(update_all_store_data_from_feed, trigger="cron", hour=4, minute=0, id="update_coupons_feed", replace_existing=True)

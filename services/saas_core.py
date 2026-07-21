@@ -526,3 +526,101 @@ async def pin_post_if_enabled(bot: Bot, user_id: int, channel_id: str, message_i
         logger.error(f"Ошибка закрепления поста {message_id} в {channel_id}: {e}")
     finally:
         conn.close()
+
+
+async def publish_cpc_campaigns(bot: Bot):
+    if is_night_time():
+        return
+
+    conn = get_db()
+    try:
+        campaigns = conn.execute("""
+            SELECT cpc.id, cpc.user_id, cpc.campaign_id, cpc.name, cpc.cpc_link,
+                   cpc.text, cpc.interval_hours, cpc.last_posted_at,
+                   ch.channel_id, ch.sub_id, ch.channel_title
+            FROM cpc_campaigns cpc
+            JOIN users u ON u.user_id = cpc.user_id
+            JOIN channels ch ON ch.user_id = cpc.user_id
+            WHERE cpc.is_active = 1
+              AND u.is_active = 1
+              AND (cpc.last_posted_at IS NULL
+                   OR datetime(cpc.last_posted_at, '+' || cpc.interval_hours || ' hours') <= datetime('now'))
+        """).fetchall()
+    finally:
+        conn.close()
+
+    if not campaigns:
+        return
+
+    posted_ids = set()
+    for row in campaigns:
+        user_id = row["user_id"]
+        cpc_id = row["id"]
+        channel_id = row["channel_id"]
+        sub_id = row["sub_id"] or ""
+        cpc_link = row["cpc_link"]
+        text_template = row["text"] or ""
+        name = row["name"]
+        ch_title = row["channel_title"] or channel_id
+
+        if not cpc_link or not channel_id:
+            continue
+
+        subid2 = generate_subid2(user_id, channel_id)
+        separator = "&" if "?" in cpc_link else "?"
+        final_url = f"{cpc_link}{separator}subid1={sub_id}&subid2={subid2}"
+
+        if text_template and "{link}" in text_template:
+            post_text = text_template.replace("{link}", final_url)
+        elif text_template:
+            post_text = f"{text_template}\n\n{final_url}"
+        else:
+            post_text = f"🔥 {name}\n\n{final_url}"
+
+        try:
+            msg = await bot.send_message(
+                channel_id,
+                post_text,
+                parse_mode=None,
+                disable_web_page_preview=False,
+            )
+            logger.info(f"✅ CPC пост '{name}' отправлен в {ch_title} (user {user_id})")
+
+            auto_delete_hours = 168
+            try:
+                c = get_db()
+                try:
+                    u_row = c.execute(
+                        "SELECT default_auto_delete_hours FROM users WHERE user_id=?", (user_id,)
+                    ).fetchone()
+                    if u_row and u_row["default_auto_delete_hours"]:
+                        auto_delete_hours = u_row["default_auto_delete_hours"]
+                finally:
+                    c.close()
+            except Exception:
+                pass
+
+            if auto_delete_hours > 0:
+                del_at = datetime.now(timezone.utc) + timedelta(hours=auto_delete_hours)
+                c = get_db()
+                try:
+                    c.execute(
+                        "INSERT INTO posts (user_id, channel_id, status, published_at, auto_delete_hours) "
+                        "VALUES (?, ?, 'published', ?, ?)",
+                        (user_id, channel_id, datetime.now(timezone.utc).isoformat(), auto_delete_hours)
+                    )
+                    c.commit()
+                finally:
+                    c.close()
+
+            if cpc_id not in posted_ids:
+                posted_ids.add(cpc_id)
+                c = get_db()
+                try:
+                    c.execute("UPDATE cpc_campaigns SET last_posted_at=datetime('now') WHERE id=?", (cpc_id,))
+                    c.commit()
+                finally:
+                    c.close()
+
+        except Exception as e:
+            logger.error(f"❌ CPC пост '{name}' → {ch_title}: {e}")
