@@ -1688,6 +1688,7 @@ async def cb_cpc_text_save(message: Message, state: FSMContext):
 
     conn = get_db()
     try:
+        row = conn.execute("SELECT name, cpc_link FROM cpc_campaigns WHERE id=?", (row_id,)).fetchone()
         conn.execute("UPDATE cpc_campaigns SET text=? WHERE id=?", (new_text, row_id))
         conn.commit()
     finally:
@@ -1695,6 +1696,22 @@ async def cb_cpc_text_save(message: Message, state: FSMContext):
 
     await state.clear()
 
-    user_id = message.from_user.id
-    text, kb = await _build_cpc_list(user_id)
-    await message.answer(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    preview_link = "https://example.com/ref"
+    if "{link}" in new_text:
+        preview = new_text.replace("{link}", preview_link)
+    elif new_text:
+        preview = f"{new_text}\n\n{preview_link}"
+    else:
+        preview = f"🔥 {row['name']}\n\n{preview_link}"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 К списку", callback_data="menu:cpc")]
+    ])
+
+    await message.answer(
+        f"✅ Текст сохранён!\n\n"
+        f"<b>Превью поста:</b>\n\n{preview}\n\n"
+        f"<i>(Ссылка будет рабочей CPC)</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
