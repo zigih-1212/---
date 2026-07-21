@@ -723,7 +723,7 @@ async def cb_force_type_cpc(callback: CallbackQuery, bot: Bot) -> None:
         return
 
     try:
-        await _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template, auto_delete_hours)
+        await _publish_cpc_post(callback, bot, user_id, dict(campaign), dict(ch), cpc_template, auto_delete_hours)
     except Exception as e:
         logger.error(f"❌ Force CPC error for user {user_id}: {e}")
         try:
@@ -767,12 +767,39 @@ async def cb_force_cpc_channel(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer()
 
 
-async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=None, auto_delete_hours=168):
+def _check_cpc_rules(text: str, rules: str) -> list:
+    """Проверяет текст поста на нарушения правил кампании."""
+    violations = []
+    text_lower = text.lower()
+    for line in rules.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        rule_lower = line.lower()
+        # Извлекаем ключевые слова из правила
+        # Простая эвристика: ищем ключевые слова в тексте
+        if any(w in rule_lower for w in ["нельзя", "запрещено", "не допускается", "бан"]):
+            # Берём слова после запрета как ключевые
+            for marker in ["нельзя", "запрещено", "не допускается", "бан"]:
+                if marker in rule_lower:
+                    idx = rule_lower.index(marker) + len(marker)
+                    keywords = rule_lower[idx:].strip().split()
+                    keywords = [w for w in keywords if len(w) > 3]
+                    for kw in keywords:
+                        if kw in text_lower:
+                            violations.append(line)
+                            break
+                    break
+    return list(set(violations))
+
+
+async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=None, auto_delete_hours=168, skip_rules=False):
     """Публикация одного CPC-поста с картинкой и кнопкой"""
     sub_id = ch["sub_id"] or ""
     cpc_link = campaign["cpc_link"]
     name = campaign["name"]
     custom_text = campaign.get("text") or ""
+    rules = campaign.get("rules") or ""
 
     subid2 = generate_subid2(user_id, ch["channel_id"])
     separator = "&" if "?" in cpc_link else "?"
@@ -787,7 +814,20 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
     elif custom_text:
         post_text = custom_text
     else:
-        post_text = f"👆 {name}"
+        post_text = f"👆 {name}\n\n{final_url}"
+
+    # Проверка правил
+    if rules and not skip_rules:
+        violations = _check_cpc_rules(post_text, rules)
+        if violations:
+            warn = "⚠️ <b>Нарушение правил:</b>\n" + "\n".join(f"• {v}" for v in violations)
+            warn += "\n\n💡 Текст нарушает правила магазина. Публикация возможна, но выплата не гарантирована."
+            kb_warn = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📤 Опубликовать всё равно", callback_data=f"cpc_force_confirm:{campaign.get('id', 0)}:{ch['channel_id']}")],
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="cabinet:open")],
+            ])
+            await safe_edit(callback.message, warn, reply_markup=kb_warn, parse_mode=ParseMode.HTML)
+            return
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛒 Перейти", url=final_url)]
@@ -821,6 +861,43 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
 
 async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int, channel_id: str = None) -> None:
     """Публикация поста сразу без предпросмотра"""
+
+
+@router.callback_query(F.data.startswith("cpc_force_confirm:"))
+async def cb_cpc_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
+    """Публикация CPC-поста после подтверждения (нарушая правила)"""
+    parts = callback.data.split(":")
+    campaign_id = int(parts[1])
+    channel_id = parts[2]
+    user_id = callback.from_user.id
+
+    conn = get_db()
+    try:
+        campaign = conn.execute(
+            "SELECT id, name, cpc_link, text, image_url, rules FROM cpc_campaigns WHERE id = ? AND user_id = ?",
+            (campaign_id, user_id)
+        ).fetchone()
+        ch = conn.execute(
+            "SELECT channel_id, sub_id, channel_title FROM channels WHERE channel_id = ? AND user_id = ?",
+            (channel_id, user_id)
+        ).fetchone()
+        user_row = conn.execute(
+            "SELECT cpc_template, default_auto_delete_hours FROM users WHERE user_id=?",
+            (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not campaign or not ch:
+        await callback.answer("❌ Не найдено", show_alert=True)
+        return
+
+    cpc_template = user_row["cpc_template"] if user_row and user_row["cpc_template"] else None
+    auto_delete_hours = user_row["default_auto_delete_hours"] if user_row and user_row["default_auto_delete_hours"] is not None else 168
+
+    # Публикуем без проверки правил
+    await _publish_cpc_post(callback, bot, user_id, dict(campaign), dict(ch), cpc_template, auto_delete_hours, skip_rules=True)
+    await callback.answer()
     conn = get_db()
     try:
         # Получаем настройки пользователя
@@ -1671,6 +1748,18 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
 
     if not all_campaigns:
         return []
+
+    # OG-scraping для кампаний без картинки/описания
+    from services.saas_core import scrape_og_data
+    for cid, info in all_campaigns.items():
+        if not info["image_url"] or not info["description"]:
+            og = await scrape_og_data(info["cpc_link"])
+            if not info["image_url"] and og["og_image"]:
+                info["image_url"] = og["og_image"]
+            if not info["description"] and og["og_description"]:
+                info["description"] = og["og_description"]
+            elif not info["description"] and og["og_title"]:
+                info["description"] = og["og_title"]
 
     conn = get_db()
     try:

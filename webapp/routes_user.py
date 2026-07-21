@@ -2078,6 +2078,8 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     .no-campaigns { color: #888; text-align: center; padding: 40px; font-size: 1.1em; }
     .campaign-desc { background: #1e1e1e; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 0.9em; color: #aaa; line-height: 1.5; max-height: 200px; overflow-y: auto; }
     .campaign-desc b { color: #ddd; }
+    .campaign-rules { background: #2a1a1a; border: 1px solid #553; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 0.9em; color: #cc8; line-height: 1.5; }
+    .campaign-rules b { color: #ee9; }
 </style>
 </head>
 <body>
@@ -2113,17 +2115,23 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const toggleClass = isActive ? 'on' : 'off';
             const toggleText = isActive ? '🔴 Отключить' : '🟢 Включить';
             const imgHtml = c.image_url ? `<img class="campaign-img" src="${c.image_url}" alt="" onerror="this.style.display='none'">` : '<div class="campaign-img"></div>';
-            const descHtml = c.description ? `<div class="campaign-desc"><b>📋 Правила:</b><br>${c.description}</div>` : '';
+            const descHtml = c.description ? `<div class="campaign-desc"><b>📝 Описание:</b><br>${c.description}</div>` : '';
+            const rulesHtml = c.rules ? `<div class="campaign-rules"><b>⚠️ Правила:</b><br>${c.rules}</div>` : '';
             return `<div class="campaign-card">
                 ${imgHtml}
                 <div class="campaign-info">
                     <div class="campaign-name">${c.name}</div>
                     <div class="campaign-status ${statusClass}">${statusText}</div>
-                    ${descHtml}
-                    <textarea class="campaign-textarea" id="text-${c.id}" placeholder="Напишите рекламный текст для этой кампании...">${c.text || ''}</textarea>
+                    ${rulesHtml}
+                    <textarea class="campaign-textarea" id="text-${c.id}" placeholder="Напишите рекламный текст для этой кампании...">${c.text || c.description || ''}</textarea>
+                    <div class="campaign-rules" style="background:#222; border-color:#444;">
+                        <b>⚠️ Правила магазина:</b>
+                        <textarea class="campaign-textarea" id="rules-${c.id}" style="min-height:50px; background:#2a2a2a;" placeholder="Напр: Нельзя сокращать название бренда. Нельзя писать скидки >90%...">${c.rules || ''}</textarea>
+                    </div>
                     <div id="msg-${c.id}"></div>
                     <div class="campaign-actions">
-                        <button class="btn-save" onclick="saveText(${c.id})">💾 Сохранить текст</button>
+                        <button class="btn-save" onclick="saveText(${c.id})">💾 Текст</button>
+                        <button class="btn-save" style="background:#e67e22;" onclick="saveRules(${c.id})">⚠️ Правила</button>
                         <button class="btn-toggle ${toggleClass}" onclick="toggleCampaign(${c.id}, ${isActive ? 0 : 1})">${toggleText}</button>
                     </div>
                 </div>
@@ -2140,7 +2148,21 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
         const data = await res.json();
         const msg = document.getElementById('msg-' + id);
         if (data.ok) {
-            msg.innerHTML = '<div class="success">✅ Сохранено</div>';
+            msg.innerHTML = '<div class="success">✅ Текст сохранён</div>';
+            setTimeout(() => msg.innerHTML = '', 3000);
+        }
+    }
+    async function saveRules(id) {
+        const rules = document.getElementById('rules-' + id).value;
+        const f = new FormData();
+        f.append('token', '{{ token }}');
+        f.append('campaign_id', id);
+        f.append('rules', rules);
+        const res = await fetch('/my-stats/save-cpc-rules', { method: 'POST', body: f });
+        const data = await res.json();
+        const msg = document.getElementById('msg-' + id);
+        if (data.ok) {
+            msg.innerHTML = '<div class="success">✅ Правила сохранены</div>';
             setTimeout(() => msg.innerHTML = '', 3000);
         }
     }
@@ -2168,7 +2190,7 @@ async def get_cpc_campaigns_data(token: str = Query(...)):
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, campaign_id, name, text, image_url, description, is_active, interval_hours, last_posted_at "
+            "SELECT id, campaign_id, name, text, image_url, description, rules, is_active, interval_hours, last_posted_at "
             "FROM cpc_campaigns WHERE user_id=? ORDER BY name",
             (user_id,)
         ).fetchall()
@@ -2184,6 +2206,20 @@ async def save_cpc_text(token: str = Form(...), campaign_id: int = Form(...), te
         conn.execute(
             "UPDATE cpc_campaigns SET text=? WHERE id=? AND user_id=?",
             (text, campaign_id, user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+@router.post("/save-cpc-rules")
+async def save_cpc_rules(token: str = Form(...), campaign_id: int = Form(...), rules: str = Form("")):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE cpc_campaigns SET rules=? WHERE id=? AND user_id=?",
+            (rules, campaign_id, user_id)
         )
         conn.commit()
     finally:

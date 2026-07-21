@@ -4,6 +4,7 @@ import hashlib
 import logging
 import re
 import os
+from html.parser import HTMLParser
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List
 
@@ -22,6 +23,56 @@ def generate_subid2(user_id: int, channel_id: str) -> str:
     """Генерирует уникальный subid2 в формате: u{user_id}_ch_{channel}"""
     clean_channel = channel_id.lstrip("@").replace(" ", "_").replace("-", "_")
     return f"u{user_id}_ch_{clean_channel[:20]}"
+
+
+class _OGParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.og_image = ""
+        self.og_description = ""
+        self._title = ""
+        self._in_title = False
+
+    def handle_starttag(self, tag, attrs):
+        d = dict(attrs)
+        if tag == "meta":
+            prop = d.get("property", "").lower()
+            if prop == "og:image":
+                self.og_image = d.get("content", "")
+            elif prop == "og:description":
+                self.og_description = d.get("content", "")
+        if tag == "title":
+            self._in_title = True
+
+    def handle_data(self, data):
+        if self._in_title:
+            self._title += data
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            self._in_title = False
+
+
+async def scrape_og_data(url: str) -> dict:
+    """Скрейпит og:image, og:description и title со страницы."""
+    if not url or not url.startswith("http"):
+        return {"og_image": "", "og_description": "", "og_title": ""}
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code != 200:
+                return {"og_image": "", "og_description": "", "og_title": ""}
+            html = resp.text[:50000]
+            parser = _OGParser()
+            parser.feed(html)
+            return {
+                "og_image": parser.og_image,
+                "og_description": parser.og_description,
+                "og_title": parser._title.strip(),
+            }
+    except Exception as e:
+        logger.warning(f"OG scrape failed for {url}: {e}")
+        return {"og_image": "", "og_description": "", "og_title": ""}
 
 def generate_partner_url(base_url: str, subid1: str = None, subid2: str = None) -> str:
     """
@@ -597,7 +648,7 @@ async def publish_cpc_campaigns(bot: Bot):
         elif text_template:
             post_text = text_template
         else:
-            post_text = f"👆 {name}"
+            post_text = f"👆 {name}\n\n{final_url}"
 
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🛒 Перейти", url=final_url)]

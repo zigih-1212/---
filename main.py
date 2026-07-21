@@ -622,6 +622,11 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE cpc_campaigns ADD COLUMN description TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+
+    try:
+        cursor.execute("ALTER TABLE cpc_campaigns ADD COLUMN rules TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     
     # Инициализация фич (если их нет в БД)
