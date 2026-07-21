@@ -668,12 +668,13 @@ async def publish_cpc_campaigns(bot: Bot):
 
             direct_link = f"https://t.me/{channel_id.lstrip('@')}/{msg.message_id}"
 
+            donor_post_id = f"cpc_{cpc_id}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
             c = get_db()
             try:
                 c.execute(
-                    "INSERT INTO posts (user_id, channel_id, status, published_at, auto_delete_hours, caption, direct_link) "
-                    "VALUES (?, ?, 'published', ?, ?, ?, ?)",
-                    (user_id, channel_id, datetime.now(timezone.utc).isoformat(),
+                    "INSERT INTO posts (user_id, donor_post_id, channel_id, status, published_at, auto_delete_hours, caption, direct_link) "
+                    "VALUES (?, ?, ?, 'published', ?, ?, ?, ?)",
+                    (user_id, donor_post_id, channel_id, datetime.now(timezone.utc).isoformat(),
                      auto_delete_hours, post_text, direct_link)
                 )
                 c.commit()

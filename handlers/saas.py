@@ -844,10 +844,11 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
         direct_link = f"https://t.me/{ch['channel_id'].lstrip('@')}/{msg.message_id}"
         conn_rec = get_db()
         try:
+            donor_post_id = f"cpc_{campaign.get('id', 0)}_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
             conn_rec.execute(
-                "INSERT INTO posts (user_id, channel_id, status, published_at, auto_delete_hours, caption, direct_link) "
-                "VALUES (?, ?, 'published', ?, ?, ?, ?)",
-                (user_id, ch["channel_id"], datetime.now(timezone.utc).isoformat(),
+                "INSERT INTO posts (user_id, donor_post_id, channel_id, status, published_at, auto_delete_hours, caption, direct_link) "
+                "VALUES (?, ?, ?, 'published', ?, ?, ?, ?)",
+                (user_id, donor_post_id, ch["channel_id"], datetime.now(timezone.utc).isoformat(),
                  auto_delete_hours, post_text, direct_link)
             )
             conn_rec.commit()
