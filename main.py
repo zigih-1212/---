@@ -612,6 +612,11 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE channels ADD COLUMN admitad_website_id INTEGER")
     except sqlite3.OperationalError:
         pass
+
+    try:
+        cursor.execute("ALTER TABLE cpc_campaigns ADD COLUMN image_url TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     
     # Инициализация фич (если их нет в БД)

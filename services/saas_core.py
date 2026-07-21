@@ -10,7 +10,7 @@ from typing import Optional, Dict, List
 import httpx
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import InlineKeyboardMarkup, Message
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
 from services.db import get_db
 from config import is_night_time
@@ -536,7 +536,7 @@ async def publish_cpc_campaigns(bot: Bot):
     try:
         campaigns = conn.execute("""
             SELECT cpc.id, cpc.user_id, cpc.campaign_id, cpc.name, cpc.cpc_link,
-                   cpc.text, cpc.interval_hours, cpc.last_posted_at,
+                   cpc.text, cpc.image_url, cpc.interval_hours, cpc.last_posted_at,
                    ch.channel_id, ch.sub_id, ch.channel_title
             FROM cpc_campaigns cpc
             JOIN users u ON u.user_id = cpc.user_id
@@ -561,6 +561,7 @@ async def publish_cpc_campaigns(bot: Bot):
         cpc_link = row["cpc_link"]
         text_template = row["text"] or ""
         name = row["name"]
+        image_url = row["image_url"] or ""
         ch_title = row["channel_title"] or channel_id
 
         if not cpc_link or not channel_id:
@@ -597,17 +598,24 @@ async def publish_cpc_campaigns(bot: Bot):
         elif text_template and "{link}" in text_template:
             post_text = text_template.replace("{link}", final_url)
         elif text_template:
-            post_text = f"{text_template}\n\n{final_url}"
+            post_text = text_template
         else:
-            post_text = f"🔥 {name}\n\n{final_url}"
+            post_text = f"👆 {name}"
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 Перейти", url=final_url)]
+        ])
 
         try:
-            msg = await bot.send_message(
-                channel_id,
-                post_text,
-                parse_mode=None,
-                disable_web_page_preview=False,
+            msg = await publish_post_with_fallback(
+                bot=bot, channel_id=channel_id,
+                caption=post_text, photo_url=image_url,
+                reply_markup=kb,
             )
+            if not msg:
+                logger.error(f"❌ CPC пост '{name}' → {ch_title}: publish_post_with_fallback вернул None")
+                continue
+
             logger.info(f"✅ CPC пост '{name}' отправлен в {ch_title} (user {user_id})")
 
             direct_link = f"https://t.me/{channel_id.lstrip('@')}/{msg.message_id}"

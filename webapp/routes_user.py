@@ -91,6 +91,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     <div class="sidebar">
         <a href="/my-stats?token={{ token }}" class="active">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
         <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
     </div>
@@ -619,6 +620,7 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     <div class="sidebar">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}" class="active">📝 Шаблоны</a>
+        <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
         <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
     </div>
@@ -1945,6 +1947,7 @@ GUIDE_TEMPLATE = r'''<!DOCTYPE html>
     <div class="sidebar">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
         <a href="/my-stats/guide?token={{ token }}" class="active">📖 Инструкция</a>
     </div>
@@ -2028,3 +2031,172 @@ function toggleSidebar() {
 async def user_guide(token: str = Query(...)):
     html = GUIDE_TEMPLATE.replace('{{ token }}', token)
     return HTMLResponse(content=html)
+
+# ---------------------------------------------------------------------------
+# CPC кампании (веб-редактор)
+# ---------------------------------------------------------------------------
+CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CPC кампании</title>
+<style>
+    body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+    h1 { color: #ff4444; font-size: 1.5em; margin-bottom: 10px; }
+    .nav { margin-bottom: 20px; display: flex; gap: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px; }
+    .nav a { color: #ff4444; text-decoration: none; padding: 8px 16px; border-radius: 8px; background: #333; white-space: nowrap; flex-shrink: 0; }
+    .hamburger { display: none; position: fixed; top: 15px; left: 15px; z-index: 1000; background: #ff4444; color: white; border: none; font-size: 24px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    .sidebar { position: fixed; top: 0; left: -280px; width: 260px; height: 100%; background: #222; transition: left 0.3s; z-index: 999; padding: 60px 20px 20px; overflow-y: auto; }
+    .sidebar.open { left: 0; }
+    .sidebar a { display: block; color: #ccc; padding: 12px 16px; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-size: 1em; }
+    .sidebar a:hover, .sidebar a.active { background: #ff4444; color: #fff; }
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 998; }
+    .overlay.open { display: block; }
+    @media (max-width: 768px) { .hamburger { display: block; } body { padding: 15px; } }
+    .campaign-card { background: #222; border-radius: 12px; padding: 16px; margin-bottom: 16px; display: flex; gap: 16px; align-items: flex-start; }
+    .campaign-img { width: 80px; height: 80px; border-radius: 8px; object-fit: contain; background: #333; flex-shrink: 0; }
+    .campaign-info { flex: 1; min-width: 0; }
+    .campaign-name { font-size: 1.1em; font-weight: bold; color: #ddd; margin-bottom: 4px; }
+    .campaign-status { font-size: 0.85em; margin-bottom: 10px; }
+    .campaign-status.active { color: #4caf50; }
+    .campaign-status.inactive { color: #888; }
+    .campaign-textarea { width: 100%; background: #333; border: 1px solid #555; color: #ddd; padding: 10px; border-radius: 8px; font-size: 0.95em; min-height: 80px; margin-bottom: 10px; box-sizing: border-box; resize: vertical; font-family: sans-serif; }
+    .campaign-actions { display: flex; gap: 8px; }
+    .btn-save { background: #ff4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9em; }
+    .btn-save:hover { background: #e03333; }
+    .btn-toggle { background: #444; color: #ccc; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9em; }
+    .btn-toggle:hover { background: #555; }
+    .btn-toggle.on { background: #2e7d32; color: #fff; }
+    .btn-toggle.off { background: #555; color: #aaa; }
+    .success { color: #4caf50; font-size: 0.85em; margin-top: 4px; }
+    .no-campaigns { color: #888; text-align: center; padding: 40px; font-size: 1.1em; }
+</style>
+</head>
+<body>
+    <button class="hamburger" onclick="toggleSidebar()">☰</button>
+    <div class="overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar">
+        <a href="/my-stats?token={{ token }}">📊 Статистика</a>
+        <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/cpc-campaigns?token={{ token }}" class="active">👆 CPC кампании</a>
+        <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
+        <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
+    </div>
+    <h1>👆 CPC кампании</h1>
+    <p style="color:#aaa;margin-bottom:20px;">Напишите свой рекламный текст для каждой кампании. Пост будет опубликован с логотипом рекламодателя и кнопкой «🛒 Перейти».</p>
+    <div id="campaigns-list"></div>
+    <script>
+    function toggleSidebar() {
+        document.querySelector('.sidebar').classList.toggle('open');
+        document.querySelector('.overlay').classList.toggle('open');
+    }
+    async function loadCampaigns() {
+        const res = await fetch('/my-stats/cpc-campaigns-data?token={{ token }}');
+        const data = await res.json();
+        const container = document.getElementById('campaigns-list');
+        if (!data.length) {
+            container.innerHTML = '<div class="no-campaigns">Нет CPC-кампаний. Подключите рекламодателей в кабинете Admitad.</div>';
+            return;
+        }
+        container.innerHTML = data.map(c => {
+            const isActive = c.is_active === 1;
+            const statusClass = isActive ? 'active' : 'inactive';
+            const statusText = isActive ? '✅ Активна' : '❌ Неактивна';
+            const toggleClass = isActive ? 'on' : 'off';
+            const toggleText = isActive ? '🔴 Отключить' : '🟢 Включить';
+            const imgHtml = c.image_url ? `<img class="campaign-img" src="${c.image_url}" alt="" onerror="this.style.display='none'">` : '<div class="campaign-img"></div>';
+            return `<div class="campaign-card">
+                ${imgHtml}
+                <div class="campaign-info">
+                    <div class="campaign-name">${c.name}</div>
+                    <div class="campaign-status ${statusClass}">${statusText}</div>
+                    <textarea class="campaign-textarea" id="text-${c.id}" placeholder="Напишите рекламный текст для этой кампании...">${c.text || ''}</textarea>
+                    <div id="msg-${c.id}"></div>
+                    <div class="campaign-actions">
+                        <button class="btn-save" onclick="saveText(${c.id})">💾 Сохранить текст</button>
+                        <button class="btn-toggle ${toggleClass}" onclick="toggleCampaign(${c.id}, ${isActive ? 0 : 1})">${toggleText}</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+    async function saveText(id) {
+        const text = document.getElementById('text-' + id).value;
+        const f = new FormData();
+        f.append('token', '{{ token }}');
+        f.append('campaign_id', id);
+        f.append('text', text);
+        const res = await fetch('/my-stats/save-cpc-text', { method: 'POST', body: f });
+        const data = await res.json();
+        const msg = document.getElementById('msg-' + id);
+        if (data.ok) {
+            msg.innerHTML = '<div class="success">✅ Сохранено</div>';
+            setTimeout(() => msg.innerHTML = '', 3000);
+        }
+    }
+    async function toggleCampaign(id, newState) {
+        const f = new FormData();
+        f.append('token', '{{ token }}');
+        f.append('campaign_id', id);
+        const res = await fetch('/my-stats/toggle-cpc-campaign', { method: 'POST', body: f });
+        const data = await res.json();
+        if (data.ok) loadCampaigns();
+    }
+    loadCampaigns();
+    </script>
+</body>
+</html>'''
+
+@router.get("/cpc-campaigns", response_class=HTMLResponse)
+async def cpc_campaigns_page(token: str = Query(...)):
+    html = CPC_CAMPAIGNS_TEMPLATE.replace('{{ token }}', token)
+    return HTMLResponse(content=html)
+
+@router.get("/cpc-campaigns-data")
+async def get_cpc_campaigns_data(token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, campaign_id, name, text, image_url, is_active, interval_hours, last_posted_at "
+            "FROM cpc_campaigns WHERE user_id=? ORDER BY name",
+            (user_id,)
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+@router.post("/save-cpc-text")
+async def save_cpc_text(token: str = Form(...), campaign_id: int = Form(...), text: str = Form("")):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE cpc_campaigns SET text=? WHERE id=? AND user_id=?",
+            (text, campaign_id, user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+@router.post("/toggle-cpc-campaign")
+async def toggle_cpc_campaign(token: str = Form(...), campaign_id: int = Form(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT is_active FROM cpc_campaigns WHERE id=? AND user_id=?",
+            (campaign_id, user_id)
+        ).fetchone()
+        if row:
+            new_val = 0 if row["is_active"] else 1
+            conn.execute(
+                "UPDATE cpc_campaigns SET is_active=? WHERE id=? AND user_id=?",
+                (new_val, campaign_id, user_id)
+            )
+            conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}

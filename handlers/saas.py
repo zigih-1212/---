@@ -676,7 +676,7 @@ async def cb_force_type_cpc(callback: CallbackQuery, bot: Bot) -> None:
     conn = get_db()
     try:
         campaigns = conn.execute(
-            "SELECT id, name, cpc_link, text FROM cpc_campaigns WHERE user_id = ? AND is_active = 1",
+            "SELECT id, name, cpc_link, text, image_url FROM cpc_campaigns WHERE user_id = ? AND is_active = 1",
             (user_id,)
         ).fetchall()
         channels = conn.execute(
@@ -735,7 +735,7 @@ async def cb_force_cpc_channel(callback: CallbackQuery, bot: Bot) -> None:
     conn = get_db()
     try:
         campaign = conn.execute(
-            "SELECT id, name, cpc_link, text FROM cpc_campaigns WHERE id = ? AND user_id = ?",
+            "SELECT id, name, cpc_link, text, image_url FROM cpc_campaigns WHERE id = ? AND user_id = ?",
             (campaign_id, user_id)
         ).fetchone()
         ch = conn.execute(
@@ -761,10 +761,11 @@ async def cb_force_cpc_channel(callback: CallbackQuery, bot: Bot) -> None:
 
 
 async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=None, auto_delete_hours=168):
-    """Публикация одного CPC-поста"""
+    """Публикация одного CPC-поста с картинкой и кнопкой"""
     sub_id = ch["sub_id"] or ""
     cpc_link = campaign["cpc_link"]
     name = campaign["name"]
+    custom_text = campaign.get("text") or ""
 
     subid2 = generate_subid2(user_id, ch["channel_id"])
     separator = "&" if "?" in cpc_link else "?"
@@ -776,14 +777,20 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
         post_text = cpc_template.replace("{name}", name).replace("{link}", final_url)
     elif cpc_template:
         post_text = f"{cpc_template}\n\n{final_url}"
+    elif custom_text:
+        post_text = custom_text
     else:
-        post_text = f"🔥 {name}\n\n{final_url}"
+        post_text = f"👆 {name}"
 
-    msg = await bot.send_message(
-        ch["channel_id"],
-        post_text,
-        parse_mode=None,
-        disable_web_page_preview=False,
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛒 Перейти", url=final_url)]
+    ])
+    image_url = campaign.get("image_url") or ""
+
+    msg = await publish_post_with_fallback(
+        bot=bot, channel_id=ch["channel_id"],
+        caption=post_text, photo_url=image_url,
+        reply_markup=kb,
     )
 
     if msg:
@@ -1640,10 +1647,14 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
             if cid and cid not in all_campaigns:
                 gotolink = c.get("gotolink", "")
                 cpc_link = gotolink.replace("/g/", "/c/") if gotolink else ""
+                img = c.get("image") or ""
+                if isinstance(img, dict):
+                    img = img.get("url", "")
                 all_campaigns[cid] = {
                     "campaign_id": cid,
                     "name": c.get("name", f"ID {cid}"),
                     "cpc_link": cpc_link,
+                    "image_url": img,
                 }
 
     if not all_campaigns:
@@ -1658,13 +1669,13 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
             ).fetchone()
             if not existing and info["cpc_link"]:
                 conn.execute(
-                    "INSERT INTO cpc_campaigns (user_id, campaign_id, name, cpc_link) VALUES (?,?,?,?)",
-                    (user_id, cid, info["name"], info["cpc_link"])
+                    "INSERT INTO cpc_campaigns (user_id, campaign_id, name, cpc_link, image_url) VALUES (?,?,?,?,?)",
+                    (user_id, cid, info["name"], info["cpc_link"], info["image_url"])
                 )
         conn.commit()
 
         rows = conn.execute(
-            "SELECT id, campaign_id, name, cpc_link, text, is_active, interval_hours, last_posted_at "
+            "SELECT id, campaign_id, name, cpc_link, text, image_url, is_active, interval_hours, last_posted_at "
             "FROM cpc_campaigns WHERE user_id=? ORDER BY name",
             (user_id,)
         ).fetchall()
