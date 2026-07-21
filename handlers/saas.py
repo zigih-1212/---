@@ -122,7 +122,7 @@ async def cb_stores_cpc(callback: CallbackQuery):
 
     kb_rows = []
     for c in campaigns:
-        status = "🟢" if c["is_active"] else "🔴"
+        status = "✅" if c["is_active"] else "❌"
         name = c["name"]
         kb_rows.append([InlineKeyboardButton(
             text=f"{status} {name}",
