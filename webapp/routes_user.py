@@ -2078,8 +2078,11 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     .no-campaigns { color: #888; text-align: center; padding: 40px; font-size: 1.1em; }
     .campaign-desc { background: #1e1e1e; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 0.9em; color: #aaa; line-height: 1.5; max-height: 200px; overflow-y: auto; }
     .campaign-desc b { color: #ddd; }
-    .campaign-rules { background: #2a1a1a; border: 1px solid #553; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 0.9em; color: #cc8; line-height: 1.5; }
-    .campaign-rules b { color: #ee9; }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 2000; justify-content: center; align-items: center; }
+    .modal-overlay.open { display: flex; }
+    .modal-box { background: #222; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; color: #ccc; font-size: 0.95em; line-height: 1.6; }
+    .modal-box h2 { color: #ff4444; margin-top: 0; font-size: 1.2em; }
+    .modal-close { background: #ff4444; color: white; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; margin-top: 16px; font-size: 0.9em; }
 </style>
 </head>
 <body>
@@ -2093,8 +2096,15 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
         <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
     </div>
     <h1>👆 CPC кампании</h1>
-    <p style="color:#aaa;margin-bottom:20px;">Напишите свой рекламный текст для каждой кампании. Пост будет опубликован с логотипом рекламодателя и кнопкой «🛒 Перейти».</p>
+    <p style="color:#aaa;margin-bottom:20px;">Напишите свой рекламный текст для каждой кампании. Пост будет опубликован с логотипом рекламодателя.</p>
     <div id="campaigns-list"></div>
+    <div class="modal-overlay" id="rulesModal" onclick="if(event.target===this)closeRulesModal()">
+        <div class="modal-box">
+            <h2 id="rulesModalTitle">Правила магазина</h2>
+            <div id="rulesModalContent" style="white-space:pre-wrap;"></div>
+            <button class="modal-close" onclick="closeRulesModal()">Закрыть</button>
+        </div>
+    </div>
     <script>
     function toggleSidebar() {
         document.querySelector('.sidebar').classList.toggle('open');
@@ -2116,22 +2126,18 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const toggleText = isActive ? '🔴 Отключить' : '🟢 Включить';
             const imgHtml = c.image_url ? `<img class="campaign-img" src="${c.image_url}" alt="" onerror="this.style.display='none'">` : '<div class="campaign-img"></div>';
             const descHtml = c.description ? `<div class="campaign-desc"><b>📝 Описание:</b><br>${c.description}</div>` : '';
-            const rulesHtml = c.rules ? `<div class="campaign-rules"><b>⚠️ Правила:</b><br>${c.rules}</div>` : '';
+            const rulesBtnHtml = (c.more_rules || c.rules) ? `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(c.name).replace(/'/g,"\\'")}, ${JSON.stringify(c.more_rules||c.rules||"").replace(/'/g,"\\'")})'>⚠️ Правила</button>` : '';
             return `<div class="campaign-card">
                 ${imgHtml}
                 <div class="campaign-info">
                     <div class="campaign-name">${c.name}</div>
                     <div class="campaign-status ${statusClass}">${statusText}</div>
-                    ${rulesHtml}
+                    ${descHtml}
                     <textarea class="campaign-textarea" id="text-${c.id}" placeholder="Напишите рекламный текст для этой кампании...">${c.text || c.description || ''}</textarea>
-                    <div class="campaign-rules" style="background:#222; border-color:#444;">
-                        <b>⚠️ Правила магазина:</b>
-                        <textarea class="campaign-textarea" id="rules-${c.id}" style="min-height:50px; background:#2a2a2a;" placeholder="Напр: Нельзя сокращать название бренда. Нельзя писать скидки >90%...">${c.rules || ''}</textarea>
-                    </div>
                     <div id="msg-${c.id}"></div>
                     <div class="campaign-actions">
                         <button class="btn-save" onclick="saveText(${c.id})">💾 Текст</button>
-                        <button class="btn-save" style="background:#e67e22;" onclick="saveRules(${c.id})">⚠️ Правила</button>
+                        ${rulesBtnHtml}
                         <button class="btn-toggle ${toggleClass}" onclick="toggleCampaign(${c.id}, ${isActive ? 0 : 1})">${toggleText}</button>
                     </div>
                 </div>
@@ -2152,19 +2158,13 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             setTimeout(() => msg.innerHTML = '', 3000);
         }
     }
-    async function saveRules(id) {
-        const rules = document.getElementById('rules-' + id).value;
-        const f = new FormData();
-        f.append('token', '{{ token }}');
-        f.append('campaign_id', id);
-        f.append('rules', rules);
-        const res = await fetch('/my-stats/save-cpc-rules', { method: 'POST', body: f });
-        const data = await res.json();
-        const msg = document.getElementById('msg-' + id);
-        if (data.ok) {
-            msg.innerHTML = '<div class="success">✅ Правила сохранены</div>';
-            setTimeout(() => msg.innerHTML = '', 3000);
-        }
+    function openRulesModal(name, rules) {
+        document.getElementById('rulesModalTitle').textContent = '⚠️ Правила: ' + name;
+        document.getElementById('rulesModalContent').textContent = rules || 'Правила не найдены.';
+        document.getElementById('rulesModal').classList.add('open');
+    }
+    function closeRulesModal() {
+        document.getElementById('rulesModal').classList.remove('open');
     }
     async function toggleCampaign(id, newState) {
         const f = new FormData();
@@ -2190,7 +2190,7 @@ async def get_cpc_campaigns_data(token: str = Query(...)):
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, campaign_id, name, text, image_url, description, rules, is_active, interval_hours, last_posted_at "
+            "SELECT id, campaign_id, name, text, image_url, description, rules, more_rules, is_active, interval_hours, last_posted_at "
             "FROM cpc_campaigns WHERE user_id=? ORDER BY name",
             (user_id,)
         ).fetchall()

@@ -676,7 +676,7 @@ async def cb_force_type_cpc(callback: CallbackQuery, bot: Bot) -> None:
     conn = get_db()
     try:
         campaigns = conn.execute(
-            "SELECT id, name, cpc_link, text, image_url, description FROM cpc_campaigns WHERE user_id = ? AND is_active = 1",
+            "SELECT id, name, cpc_link, text, image_url, description, more_rules FROM cpc_campaigns WHERE user_id = ? AND is_active = 1",
             (user_id,)
         ).fetchall()
         channels = conn.execute(
@@ -742,7 +742,7 @@ async def cb_force_cpc_channel(callback: CallbackQuery, bot: Bot) -> None:
     conn = get_db()
     try:
         campaign = conn.execute(
-            "SELECT id, name, cpc_link, text, image_url, description FROM cpc_campaigns WHERE id = ? AND user_id = ?",
+            "SELECT id, name, cpc_link, text, image_url, description, more_rules FROM cpc_campaigns WHERE id = ? AND user_id = ?",
             (campaign_id, user_id)
         ).fetchone()
         ch = conn.execute(
@@ -801,7 +801,7 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
     name = campaign["name"]
     custom_text = campaign.get("text") or ""
     description = campaign.get("description") or ""
-    rules = campaign.get("rules") or ""
+    more_rules = campaign.get("more_rules") or ""
 
     subid2 = generate_subid2(user_id, ch["channel_id"])
     separator = "&" if "?" in cpc_link else "?"
@@ -828,8 +828,8 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
     post_text = f"{post_text}{reklama_line}"
 
     # Проверка правил
-    if rules and not skip_rules:
-        violations = _check_cpc_rules(post_text, rules)
+    if more_rules and not skip_rules:
+        violations = _check_cpc_rules(post_text, more_rules)
         if violations:
             warn = "⚠️ <b>Нарушение правил:</b>\n" + "\n".join(f"• {v}" for v in violations)
             warn += "\n\n💡 Текст нарушает правила магазина. Публикация возможна, но выплата не гарантирована."
@@ -885,7 +885,7 @@ async def cb_cpc_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
     conn = get_db()
     try:
         campaign = conn.execute(
-            "SELECT id, name, cpc_link, text, image_url, rules, description FROM cpc_campaigns WHERE id = ? AND user_id = ?",
+            "SELECT id, name, cpc_link, text, image_url, rules, more_rules, description FROM cpc_campaigns WHERE id = ? AND user_id = ?",
             (campaign_id, user_id)
         ).fetchone()
         ch = conn.execute(
@@ -1755,6 +1755,7 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
                     "cpc_link": cpc_link,
                     "image_url": img,
                     "description": c.get("description", "") or "",
+                    "more_rules": c.get("more_rules", "") or "",
                 }
 
     if not all_campaigns:
@@ -1782,21 +1783,22 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
             ).fetchone()
             if not existing and info["cpc_link"]:
                 conn.execute(
-                    "INSERT INTO cpc_campaigns (user_id, campaign_id, name, cpc_link, image_url, description) VALUES (?,?,?,?,?,?)",
-                    (user_id, cid, info["name"], info["cpc_link"], info["image_url"], info["description"])
+                    "INSERT INTO cpc_campaigns (user_id, campaign_id, name, cpc_link, image_url, description, more_rules) VALUES (?,?,?,?,?,?,?)",
+                    (user_id, cid, info["name"], info["cpc_link"], info["image_url"], info["description"], info["more_rules"])
                 )
             elif existing:
-                if info["image_url"] or info["description"]:
+                if info["image_url"] or info["description"] or info["more_rules"]:
                     existing_row = conn.execute(
-                        "SELECT image_url, description FROM cpc_campaigns WHERE id=?", (existing["id"],)
+                        "SELECT image_url, description, more_rules FROM cpc_campaigns WHERE id=?", (existing["id"],)
                     ).fetchone()
                     if existing_row:
                         new_img = existing_row["image_url"] or info["image_url"]
                         new_desc = existing_row["description"] or info["description"]
-                        if new_img != existing_row["image_url"] or new_desc != existing_row["description"]:
+                        new_rules = existing_row["more_rules"] or info["more_rules"]
+                        if new_img != existing_row["image_url"] or new_desc != existing_row["description"] or new_rules != existing_row["more_rules"]:
                             conn.execute(
-                                "UPDATE cpc_campaigns SET image_url=?, description=? WHERE id=?",
-                                (new_img, new_desc, existing["id"])
+                                "UPDATE cpc_campaigns SET image_url=?, description=?, more_rules=? WHERE id=?",
+                                (new_img, new_desc, new_rules, existing["id"])
                             )
         conn.commit()
 
