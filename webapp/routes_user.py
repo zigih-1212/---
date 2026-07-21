@@ -66,12 +66,29 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     button:hover { opacity: 0.9; }
     .payout-form textarea { width: 100%; padding: 12px; margin: 10px 0; background: #333; border: 1px solid #555; color: #ccc; border-radius: 8px; }
     #payout-msg { margin-top: 10px; }
-    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+
+    /* Hamburger sidebar */
+    .hamburger { display: none; position: fixed; top: 15px; left: 15px; z-index: 1000; background: #ff4444; color: white; border: none; font-size: 24px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    .sidebar { position: fixed; top: 0; left: -280px; width: 260px; height: 100%; background: #222; transition: left 0.3s; z-index: 999; padding: 60px 20px 20px; overflow-y: auto; }
+    .sidebar.open { left: 0; }
+    .sidebar a { display: block; color: #ccc; padding: 12px 16px; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-size: 1em; }
+    .sidebar a:hover, .sidebar a.active { background: #ff4444; color: #fff; }
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 998; }
+    .overlay.open { display: block; }
+    @media (max-width: 768px) {
+        .hamburger { display: block; }
+        .nav { display: none !important; }
+        body { padding: 15px; }
+        .container { max-width: 100%; }
+        .grid { grid-template-columns: 1fr; }
+    }
 </style>
 </head>
 <body>
 <div class="container">
-    <div class="nav">
+    <button class="hamburger" onclick="toggleSidebar()">☰</button>
+    <div class="overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar">
         <a href="/my-stats?token={{ token }}" class="active">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
@@ -142,6 +159,10 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+function toggleSidebar() {
+    document.querySelector('.sidebar').classList.toggle('open');
+    document.querySelector('.overlay').classList.toggle('open');
+}
 (function() {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
@@ -554,6 +575,7 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Шаблоны постов</title>
 <style>
     body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; }
@@ -574,11 +596,27 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     .preview-box h3 { color: #ff4444; }
     #preview-content { background: #1a1a1a; padding: 15px; border-radius: 8px; }
     .actions { margin-top: 15px; display: flex; gap: 10px; }
+    /* Hamburger sidebar */
+    .hamburger { display: none; position: fixed; top: 15px; left: 15px; z-index: 1000; background: #ff4444; color: white; border: none; font-size: 24px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    .sidebar { position: fixed; top: 0; left: -280px; width: 260px; height: 100%; background: #222; transition: left 0.3s; z-index: 999; padding: 60px 20px 20px; overflow-y: auto; }
+    .sidebar.open { left: 0; }
+    .sidebar a { display: block; color: #ccc; padding: 12px 16px; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-size: 1em; }
+    .sidebar a:hover, .sidebar a.active { background: #ff4444; color: #fff; }
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 998; }
+    .overlay.open { display: block; }
+    @media (max-width: 768px) {
+        .hamburger { display: block; }
+        .nav { display: none !important; }
+        body { padding: 15px; }
+        .container { max-width: 100%; }
+    }
 </style>
 </head>
 <body>
 <div class="container">
-    <div class="nav">
+    <button class="hamburger" onclick="toggleSidebar()">☰</button>
+    <div class="overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}" class="active">📝 Шаблоны</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
@@ -639,6 +677,10 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
 </div>
 
 <script>
+function toggleSidebar() {
+    document.querySelector('.sidebar').classList.toggle('open');
+    document.querySelector('.overlay').classList.toggle('open');
+}
 const token = "{{ token }}";
 const role = "{{ role }}";   // "saas" или "blogger"
 const isSaaS = (role === "saas");
@@ -862,11 +904,26 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     .tab-btn.active { background: #ff4444; color: #fff; border-color: #ff4444; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
+
+    /* Hamburger sidebar */
+    .hamburger { display: none; position: fixed; top: 15px; left: 15px; z-index: 1000; background: #ff4444; color: white; border: none; font-size: 24px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    .sidebar { position: fixed; top: 0; left: -280px; width: 260px; height: 100%; background: #222; transition: left 0.3s; z-index: 999; padding: 60px 20px 20px; overflow-y: auto; }
+    .sidebar.open { left: 0; }
+    .sidebar a { display: block; color: #ccc; padding: 12px 16px; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-size: 1em; }
+    .sidebar a:hover, .sidebar a.active { background: #ff4444; color: #fff; }
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 998; }
+    .overlay.open { display: block; }
+    @media (max-width: 768px) {
+        .hamburger { display: block; }
+        .nav { display: none !important; }
+        body { padding: 15px; }
+    }
 </style>
 </head>
 <body>
-<div class="container">
-    <div class="nav">
+    <button class="hamburger" onclick="toggleSidebar()">☰</button>
+    <div class="overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
         <a href="/my-stats/settings?token={{ token }}" class="active">⚙️ Настройки</a>
@@ -969,6 +1026,10 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
 </div>
 
 <script>
+function toggleSidebar() {
+    document.querySelector('.sidebar').classList.toggle('open');
+    document.querySelector('.overlay').classList.toggle('open');
+}
 const token = "{{ token }}";
 const role = "{{ role }}";
 
@@ -1844,6 +1905,7 @@ GUIDE_TEMPLATE = r'''<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Инструкция</title>
 <style>
     body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; }
@@ -1861,11 +1923,26 @@ GUIDE_TEMPLATE = r'''<!DOCTYPE html>
     .warning { background: #2a1a1a; border-left: 4px solid #ff4444; padding: 12px; border-radius: 8px; margin: 10px 0; }
     .success { background: #1a2a1a; border-left: 4px solid #4caf50; padding: 12px; border-radius: 8px; margin: 10px 0; }
     a { color: #4d6bfe; }
+    /* Hamburger sidebar */
+    .hamburger { display: none; position: fixed; top: 15px; left: 15px; z-index: 1000; background: #ff4444; color: white; border: none; font-size: 24px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    .sidebar { position: fixed; top: 0; left: -280px; width: 260px; height: 100%; background: #222; transition: left 0.3s; z-index: 999; padding: 60px 20px 20px; overflow-y: auto; }
+    .sidebar.open { left: 0; }
+    .sidebar a { display: block; color: #ccc; padding: 12px 16px; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-size: 1em; }
+    .sidebar a:hover, .sidebar a.active { background: #ff4444; color: #fff; }
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 998; }
+    .overlay.open { display: block; }
+    @media (max-width: 768px) {
+        .hamburger { display: block; }
+        .nav { display: none !important; }
+        body { padding: 15px; }
+    }
 </style>
 </head>
 <body>
 <div class="container">
-    <div class="nav">
+    <button class="hamburger" onclick="toggleSidebar()">☰</button>
+    <div class="overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
@@ -1938,6 +2015,12 @@ GUIDE_TEMPLATE = r'''<!DOCTYPE html>
         <p>По всем вопросам пишите: <a href="https://t.me/Zigih90" target="_blank">@Zigih90</a></p>
     </div>
 </div>
+<script>
+function toggleSidebar() {
+    document.querySelector('.sidebar').classList.toggle('open');
+    document.querySelector('.overlay').classList.toggle('open');
+}
+</script>
 </body>
 </html>'''
 
