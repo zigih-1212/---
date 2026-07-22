@@ -1028,6 +1028,7 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="💼 SaaS-клиент", callback_data="role:saas")],
                 [InlineKeyboardButton(text="👤 Блогер", callback_data="role:blogger")],
+                [InlineKeyboardButton(text="📊 О проекте", url="https://telegram-k4fgkxw.gamma.site")],
             ])
             await message.answer(
                 "👋 <b>Добро пожаловать в AutoPost!</b>\n\n"
@@ -1056,6 +1057,9 @@ async def cmd_start(message: Message, state: FSMContext, command: Command = None
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Презентация платформы", url="https://telegram-k4fgkxw.gamma.site")]
+    ])
     await message.answer(
         "📖 <b>Справка — AutoPost Bot</b>\n\n"
         "<b>Основные команды:</b>\n"
@@ -1075,7 +1079,8 @@ async def cmd_help(message: Message):
         "Минимальная выплата — 3000 ₽.\n"
         "Доступен для самозанятых.\n\n"
         "<b>Поддержка:</b> напишите /start и нажмите «💬 Поддержка»",
-        parse_mode=ParseMode.HTML
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
     )
 
 @router.message(Command("preview"))
@@ -2108,6 +2113,21 @@ async def main() -> None:
         ],
         scope=BotCommandScopeDefault(),
     )
+
+    # ===== ОПИСАНИЕ БОТА (видно в профиле) =====
+    try:
+        await bot.set_my_description(
+            "AutoPost Bot — автоматический постинг рекламных кампаний CPA и CPC в Telegram.\n\n"
+            "🤖 Полная автоматизация 24/7\n"
+            "⚖️ Маркировка ФЗ-38, ERID обязателен\n"
+            "📊 Прозрачная статистика для рекламодателей\n\n"
+            "Подробнее: https://telegram-k4fgkxw.gamma.site"
+        )
+        await bot.set_my_short_description(
+            "AutoPost Bot — SaaS для CPA и CPC постинга в Telegram с полной юр. защитой"
+        )
+    except Exception as e:
+        logger.warning(f"Не удалось установить описание бота: {e}")
 
     # ===== КОМАНДЫ ДЛЯ АДМИНОВ =====
     for admin_id in ADMIN_IDS:
