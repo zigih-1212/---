@@ -857,10 +857,14 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
 
     logger.info(f"CPC post: name={name!r}, text={post_text[:100]!r}, image={image_url!r}, channel={ch['channel_id']}")
 
+    cpc_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔗 Перейти", url=final_url)]
+    ])
+
     msg = await publish_post_with_fallback(
         bot=bot, channel_id=ch["channel_id"],
         caption=post_text, photo_url=image_url,
-        reply_markup=None, parse_mode=ParseMode.HTML,
+        reply_markup=cpc_kb, parse_mode=ParseMode.HTML,
     )
 
     if msg:

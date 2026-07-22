@@ -705,10 +705,13 @@ async def publish_cpc_campaigns(bot: Bot):
                 post_text = head + "...\n\n" + safe
 
         try:
+            cpc_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔗 Перейти", url=final_url)]
+            ])
             msg = await publish_post_with_fallback(
                 bot=bot, channel_id=channel_id,
                 caption=post_text, photo_url=image_url,
-                reply_markup=None, parse_mode="HTML",
+                reply_markup=cpc_kb, parse_mode="HTML",
             )
             if not msg:
                 logger.error(f"❌ CPC пост '{name}' → {ch_title}: publish_post_with_fallback вернул None")
