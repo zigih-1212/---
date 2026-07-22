@@ -118,17 +118,6 @@ logger = logging.getLogger("autopost_bot")
 # Вспомогательные (общие)
 # ---------------------------------------------------------------------------
 
-def _svg_to_png(svg_bytes: bytes) -> Optional[bytes]:
-    try:
-        import cairosvg
-        png_bytes = cairosvg.svg2png(bytestring=svg_bytes, output_width=800)
-        logger.info(f"SVG→PNG: {len(svg_bytes)}→{len(png_bytes)} bytes via cairosvg")
-        return png_bytes
-    except Exception as e:
-        logger.warning(f"SVG→PNG failed (cairo not available?): {e}")
-    return None
-
-
 async def download_image(url: str) -> Optional[bytes]:
     if not url or not url.startswith("http"):
         return None
@@ -147,12 +136,8 @@ async def download_image(url: str) -> Optional[bytes]:
             if len(content) < 1024:
                 logger.warning(f"download_image: слишком мало данных {len(content)}")
                 return None
-            if url.lower().endswith(".svg") or content[:5].lstrip().startswith(b"<svg"):
-                png_bytes = _svg_to_png(content)
-                if png_bytes:
-                    logger.info(f"download_image: SVG→PNG конвертация {len(content)}→{len(png_bytes)} bytes")
-                    return png_bytes
-                logger.warning(f"download_image: не удалось сконвертировать SVG")
+            if url.lower().endswith(".svg") or content[:500].lstrip().startswith(b"<svg") or content[:500].lstrip().startswith(b"<?xml"):
+                logger.info(f"download_image: SVG detected, skipping download ({url})")
                 return None
             return content
     except Exception as e:
@@ -190,6 +175,19 @@ async def publish_post_with_fallback(
                 )
             except TelegramAPIError as e:
                 logger.warning(f"Ошибка отправки фото: {e}")
+        else:
+            try:
+                logger.info(f"publish_post_with_fallback: trying URL directly for {channel_id}")
+                return await bot.send_photo(
+                    chat_id=channel_id,
+                    photo=photo_url,
+                    caption=caption,
+                    parse_mode=parse_mode,
+                    reply_markup=reply_markup,
+                    has_spoiler=has_spoiler,
+                )
+            except TelegramAPIError as e:
+                logger.warning(f"Ошибка отправки фото по URL: {e}")
 
     if video_url:
         try:

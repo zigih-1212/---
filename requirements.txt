@@ -10,7 +10,3 @@ jinja2
 python-multipart
 feedparser
 xlsxwriter
-cairosvg
-svglib
-reportlab
-lxml
