@@ -834,11 +834,11 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
     reklama_line = f"Реклама. {name}. Erid: {erid_value}" if erid_value else ""
     post_text = f"{post_text}\n\n{reklama_line}"
 
-    if len(post_text) > 1000:
+    if len(post_text) > 1024:
         idx = post_text.rfind(hidden_link)
         if idx > 0:
             safe = post_text[idx:]
-            head = post_text[:1000 - len(safe) - 3].rstrip()
+            head = post_text[:1024 - len(safe) - 3].rstrip()
             post_text = head + "...\n\n" + safe
 
     # Проверка правил

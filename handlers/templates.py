@@ -197,8 +197,47 @@ async def process_cpc_template(message: Message, state: FSMContext):
         await message.answer("❌ В шаблоне обязательна подстановка {link} — CPC-ссылка.")
         return
     user_id = message.from_user.id
+
     conn = get_db()
     try:
+        campaigns = conn.execute(
+            "SELECT name, description, cpc_link FROM cpc_campaigns WHERE user_id=?",
+            (user_id,)
+        ).fetchall()
+
+        too_long = []
+        for c in campaigns:
+            name = c["name"] or ""
+            desc = c["description"] or ""
+            cpc_link = c["cpc_link"] or "https://example.com/ref"
+            hidden_link = "<a href='https://example.com/ref?subid1=123&subid2=456'>Перейти</a>"
+            erid_placeholder = "XXXX-XXXX-XXXX-XXXX"
+
+            text = template.replace("{name}", name).replace("{description}", desc)
+            if "{link}" in text:
+                text = text.replace("{link}", hidden_link)
+            else:
+                text += f"\n\n{hidden_link}"
+            text += f"\n\nРеклама. {name}. Erid: {erid_placeholder}"
+
+            if len(text) > 1024:
+                overhead = len(text) - len(desc)
+                desc_max = 1024 - overhead
+                too_long.append(f"• {name}: {len(text)} / 1024 (описание {len(desc)} симв., макс. {desc_max})")
+
+        if too_long:
+            warnings = "\n".join(too_long)
+            await message.answer(
+                f"⚠️ <b>Внимание!</b> С этим шаблоном некоторые кампании не вместятся в лимит Telegram (1024 символа):\n\n{warnings}\n\n"
+                f"💡 Укоротите шаблон или описание кампаний в админке.\n\n"
+                f"Шаблон <b>не сохранён</b>. Отправьте исправленный шаблон или нажмите «Отмена».",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Отмена", callback_data="templates:cancel")]
+                ])
+            )
+            return
+
         conn.execute("UPDATE users SET cpc_template=? WHERE user_id=?", (template, user_id))
         conn.commit()
     finally:

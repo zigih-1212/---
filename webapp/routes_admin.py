@@ -1279,6 +1279,40 @@ async def admin_cpc_page(request: Request, _: int = Depends(admin_required)):
 async def admin_cpc_save(campaign_id: int = Form(...), description: str = Form(""), rules: str = Form(""), _: int = Depends(admin_required)):
     conn = get_db()
     try:
+        row = conn.execute(
+            "SELECT name FROM cpc_campaigns WHERE campaign_id=? LIMIT 1",
+            (campaign_id,)
+        ).fetchone()
+        if not row:
+            return JSONResponse({"ok": False, "error": "Кампания не найдена"})
+
+        name = row["name"]
+        template = "👆 <b>{name}</b>\n\n{description}\n\n{link}"
+        hidden_link = "<a href='https://example.com/ref?subid1=123&subid2=456'>Перейти</a>"
+        erid_placeholder = "XXXX-XXXX-XXXX-XXXX"
+
+        simulated = template.replace("{name}", name).replace("{description}", description)
+        if "{link}" in simulated:
+            simulated = simulated.replace("{link}", hidden_link)
+        else:
+            simulated += f"\n\n{hidden_link}"
+        simulated += f"\n\nРеклама. {name}. Erid: {erid_placeholder}"
+
+        if len(simulated) > 1024:
+            overhead = len(simulated) - len(description)
+            desc_max = 1024 - overhead
+            return JSONResponse({
+                "ok": False,
+                "error": (
+                    f"❌ Текст не вмещается в лимит Telegram (1024 символа).\n\n"
+                    f"📊 Длина поста: {len(simulated)} / 1024 символов\n"
+                    f"📝 Описание: {len(description)} симв. (макс. {desc_max})\n"
+                    f"🏷 Название: {len(name)} симв.\n"
+                    f"🔗 Служебная часть: {overhead} симв.\n\n"
+                    f"✂️ Укоротите описание на {len(simulated) - 1024} симв."
+                )
+            })
+
         conn.execute(
             "INSERT INTO cpc_admin_settings (campaign_id, description, rules, updated_at) VALUES (?,?,?,datetime('now')) "
             "ON CONFLICT(campaign_id) DO UPDATE SET description=excluded.description, rules=excluded.rules, updated_at=datetime('now')",

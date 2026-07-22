@@ -1229,6 +1229,7 @@ td { padding:12px 8px; border-bottom:1px solid #333; }
 .btn-save { background:#ff4444; color:white; border:none; padding:8px 20px; border-radius:6px; cursor:pointer; font-size:0.9em; }
 .btn-save:hover { background:#e03333; }
 .success { color:#4caf50; padding:8px 0; }
+.error { color:#ff4444; padding:8px 0; white-space:pre-wrap; }
 </style>
 <script>
 async function saveCpc(campaignId) {
@@ -1244,6 +1245,8 @@ async function saveCpc(campaignId) {
     if (data.ok) {
         msg.innerHTML = '<div class="success">✅ Сохранено</div>';
         setTimeout(() => msg.innerHTML = '', 3000);
+    } else if (data.error) {
+        msg.innerHTML = '<div class="error">' + data.error.replace(/\n/g, '<br>') + '</div>';
     }
 }
 async function syncAll() {
