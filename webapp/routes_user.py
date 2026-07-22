@@ -2126,7 +2126,7 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const toggleText = isActive ? '🔴 Отключить' : '🟢 Включить';
             const imgHtml = c.image_url ? `<img class="campaign-img" src="${c.image_url}" alt="" onerror="this.style.display='none'">` : '<div class="campaign-img"></div>';
             const descHtml = c.description ? `<div class="campaign-desc"><b>📝 Описание:</b><br>${c.description}</div>` : '';
-            const rulesBtnHtml = (c.more_rules || c.rules) ? `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(c.name).replace(/'/g,"\\'")}, ${JSON.stringify(c.more_rules||c.rules||"").replace(/'/g,"\\'")})'>⚠️ Правила</button>` : '';
+            const rulesBtnHtml = (c.more_rules || c.rules || c.traffics) ? `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(c.name).replace(/'/g,"\\'")}, ${JSON.stringify(c.more_rules||c.rules||"").replace(/'/g,"\\'")}, ${JSON.stringify(c.traffics||"").replace(/'/g,"\\'")})'>⚠️ Правила</button>` : '';
             const imgEditHtml = `<div style="margin-bottom:8px;"><label style="font-size:0.85em;color:#888;">🖼 Картинка (URL):</label>
                 <div style="display:flex;gap:6px;margin-top:4px;">
                     <input type="text" id="img-${c.id}" value="${c.image_url || ''}" placeholder="https://..." style="flex:1;background:#333;border:1px solid #555;color:#ddd;padding:6px 8px;border-radius:6px;font-size:0.85em;">
@@ -2179,9 +2179,23 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             setTimeout(() => { msg.innerHTML = ''; loadCampaigns(); }, 1500);
         }
     }
-    function openRulesModal(name, rules) {
+    function openRulesModal(name, rules, traffics) {
         document.getElementById('rulesModalTitle').textContent = '⚠️ Правила: ' + name;
-        document.getElementById('rulesModalContent').textContent = rules || 'Правила не найдены.';
+        let html = '';
+        if (rules) html += '<b>Правила:</b>\n' + rules + '\n\n';
+        if (traffics) {
+            try {
+                const t = typeof traffics === 'string' ? JSON.parse(traffics) : traffics;
+                if (Array.isArray(t) && t.length) {
+                    const allowed = t.filter(x => x.enabled).map(x => '✅ ' + x.name);
+                    const denied = t.filter(x => !x.enabled).map(x => '❌ ' + x.name);
+                    if (allowed.length) html += '<b>✅ Разрешено:</b>\n' + allowed.join('\n') + '\n\n';
+                    if (denied.length) html += '<b>❌ Запрещено:</b>\n' + denied.join('\n');
+                }
+            } catch(e) {}
+        }
+        if (!html) html = 'Правила не найдены.';
+        document.getElementById('rulesModalContent').innerHTML = html.replace(/\n/g, '<br>');
         document.getElementById('rulesModal').classList.add('open');
     }
     function closeRulesModal() {
@@ -2211,7 +2225,7 @@ async def get_cpc_campaigns_data(token: str = Query(...)):
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, campaign_id, name, text, image_url, description, rules, more_rules, is_active, interval_hours, last_posted_at "
+            "SELECT id, campaign_id, name, text, image_url, description, rules, more_rules, traffics, is_active, interval_hours, last_posted_at "
             "FROM cpc_campaigns WHERE user_id=? ORDER BY name",
             (user_id,)
         ).fetchall()

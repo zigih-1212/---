@@ -121,6 +121,9 @@ logger = logging.getLogger("autopost_bot")
 async def download_image(url: str) -> Optional[bytes]:
     if not url or not url.startswith("http"):
         return None
+    if url.lower().endswith(".svg"):
+        logger.info(f"download_image: пропуск SVG {url}")
+        return None
     headers = {
         "User-Agent": "Mozilla/5.0",
         "Accept": "image/webp,image/jpeg,image/png,*/*;q=0.8",

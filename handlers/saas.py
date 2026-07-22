@@ -1758,6 +1758,7 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
                     "image_url": img,
                     "description": c.get("description", "") or "",
                     "more_rules": c.get("more_rules", "") or "",
+                    "traffics": c.get("traffics", []) or [],
                 }
 
     if not all_campaigns:
@@ -1806,24 +1807,28 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
                 (user_id, cid)
             ).fetchone()
             if not existing and info["cpc_link"]:
+                import json as _json
+                traffics_str = _json.dumps(info["traffics"], ensure_ascii=False) if info["traffics"] else ""
                 conn.execute(
-                    "INSERT INTO cpc_campaigns (user_id, campaign_id, name, cpc_link, image_url, description, more_rules) VALUES (?,?,?,?,?,?,?)",
-                    (user_id, cid, info["name"], info["cpc_link"], info["image_url"], info["description"], info["more_rules"])
+                    "INSERT INTO cpc_campaigns (user_id, campaign_id, name, cpc_link, image_url, description, more_rules, traffics) VALUES (?,?,?,?,?,?,?,?)",
+                    (user_id, cid, info["name"], info["cpc_link"], info["image_url"], info["description"], info["more_rules"], traffics_str)
                 )
             elif existing:
-                if info["image_url"] or info["description"] or info["more_rules"]:
-                    existing_row = conn.execute(
-                        "SELECT image_url, description, more_rules FROM cpc_campaigns WHERE id=?", (existing["id"],)
-                    ).fetchone()
-                    if existing_row:
-                        new_img = existing_row["image_url"] or info["image_url"]
-                        new_desc = existing_row["description"] or info["description"]
-                        new_rules = existing_row["more_rules"] or info["more_rules"]
-                        if new_img != existing_row["image_url"] or new_desc != existing_row["description"] or new_rules != existing_row["more_rules"]:
-                            conn.execute(
-                                "UPDATE cpc_campaigns SET image_url=?, description=?, more_rules=? WHERE id=?",
-                                (new_img, new_desc, new_rules, existing["id"])
-                            )
+                import json as _json
+                traffics_str = _json.dumps(info["traffics"], ensure_ascii=False) if info["traffics"] else ""
+                existing_row = conn.execute(
+                    "SELECT image_url, description, more_rules, traffics FROM cpc_campaigns WHERE id=?", (existing["id"],)
+                ).fetchone()
+                if existing_row:
+                    new_img = existing_row["image_url"] or info["image_url"]
+                    new_desc = existing_row["description"] or info["description"]
+                    new_rules = existing_row["more_rules"] or info["more_rules"]
+                    new_traffics = existing_row["traffics"] or traffics_str
+                    if new_img != existing_row["image_url"] or new_desc != existing_row["description"] or new_rules != existing_row["more_rules"] or new_traffics != existing_row["traffics"]:
+                        conn.execute(
+                            "UPDATE cpc_campaigns SET image_url=?, description=?, more_rules=?, traffics=? WHERE id=?",
+                            (new_img, new_desc, new_rules, new_traffics, existing["id"])
+                        )
         conn.commit()
 
         rows = conn.execute(
