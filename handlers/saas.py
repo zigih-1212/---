@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 from aiogram import Router, F, Bot
+from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery, Message, LabeledPrice,
     InlineKeyboardMarkup, InlineKeyboardButton,
@@ -1892,63 +1893,71 @@ async def cb_cpc_toggle(callback: CallbackQuery):
     await callback.answer(f"{'Включено' if new_val else 'Выключено'}")
 
 
-@router.message(F.text == "/debug_cpc")
+@router.message(Command("debug_cpc"))
 async def debug_cpc(message: Message, bot: Bot):
-    from services.admitad_subnetwork import get_access_token
-    import httpx
-    user_id = message.from_user.id
-    conn = get_db()
     try:
-        rows = conn.execute("SELECT campaign_id, name, image_url, more_rules FROM cpc_campaigns WHERE user_id=? LIMIT 5", (user_id,)).fetchall()
-    finally:
-        conn.close()
+        from services.admitad_subnetwork import get_access_token
+        import httpx
+        user_id = message.from_user.id
+        conn = get_db()
+        try:
+            rows = conn.execute("SELECT campaign_id, name, image_url, more_rules FROM cpc_campaigns WHERE user_id=? LIMIT 5", (user_id,)).fetchall()
+        finally:
+            conn.close()
 
-    token = await get_access_token()
-    if not token:
-        await message.answer("❌ Нет токена Admitad")
-        return
+        if not rows:
+            await message.answer("Нет CPC кампаний")
+            return
 
-    conn2 = get_db()
-    try:
-        website_rows = conn2.execute(
-            "SELECT DISTINCT admitad_website_id FROM channels WHERE user_id=? AND admitad_website_id IS NOT NULL",
-            (user_id,)
-        ).fetchall()
-    finally:
-        conn2.close()
+        token = await get_access_token()
+        if not token:
+            await message.answer("❌ Нет токена Admitad")
+            return
 
-    if not website_rows:
-        await message.answer("❌ Нет подключённых площадок в каналах")
-        return
+        conn2 = get_db()
+        try:
+            website_rows = conn2.execute(
+                "SELECT DISTINCT admitad_website_id FROM channels WHERE user_id=? AND admitad_website_id IS NOT NULL",
+                (user_id,)
+            ).fetchall()
+        finally:
+            conn2.close()
 
-    for r in rows:
-        cid = r["campaign_id"]
-        name = r["name"]
-        found = False
-        for wr in website_rows:
-            wid = wr["admitad_website_id"]
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(
-                    f"https://api.admitad.com/advcampaigns/website/{wid}/",
-                    headers={"Authorization": f"Bearer {token}"},
-                    params={"limit": 500}
-                )
-                if resp.status_code == 200:
-                    for c in resp.json().get("results", []):
-                        if c.get("id") == cid:
-                            text = (
-                                f"<b>{c.get('name')} (id={cid})</b>\n"
-                                f"image: <code>{c.get('image')}</code>\n"
-                                f"description: {(c.get('description') or '')[:200]}\n"
-                                f"raw_description: {(c.get('raw_description') or '')[:200]}\n"
-                                f"more_rules: {(c.get('more_rules') or '')[:200]}\n"
-                                f"traffics: {c.get('traffics')}\n"
-                                f"site_url: {c.get('site_url')}"
-                            )
-                            await message.answer(text, parse_mode=ParseMode.HTML)
-                            found = True
-                            break
-            if found:
-                break
-        if not found:
-            await message.answer(f"{name} (id={cid}): не найдена в подключённых")
+        if not website_rows:
+            await message.answer("❌ Нет подключённых площадок в каналах")
+            return
+
+        for r in rows:
+            cid = r["campaign_id"]
+            name = r["name"]
+            found = False
+            for wr in website_rows:
+                wid = wr["admitad_website_id"]
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(
+                        f"https://api.admitad.com/advcampaigns/website/{wid}/",
+                        headers={"Authorization": f"Bearer {token}"},
+                        params={"limit": 500}
+                    )
+                    if resp.status_code == 200:
+                        for c in resp.json().get("results", []):
+                            if c.get("id") == cid:
+                                text = (
+                                    f"<b>{c.get('name')} (id={cid})</b>\n"
+                                    f"image: <code>{c.get('image')}</code>\n"
+                                    f"description: {(c.get('description') or '')[:200]}\n"
+                                    f"raw_description: {(c.get('raw_description') or '')[:200]}\n"
+                                    f"more_rules: {(c.get('more_rules') or '')[:200]}\n"
+                                    f"traffics: {c.get('traffics')}\n"
+                                    f"site_url: {c.get('site_url')}"
+                                )
+                                await message.answer(text, parse_mode=ParseMode.HTML)
+                                found = True
+                                break
+                if found:
+                    break
+            if not found:
+                await message.answer(f"{name} (id={cid}): не найдена в подключённых")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
+        logger.error(f"debug_cpc error: {e}", exc_info=True)
