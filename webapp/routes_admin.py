@@ -374,15 +374,16 @@ async def user_edit_save(user_id: int, request: Request,
                          tariff_id: int = Form(0), balance_available: float = Form(0.0),
                          balance_pending: float = Form(0.0),
                          commission_rate: float = Form(0.95),
+                         cpc_banned: int = Form(0),
                          _: int = Depends(admin_required)):
     conn = get_db()
     try:
         sub_until = subscription_until if subscription_until else None
         conn.execute("""
             UPDATE users SET role=?, subscription_until=?, tariff_id=?,
-            balance_available=?, balance_pending=?, commission_rate=?
+            balance_available=?, balance_pending=?, commission_rate=?, cpc_banned=?
             WHERE user_id=?
-        """, (role, sub_until, tariff_id, balance_available, balance_pending, commission_rate, user_id))
+        """, (role, sub_until, tariff_id, balance_available, balance_pending, commission_rate, cpc_banned, user_id))
         conn.commit()
     finally:
         conn.close()
@@ -1261,7 +1262,8 @@ async def admin_cpc_page(request: Request, _: int = Depends(admin_required)):
             SELECT c.campaign_id, c.name, c.image_url,
                    COALESCE(a.description, '') as description,
                    COALESCE(a.rules, '') as rules,
-                   COUNT(*) as user_count
+                   COUNT(*) as user_count,
+                   SUM(c.times_posted) as times_posted
             FROM cpc_campaigns c
             LEFT JOIN cpc_admin_settings a ON c.campaign_id = a.campaign_id
             GROUP BY c.campaign_id
@@ -1289,3 +1291,24 @@ async def admin_cpc_save(campaign_id: int = Form(...), description: str = Form("
     finally:
         conn.close()
     return {"ok": True}
+
+
+@router.post("/admin/cpc-sync-all")
+async def admin_cpc_sync_all(_: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        user_ids = [r["user_id"] for r in conn.execute(
+            "SELECT DISTINCT user_id FROM cpc_campaigns"
+        ).fetchall()]
+    finally:
+        conn.close()
+
+    from handlers.saas import _sync_cpc_campaigns
+    count = 0
+    for uid in user_ids:
+        try:
+            await _sync_cpc_campaigns(uid)
+            count += 1
+        except Exception as e:
+            logger.error(f"CPC sync error for user {uid}: {e}")
+    return {"ok": True, "count": count}

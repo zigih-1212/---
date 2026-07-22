@@ -527,6 +527,7 @@ USER_EDIT_TEMPLATE = '''{% extends "base.html" %}
         <input name="balance_available" value="{{ user['balance_available'] or 0 }}" type="number" step="0.01">
         <label>&#x411;&#x430;&#x43B;&#x430;&#x43D;&#x441; &#x43E;&#x436;&#x438;&#x434;&#x430;&#x44E;&#x449;&#x438;&#x439;:</label>
         <input name="balance_pending" value="{{ user['balance_pending'] or 0 }}" type="number" step="0.01">
+        <label><input type="checkbox" name="cpc_banned" value="1" {{ 'checked' if user.get('cpc_banned') }}> &#x1F6AB; &#x411;&#x43B;&#x43E;&#x43A;&#x438;&#x440;&#x43E;&#x432;&#x430;&#x442;&#x44C; CPC</label>
         <button type="submit">&#x421;&#x43E;&#x445;&#x440;&#x430;&#x43D;&#x438;&#x442;&#x44C;</button>
     </form>
 </div>
@@ -1190,6 +1191,10 @@ ADMIN_CPC_TEMPLATE = r'''{% extends "base.html" %}
 {% block title %}CPC кампании{% endblock %}
 {% block content %}
 <div class="top-bar"><h1>👆 CPC кампании &mdash; управление</h1></div>
+<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+    <button class="btn-save" onclick="syncAll()">🔄 Синхронизировать всех</button>
+    <span id="syncStatus" style="color:#888;align-self:center;"></span>
+</div>
 <p style="color:#888;margin-bottom:20px;">Здесь вы задаёте описание и правила для всех кампаний. Изменения применяются ко всем пользователям.</p>
 <table>
 <thead><tr><th>Кампания</th><th>Описание</th><th>Правила (ключевые слова)</th><th></th></tr></thead>
@@ -1199,7 +1204,7 @@ ADMIN_CPC_TEMPLATE = r'''{% extends "base.html" %}
     <td style="vertical-align:top;width:180px;">
         {% if c.image_url %}<img src="{{ c.image_url }}" style="width:80px;height:80px;object-fit:contain;border-radius:8px;display:block;margin-bottom:6px;" onerror="this.style.display='none'">{% endif %}
         <strong>{{ c.name }}</strong><br>
-        <small style="color:#888;">ID: {{ c.campaign_id }} &bull; {{ c.user_count }} польз.</small>
+        <small style="color:#888;">ID: {{ c.campaign_id }} &bull; {{ c.user_count }} польз.{% if c.times_posted %} &bull; {{ c.times_posted }} публ.{% endif %}</small>
     </td>
     <td style="vertical-align:top;">
         <textarea class="cpc-desc" data-cid="{{ c.campaign_id }}" style="width:100%;min-height:60px;background:#222;border:1px solid #444;color:#ddd;padding:8px;border-radius:6px;font-size:0.9em;">{{ c.description or '' }}</textarea>
@@ -1240,6 +1245,17 @@ async function saveCpc(campaignId) {
         msg.innerHTML = '<div class="success">✅ Сохранено</div>';
         setTimeout(() => msg.innerHTML = '', 3000);
     }
+}
+async function syncAll() {
+    const btn = document.querySelector('button[onclick="syncAll()"]');
+    const status = document.getElementById('syncStatus');
+    btn.disabled = true;
+    status.innerHTML = '⏳ Синхронизация...';
+    const res = await fetch('/admin/cpc-sync-all', { method: 'POST' });
+    const data = await res.json();
+    status.innerHTML = data.ok ? '✅ Синхронизировано (' + data.count + ' пользователей)' : '❌ Ошибка';
+    btn.disabled = false;
+    setTimeout(() => { if (data.ok) location.reload(); }, 1500);
 }
 </script>
 {% endblock %}'''

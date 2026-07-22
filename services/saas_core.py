@@ -618,13 +618,14 @@ async def publish_cpc_campaigns(bot: Bot):
         campaigns = conn.execute("""
             SELECT cpc.id, cpc.user_id, cpc.campaign_id, cpc.name, cpc.cpc_link,
                    cpc.text, cpc.image_url, cpc.interval_hours, cpc.last_posted_at,
-                   cpc.description,
+                   cpc.description, u.cpc_banned,
                    ch.channel_id, ch.sub_id, ch.channel_title
             FROM cpc_campaigns cpc
             JOIN users u ON u.user_id = cpc.user_id
             JOIN channels ch ON ch.user_id = cpc.user_id
             WHERE cpc.is_active = 1
               AND u.is_active = 1
+              AND u.cpc_banned = 0
               AND (cpc.last_posted_at IS NULL
                    OR datetime(cpc.last_posted_at, '+' || cpc.interval_hours || ' hours') <= datetime('now'))
         """).fetchall()
@@ -734,7 +735,7 @@ async def publish_cpc_campaigns(bot: Bot):
                 posted_ids.add(cpc_id)
                 c = get_db()
                 try:
-                    c.execute("UPDATE cpc_campaigns SET last_posted_at=datetime('now') WHERE id=?", (cpc_id,))
+                    c.execute("UPDATE cpc_campaigns SET last_posted_at=datetime('now'), times_posted=times_posted+1 WHERE id=?", (cpc_id,))
                     c.commit()
                 finally:
                     c.close()

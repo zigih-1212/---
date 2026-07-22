@@ -2179,7 +2179,12 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
         f.append('campaign_id', id);
         const res = await fetch('/my-stats/toggle-cpc-campaign', { method: 'POST', body: f });
         const data = await res.json();
-        if (data.ok) loadCampaigns();
+        if (data.ok) {
+            if (data.warning) alert(data.warning);
+            loadCampaigns();
+        } else if (data.error) {
+            alert(data.error);
+        }
     }
     loadCampaigns();
     </script>
@@ -2252,12 +2257,25 @@ async def toggle_cpc_campaign(token: str = Form(...), campaign_id: int = Form(..
     user_id = get_user_id_from_token(token)
     conn = get_db()
     try:
+        user = conn.execute("SELECT cpc_banned, cpc_warned FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if user and user["cpc_banned"]:
+            return {"ok": False, "error": "❌ CPC заблокирован для вашего аккаунта. Обратитесь к администратору."}
+
         row = conn.execute(
             "SELECT is_active FROM cpc_campaigns WHERE id=? AND user_id=?",
             (campaign_id, user_id)
         ).fetchone()
         if row:
             new_val = 0 if row["is_active"] else 1
+            if new_val == 1 and user and not user["cpc_warned"]:
+                conn.execute("UPDATE users SET cpc_warned=1 WHERE user_id=?", (user_id,))
+                conn.execute(
+                    "UPDATE cpc_campaigns SET is_active=? WHERE id=? AND user_id=?",
+                    (new_val, campaign_id, user_id)
+                )
+                conn.commit()
+                return {"ok": True, "warning": "⚠️ Вы несёте ответственность за маркировку рекламы (ФЗ-38). Штрафы: физлица до 80 000₽, юрлица до 500 000₽."}
+
             conn.execute(
                 "UPDATE cpc_campaigns SET is_active=? WHERE id=? AND user_id=?",
                 (new_val, campaign_id, user_id)

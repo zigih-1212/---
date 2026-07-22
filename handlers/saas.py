@@ -677,6 +677,10 @@ async def cb_force_type_cpc(callback: CallbackQuery, bot: Bot) -> None:
 
     conn = get_db()
     try:
+        banned = conn.execute("SELECT cpc_banned FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if banned and banned["cpc_banned"]:
+            await callback.answer("❌ CPC заблокирован для вашего аккаунта.", show_alert=True)
+            return
         campaigns = conn.execute(
             "SELECT id, name, cpc_link, text, image_url, description, more_rules FROM cpc_campaigns WHERE user_id = ? AND is_active = 1",
             (user_id,)
@@ -870,6 +874,7 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
                 (user_id, donor_post_id, ch["channel_id"], datetime.now(timezone.utc).isoformat(),
                  auto_delete_hours, post_text, direct_link)
             )
+            conn_rec.execute("UPDATE cpc_campaigns SET last_posted_at=datetime('now'), times_posted=times_posted+1 WHERE id=?", (campaign.get("id", 0),))
             conn_rec.commit()
         finally:
             conn_rec.close()
@@ -893,6 +898,10 @@ async def cb_cpc_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
 
     conn = get_db()
     try:
+        banned = conn.execute("SELECT cpc_banned FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if banned and banned["cpc_banned"]:
+            await callback.answer("❌ CPC заблокирован.", show_alert=True)
+            return
         campaign = conn.execute(
             "SELECT id, name, cpc_link, text, image_url, rules, more_rules, description FROM cpc_campaigns WHERE id = ? AND user_id = ?",
             (campaign_id, user_id)
@@ -902,7 +911,7 @@ async def cb_cpc_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
             (channel_id, user_id)
         ).fetchone()
         user_row = conn.execute(
-            "SELECT cpc_template, default_auto_delete_hours FROM users WHERE user_id=?",
+            "SELECT cpc_template, default_auto_delete_hours, cpc_banned FROM users WHERE user_id=?",
             (user_id,)
         ).fetchone()
     finally:
@@ -910,6 +919,9 @@ async def cb_cpc_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
 
     if not campaign or not ch:
         await callback.answer("❌ Не найдено", show_alert=True)
+        return
+    if user_row and user_row["cpc_banned"]:
+        await callback.answer("❌ CPC заблокирован.", show_alert=True)
         return
 
     cpc_template = user_row["cpc_template"] if user_row and user_row["cpc_template"] else None
