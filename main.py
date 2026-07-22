@@ -679,6 +679,12 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE cpc_campaigns ADD COLUMN times_posted INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN cpa_enabled INTEGER DEFAULT 1")
+        logger.info("✅ Колонка cpa_enabled добавлена")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e):
+            logger.warning(f"⚠️ Не удалось добавить cpa_enabled: {e}")
 
     conn.commit()
     

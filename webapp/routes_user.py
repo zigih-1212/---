@@ -971,6 +971,10 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
             </select>
         </div>
         <div class="section">
+            <h2>CPA (товарные посты)</h2>
+            <div class="checkbox-label"><input type="checkbox" id="cpa-enabled"> 🛒 Автоматическая публикация CPA-товаров включена</div>
+        </div>
+        <div class="section">
             <h2>Фильтр товаров</h2>
             <label>Минимальная скидка для CPA-товаров (%) — <b>0</b> = все товары</label>
             <input type="number" id="min-discount" min="0" max="100" value="0">
@@ -1068,6 +1072,7 @@ async function loadSettings() {
         document.getElementById('skip-preview').checked = data.force_preview_confirmed;
         document.getElementById('min-discount').value = data.min_discount || 0;
         if (data.tax_status) document.getElementById('tax-status').value = data.tax_status;
+        if (document.getElementById('cpa-enabled')) document.getElementById('cpa-enabled').checked = data.cpa_enabled;
         loadCyclic(data.stores);
         loadVideoChannels(data.video_channels);
         loadReferral(data.sub_id);
@@ -1130,6 +1135,7 @@ async function saveGeneralSettings() {
     formData.append('force_preview_confirmed', document.getElementById('skip-preview').checked ? '1' : '0');
     formData.append('min_discount', document.getElementById('min-discount').value);
     formData.append('tax_status', document.getElementById('tax-status').value);
+    if (document.getElementById('cpa-enabled')) formData.append('cpa_enabled', document.getElementById('cpa-enabled').checked ? '1' : '0');
     try {
         const resp = await fetch('/my-stats/save-settings', { method: 'POST', body: formData });
         const data = await resp.json();
@@ -1455,7 +1461,7 @@ async def get_settings_data(token: str = Query(...)):
     conn = get_db()
     try:
         user = conn.execute("""SELECT post_interval_minutes, default_auto_delete_hours,
-            auto_pin, notify_posts, force_preview_confirmed, min_discount, tax_status, sub_id
+            auto_pin, notify_posts, force_preview_confirmed, min_discount, tax_status, sub_id, cpa_enabled
             FROM users WHERE user_id=?""", (user_id,)).fetchone()
         user_stores = conn.execute(
             "SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)
@@ -1488,6 +1494,7 @@ async def get_settings_data(token: str = Query(...)):
             "stores": stores,
             "video_channels": [{"id": v["id"], "platform": v["platform"], "channel_id": v["channel_id"], "is_active": v["is_active"]} for v in video_channels],
             "sub_id": user["sub_id"] if user else "",
+            "cpa_enabled": bool(user["cpa_enabled"]) if user else True,
         })
     finally:
         conn.close()
@@ -1502,16 +1509,19 @@ async def save_settings(
     force_preview_confirmed: int = Form(0),
     min_discount: int = Form(0),
     tax_status: str = Form(""),
+    cpa_enabled: int = Form(1),
 ):
     user_id = get_user_id_from_token(token)
     conn = get_db()
     try:
         conn.execute("""UPDATE users SET
             post_interval_minutes=?, default_auto_delete_hours=?, auto_pin=?,
-            notify_posts=?, force_preview_confirmed=?, min_discount=?, tax_status=?
+            notify_posts=?, force_preview_confirmed=?, min_discount=?, tax_status=?,
+            cpa_enabled=?
             WHERE user_id=?""",
             (post_interval_minutes, default_auto_delete_hours, auto_pin,
-             notify_posts, force_preview_confirmed, min_discount, tax_status, user_id))
+             notify_posts, force_preview_confirmed, min_discount, tax_status,
+             cpa_enabled, user_id))
         conn.commit()
         return JSONResponse({"ok": True})
     except Exception as e:
