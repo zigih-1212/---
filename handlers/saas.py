@@ -1908,18 +1908,25 @@ async def debug_cpc(message: Message, bot: Bot):
         await message.answer("❌ Нет токена Admitad")
         return
 
-    from services.admitad_subnetwork import get_all_websites
-    websites = await get_all_websites()
-    if not websites:
-        await message.answer("❌ Нет площадок")
+    conn2 = get_db()
+    try:
+        website_rows = conn2.execute(
+            "SELECT DISTINCT admitad_website_id FROM channels WHERE user_id=? AND admitad_website_id IS NOT NULL",
+            (user_id,)
+        ).fetchall()
+    finally:
+        conn2.close()
+
+    if not website_rows:
+        await message.answer("❌ Нет подключённых площадок в каналах")
         return
 
     for r in rows:
         cid = r["campaign_id"]
         name = r["name"]
         found = False
-        for w in websites:
-            wid = w.get("id")
+        for wr in website_rows:
+            wid = wr["admitad_website_id"]
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.get(
                     f"https://api.admitad.com/advcampaigns/website/{wid}/",
