@@ -9,6 +9,16 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a1a; colo
 .sidebar a { color: #bbb; text-decoration: none; padding: 12px 16px; border-radius: 8px; font-weight: 500; transition: all 0.2s; }
 .sidebar a:hover, .sidebar a.active { background: #ff4444; color: #fff; }
 .main-content { flex: 1; padding: 40px; overflow-y: auto; }
+.hamburger { display: none; position: fixed; top: 12px; left: 12px; z-index: 1001; background: #ff4444; color: #fff; border: none; font-size: 24px; width: 44px; height: 44px; border-radius: 8px; cursor: pointer; align-items: center; justify-content: center; }
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999; }
+@media (max-width: 768px) {
+    body { flex-direction: column; }
+    .hamburger { display: flex; }
+    .sidebar { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; z-index: 1000; transition: left 0.3s; padding-top: 60px; }
+    .sidebar.open { left: 0; }
+    .sidebar-overlay.open { display: block; }
+    .main-content { padding: 60px 12px 20px; margin-left: 0; }
+}
 .card { background: #222; border-radius: 16px; padding: 30px; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
 h1 { color: #ff4444; margin-bottom: 20px; font-size: 2em; }
 h2 { color: #ddd; margin: 20px 0 10px; font-size: 1.5em; }
@@ -47,7 +57,9 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
 <title>{% block title %}AutoPost Bot{% endblock %}</title>
 <style>''' + CSS_CONTENT + '''</style></head>
 <body>
-<div class="sidebar">
+<button class="hamburger" onclick="toggleSidebar()">☰</button>
+<div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+<div class="sidebar" id="adminSidebar">
     <h2 style="color:#ff4444; margin-bottom:20px;">&#x26A1; AutoPost</h2>
     <a href="/admin/dashboard" class="{{ 'active' if active_page == 'dashboard' }}">&#x1F4CA; &#x414;&#x430;&#x448;&#x431;&#x43E;&#x440;&#x434;</a>
     <a href="/admin/users" class="{{ 'active' if active_page == 'users' }}">&#x1F465; &#x41F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x438;</a>
@@ -65,6 +77,12 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
 <div class="main-content">
     {% block content %}{% endblock %}
 </div>
+<script>
+function toggleSidebar() {
+    document.getElementById('adminSidebar').classList.toggle('open');
+    document.querySelector('.sidebar-overlay').classList.toggle('open');
+}
+</script>
 </body>
 </html>'''
 
