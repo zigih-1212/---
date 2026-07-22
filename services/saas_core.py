@@ -674,23 +674,22 @@ async def publish_cpc_campaigns(bot: Bot):
         final_url = f"{cpc_link}{separator}subid1={sub_id}&subid2={subid2}"
         hidden_link = f"<a href='{final_url}'>Перейти</a>"
 
-        if cpc_template and "{link}" in cpc_template:
-            post_text = cpc_template.replace("{link}", hidden_link)
-        elif cpc_template and "{name}" in cpc_template:
-            post_text = cpc_template.replace("{name}", name)
-            post_text = post_text.rstrip() + f"\n\n{hidden_link}"
-        elif cpc_template:
-            post_text = cpc_template.rstrip() + f"\n\n{hidden_link}"
-        elif text_template and "{link}" in text_template:
-            post_text = text_template.replace("{link}", hidden_link)
+        if cpc_template:
+            post_text = cpc_template
         elif text_template:
-            post_text = text_template.rstrip() + f"\n\n{hidden_link}"
+            post_text = text_template
         elif description:
-            post_text = f"👆 {name}\n\n{description}\n\n{hidden_link}"
+            post_text = "👆 {name}\n\n{description}\n\n{link}"
         else:
-            post_text = f"👆 {name}\n\n{hidden_link}"
+            post_text = "👆 {name}\n\n{link}"
 
+        post_text = post_text.replace("{name}", name)
         post_text = post_text.replace("{description}", description)
+
+        if "{link}" in post_text:
+            post_text = post_text.replace("{link}", hidden_link)
+        else:
+            post_text = post_text.rstrip() + f"\n\n{hidden_link}"
 
         erid_match = _re.search(r'erid=([^&]+)', final_url)
         erid_value = erid_match.group(1) if erid_match else ""

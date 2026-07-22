@@ -814,21 +814,22 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
     erid_value = erid_match.group(1) if erid_match else ""
     hidden_link = f"<a href='{final_url}'>Перейти</a>"
 
-    if cpc_template and "{link}" in cpc_template:
-        post_text = cpc_template.replace("{link}", hidden_link)
-    elif cpc_template and "{name}" in cpc_template:
-        post_text = cpc_template.replace("{name}", name)
-        post_text = post_text.rstrip() + f"\n\n{hidden_link}"
-    elif cpc_template:
-        post_text = cpc_template.rstrip() + f"\n\n{hidden_link}"
+    if cpc_template:
+        post_text = cpc_template
     elif custom_text:
-        post_text = custom_text.rstrip() + f"\n\n{hidden_link}"
+        post_text = custom_text
     elif description:
-        post_text = f"👆 {name}\n\n{description}\n\n{hidden_link}"
+        post_text = "👆 {name}\n\n{description}\n\n{link}"
     else:
-        post_text = f"👆 {name}\n\n{hidden_link}"
+        post_text = "👆 {name}\n\n{link}"
 
+    post_text = post_text.replace("{name}", name)
     post_text = post_text.replace("{description}", description)
+
+    if "{link}" in post_text:
+        post_text = post_text.replace("{link}", hidden_link)
+    else:
+        post_text = post_text.rstrip() + f"\n\n{hidden_link}"
 
     reklama_line = f"Реклама. {name}. Erid: {erid_value}" if erid_value else ""
     post_text = f"{post_text}\n\n{reklama_line}"
