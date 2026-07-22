@@ -1890,3 +1890,43 @@ async def cb_cpc_toggle(callback: CallbackQuery):
     text, kb = await _build_cpc_list(user_id)
     await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
     await callback.answer(f"{'Включено' if new_val else 'Выключено'}")
+
+
+@router.message(F.text == "/debug_cpc")
+async def debug_cpc(message: Message, bot: Bot):
+    from services.admitad_subnetwork import get_access_token
+    import httpx
+    user_id = message.from_user.id
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT campaign_id, name, image_url, more_rules FROM cpc_campaigns WHERE user_id=? LIMIT 5", (user_id,)).fetchall()
+    finally:
+        conn.close()
+
+    token = await get_access_token()
+    if not token:
+        await message.answer("❌ Нет токена Admitad")
+        return
+
+    for r in rows:
+        cid = r["campaign_id"]
+        name = r["name"]
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"https://api.admitad.com/advcampaigns/{cid}/",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if resp.status_code == 200:
+                c = resp.json()
+                text = (
+                    f"<b>{c.get('name')} (id={cid})</b>\n"
+                    f"image: <code>{c.get('image')}</code>\n"
+                    f"description: {(c.get('description') or '')[:200]}\n"
+                    f"raw_description: {(c.get('raw_description') or '')[:200]}\n"
+                    f"more_rules: {(c.get('more_rules') or '')[:200]}\n"
+                    f"traffics: {c.get('traffics')}\n"
+                    f"site_url: {c.get('site_url')}"
+                )
+            else:
+                text = f"{name}: ошибка {resp.status_code}"
+        await message.answer(text, parse_mode=ParseMode.HTML)
