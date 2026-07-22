@@ -122,21 +122,10 @@ def _svg_to_png(svg_bytes: bytes) -> Optional[bytes]:
     try:
         import cairosvg
         png_bytes = cairosvg.svg2png(bytestring=svg_bytes, output_width=800)
+        logger.info(f"SVG→PNG: {len(svg_bytes)}→{len(png_bytes)} bytes via cairosvg")
         return png_bytes
     except Exception as e:
-        logger.warning(f"SVG to PNG (cairosvg) failed: {e}")
-    try:
-        from svglib.svglib import svg2rlg
-        from reportlab.graphics import renderPM
-        from io import BytesIO
-        drawing = svg2rlg(BytesIO(svg_bytes))
-        if not drawing:
-            return None
-        buf = BytesIO()
-        renderPM.drawToFile(drawing, buf, fmt="PNG", outputType=1)
-        return buf.getvalue()
-    except Exception as e:
-        logger.warning(f"SVG to PNG (svglib) failed: {e}")
+        logger.warning(f"SVG→PNG failed (cairo not available?): {e}")
     return None
 
 

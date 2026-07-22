@@ -2182,20 +2182,20 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     function openRulesModal(name, rules, traffics) {
         document.getElementById('rulesModalTitle').textContent = '⚠️ Правила: ' + name;
         let html = '';
-        if (rules) html += '<b>Правила:</b>\n' + rules + '\n\n';
         if (traffics) {
             try {
                 const t = typeof traffics === 'string' ? JSON.parse(traffics) : traffics;
                 if (Array.isArray(t) && t.length) {
                     const allowed = t.filter(x => x.enabled).map(x => '✅ ' + x.name);
                     const denied = t.filter(x => !x.enabled).map(x => '❌ ' + x.name);
-                    if (allowed.length) html += '<b>✅ Разрешено:</b>\n' + allowed.join('\n') + '\n\n';
-                    if (denied.length) html += '<b>❌ Запрещено:</b>\n' + denied.join('\n');
+                    if (denied.length) html += '<b>❌ Запрещено:</b><br>' + denied.join('<br>') + '<br><br>';
+                    if (allowed.length) html += '<b>✅ Разрешено:</b><br>' + allowed.join('<br>');
                 }
             } catch(e) {}
         }
+        if (!html && rules) html = rules;
         if (!html) html = 'Правила не найдены.';
-        document.getElementById('rulesModalContent').innerHTML = html.replace(/\n/g, '<br>');
+        document.getElementById('rulesModalContent').innerHTML = html;
         document.getElementById('rulesModal').classList.add('open');
     }
     function closeRulesModal() {
