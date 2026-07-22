@@ -137,7 +137,14 @@ async def download_image(url: str) -> Optional[bytes]:
                 logger.warning(f"download_image: слишком мало данных {len(content)}")
                 return None
             if url.lower().endswith(".svg") or content[:500].lstrip().startswith(b"<svg") or content[:500].lstrip().startswith(b"<?xml"):
-                logger.info(f"download_image: SVG detected, skipping download ({url})")
+                logger.info(f"download_image: SVG detected, converting to PNG ({url})")
+                try:
+                    import cairosvg
+                    png_bytes = cairosvg.svg2png(bytestring=content, output_width=800)
+                    logger.info(f"download_image: SVG→PNG success {len(content)}→{len(png_bytes)} bytes")
+                    return png_bytes
+                except Exception as e:
+                    logger.warning(f"download_image: SVG→PNG failed: {e}")
                 return None
             return content
     except Exception as e:
