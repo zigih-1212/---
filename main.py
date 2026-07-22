@@ -815,6 +815,7 @@ async def promo_handler(message: Message, state: FSMContext):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
     )
 
+@router.callback_query(F.data == "privacy:accept")
 async def cb_privacy_accept(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
@@ -840,6 +841,7 @@ async def cb_privacy_decline(callback: CallbackQuery):
     )
     await callback.answer()
 
+@router.callback_query(F.data == "share_success")
 async def cb_share_success_main(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
