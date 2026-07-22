@@ -1,6 +1,7 @@
 # webapp/routes_postback.py
 import logging
 import re
+from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from services.db import get_db
 from helpers import apply_referral_bonus, check_payout_threshold
@@ -37,8 +38,8 @@ async def admitad_postback(request: Request):
 
         conn.execute("""
             INSERT OR IGNORE INTO admitad_transactions 
-            (admitad_id, user_id, action, action_id, payment_sum, payment_status, subid1, decline_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (admitad_id, user_id, action, action_id, payment_sum, payment_status, subid1, decline_reason, time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data.get("id"),
             user_id,
@@ -47,7 +48,8 @@ async def admitad_postback(request: Request):
             payment_sum,
             status,
             subid1,
-            data.get("reason") or data.get("decline_reason") or ""
+            data.get("reason") or data.get("decline_reason") or "",
+            int(datetime.now(timezone.utc).timestamp())
         ))
 
         if status in ("pending", "new"):

@@ -812,6 +812,31 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
 
     erid_match = _re.search(r'erid=([^&]+)', final_url)
     erid_value = erid_match.group(1) if erid_match else ""
+
+    if not erid_value:
+        logger.warning(f"CPC пост без ERID: campaign={campaign.get('id', 0)} name={name!r} channel={ch['channel_id']}")
+        await safe_edit(callback.message,
+            "⚠️ <b>Невозможно опубликовать CPC-пост</b>\n\n"
+            "В ссылке кампании отсутствует ERID (маркировка рекламы). "
+            "Публикация без ERID запрещена по закону.\n\n"
+            "💡 Обратитесь к администратору.",
+            parse_mode=ParseMode.HTML
+        )
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(
+                    admin_id,
+                    f"🚫 <b>CPC без ERID</b>\n\n"
+                    f"Пользователь: <code>{user_id}</code>\n"
+                    f"Кампания: <b>{name}</b>\n"
+                    f"Канал: <code>{ch['channel_id']}</code>\n"
+                    f"Действие: публикация заблокирована",
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception:
+                pass
+        return
+
     hidden_link = f"<a href='{final_url}'>Перейти</a>"
 
     if cpc_template:

@@ -121,6 +121,22 @@ logger = logging.getLogger("autopost_bot")
 async def download_image(url: str) -> Optional[bytes]:
     if not url or not url.startswith("http"):
         return None
+
+    cache_dir = "/app/data/cache"
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    cache_path = os.path.join(cache_dir, url_hash + ".png")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    if os.path.isfile(cache_path):
+        age = datetime.now(timezone.utc).timestamp() - os.path.getmtime(cache_path)
+        if age < 86400:
+            with open(cache_path, "rb") as f:
+                cached = f.read()
+            if cached:
+                logger.info(f"download_image: cache hit ({url})")
+                return cached
+            logger.info(f"download_image: cache empty, re-download")
+
     headers = {
         "User-Agent": "Mozilla/5.0",
         "Accept": "image/webp,image/jpeg,image/png,*/*;q=0.8",
@@ -142,10 +158,14 @@ async def download_image(url: str) -> Optional[bytes]:
                     import cairosvg
                     png_bytes = cairosvg.svg2png(bytestring=content, output_width=400)
                     logger.info(f"download_image: SVG→PNG success {len(content)}→{len(png_bytes)} bytes")
+                    with open(cache_path, "wb") as f:
+                        f.write(png_bytes)
                     return png_bytes
                 except Exception as e:
                     logger.warning(f"download_image: SVG→PNG failed: {e}")
                 return None
+            with open(cache_path, "wb") as f:
+                f.write(content)
             return content
     except Exception as e:
         logger.warning(f"download_image error: {e}")
@@ -672,6 +692,14 @@ async def publish_cpc_campaigns(bot: Bot):
         subid2 = generate_subid2(user_id, channel_id)
         separator = "&" if "?" in cpc_link else "?"
         final_url = f"{cpc_link}{separator}subid1={sub_id}&subid2={subid2}"
+
+        erid_match = _re.search(r'erid=([^&]+)', final_url)
+        erid_value = erid_match.group(1) if erid_match else ""
+
+        if not erid_value:
+            logger.warning(f"CPC авто-пост без ERID: campaign={campaign_id} name={name!r} user={user_id}")
+            continue
+
         hidden_link = f"<a href='{final_url}'>Перейти</a>"
 
         if cpc_template:
@@ -691,8 +719,6 @@ async def publish_cpc_campaigns(bot: Bot):
         else:
             post_text = post_text.rstrip() + f"\n\n{hidden_link}"
 
-        erid_match = _re.search(r'erid=([^&]+)', final_url)
-        erid_value = erid_match.group(1) if erid_match else ""
         reklama_line = f"Реклама. {name}. Erid: {erid_value}" if erid_value else ""
         post_text = f"{post_text}\n\n{reklama_line}"
 

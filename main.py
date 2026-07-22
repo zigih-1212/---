@@ -544,7 +544,15 @@ def init_db() -> None:
     try:
         cursor.execute("ALTER TABLE posts ADD COLUMN erid TEXT")
     except sqlite3.OperationalError:
-        pass      
+        pass
+    
+    # Backfill admitad_transactions.time для существующих строк (где time NULL)
+    try:
+        cursor.execute("UPDATE admitad_transactions SET time = strftime('%s', created_at) WHERE time IS NULL AND created_at IS NOT NULL")
+        logger.info("✅ admitad_transactions.time заполнен для существующих записей")
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось заполнить time: {e}")
+
     # Добавляем колонку beta_tester для управления доступом к новым функциям
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN beta_tester INTEGER DEFAULT 0")
