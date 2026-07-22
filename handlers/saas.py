@@ -1942,12 +1942,16 @@ async def debug_cpc(message: Message, bot: Bot):
                     if resp.status_code == 200:
                         for c in resp.json().get("results", []):
                             if c.get("id") == cid:
+                                import re as _re2
+                                def strip_html(s):
+                                    if not s: return ""
+                                    return _re2.sub(r'<[^>]+>', '', s)
                                 text = (
                                     f"<b>{c.get('name')} (id={cid})</b>\n"
                                     f"image: <code>{c.get('image')}</code>\n"
-                                    f"description: {(c.get('description') or '')[:200]}\n"
-                                    f"raw_description: {(c.get('raw_description') or '')[:200]}\n"
-                                    f"more_rules: {(c.get('more_rules') or '')[:200]}\n"
+                                    f"description: {strip_html(c.get('description',''))[:200]}\n"
+                                    f"raw_description: {strip_html(c.get('raw_description',''))[:200]}\n"
+                                    f"more_rules: {strip_html(c.get('more_rules',''))[:200]}\n"
                                     f"traffics: {c.get('traffics')}\n"
                                     f"site_url: {c.get('site_url')}"
                                 )
