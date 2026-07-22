@@ -66,6 +66,7 @@ TEMPLATES = {
     "admin_reports.html": REPORTS_TEMPLATE,
     "admin_payouts.html": ADMIN_PAYOUTS_TEMPLATE,
     "admin_chat.html": ADMIN_CHAT_TEMPLATE,
+    "admin_cpc.html": ADMIN_CPC_TEMPLATE,
 }
 
 env = Environment(loader=DictLoader(TEMPLATES))
