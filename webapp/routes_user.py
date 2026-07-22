@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone, date
 from config import BOT_USERNAME, MIN_PAYOUT, ADMIN_IDS, WEBAPP_ADMIN_URL
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from services.text_rewriter import generate_post_text
-from services.admitad import get_delivery_for_store, get_random_promocode
+from services.admitad import get_delivery_for_store, get_random_promocode, STORE_ID_MAP, STORES
 from utils.feature_flags import is_feature_available_async, is_feature_enabled
 from helpers import collect_views_for_user
 
@@ -2236,6 +2236,42 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     }
     loadCampaigns();
     </script>
+
+    <h2 style="color:#ff4444;font-size:1.3em;margin-top:40px;">🏪 CPA магазины</h2>
+    <p style="color:#aaa;margin-bottom:20px;">Включайте/отключайте магазины для автоматической публикации CPA-товаров.</p>
+    <div id="cpa-stores-list"></div>
+    <script>
+    async function loadCpaStores() {
+        const res = await fetch('/my-stats/cpa-stores-data?token={{ token }}');
+        const stores = await res.json();
+        const container = document.getElementById('cpa-stores-list');
+        container.innerHTML = stores.map(s => {
+            const disabled = !s.available;
+            const toggleClass = s.is_active ? 'on' : 'off';
+            const toggleText = s.is_active ? '🔴 Отключить' : '🟢 Включить';
+            const statusText = s.is_active ? '✅ Активен' : (disabled ? '❌ Недоступен' : '⚪ Отключён');
+            return `<div class="campaign-card" style="opacity:${disabled ? 0.5 : 1}">
+                <div class="campaign-info" style="flex:1;">
+                    <div class="campaign-name">${s.name}</div>
+                    <div class="campaign-status ${s.is_active ? 'active' : 'inactive'}">${statusText}</div>
+                    <div class="campaign-actions">
+                        <button class="btn-toggle ${toggleClass}" onclick="toggleCpaStore(${s.id})" ${disabled ? 'disabled' : ''}>${toggleText}</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+    async function toggleCpaStore(storeId) {
+        const f = new FormData();
+        f.append('token', '{{ token }}');
+        f.append('store_id', storeId);
+        const res = await fetch('/my-stats/toggle-cpa-store', { method: 'POST', body: f });
+        const data = await res.json();
+        if (data.ok) loadCpaStores();
+        else if (data.error) alert(data.error);
+    }
+    loadCpaStores();
+    </script>
 </body>
 </html>'''
 
@@ -2329,6 +2365,43 @@ async def toggle_cpc_campaign(token: str = Form(...), campaign_id: int = Form(..
                 (new_val, campaign_id, user_id)
             )
             conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+@router.get("/cpa-stores-data")
+async def get_cpa_stores_data(token: str = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        selected = {r["category_id"] for r in conn.execute(
+            "SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)
+        ).fetchall()}
+    finally:
+        conn.close()
+    stores = []
+    for sid, name in STORE_ID_MAP.items():
+        store_info = STORES.get(name, {})
+        available = store_info.get("available", True) if store_info else True
+        stores.append({"id": sid, "name": name, "is_active": sid in selected, "available": available})
+    stores.sort(key=lambda s: (not s["available"], s["name"]))
+    return stores
+
+@router.post("/toggle-cpa-store")
+async def toggle_cpa_store(token: str = Form(...), store_id: int = Form(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        existing = conn.execute(
+            "SELECT 1 FROM user_category_preferences WHERE user_id=? AND category_id=?",
+            (user_id, store_id)
+        ).fetchone()
+        if existing:
+            conn.execute("DELETE FROM user_category_preferences WHERE user_id=? AND category_id=?", (user_id, store_id))
+        else:
+            conn.execute("INSERT INTO user_category_preferences (user_id, category_id, created_at) VALUES (?,?,?)",
+                         (user_id, store_id, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
     finally:
         conn.close()
     return {"ok": True}
