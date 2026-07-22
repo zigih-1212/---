@@ -1,5 +1,8 @@
+import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
+
+logger = logging.getLogger("autopost_bot.webapp")
 from webapp.routes_admin import router as admin_router
 from webapp.routes_user import router as user_router
 from webapp.routes_postback import router as postback_router
@@ -37,6 +40,21 @@ def create_app(bot) -> FastAPI:
             detail = getattr(exc, "detail", "Error")
             if detail in ("Token expired", "Token not found"):
                 return _token_error_page(exc.status_code, detail)
+        logger.exception(f"Web error: {exc}")
+        bot = request.app.state.bot if hasattr(request.app.state, 'bot') else None
+        if bot:
+            from config import ADMIN_IDS
+            for admin_id in ADMIN_IDS:
+                try:
+                    await bot.send_message(
+                        admin_id,
+                        f"🌐 <b>Ошибка Web</b>\n\n"
+                        f"<code>{exc.__class__.__name__}: {exc}</code>\n\n"
+                        f"URL: <code>{request.url.path}</code>",
+                        parse_mode='HTML',
+                    )
+                except Exception:
+                    pass
         return HTMLResponse(content="<h1>Ошибка сервера</h1>", status_code=500)
 
     return app

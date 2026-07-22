@@ -108,7 +108,19 @@ class ErrorLoggingMiddleware(BaseMiddleware):
             return await handler(event, data)
         except Exception as e:
             logger.exception(f"Ошибка при обработке события: {e}")
-            # НЕ перевыбрасываем исключение — один сбойный хендлер не должен валить весь бот
+            bot = data.get("bot")
+            if bot:
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await bot.send_message(
+                            admin_id,
+                            f"🚨 <b>Ошибка бота</b>\n\n"
+                            f"<code>{e.__class__.__name__}: {e}</code>\n\n"
+                            f"Событие: <code>{event.__class__.__name__}</code>",
+                            parse_mode=ParseMode.HTML,
+                        )
+                    except Exception:
+                        pass
             return
 
 
