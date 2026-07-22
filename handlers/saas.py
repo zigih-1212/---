@@ -18,6 +18,7 @@ from states import SaasStates, PaymentFSM
 from services.db import get_db
 from services.saas_core import publish_post_with_fallback, generate_subid2
 from services.admitad import fetch_admitad_catalog_for_user, ADULT_STORES, get_delivery_for_store, STORE_ID_MAP
+import re
 from keyboards.saas import kb_cabinet_menu
 from services.text_rewriter import generate_post_text
 from services.admitad import get_random_promocode
@@ -777,17 +778,14 @@ def _check_cpc_rules(text: str, rules: str) -> list:
         if not line:
             continue
         rule_lower = line.lower()
-        # Извлекаем ключевые слова из правила
-        # Простая эвристика: ищем ключевые слова в тексте
         if any(w in rule_lower for w in ["нельзя", "запрещено", "не допускается", "бан"]):
-            # Берём слова после запрета как ключевые
             for marker in ["нельзя", "запрещено", "не допускается", "бан"]:
                 if marker in rule_lower:
                     idx = rule_lower.index(marker) + len(marker)
                     keywords = rule_lower[idx:].strip().split()
-                    keywords = [w for w in keywords if len(w) > 3]
+                    keywords = [w.strip(".,!?()") for w in keywords if len(w) > 3]
                     for kw in keywords:
-                        if kw in text_lower:
+                        if re.search(rf'\b{re.escape(kw)}\b', text_lower):
                             violations.append(line)
                             break
                     break
@@ -836,7 +834,7 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
         if idx > 0:
             safe = post_text[idx:]
             head = post_text[:1000 - len(safe) - 3].rstrip()
-            post_text = head + "..." + safe
+            post_text = head + "...\n\n" + safe
 
     # Проверка правил
     if more_rules and not skip_rules:

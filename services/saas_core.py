@@ -701,7 +701,7 @@ async def publish_cpc_campaigns(bot: Bot):
             if idx > 0:
                 safe = post_text[idx:]
                 head = post_text[:1000 - len(safe) - 3].rstrip()
-                post_text = head + "..." + safe
+                post_text = head + "...\n\n" + safe
 
         try:
             msg = await publish_post_with_fallback(
