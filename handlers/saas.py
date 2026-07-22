@@ -1908,25 +1908,40 @@ async def debug_cpc(message: Message, bot: Bot):
         await message.answer("❌ Нет токена Admitad")
         return
 
+    from services.admitad_subnetwork import get_all_websites
+    websites = await get_all_websites()
+    if not websites:
+        await message.answer("❌ Нет площадок")
+        return
+
     for r in rows:
         cid = r["campaign_id"]
         name = r["name"]
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"https://api.admitad.com/advcampaigns/{cid}/",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            if resp.status_code == 200:
-                c = resp.json()
-                text = (
-                    f"<b>{c.get('name')} (id={cid})</b>\n"
-                    f"image: <code>{c.get('image')}</code>\n"
-                    f"description: {(c.get('description') or '')[:200]}\n"
-                    f"raw_description: {(c.get('raw_description') or '')[:200]}\n"
-                    f"more_rules: {(c.get('more_rules') or '')[:200]}\n"
-                    f"traffics: {c.get('traffics')}\n"
-                    f"site_url: {c.get('site_url')}"
+        found = False
+        for w in websites:
+            wid = w.get("id")
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(
+                    f"https://api.admitad.com/advcampaigns/website/{wid}/",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={"limit": 500}
                 )
-            else:
-                text = f"{name}: ошибка {resp.status_code}"
-        await message.answer(text, parse_mode=ParseMode.HTML)
+                if resp.status_code == 200:
+                    for c in resp.json().get("results", []):
+                        if c.get("id") == cid:
+                            text = (
+                                f"<b>{c.get('name')} (id={cid})</b>\n"
+                                f"image: <code>{c.get('image')}</code>\n"
+                                f"description: {(c.get('description') or '')[:200]}\n"
+                                f"raw_description: {(c.get('raw_description') or '')[:200]}\n"
+                                f"more_rules: {(c.get('more_rules') or '')[:200]}\n"
+                                f"traffics: {c.get('traffics')}\n"
+                                f"site_url: {c.get('site_url')}"
+                            )
+                            await message.answer(text, parse_mode=ParseMode.HTML)
+                            found = True
+                            break
+            if found:
+                break
+        if not found:
+            await message.answer(f"{name} (id={cid}): не найдена в подключённых")
