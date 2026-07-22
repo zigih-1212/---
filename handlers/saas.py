@@ -815,24 +815,24 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
     if cpc_template and "{link}" in cpc_template:
         post_text = cpc_template.replace("{link}", hidden_link)
     elif cpc_template and "{name}" in cpc_template:
-        post_text = cpc_template.replace("{name}", name).replace("{link}", hidden_link)
+        post_text = cpc_template.replace("{name}", name)
+        post_text = post_text.rstrip() + f"\n\n{hidden_link}"
     elif cpc_template:
-        post_text = f"{cpc_template}\n\n{hidden_link}"
+        post_text = cpc_template.rstrip() + f"\n\n{hidden_link}"
     elif custom_text:
-        post_text = custom_text
-    elif description:
-        short_desc = description[:200].replace("\xa0", " ").strip()
-        if len(description) > 200:
-            short_desc += "..."
-        post_text = f"👆 {name}\n\n{short_desc}\n\n{hidden_link}"
+        post_text = custom_text.rstrip() + f"\n\n{hidden_link}"
     else:
         post_text = f"👆 {name}\n\n{hidden_link}"
 
-    reklama_line = f"\n\nРеклама. {name}. Erid: {erid_value}" if erid_value else ""
-    post_text = f"{post_text}{reklama_line}"
+    reklama_line = f"Реклама. {name}. Erid: {erid_value}" if erid_value else ""
+    post_text = f"{post_text}\n\n{reklama_line}"
 
     if len(post_text) > 1000:
-        post_text = post_text[:997] + "..."
+        idx = post_text.rfind(hidden_link)
+        if idx > 0:
+            safe = post_text[idx:]
+            head = post_text[:1000 - len(safe) - 3].rstrip()
+            post_text = head + "..." + safe
 
     # Проверка правил
     if more_rules and not skip_rules:

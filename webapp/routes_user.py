@@ -695,7 +695,7 @@ const placeholders = {
 };
 const defaultProduct = `🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}\n{promocode_line}{delivery_line}\n{cta_phrase}\n\nРеклама. {advertiser}. Erid: {erid}`;
 const defaultVideo = `🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href='{link}'>Смотреть</a>`;
-const defaultCpc = `👆 <b>{name}</b>\n\nПерейдите по ссылке:\n{link}`;
+const defaultCpc = `👆 <b>{name}</b>\n\n{link}`;
 let previewDebounceTimer = null;
 
 if (isSaaS) {
@@ -1603,7 +1603,7 @@ async def preview_template(token: str = Query(...), type: str = Query("product")
             return JSONResponse({"html": caption})
         elif type == "cpc":
             user_tmpl = conn.execute("SELECT cpc_template FROM users WHERE user_id=?", (user_id,)).fetchone()
-            tmpl = user_tmpl["cpc_template"] if user_tmpl and user_tmpl["cpc_template"] else "{name}\n{link}"
+            tmpl = user_tmpl["cpc_template"] if user_tmpl and user_tmpl["cpc_template"] else "👆 <b>{name}</b>\n\n{link}"
             html = tmpl.replace("{name}", "Тестовый рекламодатель").replace("{link}", "https://example.com/cpc/ref")
             return JSONResponse({"html": html})
         else:
@@ -2125,8 +2125,10 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const toggleClass = isActive ? 'on' : 'off';
             const toggleText = isActive ? '🔴 Отключить' : '🟢 Включить';
             const imgHtml = c.image_url ? `<img class="campaign-img" src="${c.image_url}" alt="" onerror="this.style.display='none'">` : '<div class="campaign-img"></div>';
-            const descHtml = c.description ? `<div class="campaign-desc"><b>📝 Описание:</b><br>${c.description}</div>` : '';
-            const rulesBtnHtml = (c.more_rules || c.rules || c.traffics) ? `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(c.name).replace(/'/g,"\\'")}, ${JSON.stringify(c.more_rules||c.rules||"").replace(/'/g,"\\'")}, ${JSON.stringify(c.traffics||"").replace(/'/g,"\\'")})'>⚠️ Правила</button>` : '';
+            const descShort = c.description ? c.description.length > 250 ? c.description.slice(0, 250) + '...' : c.description : '';
+            const descHtml = c.description ? `<div class="campaign-desc"><b>📝 Описание:</b><br>${descShort}</div>` : '';
+            const hasRules = c.more_rules || c.rules || (c.traffics && c.traffics !== '[]' && c.traffics !== '{}');
+            const rulesBtnHtml = hasRules ? `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(c.name).replace(/'/g,"\\'")}, ${JSON.stringify(c.more_rules||c.rules||"").replace(/'/g,"\\'")}, ${JSON.stringify(c.traffics||"").replace(/'/g,"\\'")})'>⚠️ Правила</button>` : '';
             const imgEditHtml = `<div style="margin-bottom:8px;"><label style="font-size:0.85em;color:#888;">🖼 Картинка (URL):</label>
                 <div style="display:flex;gap:6px;margin-top:4px;">
                     <input type="text" id="img-${c.id}" value="${c.image_url || ''}" placeholder="https://..." style="flex:1;background:#333;border:1px solid #555;color:#ddd;padding:6px 8px;border-radius:6px;font-size:0.85em;">
@@ -2140,7 +2142,7 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
                     <div class="campaign-status ${statusClass}">${statusText}</div>
                     ${descHtml}
                     ${imgEditHtml}
-                    <textarea class="campaign-textarea" id="text-${c.id}" placeholder="Напишите рекламный текст для этой кампании...">${c.text || c.description || ''}</textarea>
+                    <textarea class="campaign-textarea" id="text-${c.id}" placeholder="Напишите рекламный текст для этой кампании...">${c.text || ''}</textarea>
                     <div id="msg-${c.id}"></div>
                     <div class="campaign-actions">
                         <button class="btn-save" onclick="saveText(${c.id})">💾 Текст</button>
