@@ -1254,7 +1254,7 @@ async def dashboard_data(
     }
 
 
-@router.get("/admin/cpc")
+@router.get("/cpc")
 async def admin_cpc_page(request: Request, _: int = Depends(admin_required)):
     conn = get_db()
     try:
@@ -1274,7 +1274,7 @@ async def admin_cpc_page(request: Request, _: int = Depends(admin_required)):
     return render("admin_cpc.html", campaigns=[dict(r) for r in rows], active_page='cpc')
 
 
-@router.post("/admin/cpc-save")
+@router.post("/cpc-save")
 async def admin_cpc_save(campaign_id: int = Form(...), description: str = Form(""), rules: str = Form(""), _: int = Depends(admin_required)):
     conn = get_db()
     try:
@@ -1293,7 +1293,7 @@ async def admin_cpc_save(campaign_id: int = Form(...), description: str = Form("
     return {"ok": True}
 
 
-@router.post("/admin/cpc-sync-all")
+@router.post("/cpc-sync-all")
 async def admin_cpc_sync_all(_: int = Depends(admin_required)):
     conn = get_db()
     try:
