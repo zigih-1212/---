@@ -695,7 +695,7 @@ const placeholders = {
 };
 const defaultProduct = `🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}\n{promocode_line}{delivery_line}\n{cta_phrase}\n\nРеклама. {advertiser}. Erid: {erid}`;
 const defaultVideo = `🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href='{link}'>Смотреть</a>`;
-const defaultCpc = `👆 <b>{name}</b>\n\n{link}`;
+const defaultCpc = `👆 <b>{name}</b>\n\n{description}\n\n{link}`;
 let previewDebounceTimer = null;
 
 if (isSaaS) {

@@ -30,6 +30,7 @@ DEFAULT_VIDEO_TEMPLATE = (
 
 DEFAULT_CPC_TEMPLATE = (
     "👆 <b>{name}</b>\n\n"
+    "{description}\n\n"
     "{link}"
 )
 
