@@ -691,7 +691,7 @@ let currentTab = 'product';
 const placeholders = {
     product: ['{title}', '{price}', '{currency}', '{link}', '{advertiser}', '{erid}', '{old_price}', '{discount_percent}', '{delivery_line}', '{promocode_line}', '{price_label}', '{cta_phrase}'],
     video: ['{title}', '{link}', '{description}'],
-    cpc: ['{name}', '{link}']
+    cpc: ['{name}', '{link}', '{description}']
 };
 const defaultProduct = `🔥 <b>{title}</b>\n\n💰 {price_label}: {price} {currency}{discount_line}\n👉 {link}\n{promocode_line}{delivery_line}\n{cta_phrase}\n\nРеклама. {advertiser}. Erid: {erid}`;
 const defaultVideo = `🎬 <b>{title}</b>\n\n{description}\n\n🔗 <a href='{link}'>Смотреть</a>`;
@@ -846,13 +846,18 @@ function switchTab(tab) {
 
 function renderCpcPreview() {
     const template = document.getElementById('cpc-template').value || defaultCpc;
-    const preview = document.getElementById('preview-content');
-    const testData = { name: 'Тестовый рекламодатель', link: 'https://example.com/cpc/ref123' };
-    let text = template;
-    for (const [key, val] of Object.entries(testData)) {
-        text = text.replace(new RegExp(`\\{${key}\\}`, 'g'), val);
-    }
-    preview.innerHTML = `<div style="background:#0f0f0f; border-radius:12px; padding:16px; font-size:14px; line-height:1.6; white-space:pre-wrap;">${text.replace(/\n/g, '<br>')}</div>`;
+    const container = document.getElementById('preview-content');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center; padding:20px;">⏳ Загрузка предпросмотра...</div>';
+    (async () => {
+        const resp = await fetch(`/my-stats/preview-template?token=${token}&type=cpc`);
+        const data = await resp.json();
+        const imageHtml = data.image_url
+            ? `<div style="margin-bottom:12px;"><img src="${data.image_url}" style="max-width:100%; max-height:300px; border-radius:8px; object-fit:contain; background:#111;" onerror="this.style.display='none'"></div>`
+            : '';
+        const textHtml = `<div style="font-size:14px; line-height:1.6; word-wrap:break-word; white-space:pre-wrap;">${data.html.replace(/\n/g, '<br>')}</div>`;
+        container.innerHTML = `<div style="background:#0f0f0f; border-radius:12px; padding:16px; max-width:700px; margin:0 auto; text-align:left; border:1px solid #2a2a2a;">${imageHtml}${textHtml}</div>`;
+    })();
 }
 
 document.getElementById('product-template').addEventListener('input', updatePreview);
@@ -1604,8 +1609,15 @@ async def preview_template(token: str = Query(...), type: str = Query("product")
         elif type == "cpc":
             user_tmpl = conn.execute("SELECT cpc_template FROM users WHERE user_id=?", (user_id,)).fetchone()
             tmpl = user_tmpl["cpc_template"] if user_tmpl and user_tmpl["cpc_template"] else "👆 <b>{name}</b>\n\n{link}"
-            html = tmpl.replace("{name}", "Тестовый рекламодатель").replace("{link}", "https://example.com/cpc/ref")
-            return JSONResponse({"html": html})
+            campaign = conn.execute(
+                "SELECT name, image_url, description FROM cpc_campaigns WHERE user_id=? ORDER BY RANDOM() LIMIT 1",
+                (user_id,)
+            ).fetchone()
+            if campaign:
+                html = tmpl.replace("{name}", campaign["name"]).replace("{link}", "https://example.com/cpc/ref").replace("{description}", campaign["description"] or "")
+                return JSONResponse({"html": html, "image_url": campaign["image_url"] or ""})
+            html = tmpl.replace("{name}", "Тестовый рекламодатель").replace("{link}", "https://example.com/cpc/ref").replace("{description}", "Описание магазина")
+            return JSONResponse({"html": html, "image_url": ""})
         else:
             return JSONResponse({"html": "Предпросмотр пока недоступен"})
     finally:
@@ -2125,61 +2137,19 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const toggleClass = isActive ? 'on' : 'off';
             const toggleText = isActive ? '🔴 Отключить' : '🟢 Включить';
             const imgHtml = c.image_url ? `<img class="campaign-img" src="${c.image_url}" alt="" onerror="this.style.display='none'">` : '<div class="campaign-img"></div>';
-            const descShort = c.description ? c.description.length > 250 ? c.description.slice(0, 250) + '...' : c.description : '';
-            const descHtml = c.description ? `<div class="campaign-desc"><b>📝 Описание:</b><br>${descShort}</div>` : '';
-            const hasRules = c.more_rules || c.rules || (c.traffics && c.traffics !== '[]' && c.traffics !== '{}');
-            const rulesBtnHtml = hasRules ? `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(c.name).replace(/'/g,"\\'")}, ${JSON.stringify(c.more_rules||c.rules||"").replace(/'/g,"\\'")}, ${JSON.stringify(c.traffics||"").replace(/'/g,"\\'")})'>⚠️ Правила</button>` : '';
-            const imgEditHtml = `<div style="margin-bottom:8px;"><label style="font-size:0.85em;color:#888;">🖼 Картинка (URL):</label>
-                <div style="display:flex;gap:6px;margin-top:4px;">
-                    <input type="text" id="img-${c.id}" value="${c.image_url || ''}" placeholder="https://..." style="flex:1;background:#333;border:1px solid #555;color:#ddd;padding:6px 8px;border-radius:6px;font-size:0.85em;">
-                    <button class="btn-save" style="background:#555;font-size:0.85em;padding:6px 10px;" onclick="saveImage(${c.id})">💾</button>
-                </div>
-            </div>`;
+            const rulesBtnHtml = (c.more_rules || (c.traffics && c.traffics !== '[]' && c.traffics !== '{}')) ? `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(c.name).replace(/'/g,"\\'")}, ${JSON.stringify(c.more_rules||"").replace(/'/g,"\\'")}, ${JSON.stringify(c.traffics||"").replace(/'/g,"\\'")})'>⚠️ Правила</button>` : '';
             return `<div class="campaign-card">
                 ${imgHtml}
                 <div class="campaign-info">
                     <div class="campaign-name">${c.name}</div>
                     <div class="campaign-status ${statusClass}">${statusText}</div>
-                    ${descHtml}
-                    ${imgEditHtml}
-                    <textarea class="campaign-textarea" id="text-${c.id}" placeholder="Напишите рекламный текст для этой кампании...">${c.text || ''}</textarea>
-                    <div id="msg-${c.id}"></div>
                     <div class="campaign-actions">
-                        <button class="btn-save" onclick="saveText(${c.id})">💾 Текст</button>
                         ${rulesBtnHtml}
                         <button class="btn-toggle ${toggleClass}" onclick="toggleCampaign(${c.id}, ${isActive ? 0 : 1})">${toggleText}</button>
                     </div>
                 </div>
             </div>`;
         }).join('');
-    }
-    async function saveText(id) {
-        const text = document.getElementById('text-' + id).value;
-        const f = new FormData();
-        f.append('token', '{{ token }}');
-        f.append('campaign_id', id);
-        f.append('text', text);
-        const res = await fetch('/my-stats/save-cpc-text', { method: 'POST', body: f });
-        const data = await res.json();
-        const msg = document.getElementById('msg-' + id);
-        if (data.ok) {
-            msg.innerHTML = '<div class="success">✅ Текст сохранён</div>';
-            setTimeout(() => msg.innerHTML = '', 3000);
-        }
-    }
-    async function saveImage(id) {
-        const url = document.getElementById('img-' + id).value.trim();
-        const f = new FormData();
-        f.append('token', '{{ token }}');
-        f.append('campaign_id', id);
-        f.append('image_url', url);
-        const res = await fetch('/my-stats/save-cpc-image', { method: 'POST', body: f });
-        const data = await res.json();
-        const msg = document.getElementById('msg-' + id);
-        if (data.ok) {
-            msg.innerHTML = '<div class="success">✅ Картинка сохранена</div>';
-            setTimeout(() => { msg.innerHTML = ''; loadCampaigns(); }, 1500);
-        }
     }
     function openRulesModal(name, rules, traffics) {
         document.getElementById('rulesModalTitle').textContent = '⚠️ Правила: ' + name;

@@ -637,6 +637,15 @@ def init_db() -> None:
         cursor.execute("ALTER TABLE cpc_campaigns ADD COLUMN traffics TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cpc_admin_settings (
+            campaign_id INTEGER PRIMARY KEY,
+            description TEXT DEFAULT '',
+            rules TEXT DEFAULT '',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     
     # Инициализация фич (если их нет в БД)

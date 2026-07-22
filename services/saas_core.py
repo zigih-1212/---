@@ -684,8 +684,12 @@ async def publish_cpc_campaigns(bot: Bot):
             post_text = text_template.replace("{link}", hidden_link)
         elif text_template:
             post_text = text_template.rstrip() + f"\n\n{hidden_link}"
+        elif description:
+            post_text = f"👆 {name}\n\n{description}\n\n{hidden_link}"
         else:
             post_text = f"👆 {name}\n\n{hidden_link}"
+
+        post_text = post_text.replace("{description}", description)
 
         erid_match = _re.search(r'erid=([^&]+)', final_url)
         erid_value = erid_match.group(1) if erid_match else ""

@@ -28,7 +28,8 @@ from webapp.templates import (
     STORE_DELIVERY_TEMPLATE, BULK_ACTIONS_TEMPLATE,
     SETTINGS_TEMPLATE, AUDIT_TEMPLATE, REPORTS_TEMPLATE,
     ADMIN_PAYOUTS_TEMPLATE,
-    ADMIN_CHAT_TEMPLATE
+    ADMIN_CHAT_TEMPLATE,
+    ADMIN_CPC_TEMPLATE
 )
 from config import BOT_USERNAME
 from aiogram.enums import ParseMode
@@ -1250,3 +1251,41 @@ async def dashboard_data(
         "selected_channel_title": selected_channel_title,
         "subid2_stats": subid2_list,
     }
+
+
+@router.get("/admin/cpc")
+async def admin_cpc_page(request: Request, _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT c.campaign_id, c.name, c.image_url,
+                   COALESCE(a.description, '') as description,
+                   COALESCE(a.rules, '') as rules,
+                   COUNT(*) as user_count
+            FROM cpc_campaigns c
+            LEFT JOIN cpc_admin_settings a ON c.campaign_id = a.campaign_id
+            GROUP BY c.campaign_id
+            ORDER BY c.name
+        """).fetchall()
+    finally:
+        conn.close()
+    return render("admin_cpc.html", campaigns=[dict(r) for r in rows], active_page='cpc')
+
+
+@router.post("/admin/cpc-save")
+async def admin_cpc_save(campaign_id: int = Form(...), description: str = Form(""), rules: str = Form(""), _: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO cpc_admin_settings (campaign_id, description, rules, updated_at) VALUES (?,?,?,datetime('now')) "
+            "ON CONFLICT(campaign_id) DO UPDATE SET description=excluded.description, rules=excluded.rules, updated_at=datetime('now')",
+            (campaign_id, description, rules)
+        )
+        conn.execute(
+            "UPDATE cpc_campaigns SET description=?, more_rules=? WHERE campaign_id=?",
+            (description, rules, campaign_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}

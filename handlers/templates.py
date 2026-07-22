@@ -68,7 +68,7 @@ async def cb_menu_templates(callback: CallbackQuery):
         "CPA подстановки:\n"
         "<b>{title}, {price}, {currency}, {link}, {advertiser}, {erid}, {old_price}, {discount_percent}, {delivery_line}, {promocode_line}</b>\n\n"
         "CPC подстановки:\n"
-        "<b>{name} — название рекламодателя, {link} — CPC-ссылка</b>\n\n"
+        "<b>{name} — название рекламодателя, {link} — CPC-ссылка, {description} — описание от админа</b>\n\n"
         "Видео подстановки:\n"
         "<b>{title}, {link}, {description}</b>"
     )

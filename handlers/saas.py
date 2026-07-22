@@ -821,8 +821,12 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
         post_text = cpc_template.rstrip() + f"\n\n{hidden_link}"
     elif custom_text:
         post_text = custom_text.rstrip() + f"\n\n{hidden_link}"
+    elif description:
+        post_text = f"👆 {name}\n\n{description}\n\n{hidden_link}"
     else:
         post_text = f"👆 {name}\n\n{hidden_link}"
+
+    post_text = post_text.replace("{description}", description)
 
     reklama_line = f"Реклама. {name}. Erid: {erid_value}" if erid_value else ""
     post_text = f"{post_text}\n\n{reklama_line}"
@@ -1835,6 +1839,17 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
                             "UPDATE cpc_campaigns SET image_url=?, description=?, more_rules=?, traffics=? WHERE id=?",
                             (new_img, new_desc, new_rules, new_traffics, existing["id"])
                         )
+
+        admin_settings = conn.execute("SELECT campaign_id, description, rules FROM cpc_admin_settings").fetchall()
+        admin_map = {r["campaign_id"]: r for r in admin_settings}
+        for row in conn.execute("SELECT id, campaign_id FROM cpc_campaigns WHERE user_id=?", (user_id,)).fetchall():
+            admin = admin_map.get(row["campaign_id"])
+            if admin:
+                conn.execute(
+                    "UPDATE cpc_campaigns SET description=?, more_rules=? WHERE id=?",
+                    (admin["description"], admin["rules"], row["id"])
+                )
+
         conn.commit()
 
         rows = conn.execute(

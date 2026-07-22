@@ -59,6 +59,7 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
     <a href="/admin/settings-edit" class="{{ 'active' if active_page == 'settings' }}">&#x2699;&#xFE0F; &#x41D;&#x430;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x43A;&#x438;</a>
     <a href="/admin/audit" class="{{ 'active' if active_page == 'audit' }}">&#x1F4DC; &#x410;&#x443;&#x434;&#x438;&#x442;</a>
     <a href="/admin/reports" class="{{ 'active' if active_page == 'reports' }}">&#x1F4C1; &#x41E;&#x442;&#x447;&#x451;&#x442;&#x44B;</a>
+    <a href="/admin/cpc" class="{{ 'active' if active_page == 'cpc' }}">&#x1F446; CPC</a>
     <a href="/admin/logout" class="logout">&#x412;&#x44B;&#x439;&#x442;&#x438;</a>
 </div>
 <div class="main-content">
@@ -1166,6 +1167,65 @@ loadChat();
 </body>
 </html>'''
 
+# ---------- ADMIN CPC КАМПАНИИ ----------
+ADMIN_CPC_TEMPLATE = r'''{% extends "base.html" %}
+{% block title %}CPC кампании{% endblock %}
+{% block content %}
+<div class="top-bar"><h1>👆 CPC кампании &mdash; управление</h1></div>
+<p style="color:#888;margin-bottom:20px;">Здесь вы задаёте описание и правила для всех кампаний. Изменения применяются ко всем пользователям.</p>
+<table>
+<thead><tr><th>Кампания</th><th>Описание</th><th>Правила (ключевые слова)</th><th></th></tr></thead>
+<tbody>
+{% for c in campaigns %}
+<tr>
+    <td style="vertical-align:top;width:180px;">
+        {% if c.image_url %}<img src="{{ c.image_url }}" style="width:80px;height:80px;object-fit:contain;border-radius:8px;display:block;margin-bottom:6px;" onerror="this.style.display='none'">{% endif %}
+        <strong>{{ c.name }}</strong><br>
+        <small style="color:#888;">ID: {{ c.campaign_id }} &bull; {{ c.user_count }} польз.</small>
+    </td>
+    <td style="vertical-align:top;">
+        <textarea class="cpc-desc" data-cid="{{ c.campaign_id }}" style="width:100%;min-height:60px;background:#222;border:1px solid #444;color:#ddd;padding:8px;border-radius:6px;font-size:0.9em;">{{ c.description or '' }}</textarea>
+    </td>
+    <td style="vertical-align:top;">
+        <textarea class="cpc-rules" data-cid="{{ c.campaign_id }}" style="width:100%;min-height:60px;background:#222;border:1px solid #444;color:#ddd;padding:8px;border-radius:6px;font-size:0.9em;font-family:monospace;">{{ c.rules or '' }}</textarea>
+        <small style="color:#666;display:block;margin-top:4px;">Каждое правило с новой строки. Используйте: нельзя, запрещено, не допускается, бан</small>
+    </td>
+    <td style="vertical-align:top;width:80px;">
+        <button class="btn-save" onclick="saveCpc({{ c.campaign_id }})">💾</button>
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+<div id="msg" style="margin-top:16px;"></div>
+
+<style>
+table { width:100%; border-collapse: collapse; }
+th { text-align:left; padding:12px 8px; border-bottom:2px solid #ff4444; color:#ff4444; font-size:0.9em; }
+td { padding:12px 8px; border-bottom:1px solid #333; }
+.btn-save { background:#ff4444; color:white; border:none; padding:8px 20px; border-radius:6px; cursor:pointer; font-size:0.9em; }
+.btn-save:hover { background:#e03333; }
+.success { color:#4caf50; padding:8px 0; }
+</style>
+<script>
+async function saveCpc(campaignId) {
+    const desc = document.querySelector(`.cpc-desc[data-cid="${campaignId}"]`).value;
+    const rules = document.querySelector(`.cpc-rules[data-cid="${campaignId}"]`).value;
+    const f = new FormData();
+    f.append('campaign_id', campaignId);
+    f.append('description', desc);
+    f.append('rules', rules);
+    const res = await fetch('/admin/cpc-save', { method: 'POST', body: f });
+    const data = await res.json();
+    const msg = document.getElementById('msg');
+    if (data.ok) {
+        msg.innerHTML = '<div class="success">✅ Сохранено</div>';
+        setTimeout(() => msg.innerHTML = '', 3000);
+    }
+}
+</script>
+{% endblock %}'''
+
 # Export all templates
 TEMPLATES = {
     "base.html": BASE_TEMPLATE,
@@ -1184,4 +1244,5 @@ TEMPLATES = {
     "admin_reports.html": REPORTS_TEMPLATE,
     "admin_payouts.html": ADMIN_PAYOUTS_TEMPLATE,
     "admin_chat.html": ADMIN_CHAT_TEMPLATE,
+    "admin_cpc.html": ADMIN_CPC_TEMPLATE,
 }
