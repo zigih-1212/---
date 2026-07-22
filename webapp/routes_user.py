@@ -897,6 +897,13 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     .btn-small:hover { background: #555; }
     .btn-danger { background: #c62828; }
     .btn-danger:hover { background: #b71c1c; }
+    .time-picker { display: flex; align-items: center; gap: 8px; justify-content: center; margin-bottom: 15px; }
+    .time-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .time-val { background: #333; border: 2px solid #ff4444; border-radius: 12px; padding: 12px 24px; font-size: 2em; font-weight: 700; color: #fff; min-width: 80px; text-align: center; }
+    .time-up, .time-dn { background: none; border: none; color: #888; font-size: 1.2em; cursor: pointer; padding: 4px 16px; }
+    .time-up:hover, .time-dn:hover { color: #ff4444; }
+    .time-sep { font-size: 2em; color: #fff; padding-bottom: 24px; }
+    .time-lbl { color: #888; font-size: 0.8em; margin-top: 2px; }
     .success { color: #4caf50; margin-bottom: 10px; }
     .error { color: #ff4444; margin-bottom: 10px; }
     .store-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px; background: #2a2a2a; border-radius: 8px; }
@@ -948,8 +955,23 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     <div id="tab-general" class="tab-content active">
         <div class="section">
             <h2>Периодичность</h2>
-            <label>Интервал между постами (минуты)</label>
-            <input type="number" id="post-interval" min="5" value="60">
+            <label>Интервал между постами</label>
+            <div class="time-picker">
+                <div class="time-col">
+                    <button class="time-up" onclick="adj('hour',1)">▲</button>
+                    <div class="time-val" id="tv-hour">1</div>
+                    <button class="time-dn" onclick="adj('hour',-1)">▼</button>
+                    <div class="time-lbl">ч</div>
+                </div>
+                <div class="time-sep">:</div>
+                <div class="time-col">
+                    <button class="time-up" onclick="adj('min',5)">▲</button>
+                    <div class="time-val" id="tv-min">00</div>
+                    <button class="time-dn" onclick="adj('min',-5)">▼</button>
+                    <div class="time-lbl">мин</div>
+                </div>
+            </div>
+            <input type="hidden" id="post-interval" value="60">
         </div>
         <div class="section">
             <h2>Посты</h2>
@@ -1060,12 +1082,28 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     });
 });
 
+function timeDisplay() {
+    const total = parseInt(document.getElementById('post-interval').value) || 60;
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    document.getElementById('tv-hour').textContent = h;
+    document.getElementById('tv-min').textContent = String(m).padStart(2, '0');
+}
+function adj(unit, step) {
+    const total = parseInt(document.getElementById('post-interval').value) || 60;
+    let h = Math.floor(total / 60), m = total % 60;
+    if (unit === 'hour') { h = Math.max(0, Math.min(23, h + step)); }
+    else { m = Math.max(0, Math.min(55, m + step)); }
+    document.getElementById('post-interval').value = h * 60 + m;
+    timeDisplay();
+}
 // Load settings
 async function loadSettings() {
     try {
         const resp = await fetch(`/my-stats/settings-data?token=${token}`);
         const data = await resp.json();
         document.getElementById('post-interval').value = data.post_interval_minutes || 60;
+        timeDisplay();
         document.getElementById('auto-delete').value = data.default_auto_delete_hours || 168;
         document.getElementById('auto-pin').checked = data.auto_pin;
         document.getElementById('notify-posts').checked = data.notify_posts;
