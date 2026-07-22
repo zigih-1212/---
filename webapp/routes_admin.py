@@ -1353,3 +1353,116 @@ async def admin_cpc_sync_all(_: int = Depends(admin_required)):
 async def cpc_advertiser_token(campaign_id: int = Query(...), _: int = Depends(admin_required)):
     from webapp.routes_advertiser import _advertiser_token
     return {"token": _advertiser_token(campaign_id)}
+
+
+@router.get("/presentation", response_class=HTMLResponse)
+async def admin_presentation(_: int = Depends(admin_required)):
+    conn = get_db()
+    try:
+        total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] or 0
+        active_users = conn.execute("SELECT COUNT(*) FROM users WHERE role='blogger'").fetchone()[0] or 0
+        total_channels = conn.execute("SELECT COUNT(*) FROM channels WHERE is_active=1").fetchone()[0] or 0
+        total_posts = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published'").fetchone()[0] or 0
+        total_cpa = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published' AND donor_post_id NOT LIKE 'cpc_%'").fetchone()[0] or 0
+        total_cpc = conn.execute("SELECT COUNT(*) FROM posts WHERE status='published' AND donor_post_id LIKE 'cpc_%'").fetchone()[0] or 0
+        total_clicks = conn.execute("SELECT COALESCE(SUM(clicks_count),0) FROM subid_stats").fetchone()[0] or 0
+        total_leads = conn.execute("SELECT COALESCE(SUM(leads_count),0) FROM subid_stats").fetchone()[0] or 0
+        total_revenue = conn.execute("SELECT COALESCE(SUM(earnings_approved),0) FROM subid_stats").fetchone()[0] or 0
+        cpc_campaigns = conn.execute("SELECT COUNT(DISTINCT campaign_id) FROM cpc_campaigns").fetchone()[0] or 0
+        current_date = datetime.now(timezone.utc).strftime("%d.%m.%Y")
+    finally:
+        conn.close()
+
+    html = f'''<!DOCTYPE html><html lang="ru"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AutoPost Bot — Презентация</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d1117;color:#e6edf3;overflow:hidden;height:100vh}}
+.slide{{display:none;height:100vh;padding:60px 80px;flex-direction:column;justify-content:center;align-items:center;text-align:center}}
+.slide.active{{display:flex}}
+h1{{font-size:3em;margin-bottom:16px;background:linear-gradient(135deg,#ff4444,#ff6b6b);-webkit-background-clip:text;-webkit-text-fill-color:transparent}}
+h2{{font-size:2em;margin-bottom:24px;color:#fff}}
+.stat-grid{{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;max-width:900px}}
+.stat-card{{background:#161b22;border:1px solid #30363d;border-radius:16px;padding:32px 40px;min-width:180px}}
+.stat-num{{font-size:2.5em;font-weight:700;color:#58a6ff}}
+.stat-label{{color:#8b949e;font-size:0.9em;margin-top:4px}}
+.step{{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px;margin:12px auto;max-width:600px;text-align:left}}
+.step-num{{display:inline-block;background:#ff4444;color:#fff;border-radius:50%;width:32px;height:32px;text-align:center;line-height:32px;font-weight:700;margin-right:12px}}
+.nav{{position:fixed;bottom:32px;left:50%;transform:translateX(-50%);display:flex;gap:16px;align-items:center;z-index:100;background:#0d1117;padding:12px 24px;border-radius:12px;border:1px solid #30363d}}
+.nav button{{background:#30363d;color:#fff;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-size:1em}}
+.nav button:hover{{background:#444}}
+.dot{{width:10px;height:10px;border-radius:50%;background:#30363d;cursor:pointer;display:inline-block;margin:0 4px}}
+.dot.active{{background:#ff4444}}
+small{{color:#8b949e}}
+ul{{text-align:left;list-style:none;padding:0;max-width:600px}}
+li{{padding:10px 0;font-size:1.15em}}
+li::before{{content:"▸ ";color:#ff4444}}
+img.example{{max-width:300px;border-radius:12px;border:1px solid #30363d;margin:8px}}
+.flex{{display:flex;gap:24px;flex-wrap:wrap;justify-content:center}}
+</style></head><body>
+<div class="slide active" id="s0">
+<h1>🤖 AutoPost Bot</h1>
+<p style="font-size:1.3em;color:#8b949e;margin-bottom:8px">Автоматический постинг рекламных кампаний<br>в Telegram-каналы</p>
+<p style="color:#8b949e">Партнёрская платформа на базе Admitad</p>
+<p style="margin-top:32px"><small>{current_date}</small></p>
+</div>
+<div class="slide" id="s1">
+<h2>📊 Статистика</h2>
+<div class="stat-grid">
+<div class="stat-card"><div class="stat-num">{total_users}</div><div class="stat-label">Пользователей</div></div>
+<div class="stat-card"><div class="stat-num">{total_channels}</div><div class="stat-label">Активных каналов</div></div>
+<div class="stat-card"><div class="stat-num">{total_posts}</div><div class="stat-label">Всего постов</div></div>
+<div class="stat-card"><div class="stat-num">{total_cpa}</div><div class="stat-label">CPA (товары)</div></div>
+<div class="stat-card"><div class="stat-num">{total_cpc}</div><div class="stat-label">CPC (клики)</div></div>
+<div class="stat-card"><div class="stat-num">{total_clicks}</div><div class="stat-label">Кликов</div></div>
+<div class="stat-card"><div class="stat-num">{total_leads}</div><div class="stat-label">Конверсий</div></div>
+<div class="stat-card"><div class="stat-num">{cpc_campaigns}</div><div class="stat-label">CPC-кампаний</div></div>
+</div>
+</div>
+<div class="slide" id="s2">
+<h2>🔧 Как это работает</h2>
+<div style="max-width:900px">
+<div class="step"><span class="step-num">1</span> <strong>CPA-постинг</strong><br><small>Пользователь выбирает магазин → бот подбирает товары из каталога Admitad → публикует в канал с карточкой товара</small></div>
+<div class="step"><span class="step-num">2</span> <strong>CPC-постинг</strong><br><small>Админ подключает CPC-кампании → пользователь включает/выключает → бот публикует посты с инлайн-кнопкой</small></div>
+<div class="step"><span class="step-num">3</span> <strong>Правила и фильтры</strong><br><small>Для каждой CPC-кампании задаются ключевые слова-правила. Пост проверяется перед публикацией</small></div>
+<div class="step"><span class="step-num">4</span> <strong>Автоматизация</strong><br><small>Посты публикуются по расписанию (интервал задаётся пользователем). Работает 24/7</small></div>
+</div>
+</div>
+<div class="slide" id="s3">
+<h2>⚖️ Юридическая безопасность</h2>
+<div style="max-width:700px">
+<div class="step" style="text-align:center"><span class="step-num">ERID</span> Каждый пост содержит обязательную маркировку рекламы (ERID)</div>
+<div class="step" style="text-align:center"><span class="step-num">Оферта</span> Пользователь принимает оферту перед началом работы</div>
+<div class="step" style="text-align:center"><span class="step-num">Самозанятые</span> Поддержка вывода средств для самозанятых и ИП</div>
+<div class="step" style="text-align:center"><span class="step-num">Реклама</span> Автоматическая простановка «Реклама. Name. Erid: XXXX» в каждом посте</div>
+</div>
+</div>
+<div class="slide" id="s4">
+<h2>🤝 Партнёрство с Admitad</h2>
+<div style="max-width:700px">
+<ul>
+<li>Полная интеграция с API Admitad (товары + CPC)</li>
+<li>Автоматическая синхронизация кампаний</li>
+<li>Постбэк — учёт кликов и конверсий</li>
+<li>Прозрачная статистика для рекламодателя</li>
+<li>Юридически чистая маркировка (ERID)</li>
+<li>Готовность к масштабированию</li>
+</ul>
+</div>
+</div>
+<div class="nav">
+<button onclick="prevSlide()">←</button>
+<div id="dots"></div>
+<button onclick="nextSlide()">→</button>
+</div>
+<script>
+let cur=0,total=5
+for(let i=0;i<total;i++){{let d=document.createElement('span');d.className='dot'+(i==0?' active':'');d.onclick=()=>goTo(i);document.getElementById('dots').appendChild(d)}}
+function goTo(n){{document.getElementById('s'+cur).classList.remove('active');document.querySelectorAll('.dot')[cur].classList.remove('active');cur=n;document.getElementById('s'+cur).classList.add('active');document.querySelectorAll('.dot')[cur].classList.add('active')}}
+function nextSlide(){{goTo((cur+1)%total)}}
+function prevSlide(){{goTo((cur-1+total)%total)}}
+document.addEventListener('keydown',e=>{{if(e.key==='ArrowRight')nextSlide();if(e.key==='ArrowLeft')prevSlide()}})
+</script>
+</body></html>'''
+    return HTMLResponse(content=html)

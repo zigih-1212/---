@@ -72,6 +72,7 @@ BASE_TEMPLATE = '''<!DOCTYPE html>
     <a href="/admin/audit" class="{{ 'active' if active_page == 'audit' }}">&#x1F4DC; &#x410;&#x443;&#x434;&#x438;&#x442;</a>
     <a href="/admin/reports" class="{{ 'active' if active_page == 'reports' }}">&#x1F4C1; &#x41E;&#x442;&#x447;&#x451;&#x442;&#x44B;</a>
     <a href="/admin/cpc" class="{{ 'active' if active_page == 'cpc' }}">&#x1F446; CPC</a>
+    <a href="/admin/presentation" class="{{ 'active' if active_page == 'presentation' }}">&#x1F4F9; Презентация</a>
     <a href="/admin/logout" class="logout">&#x412;&#x44B;&#x439;&#x442;&#x438;</a>
 </div>
 <div class="main-content">
