@@ -118,11 +118,30 @@ logger = logging.getLogger("autopost_bot")
 # Вспомогательные (общие)
 # ---------------------------------------------------------------------------
 
+def _svg_to_png(svg_bytes: bytes) -> Optional[bytes]:
+    try:
+        import cairosvg
+        png_bytes = cairosvg.svg2png(bytestring=svg_bytes, output_width=800)
+        return png_bytes
+    except Exception as e:
+        logger.warning(f"SVG to PNG (cairosvg) failed: {e}")
+    try:
+        from svglib.svglib import svg2rlg
+        from reportlab.graphics import renderPM
+        from io import BytesIO
+        drawing = svg2rlg(BytesIO(svg_bytes))
+        if not drawing:
+            return None
+        buf = BytesIO()
+        renderPM.drawToFile(drawing, buf, fmt="PNG", outputType=1)
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning(f"SVG to PNG (svglib) failed: {e}")
+    return None
+
+
 async def download_image(url: str) -> Optional[bytes]:
     if not url or not url.startswith("http"):
-        return None
-    if url.lower().endswith(".svg"):
-        logger.info(f"download_image: пропуск SVG {url}")
         return None
     headers = {
         "User-Agent": "Mozilla/5.0",
@@ -132,9 +151,21 @@ async def download_image(url: str) -> Optional[bytes]:
     try:
         async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
-            if resp.status_code == 200 and len(resp.content) > 1024:
-                return resp.content
-            logger.warning(f"download_image: статус {resp.status_code}, размер {len(resp.content)}")
+            if resp.status_code != 200:
+                logger.warning(f"download_image: статус {resp.status_code}")
+                return None
+            content = resp.content
+            if len(content) < 1024:
+                logger.warning(f"download_image: слишком мало данных {len(content)}")
+                return None
+            if url.lower().endswith(".svg") or content[:5].lstrip().startswith(b"<svg"):
+                png_bytes = _svg_to_png(content)
+                if png_bytes:
+                    logger.info(f"download_image: SVG→PNG конвертация {len(content)}→{len(png_bytes)} bytes")
+                    return png_bytes
+                logger.warning(f"download_image: не удалось сконвертировать SVG")
+                return None
+            return content
     except Exception as e:
         logger.warning(f"download_image error: {e}")
     return None
