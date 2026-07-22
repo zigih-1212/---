@@ -684,7 +684,10 @@ async def publish_cpc_campaigns(bot: Bot):
         elif text_template:
             post_text = text_template
         elif description:
-            post_text = f"👆 {name}\n\n{description}\n\n{hidden_link}"
+            short_desc = description[:200].replace("\xa0", " ").strip()
+            if len(description) > 200:
+                short_desc += "..."
+            post_text = f"👆 {name}\n\n{short_desc}\n\n{hidden_link}"
         else:
             post_text = f"👆 {name}\n\n{hidden_link}"
 
@@ -692,6 +695,9 @@ async def publish_cpc_campaigns(bot: Bot):
         erid_value = erid_match.group(1) if erid_match else ""
         reklama_line = f"\n\nРеклама. {name}. Erid: {erid_value}" if erid_value else ""
         post_text = f"{post_text}{reklama_line}"
+
+        if len(post_text) > 1000:
+            post_text = post_text[:997] + "..."
 
         try:
             msg = await publish_post_with_fallback(

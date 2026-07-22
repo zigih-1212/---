@@ -821,12 +821,18 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
     elif custom_text:
         post_text = custom_text
     elif description:
-        post_text = f"👆 {name}\n\n{description}\n\n{hidden_link}"
+        short_desc = description[:200].replace("\xa0", " ").strip()
+        if len(description) > 200:
+            short_desc += "..."
+        post_text = f"👆 {name}\n\n{short_desc}\n\n{hidden_link}"
     else:
         post_text = f"👆 {name}\n\n{hidden_link}"
 
     reklama_line = f"\n\nРеклама. {name}. Erid: {erid_value}" if erid_value else ""
     post_text = f"{post_text}{reklama_line}"
+
+    if len(post_text) > 1000:
+        post_text = post_text[:997] + "..."
 
     # Проверка правил
     if more_rules and not skip_rules:
