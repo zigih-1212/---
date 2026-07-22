@@ -1903,6 +1903,25 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
     return [dict(r) for r in rows]
 
 
+async def sync_all_cpc_campaigns() -> int:
+    """Ежедневная синхронизация CPC для всех пользователей."""
+    conn = get_db()
+    try:
+        user_ids = [r["user_id"] for r in conn.execute(
+            "SELECT DISTINCT user_id FROM cpc_campaigns"
+        ).fetchall()]
+    finally:
+        conn.close()
+    count = 0
+    for uid in user_ids:
+        try:
+            await _sync_cpc_campaigns(uid)
+            count += 1
+        except Exception as e:
+            logger.error(f"CPC auto-sync error for user {uid}: {e}")
+    return count
+
+
 async def _build_cpc_list(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
     campaigns = await _sync_cpc_campaigns(user_id)
 

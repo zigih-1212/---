@@ -23,7 +23,7 @@ from logging.handlers import RotatingFileHandler
 from webapp import create_app
 from webapp.routes_user import collect_views_for_user
 import sys
-from handlers.saas import router as saas_router
+from handlers.saas import router as saas_router, sync_all_cpc_campaigns
 from services.admitad import refill_admitad_catalogs, update_all_store_data_from_feed
 from webapp.auth import generate_admin_token, generate_user_token
 from config import (
@@ -2045,6 +2045,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(update_post_views, 'cron', hour=3, minute=30, kwargs={"bot": bot}, id="update_views", replace_existing=True)
     scheduler.add_job(generate_monthly_ord_reports, trigger="cron", day=1, hour=0, minute=5, kwargs={"bot": bot}, id="monthly_ord_reports", replace_existing=True)
     scheduler.add_job(auto_delete_posts, trigger="interval", minutes=15, kwargs={"bot": bot}, id="auto_delete_posts", replace_existing=True)
+    scheduler.add_job(sync_all_cpc_campaigns, trigger="cron", hour=5, minute=0, id="sync_cpc_campaigns", replace_existing=True)
     
     logger.info("✅ Все задачи добавлены в планировщик")
     return scheduler

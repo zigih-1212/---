@@ -1347,3 +1347,9 @@ async def admin_cpc_sync_all(_: int = Depends(admin_required)):
         except Exception as e:
             logger.error(f"CPC sync error for user {uid}: {e}")
     return {"ok": True, "count": count}
+
+
+@router.get("/cpc-advertiser-token")
+async def cpc_advertiser_token(campaign_id: int = Query(...), _: int = Depends(admin_required)):
+    from webapp.routes_advertiser import _advertiser_token
+    return {"token": _advertiser_token(campaign_id)}

@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse
 from webapp.routes_admin import router as admin_router
 from webapp.routes_user import router as user_router
 from webapp.routes_postback import router as postback_router
+from webapp.routes_advertiser import router as advertiser_router
 
 def _token_error_page(status: int, detail: str) -> HTMLResponse:
     messages = {
@@ -27,6 +28,7 @@ def create_app(bot) -> FastAPI:
     app.include_router(admin_router, prefix="/admin", tags=["admin"])
     app.include_router(user_router, prefix="/my-stats", tags=["user"])
     app.include_router(postback_router, tags=["postback"])
+    app.include_router(advertiser_router, prefix="/advertiser", tags=["advertiser"])
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):

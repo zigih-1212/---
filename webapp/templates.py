@@ -1197,7 +1197,7 @@ ADMIN_CPC_TEMPLATE = r'''{% extends "base.html" %}
 </div>
 <p style="color:#888;margin-bottom:20px;">Здесь вы задаёте описание и правила для всех кампаний. Изменения применяются ко всем пользователям.</p>
 <table>
-<thead><tr><th>Кампания</th><th>Описание</th><th>Правила (ключевые слова)</th><th></th></tr></thead>
+<thead><tr><th>Кампания</th><th>Описание</th><th>Правила (ключевые слова)</th><th>Рекламодателю</th><th></th></tr></thead>
 <tbody>
 {% for c in campaigns %}
 <tr>
@@ -1214,6 +1214,9 @@ ADMIN_CPC_TEMPLATE = r'''{% extends "base.html" %}
         <small style="color:#666;display:block;margin-top:4px;">Каждое правило с новой строки. Используйте: нельзя, запрещено, не допускается, бан</small>
     </td>
     <td style="vertical-align:top;width:80px;">
+        <button class="btn-adv" onclick="copyAdvLink({{ c.campaign_id }})" title="Скопировать ссылку для рекламодателя">🔗</button>
+    </td>
+    <td style="vertical-align:top;width:80px;">
         <button class="btn-save" onclick="saveCpc({{ c.campaign_id }})">💾</button>
     </td>
 </tr>
@@ -1228,6 +1231,8 @@ th { text-align:left; padding:12px 8px; border-bottom:2px solid #ff4444; color:#
 td { padding:12px 8px; border-bottom:1px solid #333; }
 .btn-save { background:#ff4444; color:white; border:none; padding:8px 20px; border-radius:6px; cursor:pointer; font-size:0.9em; }
 .btn-save:hover { background:#e03333; }
+.btn-adv { background:#1f6feb; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:1em; }
+.btn-adv:hover { background:#1858b8; }
 .success { color:#4caf50; padding:8px 0; }
 .error { color:#ff4444; padding:8px 0; white-space:pre-wrap; }
 </style>
@@ -1259,6 +1264,16 @@ async function syncAll() {
     status.innerHTML = data.ok ? '✅ Синхронизировано (' + data.count + ' пользователей)' : '❌ Ошибка';
     btn.disabled = false;
     setTimeout(() => { if (data.ok) location.reload(); }, 1500);
+}
+async function copyAdvLink(campaignId) {
+    const d = await fetch('/admin/cpc-advertiser-token?campaign_id=' + campaignId).then(r => r.json());
+    const url = window.location.origin + '/advertiser/campaign/' + d.token;
+    try {
+        await navigator.clipboard.writeText(url);
+        const msg = document.getElementById('msg');
+        msg.innerHTML = '<div class="success">✅ Ссылка скопирована</div>';
+        setTimeout(() => msg.innerHTML = '', 3000);
+    } catch { prompt('Скопируйте ссылку:', url); }
 }
 </script>
 {% endblock %}'''
