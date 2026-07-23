@@ -711,6 +711,20 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS post_schedules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            target_type TEXT NOT NULL,
+            target_id INTEGER NOT NULL,
+            post_date TEXT NOT NULL,
+            post_time TEXT NOT NULL,
+            is_posted INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        )
+    """)
+
     conn.commit()
     
     # Инициализация фич (если их нет в БД)

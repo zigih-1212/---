@@ -953,7 +953,6 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
 
     <div class="tabs">
         <button class="tab-btn active" data-tab="general">Основные</button>
-        <button class="tab-btn" data-tab="cyclic">Расписание</button>
         <button class="tab-btn" data-tab="video">Видео-каналы</button>
         <button class="tab-btn" data-tab="referral">Рефералка</button>
     </div>
@@ -978,17 +977,6 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
                 </div>
             </div>
             <input type="hidden" id="post-interval" value="60">
-            <label>Дни публикации</label>
-            <div class="days-grid" id="days-grid">
-                <button class="day-btn active" data-day="0">ПН</button>
-                <button class="day-btn active" data-day="1">ВТ</button>
-                <button class="day-btn active" data-day="2">СР</button>
-                <button class="day-btn active" data-day="3">ЧТ</button>
-                <button class="day-btn active" data-day="4">ПТ</button>
-                <button class="day-btn active" data-day="5">СБ</button>
-                <button class="day-btn active" data-day="6">ВС</button>
-            </div>
-            <input type="hidden" id="post-days" value="127">
         </div>
         <div class="section">
             <h2>Посты</h2>
@@ -1029,16 +1017,6 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
         </div>
         <button class="btn" onclick="saveGeneralSettings()">💾 Сохранить настройки</button>
         <div id="save-msg" style="margin-top:10px;"></div>
-    </div>
-
-    <div id="tab-cyclic" class="tab-content">
-        <div class="section">
-            <h2>⏰ Циклический постинг</h2>
-            <p style="color:#aaa; margin-bottom:15px;">Задайте периодичность для каждого магазина. Если расписание не настроено — магазины чередуются автоматически.</p>
-            <div id="cyclic-list"></div>
-            <button class="btn" onclick="saveCyclicSchedules()">💾 Сохранить расписание</button>
-            <div id="cyclic-msg" style="margin-top:10px;"></div>
-        </div>
     </div>
 
     <div id="tab-video" class="tab-content">
@@ -1083,12 +1061,6 @@ function toggleSidebar() {
 const token = "{{ token }}";
 const role = "{{ role }}";
 
-const intervalOptions = [
-    [0, "Выключено"], [1, "1 час"], [6, "6 часов"], [12, "12 часов"],
-    [24, "1 день"], [48, "2 дня"], [72, "3 дня"], [168, "7 дней"],
-    [336, "14 дней"], [720, "30 дней"]
-];
-
 // Tabs
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1132,19 +1104,6 @@ function syncFromInput() {
     document.getElementById('tv-min').value = String(m).padStart(2, '0');
     document.getElementById('post-interval').value = h * 60 + m;
 }
-document.addEventListener('DOMContentLoaded', function() {
-    const grid = document.getElementById('days-grid');
-    if (grid) {
-        grid.addEventListener('click', function(e) {
-            const btn = e.target.closest('.day-btn');
-            if (!btn) return;
-            btn.classList.toggle('active');
-            const bits = Array.from(grid.children).map(b => b.classList.contains('active') ? 1 : 0);
-            const mask = bits.reduce((acc, b, i) => acc | (b << i), 0);
-            document.getElementById('post-days').value = mask;
-        });
-    }
-});
 // Load settings
 async function loadSettings() {
     try {
@@ -1152,12 +1111,6 @@ async function loadSettings() {
         const data = await resp.json();
         document.getElementById('post-interval').value = data.post_interval_minutes || 60;
         timeDisplay();
-        if (document.getElementById('post-days')) {
-            const mask = data.post_days || 127;
-            document.getElementById('post-days').value = mask;
-            const btns = document.querySelectorAll('#days-grid .day-btn');
-            btns.forEach((btn, i) => btn.classList.toggle('active', !!(mask & (1 << i))));
-        }
         document.getElementById('auto-delete').value = data.default_auto_delete_hours || 168;
         document.getElementById('auto-pin').checked = data.auto_pin;
         document.getElementById('notify-posts').checked = data.notify_posts;
@@ -1165,29 +1118,9 @@ async function loadSettings() {
         document.getElementById('min-discount').value = data.min_discount || 0;
         if (data.tax_status) document.getElementById('tax-status').value = data.tax_status;
         if (document.getElementById('cpa-enabled')) document.getElementById('cpa-enabled').checked = data.cpa_enabled;
-        loadCyclic(data.stores);
         loadVideoChannels(data.video_channels);
         loadReferral(data.sub_id);
     } catch(e) { console.error(e); }
-}
-
-function loadCyclic(stores) {
-    const container = document.getElementById('cyclic-list');
-    if (!stores || stores.length === 0) {
-        container.innerHTML = '<p style="color:#888;">Сначала выберите магазины в боте (🏪 Магазины).</p>';
-        return;
-    }
-    container.innerHTML = stores.map(s => `
-        <div class="store-row">
-            <label>${s.name}</label>
-            <select data-store="${s.id}" ${!s.available ? 'disabled' : ''}>
-                ${intervalOptions.map(([val, label]) =>
-                    `<option value="${val}" ${s.interval == val && val > 0 ? 'selected' : ''}>${label}</option>`
-                ).join('')}
-                <option value="-1" ${s.interval > 0 && !intervalOptions.some(o => o[0] == s.interval) ? 'selected' : ''} disabled>—</option>
-            </select>
-        </div>
-    `).join('');
 }
 
 function loadVideoChannels(channels) {
@@ -1221,7 +1154,6 @@ async function saveGeneralSettings() {
     const formData = new FormData();
     formData.append('token', token);
     formData.append('post_interval_minutes', document.getElementById('post-interval').value);
-    formData.append('post_days', document.getElementById('post-days') ? document.getElementById('post-days').value : '127');
     formData.append('default_auto_delete_hours', document.getElementById('auto-delete').value);
     formData.append('auto_pin', document.getElementById('auto-pin').checked ? '1' : '0');
     formData.append('notify_posts', document.getElementById('notify-posts').checked ? '1' : '0');
@@ -1238,25 +1170,6 @@ async function saveGeneralSettings() {
     } catch(e) { console.error(e); }
     btn.disabled = false;
     btn.textContent = '💾 Сохранить настройки';
-}
-
-async function saveCyclicSchedules() {
-    const rows = document.querySelectorAll('#cyclic-list .store-row select');
-    const schedules = [];
-    rows.forEach(sel => {
-        const val = parseInt(sel.value);
-        if (val > 0) schedules.push({ store_id: parseInt(sel.dataset.store), interval_days: val });
-    });
-    const formData = new FormData();
-    formData.append('token', token);
-    formData.append('schedules', JSON.stringify(schedules));
-    try {
-        const resp = await fetch('/my-stats/save-cyclic', { method: 'POST', body: formData });
-        const data = await resp.json();
-        const msg = document.getElementById('cyclic-msg');
-        msg.innerHTML = data.ok ? '<p class="success">✅ Расписание сохранено</p>' : '<p class="error">❌ Ошибка</p>';
-        setTimeout(() => msg.innerHTML = '', 3000);
-    } catch(e) { console.error(e); }
 }
 
 async function addVideoChannel() {
@@ -1559,23 +1472,9 @@ async def get_settings_data(token: str = Query(...)):
         user_stores = conn.execute(
             "SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)
         ).fetchall()
-        schedules = conn.execute(
-            "SELECT store_id, interval_days FROM cyclic_schedules WHERE user_id=?", (user_id,)
-        ).fetchall()
         video_channels = conn.execute(
             "SELECT id, platform, channel_id, is_active FROM social_channels WHERE user_id=?", (user_id,)
         ).fetchall()
-        from services.admitad import STORE_ID_MAP
-        stores = []
-        for s in user_stores:
-            sid = s["category_id"]
-            name = STORE_ID_MAP.get(sid, f"ID {sid}")
-            interval = 0
-            for sch in schedules:
-                if sch["store_id"] == sid:
-                    interval = sch["interval_days"]
-                    break
-            stores.append({"id": sid, "name": name, "interval": interval, "available": True})
         return JSONResponse({
             "post_interval_minutes": user["post_interval_minutes"] if user else 60,
             "default_auto_delete_hours": user["default_auto_delete_hours"] if user else 168,
@@ -1584,11 +1483,9 @@ async def get_settings_data(token: str = Query(...)):
             "force_preview_confirmed": bool(user["force_preview_confirmed"]) if user else False,
             "min_discount": user["min_discount"] if user else 0,
             "tax_status": user["tax_status"] if user else "",
-            "stores": stores,
             "video_channels": [{"id": v["id"], "platform": v["platform"], "channel_id": v["channel_id"], "is_active": v["is_active"]} for v in video_channels],
             "sub_id": user["sub_id"] if user else "",
             "cpa_enabled": bool(user["cpa_enabled"]) if user else True,
-            "post_days": user["post_days"] if user else 127,
         })
     finally:
         conn.close()
@@ -1624,27 +1521,6 @@ async def save_settings(
         return JSONResponse({"ok": False, "error": str(e)})
     finally:
         conn.close()
-
-@router.post("/save-cyclic")
-async def save_cyclic_schedules(token: str = Form(...), schedules: str = Form("[]")):
-    user_id = get_user_id_from_token(token)
-    import json
-    try:
-        conn = get_db()
-        try:
-            conn.execute("DELETE FROM cyclic_schedules WHERE user_id=?", (user_id,))
-            sched_list = json.loads(schedules)
-            for s in sched_list:
-                conn.execute("""
-                    INSERT INTO cyclic_schedules (user_id, store_id, interval_days, is_active)
-                    VALUES (?, ?, ?, 1)
-                """, (user_id, s["store_id"], s["interval_days"]))
-            conn.commit()
-            return JSONResponse({"ok": True})
-        finally:
-            conn.close()
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)})
 
 @router.post("/add-video-channel")
 async def add_video_channel(token: str = Form(...), platform: str = Form(...), channel_id: str = Form(...)):
@@ -2217,6 +2093,20 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     .day-btn:hover { border-color: #ff6666; }
     .btn-save-timer { background: #ff4444; color: white; border: none; padding: 10px 24px; border-radius: 8px; cursor: pointer; font-size: 1em; display: block; margin: 0 auto; }
     .btn-save-timer:hover { background: #e03333; }
+    .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 10px 0; }
+    .cal-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .cal-nav button { background: none; border: none; color: #ff4444; font-size: 1.3em; cursor: pointer; padding: 4px 12px; }
+    .cal-nav span { color: #ddd; font-size: 1.1em; font-weight: bold; }
+    .cal-head { text-align: center; color: #666; font-size: 0.75em; padding: 4px 0; }
+    .cal-day { text-align: center; padding: 8px 0; border-radius: 8px; cursor: pointer; color: #aaa; font-size: 0.9em; border: 2px solid transparent; transition: all 0.15s; }
+    .cal-day:hover { border-color: #ff4444; }
+    .cal-day.today { border-color: #ff4444; color: #ff4444; }
+    .cal-day.selected { background: #ff4444; color: #fff; }
+    .cal-day.empty { cursor: default; }
+    .cal-day.empty:hover { border-color: transparent; }
+    .sched-item { display: flex; justify-content: space-between; align-items: center; background: #2a2a2a; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; }
+    .sched-item span { color: #ddd; font-size: 0.9em; }
+    .sched-item button { background: #c62828; color: white; border: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8em; }
 </style>
 </head>
 <body>
@@ -2240,39 +2130,32 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
         </div>
     </div>
     <div class="modal-overlay" id="timerModal" onclick="if(event.target===this)closeTimerModal()">
-        <div class="modal-box" style="max-width:400px;">
-            <h2 id="timerModalTitle">⏱ Таймер публикации</h2>
-            <div class="time-picker">
-                <div class="time-col">
-                    <button class="time-up" onclick="timerAdj('hour',1)">▲</button>
-                    <input class="time-val" type="number" id="tm-h" value="0" min="0" max="23" onchange="timerSyncFromInput()">
-                    <button class="time-dn" onclick="timerAdj('hour',-1)">▼</button>
-                    <div class="time-lbl">ч</div>
-                </div>
-                <div class="time-sep">:</div>
-                <div class="time-col">
-                    <button class="time-up" onclick="timerAdj('min',5)">▲</button>
-                    <input class="time-val" type="number" id="tm-m" value="30" min="0" max="59" onchange="timerSyncFromInput()">
-                    <button class="time-dn" onclick="timerAdj('min',-5)">▼</button>
-                    <div class="time-lbl">мин</div>
-                </div>
-            </div>
-            <input type="hidden" id="tm-total" value="30">
-            <label>Дни публикации</label>
-            <div class="days-grid" id="tm-days-grid">
-                <button class="day-btn active" data-day="0">ПН</button>
-                <button class="day-btn active" data-day="1">ВТ</button>
-                <button class="day-btn active" data-day="2">СР</button>
-                <button class="day-btn active" data-day="3">ЧТ</button>
-                <button class="day-btn active" data-day="4">ПТ</button>
-                <button class="day-btn active" data-day="5">СБ</button>
-                <button class="day-btn active" data-day="6">ВС</button>
-            </div>
-            <input type="hidden" id="tm-days" value="127">
+        <div class="modal-box" style="max-width:420px;">
+            <h2 id="timerModalTitle">⏱ Расписание</h2>
             <input type="hidden" id="tm-target-type" value="">
             <input type="hidden" id="tm-target-id" value="">
-            <button class="btn-save-timer" onclick="saveTimer()">💾 Сохранить</button>
-            <button class="modal-close" onclick="closeTimerModal()" style="display:block;margin:10px auto 0;">Отмена</button>
+            <div id="schedule-list" style="margin-bottom:15px;"></div>
+            <div class="calendar" id="cal-grid"></div>
+            <div id="cal-time-picker" style="display:none;margin-top:15px;">
+                <label>Время публикации: <span id="cal-selected-date"></span></label>
+                <div class="time-picker" style="margin:10px 0;">
+                    <div class="time-col">
+                        <button class="time-up" onclick="calAdj('hour',1)">▲</button>
+                        <input class="time-val" type="number" id="cal-h" value="10" min="0" max="23" onchange="calSync()">
+                        <button class="time-dn" onclick="calAdj('hour',-1)">▼</button>
+                        <div class="time-lbl">ч</div>
+                    </div>
+                    <div class="time-sep">:</div>
+                    <div class="time-col">
+                        <button class="time-up" onclick="calAdj('min',5)">▲</button>
+                        <input class="time-val" type="number" id="cal-m" value="0" min="0" max="59" onchange="calSync()">
+                        <button class="time-dn" onclick="calAdj('min',-5)">▼</button>
+                        <div class="time-lbl">мин</div>
+                    </div>
+                </div>
+                <button class="btn-save-timer" onclick="addSchedule()">+ Добавить</button>
+            </div>
+            <button class="modal-close" onclick="closeTimerModal()" style="display:block;margin:10px auto 0;">Закрыть</button>
         </div>
     </div>
     <script>
@@ -2296,7 +2179,7 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const toggleText = isActive ? '🔴 Отключить' : '🟢 Включить';
             const imgHtml = c.image_url ? `<img class="campaign-img" src="${c.image_url}" alt="" onerror="this.style.display='none'">` : '<div class="campaign-img"></div>';
             const rulesBtnHtml = (c.more_rules || (c.traffics && c.traffics !== '[]' && c.traffics !== '{}')) ? `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(c.name).replace(/'/g,"\\'")}, ${JSON.stringify(c.more_rules||"").replace(/'/g,"\\'")}, ${JSON.stringify(c.traffics||"").replace(/'/g,"\\'")})'>⚠️ Правила</button>` : '';
-            const timerBtnHtml = `<button class="btn-timer" onclick="openTimerModal('campaign',${c.id},${c.interval_hours||0},${c.interval_minutes||0},${c.post_days||127})">⏱ Таймер</button>`;
+            const timerBtnHtml = `<button class="btn-timer" onclick='openTimerModal("campaign",${c.id},${JSON.stringify(c.name).replace(/'/g,"\\'")})'>⏱ Таймер</button>`;
             return `<div class="campaign-card">
                 ${imgHtml}
                 <div class="campaign-info">
@@ -2333,90 +2216,109 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     function closeRulesModal() {
         document.getElementById('rulesModal').classList.remove('open');
     }
-    function openTimerModal(type, id, hoursOrDays, minutes, daysMask) {
+    function openTimerModal(type, id, name) {
         document.getElementById('tm-target-type').value = type;
         document.getElementById('tm-target-id').value = id;
-        document.getElementById('tm-days').value = daysMask || 127;
-        const btns = document.querySelectorAll('#tm-days-grid .day-btn');
-        const mask = daysMask || 127;
-        btns.forEach((btn, i) => btn.classList.toggle('active', !!(mask & (1 << i))));
-        if (type === 'campaign') {
-            document.getElementById('tm-h').value = hoursOrDays;
-            document.getElementById('tm-m').value = String(minutes).padStart(2, '0');
-            document.getElementById('tm-total').value = hoursOrDays * 60 + minutes;
-            document.getElementById('timerModalTitle').textContent = '⏱ Таймер: CPC кампания (часы:минуты)';
-        } else {
-            document.getElementById('tm-h').value = hoursOrDays;
-            document.getElementById('tm-m').value = String(minutes).padStart(2, '0');
-            document.getElementById('tm-total').value = hoursOrDays * 60 + minutes;
-            document.getElementById('timerModalTitle').textContent = '⏱ Таймер: CPA магазин (дни:минуты)';
-        }
+        document.getElementById('timerModalTitle').textContent = '⏱ ' + name;
+        document.getElementById('cal-time-picker').style.display = 'none';
+        calCurrentType = type;
+        calCurrentId = id;
+        calSelectedDate = null;
+        calMonth = new Date().getMonth();
+        calYear = new Date().getFullYear();
+        renderCalendar();
+        loadScheduleList();
         document.getElementById('timerModal').classList.add('open');
     }
     function closeTimerModal() {
         document.getElementById('timerModal').classList.remove('open');
     }
-    function timerAdj(unit, step) {
-        const total = parseInt(document.getElementById('tm-total').value) || 30;
-        let h = parseInt(document.getElementById('tm-h').value) || 0;
-        let m = parseInt(document.getElementById('tm-m').value) || 0;
+    let calCurrentType = '', calCurrentId = 0, calSelectedDate = null, calMonth = 0, calYear = 0;
+    const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    const DAYS_RU = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+    function renderCalendar() {
+        const grid = document.getElementById('cal-grid');
+        let html = '<div class="cal-nav"><button onclick="calNav(-1)">◀</button><span>' + MONTHS_RU[calMonth] + ' ' + calYear + '</span><button onclick="calNav(1)">▶</button></div>';
+        html += '<div class="cal-head">' + DAYS_RU.join('</div><div class="cal-head">') + '</div><div class="calendar">';
+        const first = new Date(calYear, calMonth, 1);
+        let startDay = first.getDay() - 1;
+        if (startDay < 0) startDay = 6;
+        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+        const today = new Date();
+        for (let i = 0; i < startDay; i++) html += '<div class="cal-day empty"></div>';
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = calYear + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            const isToday = (today.getFullYear() === calYear && today.getMonth() === calMonth && today.getDate() === d);
+            const isSelected = (calSelectedDate === dateStr);
+            let cls = 'cal-day';
+            if (isToday) cls += ' today';
+            if (isSelected) cls += ' selected';
+            html += '<div class="' + cls + '" onclick="calPickDate(\'' + dateStr + '\')">' + d + '</div>';
+        }
+        html += '</div>';
+        grid.innerHTML = html;
+    }
+    function calNav(dir) {
+        calMonth += dir;
+        if (calMonth > 11) { calMonth = 0; calYear++; }
+        if (calMonth < 0) { calMonth = 11; calYear--; }
+        renderCalendar();
+    }
+    function calPickDate(dateStr) {
+        calSelectedDate = dateStr;
+        renderCalendar();
+        document.getElementById('cal-selected-date').textContent = dateStr;
+        document.getElementById('cal-time-picker').style.display = 'block';
+    }
+    function calAdj(unit, step) {
+        let h = parseInt(document.getElementById('cal-h').value) || 0;
+        let m = parseInt(document.getElementById('cal-m').value) || 0;
         if (unit === 'hour') {
-            h += step;
-            if (h > 23) h = 0;
-            if (h < 0) h = 23;
+            h += step; if (h > 23) h = 0; if (h < 0) h = 23;
         } else {
             m += step;
             if (m >= 60) { m = 0; h++; if (h > 23) h = 0; }
             if (m < 0) { m = 55; h--; if (h < 0) h = 23; }
         }
-        document.getElementById('tm-h').value = h;
-        document.getElementById('tm-m').value = String(m).padStart(2, '0');
-        document.getElementById('tm-total').value = h * 60 + m;
+        document.getElementById('cal-h').value = h;
+        document.getElementById('cal-m').value = String(m).padStart(2, '0');
     }
-    function timerSyncFromInput() {
-        let h = parseInt(document.getElementById('tm-h').value) || 0;
-        let m = parseInt(document.getElementById('tm-m').value) || 0;
+    function calSync() {
+        let h = parseInt(document.getElementById('cal-h').value) || 0;
+        let m = parseInt(document.getElementById('cal-m').value) || 0;
         if (h > 23) h = 23; if (h < 0) h = 0;
         if (m > 59) m = 59; if (m < 0) m = 0;
-        document.getElementById('tm-h').value = h;
-        document.getElementById('tm-m').value = String(m).padStart(2, '0');
-        document.getElementById('tm-total').value = h * 60 + m;
+        document.getElementById('cal-h').value = h;
+        document.getElementById('cal-m').value = String(m).padStart(2, '0');
     }
-    async function saveTimer() {
-        const type = document.getElementById('tm-target-type').value;
-        const id = document.getElementById('tm-target-id').value;
-        const h = parseInt(document.getElementById('tm-h').value) || 0;
-        const m = parseInt(document.getElementById('tm-m').value) || 0;
-        const days = parseInt(document.getElementById('tm-days').value) || 127;
+    async function addSchedule() {
+        if (!calSelectedDate) return;
+        const h = String(document.getElementById('cal-h').value || 10).padStart(2, '0');
+        const m = String(document.getElementById('cal-m').value || 0).padStart(2, '0');
         const f = new FormData();
         f.append('token', '{{ token }}');
-        f.append('target_type', type);
-        f.append('target_id', id);
-        f.append('hours', h);
-        f.append('minutes', m);
-        f.append('days', days);
+        f.append('target_type', calCurrentType);
+        f.append('target_id', calCurrentId);
+        f.append('post_date', calSelectedDate);
+        f.append('post_time', h + ':' + m);
         const res = await fetch('/my-stats/save-timer', { method: 'POST', body: f });
         const data = await res.json();
-        if (data.ok) {
-            closeTimerModal();
-            if (type === 'store') loadCpaStores();
-        } else {
-            alert(data.error || 'Ошибка сохранения');
-        }
+        if (data.ok) loadScheduleList();
     }
-    document.addEventListener('DOMContentLoaded', function() {
-        const grid = document.getElementById('tm-days-grid');
-        if (grid) {
-            grid.addEventListener('click', function(e) {
-                const btn = e.target.closest('.day-btn');
-                if (!btn) return;
-                btn.classList.toggle('active');
-                const bits = Array.from(grid.children).map(b => b.classList.contains('active') ? 1 : 0);
-                const mask = bits.reduce((acc, b, i) => acc | (b << i), 0);
-                document.getElementById('tm-days').value = mask;
-            });
-        }
-    });
+    async function loadScheduleList() {
+        const res = await fetch('/my-stats/get-schedules?token={{ token }}&target_type=' + calCurrentType + '&target_id=' + calCurrentId);
+        const data = await res.json();
+        const el = document.getElementById('schedule-list');
+        if (!data.length) { el.innerHTML = '<p style="color:#888;text-align:center;">Нет запланированных постов</p>'; return; }
+        el.innerHTML = data.map(s => '<div class="sched-item"><span>📅 ' + s.date + '  🕐 ' + s.time + '</span><button onclick="delSchedule(' + s.id + ')">✕</button></div>').join('');
+    }
+    async function delSchedule(id) {
+        const f = new FormData();
+        f.append('token', '{{ token }}');
+        f.append('schedule_id', id);
+        await fetch('/my-stats/delete-schedule', { method: 'POST', body: f });
+        loadScheduleList();
+    }
     async function toggleCampaign(id, newState) {
         const f = new FormData();
         f.append('token', '{{ token }}');
@@ -2446,13 +2348,14 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const toggleClass = s.is_active ? 'on' : 'off';
             const toggleText = s.is_active ? '🔴 Отключить' : '🟢 Включить';
             const statusText = s.is_active ? '✅ Активен' : (disabled ? '❌ Недоступен' : '⚪ Отключён');
-            const timerBtnHtml = `<button class="btn-timer" onclick="openTimerModal('store',${s.id},${s.interval_days||1},${s.interval_minutes||0},${s.post_days||127})">⏱ Таймер</button>`;
+            const rulesBtnHtml = `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(s.name).replace(/'/g,"\\'")}, "", "")'>⚠️ Правила</button>`;
+            const timerBtnHtml = `<button class="btn-timer" onclick='openTimerModal("store",${s.id},${JSON.stringify(s.name).replace(/'/g,"\\'")})'>⏱ Таймер</button>`;
             return `<div class="campaign-card" style="opacity:${disabled ? 0.5 : 1}">
                 <div class="campaign-info" style="flex:1;">
                     <div class="campaign-name">${s.name}</div>
                     <div class="campaign-status ${s.is_active ? 'active' : 'inactive'}">${statusText}</div>
                     <div class="campaign-actions">
-                        ${!disabled ? timerBtnHtml : ''}
+                        ${!disabled ? rulesBtnHtml + timerBtnHtml : ''}
                         <button class="btn-toggle ${toggleClass}" onclick="toggleCpaStore(${s.id})" ${disabled ? 'disabled' : ''}>${toggleText}</button>
                     </div>
                 </div>
@@ -2573,29 +2476,50 @@ async def save_timer(
     token: str = Form(...),
     target_type: str = Form(...),
     target_id: int = Form(...),
-    hours: int = Form(0),
-    minutes: int = Form(0),
-    days: int = Form(127),
+    post_date: str = Form(...),
+    post_time: str = Form(...),
 ):
     user_id = get_user_id_from_token(token)
     conn = get_db()
     try:
-        if target_type == "campaign":
-            conn.execute(
-                "UPDATE cpc_campaigns SET interval_hours=?, interval_minutes=?, post_days=? WHERE id=? AND user_id=?",
-                (hours, minutes, days, target_id, user_id)
-            )
-        elif target_type == "store":
-            conn.execute("""
-                INSERT INTO cyclic_schedules (user_id, store_id, interval_days, interval_minutes, post_days, is_active)
-                VALUES (?, ?, ?, ?, ?, 1)
-                ON CONFLICT(user_id, store_id) DO UPDATE SET interval_days=?, interval_minutes=?, post_days=?
-            """, (user_id, target_id, hours, minutes, days, hours, minutes, days))
+        conn.execute(
+            "INSERT INTO post_schedules (user_id, target_type, target_id, post_date, post_time) VALUES (?, ?, ?, ?, ?)",
+            (user_id, target_type, target_id, post_date, post_time)
+        )
         conn.commit()
         return {"ok": True}
     except Exception as e:
         logger.error(f"Save timer error: {e}")
         return {"ok": False, "error": str(e)}
+    finally:
+        conn.close()
+
+
+@router.post("/delete-schedule")
+async def delete_schedule(
+    token: str = Form(...),
+    schedule_id: int = Form(...),
+):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM post_schedules WHERE id=? AND user_id=?", (schedule_id, user_id))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@router.get("/get-schedules")
+async def get_schedules(token: str = Query(...), target_type: str = Query(...), target_id: int = Query(...)):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, post_date, post_time FROM post_schedules WHERE user_id=? AND target_type=? AND target_id=? AND is_posted=0 ORDER BY post_date, post_time",
+            (user_id, target_type, target_id)
+        ).fetchall()
+        return [{"id": r["id"], "date": r["post_date"], "time": r["post_time"]} for r in rows]
     finally:
         conn.close()
 
@@ -2607,22 +2531,13 @@ async def get_cpa_stores_data(token: str = Query(...)):
         selected = {r["category_id"] for r in conn.execute(
             "SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)
         ).fetchall()}
-        schedules = {r["store_id"]: r for r in conn.execute(
-            "SELECT store_id, interval_days, interval_minutes, post_days FROM cyclic_schedules WHERE user_id=?", (user_id,)
-        ).fetchall()}
     finally:
         conn.close()
     stores = []
     for sid, name in STORE_ID_MAP.items():
         store_info = STORES.get(name, {})
         available = store_info.get("available", True) if store_info else True
-        sched = schedules.get(sid)
-        stores.append({
-            "id": sid, "name": name, "is_active": sid in selected, "available": available,
-            "interval_days": sched["interval_days"] if sched else 1,
-            "interval_minutes": sched["interval_minutes"] if sched else 0,
-            "post_days": sched["post_days"] if sched else 127
-        })
+        stores.append({"id": sid, "name": name, "is_active": sid in selected, "available": available})
     stores.sort(key=lambda s: (not s["available"], s["name"]))
     return stores
 

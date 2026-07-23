@@ -271,7 +271,7 @@ async def publish_from_catalog(bot: Bot):
     conn = get_db()
     try:
         users = conn.execute("""
-            SELECT u.user_id, u.tariff_id, u.role, u.post_interval_minutes, u.post_days, u.commission_rate
+            SELECT u.user_id, u.tariff_id, u.role, u.post_interval_minutes, u.commission_rate
             FROM users u
             WHERE u.role IN ('saas', 'blogger') AND u.is_active = 1 AND u.cpa_enabled = 1
         """).fetchall()
@@ -287,11 +287,6 @@ async def publish_from_catalog(bot: Bot):
         role = user["role"]
         post_interval = user["post_interval_minutes"] or 60
         commission_rate = user["commission_rate"] or 0.70
-        post_days = user["post_days"] or 127
-        today_weekday = datetime.now(timezone.utc).weekday()
-        if not (post_days & (1 << today_weekday)):
-            logger.info(f"[DEBUG] User {user_id}: сегодня не день публикации, пропускаем")
-            continue
 
         logger.info(f"[DEBUG] Обработка пользователя {user_id}, роль {role}")
 
@@ -326,61 +321,51 @@ async def publish_from_catalog(bot: Bot):
         allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
         logger.info(f"[DEBUG] User {user_id}: allowed_sources = {allowed_sources}")
 
-        # Если пользователь не выбрал ни одного магазина — пропускаем публикацию
         if not allowed_sources:
             logger.info(f"[DEBUG] User {user_id}: нет выбранных магазинов, пропускаем")
             continue
 
-        # Циклический постинг: определяем какой магазин должен опубликовать сегодня
-        cyclic_store_source = None
-        cyclic_store_id = None
+        now = datetime.now(timezone.utc)
+        today_str = now.strftime("%Y-%m-%d")
+        current_time = now.strftime("%H:%M")
+
+        scheduled_stores = []
         conn = get_db()
         try:
-            schedules = conn.execute(
-                "SELECT store_id, interval_days, interval_minutes, post_days, last_posted_at FROM cyclic_schedules WHERE user_id=? AND is_active=1",
-                (user_id,)
+            sched_rows = conn.execute(
+                "SELECT target_id, post_time FROM post_schedules WHERE user_id=? AND target_type='store' AND post_date=? AND is_posted=0",
+                (user_id, today_str)
             ).fetchall()
+            for sr in sched_rows:
+                stid = sr["target_id"]
+                if stid in STORE_ID_MAP and STORE_ID_MAP[stid] in allowed_sources:
+                    scheduled_stores.append((STORE_ID_MAP[stid], sr["post_time"]))
         finally:
             conn.close()
 
-        if schedules:
-            now = datetime.now(timezone.utc)
-            today_weekday = now.weekday()  # 0=Monday
-            most_overdue_mins = -1
-            for sched in schedules:
-                sid = sched["store_id"]
-                interval_days = sched["interval_days"]
-                interval_minutes = sched["interval_minutes"] or 0
-                post_days = sched["post_days"] or 127
-                interval_total = interval_days * 1440 + interval_minutes
-                last_posted = sched["last_posted_at"]
-                if sid not in [s for s in store_ids if s in STORE_ID_MAP]:
-                    continue
-                source_name = STORE_ID_MAP.get(sid)
-                if not source_name:
-                    continue
-                # check if today is allowed
-                if not (post_days & (1 << today_weekday)):
-                    continue
-                if last_posted:
-                    try:
-                        last_dt = datetime.fromisoformat(last_posted.replace("Z", "+00:00"))
-                        mins_since = (now - last_dt).total_seconds() / 60
-                    except Exception:
-                        mins_since = interval_total + 1
-                else:
-                    mins_since = interval_total + 1
-                if mins_since >= interval_total and mins_since > most_overdue_mins:
-                    most_overdue_mins = mins_since
-                    cyclic_store_source = source_name
-                    cyclic_store_id = sid
+        if not scheduled_stores:
+            logger.info(f"[DEBUG] User {user_id}: нет запланированных магазинов на сегодня")
+            continue
 
-            if cyclic_store_source:
-                logger.info(f"[DEBUG] User {user_id}: циклический магазин {cyclic_store_source} (просрочен {most_overdue_mins:.1f} мин.)")
-                allowed_sources = [cyclic_store_source]
-            else:
-                logger.info(f"[DEBUG] User {user_id}: ни один циклический магазин не просрочен, пропускаем")
-                continue
+        scheduled_stores.sort(key=lambda x: x[1])
+        best = None
+        for src, ptime in scheduled_stores:
+            if ptime <= current_time:
+                best = src
+        if not best:
+            logger.info(f"[DEBUG] User {user_id}: время публикации для магазинов ещё не наступило")
+            continue
+        logger.info(f"[DEBUG] User {user_id}: запланированный магазин {best}")
+        allowed_sources = [best]
+
+        scheduled_store_id = None
+        for src, ptime in scheduled_stores:
+            if ptime <= current_time:
+                for sid_candidate in store_ids:
+                    if sid_candidate in STORE_ID_MAP and STORE_ID_MAP[sid_candidate] == src:
+                        scheduled_store_id = sid_candidate
+                        break
+                break
 
         min_discount = 0
         if role == "saas":
@@ -558,6 +543,17 @@ async def publish_from_catalog(bot: Bot):
                         )
                         conn_rec.commit()
                         logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}, post_id={msg.message_id}")
+                        # Помечаем расписание как опубликованное
+                        try:
+                            conn_sched = get_db()
+                            conn_sched.execute(
+                                "UPDATE post_schedules SET is_posted=1 WHERE user_id=? AND target_type='store' AND target_id=? AND post_date=? AND post_time<=? AND is_posted=0",
+                                (user_id, scheduled_store_id, today_str, current_time)
+                            )
+                            conn_sched.commit()
+                            conn_sched.close()
+                        except Exception:
+                            pass
                         await pin_post_if_enabled(bot, user_id, ch["channel_id"], msg.message_id)
                         try:
                             conn_chk = get_db()
@@ -646,51 +642,53 @@ async def publish_cpc_campaigns(bot: Bot):
 
     import re as _re
     now = datetime.now(timezone.utc)
-    today_weekday = now.weekday()
+    today_str = now.strftime("%Y-%m-%d")
+    current_time = now.strftime("%H:%M")
+
     conn = get_db()
     try:
-        campaigns_raw = conn.execute("""
-            SELECT cpc.id, cpc.user_id, cpc.campaign_id, cpc.name, cpc.cpc_link,
-                   cpc.text, cpc.image_url, cpc.interval_hours, cpc.interval_minutes, cpc.post_days, cpc.last_posted_at,
-                   cpc.description, u.cpc_banned,
-                   ch.channel_id, ch.sub_id, ch.channel_title
-            FROM cpc_campaigns cpc
-            JOIN users u ON u.user_id = cpc.user_id
-            JOIN channels ch ON ch.user_id = cpc.user_id
-            WHERE cpc.is_active = 1
-              AND u.is_active = 1
-              AND u.cpc_banned = 0
-        """).fetchall()
+        scheduled = conn.execute(
+            "SELECT user_id, target_id, post_time FROM post_schedules WHERE target_type='campaign' AND post_date=? AND is_posted=0",
+            (today_str,)
+        ).fetchall()
     finally:
         conn.close()
 
-    campaigns = []
-    for row in campaigns_raw:
-        post_days = row["post_days"] or 127
-        if not (post_days & (1 << today_weekday)):
-            continue
-        interval_hours = row["interval_hours"] or 24
-        interval_minutes = row["interval_minutes"] or 0
-        last_posted = row["last_posted_at"]
-        total_minutes = interval_hours * 60 + interval_minutes
-        if total_minutes <= 0:
-            total_minutes = 1440
-        if last_posted:
-            try:
-                last_dt = datetime.fromisoformat(last_posted.replace("Z", "+00:00"))
-                mins_since = (now - last_dt).total_seconds() / 60
-            except Exception:
-                mins_since = total_minutes + 1
-        else:
-            mins_since = total_minutes + 1
-        if mins_since >= total_minutes:
-            campaigns.append(row)
+    if not scheduled:
+        return
 
-    if not campaigns:
+    campaigns_to_post = []
+    for sched in scheduled:
+        if sched["post_time"] > current_time:
+            continue
+        user_id = sched["user_id"]
+        campaign_id = sched["target_id"]
+        conn = get_db()
+        try:
+            row = conn.execute("""
+                SELECT cpc.id, cpc.user_id, cpc.campaign_id, cpc.name, cpc.cpc_link,
+                       cpc.text, cpc.image_url, cpc.description,
+                       u.cpc_banned,
+                       ch.channel_id, ch.sub_id, ch.channel_title
+                FROM cpc_campaigns cpc
+                JOIN users u ON u.user_id = cpc.user_id
+                JOIN channels ch ON ch.user_id = cpc.user_id
+                WHERE cpc.is_active = 1
+                  AND u.is_active = 1
+                  AND u.cpc_banned = 0
+                  AND cpc.user_id = ?
+                  AND cpc.id = ?
+            """, (user_id, campaign_id)).fetchone()
+        finally:
+            conn.close()
+        if row:
+            campaigns_to_post.append(row)
+
+    if not campaigns_to_post:
         return
 
     posted_ids = set()
-    for row in campaigns:
+    for row in campaigns_to_post:
         user_id = row["user_id"]
         cpc_id = row["id"]
         channel_id = row["channel_id"]
@@ -798,6 +796,10 @@ async def publish_cpc_campaigns(bot: Bot):
                 c = get_db()
                 try:
                     c.execute("UPDATE cpc_campaigns SET last_posted_at=datetime('now'), times_posted=times_posted+1 WHERE id=?", (cpc_id,))
+                    c.execute(
+                        "UPDATE post_schedules SET is_posted=1 WHERE user_id=? AND target_type='campaign' AND target_id=? AND post_date=? AND post_time<=? AND is_posted=0",
+                        (user_id, cpc_id, today_str, current_time)
+                    )
                     c.commit()
                 finally:
                     c.close()
