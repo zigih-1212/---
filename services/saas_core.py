@@ -584,17 +584,6 @@ async def publish_from_catalog(bot: Bot):
                             pass
                     finally:
                         conn_rec.close()
-                    if cyclic_store_id:
-                        try:
-                            conn_cyc = get_db()
-                            conn_cyc.execute(
-                                "UPDATE cyclic_schedules SET last_posted_at = ? WHERE user_id = ? AND store_id = ?",
-                                (datetime.now(timezone.utc).isoformat(), user_id, cyclic_store_id)
-                            )
-                            conn_cyc.commit()
-                            conn_cyc.close()
-                        except Exception:
-                            pass
                 else:
                     logger.warning(f"[DEBUG] Не удалось опубликовать в {ch['channel_id']}")
             except Exception as e:

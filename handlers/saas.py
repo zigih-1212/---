@@ -736,8 +736,59 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
 
 async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int, channel_id: str = None) -> None:
     """Публикация поста сразу без предпросмотра"""
+    conn = get_db()
+    try:
+        user_stores = conn.execute("SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)).fetchall()
+        store_ids = [r["category_id"] for r in user_stores]
+        user_tmpl = conn.execute("SELECT product_template FROM users WHERE user_id=?", (user_id,)).fetchone()
+        custom_template = user_tmpl["product_template"] if user_tmpl and user_tmpl["product_template"] else None
+        min_disc = conn.execute("SELECT min_discount FROM users WHERE user_id=?", (user_id,)).fetchone()
+        min_discount = min_disc["min_discount"] if min_disc else 0
+    finally:
+        conn.close()
 
+    allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
 
+    conn = get_db()
+    try:
+        if allowed_sources:
+            placeholders = ','.join('?' * len(allowed_sources))
+            product = conn.execute(
+                f"SELECT * FROM gdeslon_catalog WHERE user_id=? AND used=0 AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                (user_id, *allowed_sources, min_discount)
+            ).fetchone()
+        else:
+            product = None
+
+        if not product:
+            if allowed_sources:
+                placeholders = ','.join('?' * len(allowed_sources))
+                conn.execute(f"UPDATE gdeslon_catalog SET used=0 WHERE user_id=? AND source IN ({placeholders})", (user_id, *allowed_sources))
+                conn.commit()
+                product = conn.execute(
+                    f"SELECT * FROM gdeslon_catalog WHERE user_id=? AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                    (user_id, *allowed_sources, min_discount)
+                ).fetchone()
+            else:
+                product = conn.execute(
+                    "SELECT * FROM gdeslon_catalog WHERE user_id=? AND used=0 AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                    (user_id, min_discount)
+                ).fetchone()
+                if not product:
+                    conn.execute("UPDATE gdeslon_catalog SET used=0 WHERE user_id=?", (user_id,))
+                    conn.commit()
+                    product = conn.execute(
+                        "SELECT * FROM gdeslon_catalog WHERE user_id=? AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
+                        (user_id, min_discount)
+                    ).fetchone()
+    finally:
+        conn.close()
+
+    if not product:
+        await callback.answer("❌ Нет товаров для публикации", show_alert=True)
+        return
+
+    await _publish_product(callback, bot, user_id, product, custom_template)
 
 @router.callback_query(F.data.startswith("cpc_force_confirm:"))
 async def cb_cpc_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
@@ -781,112 +832,6 @@ async def cb_cpc_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
     # Публикуем без проверки правил
     await _publish_cpc_post(callback, bot, user_id, dict(campaign), dict(ch), cpc_template, auto_delete_hours, skip_rules=True)
     await callback.answer()
-    conn = get_db()
-    try:
-        # Получаем настройки пользователя
-        user_stores = conn.execute(
-            "SELECT category_id FROM user_category_preferences WHERE user_id = ?", 
-            (user_id,)
-        ).fetchall()
-        store_ids = [r["category_id"] for r in user_stores]
-        
-        user_tmpl = conn.execute(
-            "SELECT product_template, default_auto_delete_hours FROM users WHERE user_id = ?", 
-            (user_id,)
-        ).fetchone()
-        custom_template = user_tmpl["product_template"] if user_tmpl else None
-        auto_delete_hours = user_tmpl["default_auto_delete_hours"] if user_tmpl and user_tmpl["default_auto_delete_hours"] is not None else 168
-        
-        min_disc = conn.execute(
-            "SELECT min_discount FROM users WHERE user_id = ?", 
-            (user_id,)
-        ).fetchone()
-        min_discount = min_disc["min_discount"] if min_disc else 0
-        
-        # Получаем список каналов
-        channels = conn.execute(
-            "SELECT channel_id, channel_title FROM channels WHERE user_id = ? AND is_active = 1",
-            (user_id,)
-        ).fetchall()
-        
-        if not channels:
-            await callback.answer("❌ Нет активных каналов", show_alert=True)
-            return
-            
-        # Если канал не выбран, но их несколько - предлагаем выбор
-        if not channel_id and len(channels) > 1:
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text=ch["channel_title"] or ch["channel_id"], 
-                    callback_data=f"force_channel:{ch['channel_id']}"
-                )] for ch in channels
-            ])
-            await safe_edit(callback.message,
-                "📢 Выберите канал для публикации:",
-                reply_markup=kb
-            )
-            await callback.answer()
-            return
-    finally:
-        conn.close()
-
-    allowed_sources = [STORE_ID_MAP[sid] for sid in store_ids if sid in STORE_ID_MAP]
-
-    conn = get_db()
-    try:
-        if allowed_sources:
-            placeholders = ','.join('?' * len(allowed_sources))
-            product = conn.execute(
-                f"""SELECT * FROM gdeslon_catalog 
-                WHERE user_id = ? AND used = 0 
-                AND erid != '' AND erid IS NOT NULL 
-                AND source IN ({placeholders}) 
-                AND (discount_percent IS NULL OR discount_percent >= ?)
-                ORDER BY 
-                    CASE WHEN discount_percent >= 30 THEN 0  -- Приоритет товарам со скидкой 30%+
-                    ELSE 1 END,
-                    RANDOM()
-                LIMIT 1""",
-                (user_id, *allowed_sources, min_discount)
-            ).fetchone()
-        else:
-            product = None
-
-        if not product:
-            if allowed_sources:
-                conn.execute(
-                    f"UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ? AND source IN ({placeholders})",
-                    (user_id, *allowed_sources)
-                )
-                conn.commit()
-                product = conn.execute(
-                    f"SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND source IN ({placeholders}) AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
-                    (user_id, *allowed_sources, min_discount)
-                ).fetchone()
-            else:
-                product = conn.execute(
-                    "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND used = 0 AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
-                    (user_id, min_discount)
-                ).fetchone()
-                if not product:
-                    conn.execute("UPDATE gdeslon_catalog SET used = 0 WHERE user_id = ?", (user_id,))
-                    conn.commit()
-                    product = conn.execute(
-                        "SELECT * FROM gdeslon_catalog WHERE user_id = ? AND erid != '' AND erid IS NOT NULL AND (discount_percent IS NULL OR discount_percent >= ?) ORDER BY RANDOM() LIMIT 1",
-                        (user_id, min_discount)
-                    ).fetchone()
-
-        if product:
-            conn.execute("UPDATE gdeslon_catalog SET used = 1 WHERE id = ?", (product["id"],))
-            conn.commit()
-    finally:
-        conn.close()
-
-    if not product:
-        await safe_edit(callback.message, "❌ В каталоге пока нет товаров с маркировкой ERID.")
-        return
-
-    await _publish_product(callback, bot, user_id, product, custom_template)
 
 async def _force_post_preview(callback: CallbackQuery, bot: Bot, user_id: int) -> None:
     conn = get_db()
