@@ -94,7 +94,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
         <a href="/my-stats/cpa-stores?token={{ token }}">🛒 CPA магазины</a>
         <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
-        <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
+        <a href="/my-stats/guide?token={{ token }}">📖 Выплаты</a>
     </div>
     <h1>📊 Статистика</h1>
     <div class="period-selector">
@@ -624,7 +624,7 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
         <a href="/my-stats/cpa-stores?token={{ token }}">🛒 CPA магазины</a>
         <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
-        <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
+        <a href="/my-stats/guide?token={{ token }}">📖 Выплаты</a>
     </div>
     <h1>📝 Шаблоны постов</h1>
     <div class="tabs">
@@ -951,7 +951,7 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
         <a href="/my-stats/cpa-stores?token={{ token }}">🛒 CPA магазины</a>
         <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}" class="active">⚙️ Настройки</a>
-        <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
+        <a href="/my-stats/guide?token={{ token }}">📖 Выплаты</a>
     </div>
     <h1>⚙️ Настройки</h1>
 
@@ -1910,7 +1910,7 @@ GUIDE_TEMPLATE = r'''<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Инструкция</title>
+<title>Выплаты</title>
 <style>
     body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; }
     h1 { color: #ff4444; }
@@ -1952,73 +1952,54 @@ GUIDE_TEMPLATE = r'''<!DOCTYPE html>
         <a href="/my-stats/cpa-stores?token={{ token }}">🛒 CPA магазины</a>
         <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
-        <a href="/my-stats/guide?token={{ token }}" class="active">📖 Инструкция</a>
+        <a href="/my-stats/guide?token={{ token }}" class="active">📖 Выплаты</a>
     </div>
-    <h1>📖 Инструкция</h1>
+    <h1>📖 Выплаты</h1>
 
     <div class="card">
-        <h2>🚀 Быстрый старт</h2>
+        <h2>💳 Как запросить выплату</h2>
         <ol>
-            <li><b>Добавьте канал</b> — отправьте боту @username вашего Telegram-канала</li>
-            <li><b>Назначьте бота администратором</b> канала с правом публикации</li>
-            <li><b>Выберите магазины</b> в разделе «🏪 Магазины» в боте</li>
-            <li><b>Настройте интервал</b> публикаций в разделе «веб-настройках (⚙️ Настройки)»</li>
-            <li><b>Готово!</b> Бот начнёт публиковать товары с партнёрскими ссылками</li>
+            <li>Откройте страницу <b>📊 Статистика</b> и убедитесь, что баланс в разделе <b>«Доступно к выводу»</b> составляет <b>от 3000 ₽</b></li>
+            <li>Нажмите кнопку <b>«💸 Запросить выплату»</b></li>
+            <li>Укажите реквизиты вашей карты</li>
+            <li>Дождитесь перевода от администратора</li>
         </ol>
     </div>
 
     <div class="card">
-        <h2>💰 Как устроен доход</h2>
-        <p>Когда подписчик переходит по ссылке и покупает товар:</p>
+        <h2>🧾 Загрузка чека (обязательно!)</h2>
+        <p>После получения денег вам приходит уведомление с кнопкой <b>«📤 Отправить чек»</b>.</p>
+        <ol>
+            <li>Откройте приложение <b>«Мой Налог»</b></li>
+            <li>Создайте чек: тип — <b>Продажа физ.лицу</b>, услуга — <b>Рекламные услуги</b></li>
+            <li>Загрузите чек через кнопку <b>«📤 Отправить чек»</b> в веб-статистике</li>
+        </ol>
+        <div class="warning">⚠️ Срок: <b>24 часа</b> с момента получения перевода. Если не загрузить чек — аккаунт будет заблокирован навсегда, а невыплаченные средства аннулированы.</div>
+    </div>
+
+    <div class="card">
+        <h2>📋 Требования</h2>
         <ul>
-            <li><b>«В ожидании»</b> — магазин проверяет заказ (30–90 дней)</li>
-            <li><b>«Доступно к выводу»</b> — деньги подтверждены</li>
+            <li>Минимальная сумма для вывода: <b>3000 ₽</b></li>
+            <li>Обязательный статус: <b>Самозанятый</b> (бесплатно в «Мой Налог») или <b>ИП</b></li>
+            <li>Доход от подтверждённых покупок: <b>70%</b> вам, 30% сервису</li>
+            <li>Время ожидания подтверждения заказа: 30–90 дней</li>
         </ul>
-        <p>Вы получаете <b>70%</b> от комиссии за каждую покупку.</p>
-    </div>
-
-    <div class="card">
-        <h2>💳 Вывод средств</h2>
-        <ol>
-            <li>Накопите <b>3000 ₽</b> в разделе «Доступно к выводу»</li>
-            <li>Оформите статус <b>Самозанятого</b> (бесплатно в приложении «Мой Налог») или <b>ИП</b></li>
-            <li>Нажмите «💸 Запросить выплату» на этой странице</li>
-            <li>Укажите реквизиты карты</li>
-            <li>После получения денег — <b>загрузите чек</b> из «Мой Налог» в течение 24 часов</li>
-        </ol>
-        <div class="warning">⚠️ Если не загрузить чек за 24 часа — аккаунт будет заблокирован</div>
     </div>
 
     <div class="card">
         <h2>📊 Отчёт для ОРД (ЕРИР)</h2>
-        <p>Раз в месяц вам нужно подавать статистику по рекламным постам в ОРД:</p>
+        <p>Раз в месяц подавайте статистику по рекламным постам:</p>
         <ol>
-            <li>На странице статистики нажмите <b>«📥 Скачать отчёт»</b></li>
-            <li>Загрузите полученный Excel-файл в личный кабинет ОРД (например, VK ОРД)</li>
-            <li>Проверьте, что все ERID и показы совпадают</li>
+            <li>На странице <b>📊 Статистика</b> нажмите <b>«📥 Скачать отчёт»</b></li>
+            <li>Загрузите Excel-файл в личный кабинет ОРД (например, VK ОРД)</li>
         </ol>
-        <div class="success">✅ Бот автоматически собирает просмотры и формирует отчёт</div>
-    </div>
-
-    <div class="card">
-        <h2>🔗 Реферальная программа</h2>
-        <p>Приглашайте других пользователей по реферальной ссылке и получайте <b>10%</b> от их дохода.</p>
-        <p>Ссылку можно найти в боте: «🔗 Реферальная ссылка» в личном кабинете.</p>
-    </div>
-
-    <div class="card">
-        <h2>🛡️ Юридическая информация</h2>
-        <ul>
-            <li>Все посты содержат обязательную маркировку <b>ERID</b> (ФЗ №38 «О рекламе»)</li>
-            <li>Товары без ERID не загружаются в каталог</li>
-            <li>Вы самостоятельно несёте ответственность за подачу статистики в ОРД</li>
-            <li><a href="https://teletype.in/@miliron/yYN0SEGfm5l" target="_blank">📄 Политика конфиденциальности</a></li>
-        </ul>
+        <div class="success">✅ Бот автоматически считает просмотры и формирует отчёт</div>
     </div>
 
     <div class="card">
         <h2>📞 Поддержка</h2>
-        <p>По всем вопросам пишите: <a href="https://t.me/Zigih90" target="_blank">@Zigih90</a></p>
+        <p>По вопросам выплат пишите: <a href="https://t.me/Zigih90" target="_blank">@Zigih90</a></p>
     </div>
 </div>
 <script>
@@ -2123,7 +2104,7 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
         <a href="/my-stats/cpa-stores?token={{ token }}">🛒 CPA магазины</a>
         <a href="/my-stats/cpc-campaigns?token={{ token }}" class="active">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
-        <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
+        <a href="/my-stats/guide?token={{ token }}">📖 Выплаты</a>
     </div>
     <h1>👆 CPC кампании</h1>
     <p style="color:#aaa;margin-bottom:20px;">Напишите свой рекламный текст для каждой кампании. Пост будет опубликован с логотипом рекламодателя.</p>
@@ -2422,7 +2403,7 @@ CPA_STORES_TEMPLATE = r'''<!DOCTYPE html>
         <a href="/my-stats/cpa-stores?token={{ token }}" class="active">🛒 CPA магазины</a>
         <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
-        <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
+        <a href="/my-stats/guide?token={{ token }}">📖 Выплаты</a>
     </div>
     <h1>🛒 CPA магазины</h1>
     <p style="color:#aaa;margin-bottom:20px;">Включайте/отключайте магазины для автоматической публикации CPA-товаров.</p>
