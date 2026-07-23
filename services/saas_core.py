@@ -367,8 +367,8 @@ async def publish_from_catalog(bot: Bot):
                 logger.info(f"[DEBUG] User {user_id}: циклический магазин {cyclic_store_source} (просрочен {most_overdue_days:.1f} дн.)")
                 allowed_sources = [cyclic_store_source]
             else:
-                logger.info(f"[DEBUG] User {user_id}: ни один циклический магазин не просрочен, пропускаем")
-                continue
+                logger.info(f"[DEBUG] User {user_id}: ни один циклический магазин не просрочен, публикуем обычный CPA-пост")
+                # если циклические магазины не просрочены — публикуем обычный CPA-пост из доступных магазинов
 
         min_discount = 0
         if role == "saas":
