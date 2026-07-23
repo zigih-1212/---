@@ -290,24 +290,6 @@ async def publish_from_catalog(bot: Bot):
 
         logger.info(f"[DEBUG] Обработка пользователя {user_id}, роль {role}")
 
-        # Проверка интервала для ВСЕХ пользователей
-        conn = get_db()
-        try:
-            last_post = conn.execute(
-                "SELECT MAX(published_at) FROM posts WHERE user_id=? AND status='published' AND donor_post_id LIKE 'admitad_%'",
-                (user_id,)
-            ).fetchone()[0]
-            if last_post:
-                last_dt = datetime.fromisoformat(last_post.replace("Z", "+00:00"))
-                seconds_since_last = (datetime.now(timezone.utc) - last_dt).total_seconds()
-                if seconds_since_last < post_interval * 60:
-                    logger.info(f"[DEBUG] User {user_id}: интервал {post_interval} мин, прошло {seconds_since_last:.0f} сек, пропускаем")
-                    continue
-                else:
-                    logger.info(f"[DEBUG] User {user_id}: интервал прошёл, публикуем")
-        finally:
-            conn.close()
-
         # Загружаем выбранные пользователем магазины
         conn = get_db()
         try:
@@ -343,29 +325,54 @@ async def publish_from_catalog(bot: Bot):
         finally:
             conn.close()
 
-        if not scheduled_stores:
-            logger.info(f"[DEBUG] User {user_id}: нет запланированных магазинов на сегодня")
-            continue
+        has_timer = False
+        if scheduled_stores:
+            scheduled_stores.sort(key=lambda x: x[1])
+            for src, ptime in scheduled_stores:
+                if ptime <= current_time:
+                    has_timer = True
+                    break
 
-        scheduled_stores.sort(key=lambda x: x[1])
-        best = None
-        for src, ptime in scheduled_stores:
-            if ptime <= current_time:
-                best = src
-        if not best:
-            logger.info(f"[DEBUG] User {user_id}: время публикации для магазинов ещё не наступило")
-            continue
-        logger.info(f"[DEBUG] User {user_id}: запланированный магазин {best}")
-        allowed_sources = [best]
+        if not has_timer:
+            conn = get_db()
+            try:
+                last_post = conn.execute(
+                    "SELECT MAX(published_at) FROM posts WHERE user_id=? AND status='published' AND donor_post_id LIKE 'admitad_%'",
+                    (user_id,)
+                ).fetchone()[0]
+                if last_post:
+                    last_dt = datetime.fromisoformat(last_post.replace("Z", "+00:00"))
+                    seconds_since_last = (datetime.now(timezone.utc) - last_dt).total_seconds()
+                    if seconds_since_last < post_interval * 60:
+                        logger.info(f"[DEBUG] User {user_id}: нет таймеров, интервал {post_interval} мин, прошло {seconds_since_last:.0f} сек, пропускаем")
+                        continue
+                    else:
+                        logger.info(f"[DEBUG] User {user_id}: нет таймеров, интервал прошёл, публикуем по расписанию магазинов")
+            finally:
+                conn.close()
+            if not scheduled_stores:
+                logger.info(f"[DEBUG] User {user_id}: нет запланированных магазинов на сегодня")
+                continue
 
-        scheduled_store_id = None
-        for src, ptime in scheduled_stores:
-            if ptime <= current_time:
-                for sid_candidate in store_ids:
-                    if sid_candidate in STORE_ID_MAP and STORE_ID_MAP[sid_candidate] == src:
-                        scheduled_store_id = sid_candidate
-                        break
-                break
+        if scheduled_stores:
+            best = None
+            for src, ptime in scheduled_stores:
+                if ptime <= current_time:
+                    best = src
+            if not best:
+                logger.info(f"[DEBUG] User {user_id}: время публикации для магазинов ещё не наступило")
+                continue
+            logger.info(f"[DEBUG] User {user_id}: таймер — публикуем магазин {best} (без проверки интервала)")
+            allowed_sources = [best]
+
+            scheduled_store_id = None
+            for src, ptime in scheduled_stores:
+                if ptime <= current_time:
+                    for sid_candidate in store_ids:
+                        if sid_candidate in STORE_ID_MAP and STORE_ID_MAP[sid_candidate] == src:
+                            scheduled_store_id = sid_candidate
+                            break
+                    break
 
         min_discount = 0
         if role == "saas":
