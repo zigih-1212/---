@@ -900,6 +900,12 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     .time-picker { display: flex; align-items: center; gap: 8px; justify-content: center; margin-bottom: 15px; }
     .time-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
     .time-val { background: #333; border: 2px solid #ff4444; border-radius: 12px; padding: 12px 24px; font-size: 2em; font-weight: 700; color: #fff; min-width: 80px; text-align: center; }
+    .time-val::-webkit-inner-spin-button, .time-val::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .time-val[type=number] { -moz-appearance: textfield; appearance: textfield; }
+    .days-grid { display: flex; gap: 6px; justify-content: center; margin-bottom: 15px; flex-wrap: wrap; }
+    .day-btn { width: 42px; height: 42px; border-radius: 50%; border: 2px solid #555; background: #2a2a2a; color: #aaa; font-size: 0.85em; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .day-btn.active { border-color: #ff4444; background: #ff4444; color: #fff; }
+    .day-btn:hover { border-color: #ff6666; }
     .time-up, .time-dn { background: none; border: none; color: #888; font-size: 1.2em; cursor: pointer; padding: 4px 16px; }
     .time-up:hover, .time-dn:hover { color: #ff4444; }
     .time-sep { font-size: 2em; color: #fff; padding-bottom: 24px; }
@@ -959,19 +965,30 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
             <div class="time-picker">
                 <div class="time-col">
                     <button class="time-up" onclick="adj('hour',1)">▲</button>
-                    <div class="time-val" id="tv-hour">1</div>
+                    <input class="time-val" type="number" id="tv-hour" value="1" min="0" max="23" onchange="syncFromInput()">
                     <button class="time-dn" onclick="adj('hour',-1)">▼</button>
                     <div class="time-lbl">ч</div>
                 </div>
                 <div class="time-sep">:</div>
                 <div class="time-col">
                     <button class="time-up" onclick="adj('min',5)">▲</button>
-                    <div class="time-val" id="tv-min">00</div>
+                    <input class="time-val" type="number" id="tv-min" value="0" min="0" max="59" onchange="syncFromInput()">
                     <button class="time-dn" onclick="adj('min',-5)">▼</button>
                     <div class="time-lbl">мин</div>
                 </div>
             </div>
             <input type="hidden" id="post-interval" value="60">
+            <label>Дни публикации</label>
+            <div class="days-grid" id="days-grid">
+                <button class="day-btn active" data-day="0">ПН</button>
+                <button class="day-btn active" data-day="1">ВТ</button>
+                <button class="day-btn active" data-day="2">СР</button>
+                <button class="day-btn active" data-day="3">ЧТ</button>
+                <button class="day-btn active" data-day="4">ПТ</button>
+                <button class="day-btn active" data-day="5">СБ</button>
+                <button class="day-btn active" data-day="6">ВС</button>
+            </div>
+            <input type="hidden" id="post-days" value="127">
         </div>
         <div class="section">
             <h2>Посты</h2>
@@ -1086,17 +1103,48 @@ function timeDisplay() {
     const total = parseInt(document.getElementById('post-interval').value) || 60;
     const h = Math.floor(total / 60);
     const m = total % 60;
-    document.getElementById('tv-hour').textContent = h;
-    document.getElementById('tv-min').textContent = String(m).padStart(2, '0');
+    document.getElementById('tv-hour').value = h;
+    document.getElementById('tv-min').value = String(m).padStart(2, '0');
 }
 function adj(unit, step) {
     const total = parseInt(document.getElementById('post-interval').value) || 60;
     let h = Math.floor(total / 60), m = total % 60;
-    if (unit === 'hour') { h = Math.max(0, Math.min(23, h + step)); }
-    else { m = Math.max(0, Math.min(55, m + step)); }
+    if (unit === 'hour') {
+        h += step;
+        if (h > 23) h = 0;
+        if (h < 0) h = 23;
+    } else {
+        m += step;
+        if (m >= 60) { m = 0; h++; if (h > 23) h = 0; }
+        if (m < 0) { m = 55; h--; if (h < 0) h = 23; }
+    }
     document.getElementById('post-interval').value = h * 60 + m;
     timeDisplay();
 }
+function syncFromInput() {
+    let h = parseInt(document.getElementById('tv-hour').value) || 0;
+    let m = parseInt(document.getElementById('tv-min').value) || 0;
+    if (h > 23) h = 23;
+    if (h < 0) h = 0;
+    if (m > 59) m = 59;
+    if (m < 0) m = 0;
+    document.getElementById('tv-hour').value = h;
+    document.getElementById('tv-min').value = String(m).padStart(2, '0');
+    document.getElementById('post-interval').value = h * 60 + m;
+}
+document.addEventListener('DOMContentLoaded', function() {
+    const grid = document.getElementById('days-grid');
+    if (grid) {
+        grid.addEventListener('click', function(e) {
+            const btn = e.target.closest('.day-btn');
+            if (!btn) return;
+            btn.classList.toggle('active');
+            const bits = Array.from(grid.children).map(b => b.classList.contains('active') ? 1 : 0);
+            const mask = bits.reduce((acc, b, i) => acc | (b << i), 0);
+            document.getElementById('post-days').value = mask;
+        });
+    }
+});
 // Load settings
 async function loadSettings() {
     try {
@@ -1104,6 +1152,12 @@ async function loadSettings() {
         const data = await resp.json();
         document.getElementById('post-interval').value = data.post_interval_minutes || 60;
         timeDisplay();
+        if (document.getElementById('post-days')) {
+            const mask = data.post_days || 127;
+            document.getElementById('post-days').value = mask;
+            const btns = document.querySelectorAll('#days-grid .day-btn');
+            btns.forEach((btn, i) => btn.classList.toggle('active', !!(mask & (1 << i))));
+        }
         document.getElementById('auto-delete').value = data.default_auto_delete_hours || 168;
         document.getElementById('auto-pin').checked = data.auto_pin;
         document.getElementById('notify-posts').checked = data.notify_posts;
@@ -1167,6 +1221,7 @@ async function saveGeneralSettings() {
     const formData = new FormData();
     formData.append('token', token);
     formData.append('post_interval_minutes', document.getElementById('post-interval').value);
+    formData.append('post_days', document.getElementById('post-days') ? document.getElementById('post-days').value : '127');
     formData.append('default_auto_delete_hours', document.getElementById('auto-delete').value);
     formData.append('auto_pin', document.getElementById('auto-pin').checked ? '1' : '0');
     formData.append('notify_posts', document.getElementById('notify-posts').checked ? '1' : '0');
@@ -1499,7 +1554,7 @@ async def get_settings_data(token: str = Query(...)):
     conn = get_db()
     try:
         user = conn.execute("""SELECT post_interval_minutes, default_auto_delete_hours,
-            auto_pin, notify_posts, force_preview_confirmed, min_discount, tax_status, sub_id, cpa_enabled
+            auto_pin, notify_posts, force_preview_confirmed, min_discount, tax_status, sub_id, cpa_enabled, post_days
             FROM users WHERE user_id=?""", (user_id,)).fetchone()
         user_stores = conn.execute(
             "SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)
@@ -1533,6 +1588,7 @@ async def get_settings_data(token: str = Query(...)):
             "video_channels": [{"id": v["id"], "platform": v["platform"], "channel_id": v["channel_id"], "is_active": v["is_active"]} for v in video_channels],
             "sub_id": user["sub_id"] if user else "",
             "cpa_enabled": bool(user["cpa_enabled"]) if user else True,
+            "post_days": user["post_days"] if user else 127,
         })
     finally:
         conn.close()
@@ -1548,6 +1604,7 @@ async def save_settings(
     min_discount: int = Form(0),
     tax_status: str = Form(""),
     cpa_enabled: int = Form(1),
+    post_days: int = Form(127),
 ):
     user_id = get_user_id_from_token(token)
     conn = get_db()
@@ -1555,11 +1612,11 @@ async def save_settings(
         conn.execute("""UPDATE users SET
             post_interval_minutes=?, default_auto_delete_hours=?, auto_pin=?,
             notify_posts=?, force_preview_confirmed=?, min_discount=?, tax_status=?,
-            cpa_enabled=?
+            cpa_enabled=?, post_days=?
             WHERE user_id=?""",
             (post_interval_minutes, default_auto_delete_hours, auto_pin,
              notify_posts, force_preview_confirmed, min_discount, tax_status,
-             cpa_enabled, user_id))
+             cpa_enabled, post_days, user_id))
         conn.commit()
         return JSONResponse({"ok": True})
     except Exception as e:
@@ -2143,6 +2200,23 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     .modal-box { background: #222; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; color: #ccc; font-size: 0.95em; line-height: 1.6; }
     .modal-box h2 { color: #ff4444; margin-top: 0; font-size: 1.2em; }
     .modal-close { background: #ff4444; color: white; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; margin-top: 16px; font-size: 0.9em; }
+    .btn-timer { background: #e67e22; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85em; white-space: nowrap; }
+    .btn-timer:hover { background: #d35400; }
+    .time-picker { display: flex; align-items: center; gap: 8px; justify-content: center; margin: 15px 0; }
+    .time-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .time-val { background: #333; border: 2px solid #ff4444; border-radius: 12px; padding: 12px 24px; font-size: 2em; font-weight: 700; color: #fff; min-width: 80px; text-align: center; }
+    .time-val::-webkit-inner-spin-button, .time-val::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .time-val[type=number] { -moz-appearance: textfield; appearance: textfield; }
+    .time-up, .time-dn { background: none; border: none; color: #888; font-size: 1.2em; cursor: pointer; padding: 4px 16px; }
+    .time-up:hover, .time-dn:hover { color: #ff4444; }
+    .time-sep { font-size: 2em; color: #fff; padding-bottom: 24px; }
+    .time-lbl { color: #888; font-size: 0.8em; margin-top: 2px; }
+    .days-grid { display: flex; gap: 6px; justify-content: center; margin: 10px 0 15px; flex-wrap: wrap; }
+    .day-btn { width: 42px; height: 42px; border-radius: 50%; border: 2px solid #555; background: #2a2a2a; color: #aaa; font-size: 0.85em; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .day-btn.active { border-color: #ff4444; background: #ff4444; color: #fff; }
+    .day-btn:hover { border-color: #ff6666; }
+    .btn-save-timer { background: #ff4444; color: white; border: none; padding: 10px 24px; border-radius: 8px; cursor: pointer; font-size: 1em; display: block; margin: 0 auto; }
+    .btn-save-timer:hover { background: #e03333; }
 </style>
 </head>
 <body>
@@ -2163,6 +2237,42 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             <h2 id="rulesModalTitle">Правила магазина</h2>
             <div id="rulesModalContent" style="white-space:pre-wrap;"></div>
             <button class="modal-close" onclick="closeRulesModal()">Закрыть</button>
+        </div>
+    </div>
+    <div class="modal-overlay" id="timerModal" onclick="if(event.target===this)closeTimerModal()">
+        <div class="modal-box" style="max-width:400px;">
+            <h2 id="timerModalTitle">⏱ Таймер публикации</h2>
+            <div class="time-picker">
+                <div class="time-col">
+                    <button class="time-up" onclick="timerAdj('hour',1)">▲</button>
+                    <input class="time-val" type="number" id="tm-h" value="0" min="0" max="23" onchange="timerSyncFromInput()">
+                    <button class="time-dn" onclick="timerAdj('hour',-1)">▼</button>
+                    <div class="time-lbl">ч</div>
+                </div>
+                <div class="time-sep">:</div>
+                <div class="time-col">
+                    <button class="time-up" onclick="timerAdj('min',5)">▲</button>
+                    <input class="time-val" type="number" id="tm-m" value="30" min="0" max="59" onchange="timerSyncFromInput()">
+                    <button class="time-dn" onclick="timerAdj('min',-5)">▼</button>
+                    <div class="time-lbl">мин</div>
+                </div>
+            </div>
+            <input type="hidden" id="tm-total" value="30">
+            <label>Дни публикации</label>
+            <div class="days-grid" id="tm-days-grid">
+                <button class="day-btn active" data-day="0">ПН</button>
+                <button class="day-btn active" data-day="1">ВТ</button>
+                <button class="day-btn active" data-day="2">СР</button>
+                <button class="day-btn active" data-day="3">ЧТ</button>
+                <button class="day-btn active" data-day="4">ПТ</button>
+                <button class="day-btn active" data-day="5">СБ</button>
+                <button class="day-btn active" data-day="6">ВС</button>
+            </div>
+            <input type="hidden" id="tm-days" value="127">
+            <input type="hidden" id="tm-target-type" value="">
+            <input type="hidden" id="tm-target-id" value="">
+            <button class="btn-save-timer" onclick="saveTimer()">💾 Сохранить</button>
+            <button class="modal-close" onclick="closeTimerModal()" style="display:block;margin:10px auto 0;">Отмена</button>
         </div>
     </div>
     <script>
@@ -2186,6 +2296,7 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const toggleText = isActive ? '🔴 Отключить' : '🟢 Включить';
             const imgHtml = c.image_url ? `<img class="campaign-img" src="${c.image_url}" alt="" onerror="this.style.display='none'">` : '<div class="campaign-img"></div>';
             const rulesBtnHtml = (c.more_rules || (c.traffics && c.traffics !== '[]' && c.traffics !== '{}')) ? `<button class="btn-save" style="background:#e67e22;" onclick='openRulesModal(${JSON.stringify(c.name).replace(/'/g,"\\'")}, ${JSON.stringify(c.more_rules||"").replace(/'/g,"\\'")}, ${JSON.stringify(c.traffics||"").replace(/'/g,"\\'")})'>⚠️ Правила</button>` : '';
+            const timerBtnHtml = `<button class="btn-timer" onclick="openTimerModal('campaign',${c.id},${c.interval_hours||0},${c.interval_minutes||0},${c.post_days||127})">⏱ Таймер</button>`;
             return `<div class="campaign-card">
                 ${imgHtml}
                 <div class="campaign-info">
@@ -2193,6 +2304,7 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
                     <div class="campaign-status ${statusClass}">${statusText}</div>
                     <div class="campaign-actions">
                         ${rulesBtnHtml}
+                        ${timerBtnHtml}
                         <button class="btn-toggle ${toggleClass}" onclick="toggleCampaign(${c.id}, ${isActive ? 0 : 1})">${toggleText}</button>
                     </div>
                 </div>
@@ -2221,6 +2333,90 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     function closeRulesModal() {
         document.getElementById('rulesModal').classList.remove('open');
     }
+    function openTimerModal(type, id, hoursOrDays, minutes, daysMask) {
+        document.getElementById('tm-target-type').value = type;
+        document.getElementById('tm-target-id').value = id;
+        document.getElementById('tm-days').value = daysMask || 127;
+        const btns = document.querySelectorAll('#tm-days-grid .day-btn');
+        const mask = daysMask || 127;
+        btns.forEach((btn, i) => btn.classList.toggle('active', !!(mask & (1 << i))));
+        if (type === 'campaign') {
+            document.getElementById('tm-h').value = hoursOrDays;
+            document.getElementById('tm-m').value = String(minutes).padStart(2, '0');
+            document.getElementById('tm-total').value = hoursOrDays * 60 + minutes;
+            document.getElementById('timerModalTitle').textContent = '⏱ Таймер: CPC кампания (часы:минуты)';
+        } else {
+            document.getElementById('tm-h').value = hoursOrDays;
+            document.getElementById('tm-m').value = String(minutes).padStart(2, '0');
+            document.getElementById('tm-total').value = hoursOrDays * 60 + minutes;
+            document.getElementById('timerModalTitle').textContent = '⏱ Таймер: CPA магазин (дни:минуты)';
+        }
+        document.getElementById('timerModal').classList.add('open');
+    }
+    function closeTimerModal() {
+        document.getElementById('timerModal').classList.remove('open');
+    }
+    function timerAdj(unit, step) {
+        const total = parseInt(document.getElementById('tm-total').value) || 30;
+        let h = parseInt(document.getElementById('tm-h').value) || 0;
+        let m = parseInt(document.getElementById('tm-m').value) || 0;
+        if (unit === 'hour') {
+            h += step;
+            if (h > 23) h = 0;
+            if (h < 0) h = 23;
+        } else {
+            m += step;
+            if (m >= 60) { m = 0; h++; if (h > 23) h = 0; }
+            if (m < 0) { m = 55; h--; if (h < 0) h = 23; }
+        }
+        document.getElementById('tm-h').value = h;
+        document.getElementById('tm-m').value = String(m).padStart(2, '0');
+        document.getElementById('tm-total').value = h * 60 + m;
+    }
+    function timerSyncFromInput() {
+        let h = parseInt(document.getElementById('tm-h').value) || 0;
+        let m = parseInt(document.getElementById('tm-m').value) || 0;
+        if (h > 23) h = 23; if (h < 0) h = 0;
+        if (m > 59) m = 59; if (m < 0) m = 0;
+        document.getElementById('tm-h').value = h;
+        document.getElementById('tm-m').value = String(m).padStart(2, '0');
+        document.getElementById('tm-total').value = h * 60 + m;
+    }
+    async function saveTimer() {
+        const type = document.getElementById('tm-target-type').value;
+        const id = document.getElementById('tm-target-id').value;
+        const h = parseInt(document.getElementById('tm-h').value) || 0;
+        const m = parseInt(document.getElementById('tm-m').value) || 0;
+        const days = parseInt(document.getElementById('tm-days').value) || 127;
+        const f = new FormData();
+        f.append('token', '{{ token }}');
+        f.append('target_type', type);
+        f.append('target_id', id);
+        f.append('hours', h);
+        f.append('minutes', m);
+        f.append('days', days);
+        const res = await fetch('/my-stats/save-timer', { method: 'POST', body: f });
+        const data = await res.json();
+        if (data.ok) {
+            closeTimerModal();
+            if (type === 'store') loadCpaStores();
+        } else {
+            alert(data.error || 'Ошибка сохранения');
+        }
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        const grid = document.getElementById('tm-days-grid');
+        if (grid) {
+            grid.addEventListener('click', function(e) {
+                const btn = e.target.closest('.day-btn');
+                if (!btn) return;
+                btn.classList.toggle('active');
+                const bits = Array.from(grid.children).map(b => b.classList.contains('active') ? 1 : 0);
+                const mask = bits.reduce((acc, b, i) => acc | (b << i), 0);
+                document.getElementById('tm-days').value = mask;
+            });
+        }
+    });
     async function toggleCampaign(id, newState) {
         const f = new FormData();
         f.append('token', '{{ token }}');
@@ -2250,11 +2446,13 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             const toggleClass = s.is_active ? 'on' : 'off';
             const toggleText = s.is_active ? '🔴 Отключить' : '🟢 Включить';
             const statusText = s.is_active ? '✅ Активен' : (disabled ? '❌ Недоступен' : '⚪ Отключён');
+            const timerBtnHtml = `<button class="btn-timer" onclick="openTimerModal('store',${s.id},${s.interval_days||1},${s.interval_minutes||0},${s.post_days||127})">⏱ Таймер</button>`;
             return `<div class="campaign-card" style="opacity:${disabled ? 0.5 : 1}">
                 <div class="campaign-info" style="flex:1;">
                     <div class="campaign-name">${s.name}</div>
                     <div class="campaign-status ${s.is_active ? 'active' : 'inactive'}">${statusText}</div>
                     <div class="campaign-actions">
+                        ${!disabled ? timerBtnHtml : ''}
                         <button class="btn-toggle ${toggleClass}" onclick="toggleCpaStore(${s.id})" ${disabled ? 'disabled' : ''}>${toggleText}</button>
                     </div>
                 </div>
@@ -2286,7 +2484,7 @@ async def get_cpc_campaigns_data(token: str = Query(...)):
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, campaign_id, name, text, image_url, description, rules, more_rules, traffics, is_active, interval_hours, last_posted_at "
+            "SELECT id, campaign_id, name, text, image_url, description, rules, more_rules, traffics, is_active, interval_hours, interval_minutes, post_days, last_posted_at "
             "FROM cpc_campaigns WHERE user_id=? ORDER BY name",
             (user_id,)
         ).fetchall()
@@ -2364,10 +2562,42 @@ async def toggle_cpc_campaign(token: str = Form(...), campaign_id: int = Form(..
                 "UPDATE cpc_campaigns SET is_active=? WHERE id=? AND user_id=?",
                 (new_val, campaign_id, user_id)
             )
-            conn.commit()
+        conn.commit()
     finally:
         conn.close()
     return {"ok": True}
+
+
+@router.post("/save-timer")
+async def save_timer(
+    token: str = Form(...),
+    target_type: str = Form(...),
+    target_id: int = Form(...),
+    hours: int = Form(0),
+    minutes: int = Form(0),
+    days: int = Form(127),
+):
+    user_id = get_user_id_from_token(token)
+    conn = get_db()
+    try:
+        if target_type == "campaign":
+            conn.execute(
+                "UPDATE cpc_campaigns SET interval_hours=?, interval_minutes=?, post_days=? WHERE id=? AND user_id=?",
+                (hours, minutes, days, target_id, user_id)
+            )
+        elif target_type == "store":
+            conn.execute("""
+                INSERT INTO cyclic_schedules (user_id, store_id, interval_days, interval_minutes, post_days, is_active)
+                VALUES (?, ?, ?, ?, ?, 1)
+                ON CONFLICT(user_id, store_id) DO UPDATE SET interval_days=?, interval_minutes=?, post_days=?
+            """, (user_id, target_id, hours, minutes, days, hours, minutes, days))
+        conn.commit()
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Save timer error: {e}")
+        return {"ok": False, "error": str(e)}
+    finally:
+        conn.close()
 
 @router.get("/cpa-stores-data")
 async def get_cpa_stores_data(token: str = Query(...)):
@@ -2377,13 +2607,22 @@ async def get_cpa_stores_data(token: str = Query(...)):
         selected = {r["category_id"] for r in conn.execute(
             "SELECT category_id FROM user_category_preferences WHERE user_id=?", (user_id,)
         ).fetchall()}
+        schedules = {r["store_id"]: r for r in conn.execute(
+            "SELECT store_id, interval_days, interval_minutes, post_days FROM cyclic_schedules WHERE user_id=?", (user_id,)
+        ).fetchall()}
     finally:
         conn.close()
     stores = []
     for sid, name in STORE_ID_MAP.items():
         store_info = STORES.get(name, {})
         available = store_info.get("available", True) if store_info else True
-        stores.append({"id": sid, "name": name, "is_active": sid in selected, "available": available})
+        sched = schedules.get(sid)
+        stores.append({
+            "id": sid, "name": name, "is_active": sid in selected, "available": available,
+            "interval_days": sched["interval_days"] if sched else 1,
+            "interval_minutes": sched["interval_minutes"] if sched else 0,
+            "post_days": sched["post_days"] if sched else 127
+        })
     stores.sort(key=lambda s: (not s["available"], s["name"]))
     return stores
 

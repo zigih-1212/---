@@ -685,6 +685,31 @@ def init_db() -> None:
     except sqlite3.OperationalError as e:
         if "duplicate column name" not in str(e):
             logger.warning(f"⚠️ Не удалось добавить cpa_enabled: {e}")
+    try:
+        cursor.execute("ALTER TABLE cyclic_schedules ADD COLUMN interval_minutes INTEGER DEFAULT 0")
+        logger.info("✅ Колонка cyclic_schedules.interval_minutes добавлена")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE cpc_campaigns ADD COLUMN interval_minutes INTEGER DEFAULT 0")
+        logger.info("✅ Колонка cpc_campaigns.interval_minutes добавлена")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN post_days INTEGER DEFAULT 127")
+        logger.info("✅ Колонка users.post_days добавлена")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE cyclic_schedules ADD COLUMN post_days INTEGER DEFAULT 127")
+        logger.info("✅ Колонка cyclic_schedules.post_days добавлена")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE cpc_campaigns ADD COLUMN post_days INTEGER DEFAULT 127")
+        logger.info("✅ Колонка cpc_campaigns.post_days добавлена")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     

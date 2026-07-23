@@ -151,9 +151,6 @@ async def cb_toggle_store(callback: CallbackQuery):
         return
 
     # Проверка конкретных магазинов, которые недоступны
-    if store_id == 1:  # AliExpress
-        await callback.answer("❌ AliExpress временно недоступен (отсутствует ERID).", show_alert=True)
-        return
     if store_id == 3:  # Аквафор
         await callback.answer("❌ Аквафор временно недоступен.", show_alert=True)
         return
@@ -258,13 +255,36 @@ INTERVAL_OPTIONS = [
     (30, "Раз в месяц"),
 ]
 
+DAYS_LABELS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"]
+
+def format_interval(days: int, minutes: int, post_days: int) -> str:
+    parts = []
+    if days:
+        parts.append(f"{days} дн.")
+    if minutes:
+        h = minutes // 60
+        m = minutes % 60
+        if h:
+            parts.append(f"{h} ч.")
+        if m:
+            parts.append(f"{m} мин.")
+    if not parts:
+        parts.append("нет")
+    interval_str = " ".join(parts)
+    if post_days and post_days != 127:
+        active_days = [DAYS_LABELS[i] for i in range(7) if post_days & (1 << i)]
+        days_str = ", ".join(active_days) if active_days else "нет"
+        return f"{interval_str} ({days_str})"
+    else:
+        return interval_str
+
 @router.callback_query(F.data == "menu:cyclic")
 async def cb_cyclic_schedules(callback: CallbackQuery):
     user_id = callback.from_user.id
     conn = get_db()
     try:
         schedules = conn.execute(
-            "SELECT store_id, interval_days, is_active FROM cyclic_schedules WHERE user_id=?",
+            "SELECT store_id, interval_days, interval_minutes, post_days, is_active FROM cyclic_schedules WHERE user_id=?",
             (user_id,)
         ).fetchall()
         user_stores = conn.execute(
@@ -298,9 +318,8 @@ async def cb_cyclic_schedules(callback: CallbackQuery):
     for sid in sorted(store_ids):
         store_name = STORE_ID_MAP.get(sid, f"ID {sid}")
         sched = sched_map.get(sid)
-        if sched and sched["interval_days"]:
-            label_map = {d: t for d, t in INTERVAL_OPTIONS}
-            interval_text = label_map.get(sched["interval_days"], f"каждые {sched['interval_days']} дн.")
+        if sched and (sched["interval_days"] or sched.get("interval_minutes")):
+            interval_text = format_interval(sched["interval_days"], sched["interval_minutes"] or 0, sched["post_days"] or 127)
             status = "✅" if sched["is_active"] else "⏸"
             kb_rows.append([InlineKeyboardButton(
                 text=f"{status} {store_name}: {interval_text}",
@@ -328,7 +347,7 @@ async def cb_cyclic_set(callback: CallbackQuery):
     conn = get_db()
     try:
         sched = conn.execute(
-            "SELECT interval_days, is_active FROM cyclic_schedules WHERE user_id=? AND store_id=?",
+            "SELECT interval_days, interval_minutes, post_days, is_active FROM cyclic_schedules WHERE user_id=? AND store_id=?",
             (user_id, store_id)
         ).fetchone()
     finally:
@@ -336,14 +355,17 @@ async def cb_cyclic_set(callback: CallbackQuery):
 
     current_text = ""
     if sched:
-        label_map = {d: t for d, t in INTERVAL_OPTIONS}
-        current_text = f"\nТекущее: {label_map.get(sched['interval_days'], str(sched['interval_days']) + ' дн.')}"
+        interval_days = sched["interval_days"]
+        interval_minutes = sched["interval_minutes"] or 0
+        post_days = sched["post_days"] or 127
+        interval_str = format_interval(interval_days, interval_minutes, post_days)
+        current_text = f"\nТекущее: {interval_str}"
         if sched["is_active"]:
             current_text += " (активно)"
         else:
             current_text += " (приостановлено)"
 
-    text = f"⏰ <b>Расписание: {store_name}</b>{current_text}\n\nВыберите периодичность публикации:"
+    text = f"⏰ <b>Расписание: {store_name}</b>{current_text}\n\nВыберите периодичность публикации.\nПодробный таймер (часы:минуты + дни недели) — в веб-панели:"
 
     kb_rows = []
     for days, label in INTERVAL_OPTIONS:
@@ -363,6 +385,8 @@ async def cb_cyclic_set(callback: CallbackQuery):
             callback_data=f"cyclic_delete:{store_id}"
         )])
 
+    from config import WEBAPP_URL
+    kb_rows.append([InlineKeyboardButton(text="🌐 Открыть веб-панель", web_app=WebAppInfo(url=WEBAPP_URL))])
     kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu:cyclic")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await safe_edit(callback.message, text, reply_markup=kb, parse_mode=ParseMode.HTML)
@@ -916,6 +940,7 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
 
 async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int, channel_id: str = None) -> None:
     """Публикация поста сразу без предпросмотра"""
+
 
 
 @router.callback_query(F.data.startswith("cpc_force_confirm:"))
@@ -1793,6 +1818,9 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
         wid = ch["admitad_website_id"]
         campaigns = await get_website_campaigns(wid)
         for c in campaigns:
+            name = c.get("name", "")
+            if "aliexpress" in name.lower():
+                continue
             cid = c.get("id")
             if cid and cid not in all_campaigns:
                 gotolink = c.get("gotolink", "")
@@ -1892,8 +1920,15 @@ async def _sync_cpc_campaigns(user_id: int) -> list:
 
         conn.commit()
 
+        # Удаляем старые записи AliExpress (ww, не ru)
+        conn.execute(
+            "DELETE FROM cpc_campaigns WHERE user_id=? AND LOWER(name) LIKE '%aliexpress%'",
+            (user_id,)
+        )
+        conn.commit()
+
         rows = conn.execute(
-            "SELECT id, campaign_id, name, cpc_link, text, image_url, description, is_active, interval_hours, last_posted_at "
+            "SELECT id, campaign_id, name, cpc_link, text, image_url, description, is_active, interval_hours, interval_minutes, last_posted_at "
             "FROM cpc_campaigns WHERE user_id=? ORDER BY name",
             (user_id,)
         ).fetchall()
@@ -1942,7 +1977,10 @@ async def _build_cpc_list(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
     for c in campaigns:
         status = "✅" if c["is_active"] else "⬜"
         name = c["name"]
-        lines.append(f"{status} <b>{name}</b>")
+        interval_h = c.get("interval_hours") or 24
+        interval_m = c.get("interval_minutes") or 0
+        interval_str = f"каждые {interval_h}ч {interval_m}мин" if interval_m else f"каждые {interval_h}ч"
+        lines.append(f"{status} <b>{name}</b>  ({interval_str})")
         lines.append("")
 
         btn_status = f"{'🟢' if c['is_active'] else '🔴'} {name}"
