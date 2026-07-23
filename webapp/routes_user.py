@@ -91,6 +91,7 @@ USER_STATS_TEMPLATE = r'''<!DOCTYPE html>
     <div class="sidebar">
         <a href="/my-stats?token={{ token }}" class="active">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/cpa-stores?token={{ token }}">🛒 CPA магазины</a>
         <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
         <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
@@ -620,6 +621,7 @@ TEMPLATES_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     <div class="sidebar">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}" class="active">📝 Шаблоны</a>
+        <a href="/my-stats/cpa-stores?token={{ token }}">🛒 CPA магазины</a>
         <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
         <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
@@ -946,6 +948,8 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     <div class="sidebar">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/cpa-stores?token={{ token }}">🛒 CPA магазины</a>
+        <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}" class="active">⚙️ Настройки</a>
         <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
     </div>
@@ -1945,6 +1949,7 @@ GUIDE_TEMPLATE = r'''<!DOCTYPE html>
     <div class="sidebar">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/cpa-stores?token={{ token }}">🛒 CPA магазины</a>
         <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
         <a href="/my-stats/guide?token={{ token }}" class="active">📖 Инструкция</a>
@@ -2115,6 +2120,7 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     <div class="sidebar">
         <a href="/my-stats?token={{ token }}">📊 Статистика</a>
         <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/cpa-stores?token={{ token }}">🛒 CPA магазины</a>
         <a href="/my-stats/cpc-campaigns?token={{ token }}" class="active">👆 CPC кампании</a>
         <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
         <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
@@ -2334,11 +2340,134 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
     }
     loadCampaigns();
     </script>
+</body>
+</html>'''
 
-    <h2 style="color:#ff4444;font-size:1.3em;margin-top:40px;">🏪 CPA магазины</h2>
+@router.get("/cpc-campaigns", response_class=HTMLResponse)
+async def cpc_campaigns_page(token: str = Query(...)):
+    html = CPC_CAMPAIGNS_TEMPLATE.replace('{{ token }}', token)
+    return HTMLResponse(content=html)
+
+CPA_STORES_TEMPLATE = r'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CPA магазины</title>
+<style>
+    body { background: #1a1a1a; color: #ccc; font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+    h1 { color: #ff4444; font-size: 1.5em; margin-bottom: 10px; }
+    .hamburger { display: none; position: fixed; top: 15px; left: 15px; z-index: 1000; background: #ff4444; color: white; border: none; font-size: 24px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    .sidebar { position: fixed; top: 0; left: -280px; width: 260px; height: 100%; background: #222; transition: left 0.3s; z-index: 999; padding: 60px 20px 20px; overflow-y: auto; }
+    .sidebar.open { left: 0; }
+    .sidebar a { display: block; color: #ccc; padding: 12px 16px; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-size: 1em; }
+    .sidebar a:hover, .sidebar a.active { background: #ff4444; color: #fff; }
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 998; }
+    .overlay.open { display: block; }
+    @media (max-width: 768px) { .hamburger { display: block; } body { padding: 15px; } }
+    .campaign-card { background: #222; border-radius: 12px; padding: 16px; margin-bottom: 16px; display: flex; gap: 16px; align-items: flex-start; }
+    .campaign-info { flex: 1; min-width: 0; }
+    .campaign-name { font-size: 1.1em; font-weight: bold; color: #ddd; margin-bottom: 4px; }
+    .campaign-status { font-size: 0.85em; margin-bottom: 10px; }
+    .campaign-status.active { color: #4caf50; }
+    .campaign-status.inactive { color: #888; }
+    .campaign-actions { display: flex; gap: 8px; }
+    .btn-save { background: #ff4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9em; }
+    .btn-save:hover { background: #e03333; }
+    .btn-toggle { background: #444; color: #ccc; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9em; }
+    .btn-toggle:hover { background: #555; }
+    .btn-toggle.on { background: #2e7d32; color: #fff; }
+    .btn-toggle.off { background: #555; color: #aaa; }
+    .no-campaigns { color: #888; text-align: center; padding: 40px; font-size: 1.1em; }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 2000; justify-content: center; align-items: center; }
+    .modal-overlay.open { display: flex; }
+    .modal-box { background: #222; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; color: #ccc; font-size: 0.95em; line-height: 1.6; }
+    .modal-box h2 { color: #ff4444; margin-top: 0; font-size: 1.2em; }
+    .modal-close { background: #ff4444; color: white; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; margin-top: 16px; font-size: 0.9em; }
+    .btn-timer { background: #e67e22; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85em; white-space: nowrap; }
+    .btn-timer:hover { background: #d35400; }
+    .time-picker { display: flex; align-items: center; gap: 8px; justify-content: center; margin: 15px 0; }
+    .time-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .time-val { background: #333; border: 2px solid #ff4444; border-radius: 12px; padding: 12px 24px; font-size: 2em; font-weight: 700; color: #fff; min-width: 80px; text-align: center; }
+    .time-val::-webkit-inner-spin-button, .time-val::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .time-val[type=number] { -moz-appearance: textfield; appearance: textfield; }
+    .time-up, .time-dn { background: none; border: none; color: #888; font-size: 1.2em; cursor: pointer; padding: 4px 16px; }
+    .time-up:hover, .time-dn:hover { color: #ff4444; }
+    .time-sep { font-size: 2em; color: #fff; padding-bottom: 24px; }
+    .time-lbl { color: #888; font-size: 0.8em; margin-top: 2px; }
+    .btn-save-timer { background: #ff4444; color: white; border: none; padding: 10px 24px; border-radius: 8px; cursor: pointer; font-size: 1em; display: block; margin: 0 auto; }
+    .btn-save-timer:hover { background: #e03333; }
+    .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 10px 0; }
+    .cal-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .cal-nav button { background: none; border: none; color: #ff4444; font-size: 1.3em; cursor: pointer; padding: 4px 12px; }
+    .cal-nav span { color: #ddd; font-size: 1.1em; font-weight: bold; }
+    .cal-head { text-align: center; color: #666; font-size: 0.75em; padding: 4px 0; }
+    .cal-day { text-align: center; padding: 8px 0; border-radius: 8px; cursor: pointer; color: #aaa; font-size: 0.9em; border: 2px solid transparent; transition: all 0.15s; }
+    .cal-day:hover { border-color: #ff4444; }
+    .cal-day.today { border-color: #ff4444; color: #ff4444; }
+    .cal-day.selected { background: #ff4444; color: #fff; }
+    .cal-day.empty { cursor: default; }
+    .cal-day.empty:hover { border-color: transparent; }
+    .sched-item { display: flex; justify-content: space-between; align-items: center; background: #2a2a2a; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; }
+    .sched-item span { color: #ddd; font-size: 0.9em; }
+    .sched-item button { background: #c62828; color: white; border: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8em; }
+</style>
+</head>
+<body>
+    <button class="hamburger" onclick="toggleSidebar()">☰</button>
+    <div class="overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar">
+        <a href="/my-stats?token={{ token }}">📊 Статистика</a>
+        <a href="/my-stats/templates?token={{ token }}">📝 Шаблоны</a>
+        <a href="/my-stats/cpa-stores?token={{ token }}" class="active">🛒 CPA магазины</a>
+        <a href="/my-stats/cpc-campaigns?token={{ token }}">👆 CPC кампании</a>
+        <a href="/my-stats/settings?token={{ token }}">⚙️ Настройки</a>
+        <a href="/my-stats/guide?token={{ token }}">📖 Инструкция</a>
+    </div>
+    <h1>🛒 CPA магазины</h1>
     <p style="color:#aaa;margin-bottom:20px;">Включайте/отключайте магазины для автоматической публикации CPA-товаров.</p>
     <div id="cpa-stores-list"></div>
+    <div class="modal-overlay" id="rulesModal" onclick="if(event.target===this)closeRulesModal()">
+        <div class="modal-box">
+            <h2 id="rulesModalTitle">Правила магазина</h2>
+            <div id="rulesModalContent" style="white-space:pre-wrap;"></div>
+            <button class="modal-close" onclick="closeRulesModal()">Закрыть</button>
+        </div>
+    </div>
+    <div class="modal-overlay" id="timerModal" onclick="if(event.target===this)closeTimerModal()">
+        <div class="modal-box" style="max-width:420px;">
+            <h2 id="timerModalTitle">⏱ Расписание</h2>
+            <input type="hidden" id="tm-target-type" value="">
+            <input type="hidden" id="tm-target-id" value="">
+            <div id="schedule-list" style="margin-bottom:15px;"></div>
+            <div class="calendar" id="cal-grid"></div>
+            <div id="cal-time-picker" style="display:none;margin-top:15px;">
+                <label>Время публикации: <span id="cal-selected-date"></span></label>
+                <div class="time-picker" style="margin:10px 0;">
+                    <div class="time-col">
+                        <button class="time-up" onclick="calAdj('hour',1)">▲</button>
+                        <input class="time-val" type="number" id="cal-h" value="10" min="0" max="23" onchange="calSync()">
+                        <button class="time-dn" onclick="calAdj('hour',-1)">▼</button>
+                        <div class="time-lbl">ч</div>
+                    </div>
+                    <div class="time-sep">:</div>
+                    <div class="time-col">
+                        <button class="time-up" onclick="calAdj('min',5)">▲</button>
+                        <input class="time-val" type="number" id="cal-m" value="0" min="0" max="59" onchange="calSync()">
+                        <button class="time-dn" onclick="calAdj('min',-5)">▼</button>
+                        <div class="time-lbl">мин</div>
+                    </div>
+                </div>
+                <button class="btn-save-timer" onclick="addSchedule()">+ Добавить</button>
+            </div>
+            <button class="modal-close" onclick="closeTimerModal()" style="display:block;margin:10px auto 0;">Закрыть</button>
+        </div>
+    </div>
     <script>
+    function toggleSidebar() {
+        document.querySelector('.sidebar').classList.toggle('open');
+        document.querySelector('.overlay').classList.toggle('open');
+    }
     async function loadCpaStores() {
         const res = await fetch('/my-stats/cpa-stores-data?token={{ token }}');
         const stores = await res.json();
@@ -2362,6 +2491,83 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
             </div>`;
         }).join('');
     }
+    function openRulesModal(name, rules, traffics) {
+        document.getElementById('rulesModalTitle').textContent = '⚠️ Правила: ' + name;
+        document.getElementById('rulesModalContent').innerHTML = rules || 'Правила не найдены.';
+        document.getElementById('rulesModal').classList.add('open');
+    }
+    function closeRulesModal() { document.getElementById('rulesModal').classList.remove('open'); }
+    function openTimerModal(type, id, name) {
+        document.getElementById('tm-target-type').value = type;
+        document.getElementById('tm-target-id').value = id;
+        document.getElementById('timerModalTitle').textContent = '⏱ ' + name;
+        document.getElementById('cal-time-picker').style.display = 'none';
+        calCurrentType = type; calCurrentId = id; calSelectedDate = null;
+        calMonth = new Date().getMonth(); calYear = new Date().getFullYear();
+        renderCalendar(); loadScheduleList();
+        document.getElementById('timerModal').classList.add('open');
+    }
+    function closeTimerModal() { document.getElementById('timerModal').classList.remove('open'); }
+    let calCurrentType = '', calCurrentId = 0, calSelectedDate = null, calMonth = 0, calYear = 0;
+    const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    const DAYS_RU = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+    function renderCalendar() {
+        const grid = document.getElementById('cal-grid');
+        let html = '<div class="cal-nav"><button onclick="calNav(-1)">◀</button><span>' + MONTHS_RU[calMonth] + ' ' + calYear + '</span><button onclick="calNav(1)">▶</button></div>';
+        html += '<div class="cal-head">' + DAYS_RU.join('</div><div class="cal-head">') + '</div><div class="calendar">';
+        const first = new Date(calYear, calMonth, 1);
+        let startDay = first.getDay() - 1; if (startDay < 0) startDay = 6;
+        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+        const today = new Date();
+        for (let i = 0; i < startDay; i++) html += '<div class="cal-day empty"></div>';
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = calYear + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            const isToday = (today.getFullYear() === calYear && today.getMonth() === calMonth && today.getDate() === d);
+            const isSelected = (calSelectedDate === dateStr);
+            let cls = 'cal-day'; if (isToday) cls += ' today'; if (isSelected) cls += ' selected';
+            html += '<div class="' + cls + '" onclick="calPickDate(\'' + dateStr + '\')">' + d + '</div>';
+        }
+        html += '</div>'; grid.innerHTML = html;
+    }
+    function calNav(dir) { calMonth += dir; if (calMonth > 11) { calMonth = 0; calYear++; } if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); }
+    function calPickDate(dateStr) { calSelectedDate = dateStr; renderCalendar(); document.getElementById('cal-selected-date').textContent = dateStr; document.getElementById('cal-time-picker').style.display = 'block'; }
+    function calAdj(unit, step) {
+        let h = parseInt(document.getElementById('cal-h').value) || 0;
+        let m = parseInt(document.getElementById('cal-m').value) || 0;
+        if (unit === 'hour') { h += step; if (h > 23) h = 0; if (h < 0) h = 23; }
+        else { m += step; if (m >= 60) { m = 0; h++; if (h > 23) h = 0; } if (m < 0) { m = 55; h--; if (h < 0) h = 23; } }
+        document.getElementById('cal-h').value = h;
+        document.getElementById('cal-m').value = String(m).padStart(2, '0');
+    }
+    function calSync() {
+        let h = parseInt(document.getElementById('cal-h').value) || 0;
+        let m = parseInt(document.getElementById('cal-m').value) || 0;
+        if (h > 23) h = 23; if (h < 0) h = 0; if (m > 59) m = 59; if (m < 0) m = 0;
+        document.getElementById('cal-h').value = h;
+        document.getElementById('cal-m').value = String(m).padStart(2, '0');
+    }
+    async function addSchedule() {
+        if (!calSelectedDate) return;
+        const h = String(document.getElementById('cal-h').value || 10).padStart(2, '0');
+        const m = String(document.getElementById('cal-m').value || 0).padStart(2, '0');
+        const f = new FormData();
+        f.append('token', '{{ token }}'); f.append('target_type', calCurrentType);
+        f.append('target_id', calCurrentId); f.append('post_date', calSelectedDate);
+        f.append('post_time', h + ':' + m);
+        const res = await fetch('/my-stats/save-timer', { method: 'POST', body: f });
+        const data = await res.json(); if (data.ok) loadScheduleList();
+    }
+    async function loadScheduleList() {
+        const res = await fetch('/my-stats/get-schedules?token={{ token }}&target_type=' + calCurrentType + '&target_id=' + calCurrentId);
+        const data = await res.json();
+        const el = document.getElementById('schedule-list');
+        if (!data.length) { el.innerHTML = '<p style="color:#888;text-align:center;">Нет запланированных постов</p>'; return; }
+        el.innerHTML = data.map(s => '<div class="sched-item"><span>📅 ' + s.date + '  🕐 ' + s.time + '</span><button onclick="delSchedule(' + s.id + ')">✕</button></div>').join('');
+    }
+    async function delSchedule(id) {
+        const f = new FormData(); f.append('token', '{{ token }}'); f.append('schedule_id', id);
+        await fetch('/my-stats/delete-schedule', { method: 'POST', body: f }); loadScheduleList();
+    }
     async function toggleCpaStore(storeId) {
         const f = new FormData();
         f.append('token', '{{ token }}');
@@ -2376,9 +2582,9 @@ CPC_CAMPAIGNS_TEMPLATE = r'''<!DOCTYPE html>
 </body>
 </html>'''
 
-@router.get("/cpc-campaigns", response_class=HTMLResponse)
-async def cpc_campaigns_page(token: str = Query(...)):
-    html = CPC_CAMPAIGNS_TEMPLATE.replace('{{ token }}', token)
+@router.get("/cpa-stores", response_class=HTMLResponse)
+async def cpa_stores_page(token: str = Query(...)):
+    html = CPA_STORES_TEMPLATE.replace('{{ token }}', token)
     return HTMLResponse(content=html)
 
 @router.get("/cpc-campaigns-data")
