@@ -2740,8 +2740,8 @@ async def toggle_cpa_store(token: str = Form(...), store_id: int = Form(...)):
         if existing:
             conn.execute("DELETE FROM user_category_preferences WHERE user_id=? AND category_id=?", (user_id, store_id))
         else:
-            conn.execute("INSERT INTO user_category_preferences (user_id, category_id, created_at) VALUES (?,?,?)",
-                         (user_id, store_id, datetime.now(timezone.utc).isoformat()))
+            conn.execute("INSERT INTO user_category_preferences (user_id, category_id) VALUES (?,?)",
+                         (user_id, store_id))
         conn.commit()
     finally:
         conn.close()
