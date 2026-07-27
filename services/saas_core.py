@@ -347,12 +347,9 @@ async def publish_from_catalog(bot: Bot):
                         logger.info(f"[DEBUG] User {user_id}: нет таймеров, интервал {post_interval} мин, прошло {seconds_since_last:.0f} сек, пропускаем")
                         continue
                     else:
-                        logger.info(f"[DEBUG] User {user_id}: нет таймеров, интервал прошёл, публикуем по расписанию магазинов")
+                        logger.info(f"[DEBUG] User {user_id}: нет таймеров, интервал прошёл, публикуем из выбранных магазинов")
             finally:
                 conn.close()
-            if not scheduled_stores:
-                logger.info(f"[DEBUG] User {user_id}: нет запланированных магазинов на сегодня")
-                continue
 
         if scheduled_stores:
             best = None
