@@ -1216,6 +1216,8 @@ def _delete_user_data(user_id: int) -> None:
             ("gdeslon_catalog", "user_id"),
             ("admitad_transactions", "user_id"),
             ("social_channels", "user_id"),
+            ("cpc_campaigns", "user_id"),
+            ("post_schedules", "user_id"),
         ]:
             if col:
                 conn.execute(f"DELETE FROM {table} WHERE {col}=?", (user_id,))

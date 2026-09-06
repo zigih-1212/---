@@ -492,10 +492,9 @@ CHAT_TEMPLATE = r'''<!DOCTYPE html>
         <button onclick="sendMessage()">📨</button>
     </div>
     <div id="receipt-upload-section" class="file-upload" style="display: {{ 'block' if status == 'awaiting_receipt' else 'none' }};">
-        <input type="file" id="receipt-file" accept="image/*" onchange="previewFile()">
-        <label for="receipt-file">📎 Выберите чек</label>
-        <button onclick="uploadReceipt()">📤 Отправить</button>
-        <img id="preview" class="preview-img" style="display:none;">
+        <label for="receipt-link">🔗 Вставьте ссылку на чек из «Мой Налог» (lknpd.nalog.ru)</label>
+        <input type="url" id="receipt-link" placeholder="https://lknpd.nalog.ru/..." style="width:100%; padding:8px; margin:8px 0; border:1px solid #444; border-radius:6px; background:#1a1a2e; color:#fff;">
+        <button onclick="uploadReceipt()">📤 Отправить чек</button>
     </div>
 </div>
 
@@ -531,31 +530,25 @@ async function sendMessage() {
     loadMessages();
 }
 
-function previewFile() {
-    const file = document.getElementById('receipt-file').files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            document.getElementById('preview').src = e.target.result;
-            document.getElementById('preview').style.display = 'block';
-        };
-        reader.readAsDataURL(file);
-    }
-}
+function previewFile() {}
 
 async function uploadReceipt() {
-    const fileInput = document.getElementById('receipt-file');
-    if (!fileInput.files.length) return;
+    const linkInput = document.getElementById('receipt-link');
+    const receiptLink = linkInput.value.trim();
+    if (!receiptLink) { alert('Вставьте ссылку на чек'); return; }
     const formData = new FormData();
     formData.append('token', token);
     formData.append('request_id', requestId);
-    formData.append('file', fileInput.files[0]);
+    formData.append('receipt_link', receiptLink);
     const resp = await fetch('/my-stats/upload-receipt', { method: 'POST', body: formData });
+    if (resp.redirected) {
+        window.location.href = resp.url;
+        return;
+    }
     const result = await resp.json();
     if (result.ok) {
         loadMessages();
-        document.getElementById('receipt-file').value = '';
-        document.getElementById('preview').style.display = 'none';
+        linkInput.value = '';
         document.getElementById('status-badge').textContent = 'receipt_uploaded';
         document.getElementById('status-badge').className = 'status-badge status-receipt_uploaded';
         document.getElementById('receipt-upload-section').style.display = 'none';
@@ -908,6 +901,8 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
     .day-btn { width: 42px; height: 42px; border-radius: 50%; border: 2px solid #555; background: #2a2a2a; color: #aaa; font-size: 0.85em; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
     .day-btn.active { border-color: #ff4444; background: #ff4444; color: #fff; }
     .day-btn:hover { border-color: #ff6666; }
+    .day-btn input[type=checkbox] { display: none; }
+    .day-btn:has(input:checked) { border-color: #ff4444; background: #ff4444; color: #fff; }
     .time-up, .time-dn { background: none; border: none; color: #888; font-size: 1.2em; cursor: pointer; padding: 4px 16px; }
     .time-up:hover, .time-dn:hover { color: #ff4444; }
     .time-sep { font-size: 2em; color: #fff; padding-bottom: 24px; }
@@ -981,6 +976,16 @@ SETTINGS_PAGE_TEMPLATE = r'''<!DOCTYPE html>
                 </div>
             </div>
             <input type="hidden" id="post-interval" value="60">
+            <label style="margin-top:10px;">Дни публикации</label>
+            <div class="days-grid" id="post-days-grid">
+                <label class="day-btn"><input type="checkbox" class="post-day" value="1" checked>Пн</label>
+                <label class="day-btn"><input type="checkbox" class="post-day" value="2" checked>Вт</label>
+                <label class="day-btn"><input type="checkbox" class="post-day" value="4" checked>Ср</label>
+                <label class="day-btn"><input type="checkbox" class="post-day" value="8" checked>Чт</label>
+                <label class="day-btn"><input type="checkbox" class="post-day" value="16" checked>Пт</label>
+                <label class="day-btn"><input type="checkbox" class="post-day" value="32" checked>Сб</label>
+                <label class="day-btn"><input type="checkbox" class="post-day" value="64" checked>Вс</label>
+            </div>
         </div>
         <div class="section">
             <h2>Посты</h2>
@@ -1122,6 +1127,10 @@ async function loadSettings() {
         document.getElementById('min-discount').value = data.min_discount || 0;
         if (data.tax_status) document.getElementById('tax-status').value = data.tax_status;
         if (document.getElementById('cpa-enabled')) document.getElementById('cpa-enabled').checked = data.cpa_enabled;
+        const postDays = data.post_days || 127;
+        document.querySelectorAll('.post-day').forEach(cb => {
+            cb.checked = (postDays & parseInt(cb.value)) !== 0;
+        });
         loadVideoChannels(data.video_channels);
         loadReferral(data.sub_id);
     } catch(e) { console.error(e); }
@@ -1165,6 +1174,9 @@ async function saveGeneralSettings() {
     formData.append('min_discount', document.getElementById('min-discount').value);
     formData.append('tax_status', document.getElementById('tax-status').value);
     if (document.getElementById('cpa-enabled')) formData.append('cpa_enabled', document.getElementById('cpa-enabled').checked ? '1' : '0');
+    let postDaysMask = 0;
+    document.querySelectorAll('.post-day').forEach(cb => { if (cb.checked) postDaysMask |= parseInt(cb.value); });
+    formData.append('post_days', postDaysMask);
     try {
         const resp = await fetch('/my-stats/save-settings', { method: 'POST', body: formData });
         const data = await resp.json();
@@ -1372,23 +1384,23 @@ from services.db import get_db
 @router.post("/upload-receipt")
 async def upload_receipt(
     request: Request,
+    token: str = Form(""),
     request_id: int = Form(...),
     receipt_link: str = Form(...)  # Теперь принимаем ссылку текстом
 ):
+    user_id = get_user_id_from_token(token)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"})
     # Проверка, что ссылка ведет на сайт ФНС
     if "lknpd.nalog.ru" not in receipt_link:
-        # Если ссылка чужая - выдаем ошибку
-        return HTMLResponse(
-            "❌ Ошибка: Вы должны предоставить официальную ссылку на чек из сервиса «Мой Налог» (она начинается с lknpd.nalog.ru). <br><a href='javascript:history.back()'>Вернуться назад</a>", 
-            status_code=400
-        )
+        return JSONResponse({"ok": False, "error": "Ссылка должна вести на lknpd.nalog.ru"})
 
     conn = get_db()
     try:
         # Поле receipt_photo в БД имеет тип TEXT, поэтому оно идеально подходит для хранения URL-ссылки
         conn.execute(
-            "UPDATE payout_requests SET status = 'receipt_uploaded', receipt_photo = ? WHERE id = ?",
-            (receipt_link, request_id)
+            "UPDATE payout_requests SET status = 'receipt_uploaded', receipt_photo = ? WHERE id = ? AND user_id = ?",
+            (receipt_link, request_id, user_id)
         )
         # Добавляем системное сообщение в чат выплат
         conn.execute(
@@ -1399,16 +1411,16 @@ async def upload_receipt(
     finally:
         conn.close()
 
-    # Редирект пользователя обратно в чат
-    token = request.query_params.get("token") or ""
-    return RedirectResponse(url=f"/my-stats/chat/{request_id}?token={token}", status_code=303)
+    return JSONResponse({"ok": True})
 
 @router.get("/receipt-file")
 async def get_receipt_file(path: str = Query(...), token: str = Query(...)):
-    get_user_id_from_token(token)
+    user_id = get_user_id_from_token(token)
     safe = _safe_path(UPLOAD_DIR, path)
     if not safe or not os.path.exists(safe):
         return HTMLResponse("Файл не найден", status_code=404)
+    if not safe.startswith(os.path.join(UPLOAD_DIR, f"user_{user_id}")):
+        return HTMLResponse("Доступ запрещён", status_code=403)
     return FileResponse(safe)
 
 # ---------- Шаблоны ----------
@@ -1490,6 +1502,7 @@ async def get_settings_data(token: str = Query(...)):
             "video_channels": [{"id": v["id"], "platform": v["platform"], "channel_id": v["channel_id"], "is_active": v["is_active"]} for v in video_channels],
             "sub_id": user["sub_id"] if user else "",
             "cpa_enabled": bool(user["cpa_enabled"]) if user else True,
+            "post_days": user["post_days"] if user else 127,
         })
     finally:
         conn.close()

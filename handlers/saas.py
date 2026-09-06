@@ -242,6 +242,41 @@ async def cb_toggle_store(callback: CallbackQuery):
 
     await cb_stores_cpa(callback)
 
+@router.callback_query(F.data.startswith("store_confirm_adult:"))
+async def cb_store_confirm_adult(callback: CallbackQuery, bot: Bot) -> None:
+    """Подтверждение добавления 18+ магазина (Розовый кролик)"""
+    store_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+
+    from services.admitad import STORE_ID_MAP
+    store_name = STORE_ID_MAP.get(store_id, f"Store#{store_id}")
+
+    conn = get_db()
+    try:
+        existing = conn.execute(
+            "SELECT 1 FROM user_category_preferences WHERE user_id = ? AND category_id = ?",
+            (user_id, store_id)
+        ).fetchone()
+        if existing:
+            await callback.answer("✅ Магазин уже добавлен")
+            return
+        conn.execute(
+            "INSERT INTO user_category_preferences (user_id, category_id) VALUES (?, ?)",
+            (user_id, store_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    await callback.answer(f"✅ {store_name} добавлен!")
+    await cb_stores_cpa(callback)
+    return
+
+
+# ---------------------------------------------------------------------------
+# Циклический постинг — расписание по магазинам
+# ---------------------------------------------------------------------------
+
 # ---------------------------------------------------------------------------
 # Циклический постинг — расписание по магазинам
 # ---------------------------------------------------------------------------
@@ -519,8 +554,6 @@ async def cb_force_type_cpc(callback: CallbackQuery, bot: Bot) -> None:
         await callback.answer("❌ Нет активных каналов", show_alert=True)
         return
 
-    await callback.answer("🚀 Публикую CPC пост...", show_alert=True)
-
     user_row = None
     conn = get_db()
     try:
@@ -729,7 +762,7 @@ async def _publish_cpc_post(callback, bot, user_id, campaign, ch, cpc_template=N
         finally:
             conn_rec.close()
     try:
-        await callback.answer("✅ CPC-пост опубликован", show_alert=False)
+        await callback.answer("✅ CPC-пост опубликован", show_alert=True)
     except:
         pass
 
@@ -788,7 +821,7 @@ async def _force_post_immediate(callback: CallbackQuery, bot: Bot, user_id: int,
         await callback.answer("❌ Нет товаров для публикации", show_alert=True)
         return
 
-    await _publish_product(callback, bot, user_id, product, custom_template)
+    await _publish_product(callback, bot, user_id, product, custom_template, target_channel_id=channel_id)
 
 @router.callback_query(F.data.startswith("cpc_force_confirm:"))
 async def cb_cpc_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
@@ -930,7 +963,7 @@ async def _force_post_preview(callback: CallbackQuery, bot: Bot, user_id: int) -
     )
 
 
-async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, product, custom_template=None) -> None:
+async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, product, custom_template=None, target_channel_id=None) -> None:
     partner_url = product['partner_url'] or ''
     title = product['title'] or ''
     price = product['price'] or 0
@@ -948,10 +981,16 @@ async def _publish_product(callback: CallbackQuery, bot: Bot, user_id: int, prod
 
     conn = get_db()
     try:
-        channels = conn.execute(
-            "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
-            (user_id,)
-        ).fetchall()
+        if target_channel_id:
+            channels = conn.execute(
+                "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND channel_id = ? AND is_active = 1",
+                (user_id, target_channel_id)
+            ).fetchall()
+        else:
+            channels = conn.execute(
+                "SELECT channel_id, sub_id FROM channels WHERE user_id = ? AND is_active = 1",
+                (user_id,)
+            ).fetchall()
     finally:
         conn.close()
 

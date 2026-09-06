@@ -271,7 +271,7 @@ async def publish_from_catalog(bot: Bot):
     conn = get_db()
     try:
         users = conn.execute("""
-            SELECT u.user_id, u.tariff_id, u.role, u.post_interval_minutes, u.commission_rate
+            SELECT u.user_id, u.tariff_id, u.role, u.post_interval_minutes, u.commission_rate, u.post_days
             FROM users u
             WHERE u.role IN ('saas', 'blogger') AND u.is_active = 1 AND u.cpa_enabled = 1
         """).fetchall()
@@ -287,6 +287,12 @@ async def publish_from_catalog(bot: Bot):
         role = user["role"]
         post_interval = user["post_interval_minutes"] or 60
         commission_rate = user["commission_rate"] or 0.70
+        post_days = user["post_days"] if user["post_days"] is not None else 127
+
+        today_weekday = datetime.now(timezone.utc).weekday()
+        if not (post_days & (1 << today_weekday)):
+            logger.info(f"[DEBUG] Пользователь {user_id}: сегодня не публикуем (post_days={post_days}, weekday={today_weekday})")
+            continue
 
         logger.info(f"[DEBUG] Обработка пользователя {user_id}, роль {role}")
 
@@ -312,6 +318,7 @@ async def publish_from_catalog(bot: Bot):
         current_time = now.strftime("%H:%M")
 
         scheduled_stores = []
+        scheduled_store_id = None
         conn = get_db()
         try:
             sched_rows = conn.execute(
@@ -341,7 +348,11 @@ async def publish_from_catalog(bot: Bot):
                     (user_id,)
                 ).fetchone()[0]
                 if last_post:
-                    last_dt = datetime.fromisoformat(last_post.replace("Z", "+00:00"))
+                    try:
+                        last_dt = datetime.fromisoformat(last_post.replace("Z", "+00:00"))
+                    except ValueError:
+                        logger.warning(f"[DEBUG] User {user_id}: invalid published_at '{last_post}', пропускаем проверку интервала")
+                        continue
                     seconds_since_last = (datetime.now(timezone.utc) - last_dt).total_seconds()
                     if seconds_since_last < post_interval * 60:
                         logger.info(f"[DEBUG] User {user_id}: нет таймеров, интервал {post_interval} мин, прошло {seconds_since_last:.0f} сек, пропускаем")
@@ -353,23 +364,19 @@ async def publish_from_catalog(bot: Bot):
 
         if scheduled_stores:
             best = None
+            scheduled_store_id = None
             for src, ptime in scheduled_stores:
                 if ptime <= current_time:
                     best = src
+                    for sid_candidate in store_ids:
+                        if sid_candidate in STORE_ID_MAP and STORE_ID_MAP[sid_candidate] == src:
+                            scheduled_store_id = sid_candidate
+                            break
             if not best:
                 logger.info(f"[DEBUG] User {user_id}: время публикации для магазинов ещё не наступило")
                 continue
             logger.info(f"[DEBUG] User {user_id}: таймер — публикуем магазин {best} (без проверки интервала)")
             allowed_sources = [best]
-
-            scheduled_store_id = None
-            for src, ptime in scheduled_stores:
-                if ptime <= current_time:
-                    for sid_candidate in store_ids:
-                        if sid_candidate in STORE_ID_MAP and STORE_ID_MAP[sid_candidate] == src:
-                            scheduled_store_id = sid_candidate
-                            break
-                    break
 
         min_discount = 0
         if role == "saas":
@@ -548,16 +555,18 @@ async def publish_from_catalog(bot: Bot):
                         conn_rec.commit()
                         logger.info(f"[DEBUG] Опубликовано в {ch['channel_id']}, post_id={msg.message_id}")
                         # Помечаем расписание как опубликованное
-                        try:
+                        if scheduled_store_id is not None:
                             conn_sched = get_db()
-                            conn_sched.execute(
-                                "UPDATE post_schedules SET is_posted=1 WHERE user_id=? AND target_type='store' AND target_id=? AND post_date=? AND post_time<=? AND is_posted=0",
-                                (user_id, scheduled_store_id, today_str, current_time)
-                            )
-                            conn_sched.commit()
-                            conn_sched.close()
-                        except Exception:
-                            pass
+                            try:
+                                conn_sched.execute(
+                                    "UPDATE post_schedules SET is_posted=1 WHERE user_id=? AND target_type='store' AND target_id=? AND post_date=? AND post_time<=? AND is_posted=0",
+                                    (user_id, scheduled_store_id, today_str, current_time)
+                                )
+                                conn_sched.commit()
+                            except Exception as e:
+                                logger.error(f"Ошибка обновления расписания: {e}")
+                            finally:
+                                conn_sched.close()
                         await pin_post_if_enabled(bot, user_id, ch["channel_id"], msg.message_id)
                         try:
                             conn_chk = get_db()
