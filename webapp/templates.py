@@ -1124,6 +1124,12 @@ ADMIN_CHAT_TEMPLATE = r'''<!DOCTYPE html>
 <script>
 const requestId = {{ request_id }};
 
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+}
+
 async function loadChat() {
     try {
         const resp = await fetch(`/admin/payouts/${requestId}/chat-data`);
@@ -1139,12 +1145,12 @@ async function loadChat() {
         } else {
             chatDiv.innerHTML = data.messages.map(msg => {
                 const side = msg.sender_role === 'admin' ? 'admin' : 'user';
- o none               let text = '';
- o none               if (msg.file_path) {
+                let text = '';
+                if (msg.file_path) {
                     text = `<a href="/admin/receipt-file?path=${encodeURIComponent(msg.file_path)}" target="_blank"><img src="/admin/receipt-file?path=${encodeURIComponent(msg.file_path)}" style="max-width:150px; border-radius:8px;"></a>`;
                 }
-                if (msg.message) text += msg.message.replace(/\n/g, '<br>');
-                return `<div class="chat-msg ${side}">${text}<span class="time">${msg.created_at || ''}</span></div>`;
+                if (msg.message) text += escapeHtml(msg.message).replace(/\n/g, '<br>');
+                return `<div class="chat-msg ${side}">${text}<span class="time">${escapeHtml(msg.created_at || '')}</span></div>`;
             }).join('');
         }
         chatDiv.scrollTop = chatDiv.scrollHeight;

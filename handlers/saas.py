@@ -579,6 +579,7 @@ async def cb_force_type_cpc(callback: CallbackQuery, bot: Bot) -> None:
             )] for ch_row in channels
         ])
         await safe_edit(callback.message, "📢 Выберите канал для CPC-поста:", reply_markup=kb)
+        await callback.answer()
         return
 
     try:
@@ -1166,7 +1167,7 @@ async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
             conn_rec = get_db()
             try:
                 conn_rec.execute(
-                    """INSERT INTO posts 
+                    """INSERT INTO posts
                     (user_id, donor_post_id, channel_id, target_channel_id, subid1, subid2, direct_link, erid, status, published_at, caption, auto_delete_hours)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?)""",
                     (user_id, donor_post_id, ch['channel_id'], ch['channel_id'], ch['sub_id'], subid2, direct_link, erid,
@@ -1175,6 +1176,29 @@ async def cb_force_confirm(callback: CallbackQuery, bot: Bot) -> None:
                 conn_rec.commit()
             finally:
                 conn_rec.close()
+
+            # ===== АВТО-ЗАКРЕПЛЕНИЕ + УВЕДОМЛЕНИЕ (как в остальных путях публикации) =====
+            from services.saas_core import pin_post_if_enabled
+            await pin_post_if_enabled(bot, user_id, ch["channel_id"], msg.message_id)
+            try:
+                conn_chk = get_db()
+                try:
+                    row = conn_chk.execute("SELECT notify_posts FROM users WHERE user_id=?", (user_id,)).fetchone()
+                    do_notify = row["notify_posts"] if row else 1
+                finally:
+                    conn_chk.close()
+                if do_notify:
+                    await bot.send_message(
+                        user_id,
+                        f"✅ Пост опубликован в <b>{ch['channel_id'].lstrip('@')}</b>\n"
+                        f"📦 {title}\n"
+                        f"💰 {price} {currency}\n"
+                        f"<a href='{direct_link}'>Открыть пост</a>",
+                        parse_mode="HTML",
+                        disable_web_page_preview=True
+                    )
+            except Exception:
+                pass
         await asyncio.sleep(1)
 
     await safe_edit(callback.message, "✅ Пост успешно опубликован!")
@@ -1376,13 +1400,57 @@ async def cb_receipt_upload(callback: CallbackQuery, state: FSMContext):
             return
     finally:
         conn.close()
-    await safe_edit(callback.message, "📎 Прикрепите фото/скриншот чека из приложения «Мой налог».")
+    await safe_edit(callback.message, "📎 Пришлите ссылку на чек из приложения «Мой налог» (lknpd.nalog.ru/...).\n\n⚠️ Скриншоты и фото не принимаются — только прямая ссылка на чек.")
     await state.set_state(PayoutStates.waiting_for_receipt_photo)
     await state.update_data(payout_request_id=request_id)
     await callback.answer()
 
-@router.message(PayoutStates.waiting_for_receipt_photo, F.photo)
-async def process_receipt_photo(message: Message, state: FSMContext):
+# СТАРЫЙ ОБРАБОТЧИК ФОТО-ЧЕКОВ ОТКЛЮЧЁН: бизнес-правило требует только ссылку
+# lknpd.nalog.ru (как в веб-панели). Фото без проверки принимались в обход правила.
+# @router.message(PayoutStates.waiting_for_receipt_photo, F.photo)
+# async def process_receipt_photo(message: Message, state: FSMContext):
+#     user_id = message.from_user.id
+#     data = await state.get_data()
+#     request_id = data.get("payout_request_id")
+#     if not request_id:
+#         await message.answer("❌ Ошибка сессии. Попробуйте снова.")
+#         await state.clear()
+#         return
+#
+#     # Получаем file_id фото
+#     photo = message.photo[-1]
+#     file_id = photo.file_id
+#
+#     conn = get_db()
+#     try:
+#         # Обновляем статус заявки и сохраняем file_id (можно в отдельное поле, добавим receipt_photo)
+#         conn.execute("UPDATE payout_requests SET status='receipt_uploaded', receipt_photo=? WHERE id=?",
+#                      (file_id, request_id))
+#         conn.commit()
+#     finally:
+#         conn.close()
+#
+#     # Уведомление админам
+#     for admin_id in ADMIN_IDS:
+#         try:
+#             await message.bot.send_photo(
+#                 admin_id,
+#                 photo=file_id,
+#                 caption=f"🧾 Чек по заявке #{request_id} от пользователя {user_id}.\n"
+#                         f"Проверьте и подтвердите выплату в админке.",
+#                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+#                     [InlineKeyboardButton(text="🌐 Админка", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))]
+#                 ])
+#             )
+#         except Exception as e:
+#             logger.error(f"Ошибка отправки чека админу {admin_id}: {e}")
+#
+#     await message.answer("✅ Чек отправлен администратору. Ожидайте подтверждения.")
+#     await state.clear()
+
+@router.message(PayoutStates.waiting_for_receipt_photo, F.text)
+async def process_receipt_link(message: Message, state: FSMContext):
+    """Приём чека ссылкой — единый формат с веб-панелью."""
     user_id = message.from_user.id
     data = await state.get_data()
     request_id = data.get("payout_request_id")
@@ -1391,27 +1459,31 @@ async def process_receipt_photo(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    # Получаем file_id фото
-    photo = message.photo[-1]
-    file_id = photo.file_id
+    receipt_link = (message.text or "").strip()
+    if "lknpd.nalog.ru" not in receipt_link:
+        await message.answer(
+            "❌ Это не похоже на ссылку из «Мой налог».\n"
+            "Ссылка должна содержать <code>lknpd.nalog.ru</code>. Пришлите её ещё раз.",
+            parse_mode="HTML"
+        )
+        return
 
     conn = get_db()
     try:
-        # Обновляем статус заявки и сохраняем file_id (можно в отдельное поле, добавим receipt_photo)
         conn.execute("UPDATE payout_requests SET status='receipt_uploaded', receipt_photo=? WHERE id=?",
-                     (file_id, request_id))
+                     (receipt_link, request_id))
+        conn.execute("INSERT INTO payout_chat (request_id, sender_role, message) VALUES (?, 'user', ?)",
+                     (request_id, f"Пользователь предоставил чек (ссылка):\n{receipt_link}"))
         conn.commit()
     finally:
         conn.close()
 
-    # Уведомление админам
     for admin_id in ADMIN_IDS:
         try:
-            await message.bot.send_photo(
+            await message.bot.send_message(
                 admin_id,
-                photo=file_id,
-                caption=f"🧾 Чек по заявке #{request_id} от пользователя {user_id}.\n"
-                        f"Проверьте и подтвердите выплату в админке.",
+                f"🧾 Чек по заявке #{request_id} от пользователя {user_id}:\n{receipt_link}\n"
+                f"Проверьте и подтвердите выплату в админке.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🌐 Админка", web_app=WebAppInfo(url=WEBAPP_ADMIN_URL))]
                 ])
@@ -1421,6 +1493,14 @@ async def process_receipt_photo(message: Message, state: FSMContext):
 
     await message.answer("✅ Чек отправлен администратору. Ожидайте подтверждения.")
     await state.clear()
+
+@router.message(PayoutStates.waiting_for_receipt_photo, F.photo)
+async def process_receipt_photo_rejected(message: Message, state: FSMContext):
+    """Фото вместо ссылки — вежливо просим ссылку, состояние не сбрасываем."""
+    await message.answer(
+        "⚠️ Фото и скриншоты не принимаются.\n"
+        "Пришлите ссылку на чек из «Мой налог» (lknpd.nalog.ru/...)."
+    )
 # ---------------------------------------------------------------------------
 # Оферта
 # ---------------------------------------------------------------------------

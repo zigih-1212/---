@@ -502,6 +502,12 @@ CHAT_TEMPLATE = r'''<!DOCTYPE html>
 const requestId = {{ request_id }};
 const token = "{{ token }}";
 
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+}
+
 async function loadMessages() {
     const resp = await fetch(`/my-stats/payout-chat/${requestId}?token=${token}`);
     const messages = await resp.json();
@@ -512,8 +518,8 @@ async function loadMessages() {
         if (msg.file_path) {
             text = `<a href="/my-stats/receipt-file?path=${encodeURIComponent(msg.file_path)}&token=${token}" target="_blank"><img src="/my-stats/receipt-file?path=${encodeURIComponent(msg.file_path)}&token=${token}" style="max-width:150px; border-radius:8px;"></a>`;
         }
-        if (msg.message) text += msg.message;
-        return `<div class="chat-msg ${side}">${text}<span class="time">${msg.created_at}</span></div>`;
+        if (msg.message) text += escapeHtml(msg.message).replace(/\n/g, '<br>');
+        return `<div class="chat-msg ${side}">${text}<span class="time">${escapeHtml(msg.created_at)}</span></div>`;
     }).join('');
     chatDiv.scrollTop = chatDiv.scrollHeight;
 }
@@ -1080,15 +1086,20 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     });
 });
 
+function readIntervalMinutes(fallback) {
+    const raw = parseInt(document.getElementById('post-interval').value, 10);
+    if (Number.isNaN(raw) || raw < 0) return fallback;
+    return raw;
+}
 function timeDisplay() {
-    const total = parseInt(document.getElementById('post-interval').value) || 60;
+    const total = readIntervalMinutes(60);
     const h = Math.floor(total / 60);
     const m = total % 60;
     document.getElementById('tv-hour').value = h;
     document.getElementById('tv-min').value = String(m).padStart(2, '0');
 }
 function adj(unit, step) {
-    const total = parseInt(document.getElementById('post-interval').value) || 60;
+    const total = readIntervalMinutes(60);
     let h = Math.floor(total / 60), m = total % 60;
     if (unit === 'hour') {
         h += step;
@@ -1116,7 +1127,7 @@ function syncFromInput() {
 // Load settings
 async function loadSettings() {
     try {
-        const resp = await fetch(`/my-stats/settings-data?token=${token}`);
+        const resp = await fetch(`/my-stats/settings-data?token=${token}`, { cache: 'no-store' });
         const data = await resp.json();
         document.getElementById('post-interval').value = data.post_interval_minutes || 60;
         timeDisplay();
@@ -1178,10 +1189,18 @@ async function saveGeneralSettings() {
     document.querySelectorAll('.post-day').forEach(cb => { if (cb.checked) postDaysMask |= parseInt(cb.value); });
     formData.append('post_days', postDaysMask);
     try {
-        const resp = await fetch('/my-stats/save-settings', { method: 'POST', body: formData });
+        const resp = await fetch('/my-stats/save-settings', { method: 'POST', body: formData, cache: 'no-store' });
         const data = await resp.json();
         const msg = document.getElementById('save-msg');
-        msg.innerHTML = data.ok ? '<p class="success">✅ Настройки сохранены</p>' : '<p class="error">❌ Ошибка сохранения</p>';
+        if (data.ok) {
+            if (data.post_interval_minutes !== undefined) {
+                document.getElementById('post-interval').value = data.post_interval_minutes;
+                timeDisplay();
+            }
+            msg.innerHTML = '<p class="success">✅ Настройки сохранены</p>';
+        } else {
+            msg.innerHTML = '<p class="error">❌ ' + (data.error || 'Ошибка сохранения') + '</p>';
+        }
         setTimeout(() => msg.innerHTML = '', 3000);
     } catch(e) { console.error(e); }
     btn.disabled = false;
@@ -1311,16 +1330,23 @@ async def request_payout(request: Request, token: str = Form(...), details: str 
         return JSONResponse({"ok": False, "error": "Слишком короткие реквизиты"})
     conn = get_db()
     try:
+        # BEGIN IMMEDIATE захватывает write-lock сразу: параллельный второй
+        # запрос выплаты ждёт завершения первого и не списывает баланс дважды.
+        conn.execute("BEGIN IMMEDIATE")
         user = conn.execute("SELECT role, balance_available, tax_status, oferta_accepted FROM users WHERE user_id=?", (user_id,)).fetchone()
         if not user or user["oferta_accepted"] != 1:
+            conn.execute("ROLLBACK")
             return JSONResponse({"ok": False, "error": "Оферта не принята"})
         if user["tax_status"] != "business":
+            conn.execute("ROLLBACK")
             return JSONResponse({"ok": False, "error": "Требуется статус самозанятого/ИП"})
         available = user["balance_available"] or 0.0
         if available < MIN_PAYOUT:
+            conn.execute("ROLLBACK")
             return JSONResponse({"ok": False, "error": f"Минимальная сумма вывода: {MIN_PAYOUT} ₽"})
         active = conn.execute("SELECT id FROM payout_requests WHERE user_id=? AND status IN ('processing','awaiting_receipt','receipt_uploaded')", (user_id,)).fetchone()
         if active:
+            conn.execute("ROLLBACK")
             return JSONResponse({"ok": False, "error": "У вас уже есть активная заявка"})
         conn.execute("UPDATE users SET balance_available = balance_available - ? WHERE user_id=?", (available, user_id))
         cursor = conn.execute("INSERT INTO payout_requests (user_id, amount, message, status) VALUES (?, ?, ?, 'processing')", (user_id, available, details.strip()))
@@ -1419,7 +1445,10 @@ async def get_receipt_file(path: str = Query(...), token: str = Query(...)):
     safe = _safe_path(UPLOAD_DIR, path)
     if not safe or not os.path.exists(safe):
         return HTMLResponse("Файл не найден", status_code=404)
-    if not safe.startswith(os.path.join(UPLOAD_DIR, f"user_{user_id}")):
+    # Сравнение по полному имени директории с разделителем: без os.sep
+    # user_1 являлся префиксом user_15 и открывал чужие файлы.
+    owner_dir = os.path.join(UPLOAD_DIR, f"user_{user_id}") + os.sep
+    if safe != owner_dir.rstrip(os.sep) and not (safe + os.sep).startswith(owner_dir):
         return HTMLResponse("Доступ запрещён", status_code=403)
     return FileResponse(safe)
 
@@ -1503,7 +1532,7 @@ async def get_settings_data(token: str = Query(...)):
             "sub_id": user["sub_id"] if user else "",
             "cpa_enabled": bool(user["cpa_enabled"]) if user else True,
             "post_days": user["post_days"] if user else 127,
-        })
+        }, headers={"Cache-Control": "no-store"})
     finally:
         conn.close()
 
@@ -1521,6 +1550,8 @@ async def save_settings(
     post_days: int = Form(127),
 ):
     user_id = get_user_id_from_token(token)
+    if post_interval_minutes < 0 or post_interval_minutes > 1440:
+        return JSONResponse({"ok": False, "error": "Интервал должен быть от 0 до 1440 минут"})
     conn = get_db()
     try:
         conn.execute("""UPDATE users SET
@@ -1532,7 +1563,17 @@ async def save_settings(
              notify_posts, force_preview_confirmed, min_discount, tax_status,
              cpa_enabled, post_days, user_id))
         conn.commit()
-        return JSONResponse({"ok": True})
+        # Возвращаем фактически сохранённые значения: фронт рисует их из ответа
+        # сервера, а не из локального состояния (защита от рассинхрона/кэша).
+        saved = conn.execute(
+            "SELECT post_interval_minutes, default_auto_delete_hours, post_days FROM users WHERE user_id=?",
+            (user_id,)).fetchone()
+        return JSONResponse({
+            "ok": True,
+            "post_interval_minutes": saved["post_interval_minutes"],
+            "default_auto_delete_hours": saved["default_auto_delete_hours"],
+            "post_days": saved["post_days"],
+        }, headers={"Cache-Control": "no-store"})
     except Exception as e:
         logger.error(f"Save settings error: {e}")
         return JSONResponse({"ok": False, "error": str(e)})
