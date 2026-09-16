@@ -1,4 +1,5 @@
 # services/admitad_subnetwork.py
+import asyncio
 import time
 import re
 import logging
@@ -56,11 +57,15 @@ async def get_access_token() -> Optional[str]:
     auth_header = _get_basic_auth_header()
     async with httpx.AsyncClient(timeout=30) as client:
         try:
+            # client_id/client_secret дублируем в теле: сервер иногда игнорирует
+            # Basic-заголовок и отвечает 401 "client_id None doesn't exist".
             resp = await client.post(
                 TOKEN_URL,
                 headers={"Authorization": auth_header},
                 data={
                     "grant_type": "client_credentials",
+                    "client_id": ADMITAD_CLIENT_ID,
+                    "client_secret": ADMITAD_CLIENT_SECRET,
                     "scope": "advcampaigns websites manage_websites advcampaigns_for_website banners"
                 }
             )
@@ -111,8 +116,18 @@ async def create_subnetwork_website(
                 json=[payload]
             )
             data = resp.json()
-            if resp.status_code == 200 and "0" in data:
-                website = data["0"]
+            website = None
+            if resp.status_code == 200 and isinstance(data, dict):
+                # Основной формат: {"0": {...}}; запасной — ищем любой dict со значением id
+                # (API возвращает ошибки валидации тоже словарём, без id).
+                if isinstance(data.get("0"), dict) and data["0"].get("id"):
+                    website = data["0"]
+                else:
+                    for value in data.values():
+                        if isinstance(value, dict) and value.get("id"):
+                            website = value
+                            break
+            if website:
                 logger.info(f"✅ Подплощадка создана: id={website.get('id')}, name={name}")
                 return website
             else:
@@ -123,32 +138,36 @@ async def create_subnetwork_website(
             return None
 
 
-async def get_website_connection_status(advcampaign_id: int, website_ids: list[int]) -> list:
-    token = await get_access_token()
-    if not token:
-        return []
-
-    ids_str = ",".join(str(wid) for wid in website_ids[:30])
-    async with httpx.AsyncClient(timeout=30) as client:
-        try:
-            resp = await client.get(
-                SUBNETWORK_STATUSES_URL.format(advcampaign_id=advcampaign_id),
-                headers={"Authorization": f"Bearer {token}"},
-                params={"websites_id": ids_str}
-            )
-            if resp.status_code == 200:
-                return resp.json()
-            logger.error(f"❌ Status check error {resp.status_code}: {resp.text[:200]}")
-            return []
-        except Exception as e:
-            logger.error(f"❌ Status check exception: {e}")
-            return []
+# МЁРТВЫЙ КОД (закомментировано, не удалено): ни одного вызова в проекте.
+# Оставлено на случай, если понадобится проверка статусов подключения площадок.
+# async def get_website_connection_status(advcampaign_id: int, website_ids: list[int]) -> list:
+#     token = await get_access_token()
+#     if not token:
+#         return []
+#
+#     ids_str = ",".join(str(wid) for wid in website_ids[:30])
+#     async with httpx.AsyncClient(timeout=30) as client:
+#         try:
+#             resp = await client.get(
+#                 SUBNETWORK_STATUSES_URL.format(advcampaign_id=advcampaign_id),
+#                 headers={"Authorization": f"Bearer {token}"},
+#                 params={"websites_id": ids_str}
+#             )
+#             if resp.status_code == 200:
+#                 return resp.json()
+#             logger.error(f"❌ Status check error {resp.status_code}: {resp.text[:200]}")
+#             return []
+#         except Exception as e:
+#             logger.error(f"❌ Status check exception: {e}")
+#             return []
 
 
 async def register_channel_as_website(channel_id: str, channel_name: str) -> Optional[int]:
     clean_name = channel_name.lstrip("@") or channel_id.lstrip("@")
-    # Удаляем недопустимые символы из имени и URL
-    safe_name = re.sub(r'[^\w\s\-]', '', clean_name)[:180]
+    # Удаляем недопустимые символы из имени и URL.
+    # Итоговое имя "TG - ..." обязано влезать в лимит API 3..128 символов
+    # (проверено живой пробой: сервер режет имена длиннее 128).
+    safe_name = re.sub(r'[^\w\s\-]', '', clean_name)[:120]
     url_clean = re.sub(r'[^\w\-]', '', clean_name)
     url = f"https://t.me/{url_clean}" if url_clean else f"https://t.me/channel_{channel_id}"
 
@@ -200,6 +219,9 @@ async def backfill_existing_channels():
         else:
             failed += 1
             logger.warning(f"  ❌ {ch_id} — не удалось зарегистрировать")
+        # Пауза между запросами: без неё бэкфилл при старте долбит API
+        # подряд и ловит rate-limit при десятках каналов (как в refill каталогов).
+        await asyncio.sleep(1)
 
     logger.info(f"📊 Бэктейл завершён: {registered} создано, {failed} ошибок")
 
@@ -292,11 +314,18 @@ async def search_all_cpc_campaigns(query: str = "", limit: int = 50) -> list:
                 return []
             data = resp.json()
             results = data.get("results", [])
-            # Оставляем только тех, у кого есть CPC-действие
+            # Оставляем только тех, у кого есть CPC-действие.
+            # Матчим на трёх языках/формах: рус. "клик", англ. "click" и "cpc" —
+            # фильтр только по "клик" пропускал кампании с английскими названиями.
             cpc_campaigns = []
             for c in results:
                 actions = c.get("actions", [])
-                has_cpc = any("клик" in (a.get("name", "") or "").lower() for a in actions)
+                has_cpc = any(
+                    ("клик" in (a.get("name", "") or "").lower()
+                     or "click" in (a.get("name", "") or "").lower()
+                     or "cpc" in (a.get("name", "") or "").lower())
+                    for a in actions
+                )
                 if has_cpc:
                     cpc_campaigns.append(c)
             return cpc_campaigns
